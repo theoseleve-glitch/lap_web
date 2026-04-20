@@ -1,4 +1,4 @@
-"""Validates the 022 migration upgrades and downgrades cleanly.
+"""Validates the 059 migration upgrades and downgrades cleanly.
 
 Uses a temp PG database when TELEMETRY_PG_URL_TEST is set; otherwise
 skips (keeps CI green on sqlite-only environments).
@@ -21,18 +21,18 @@ def _alembic(args: list[str]):
     return subprocess.check_call(["alembic", *args], env=env)
 
 
-def test_022_upgrade_then_downgrade_is_clean():
-    _alembic(["upgrade", "021"])
-    _alembic(["upgrade", "022"])
-    _alembic(["downgrade", "021"])
+def test_059_upgrade_then_downgrade_is_clean():
+    _alembic(["upgrade", "058"])
+    _alembic(["upgrade", "059"])
+    _alembic(["downgrade", "058"])
     # Reapplying should still succeed.
-    _alembic(["upgrade", "022"])
+    _alembic(["upgrade", "059"])
 
 
-def test_022_adds_expected_columns():
+def test_059_adds_expected_columns():
     import contextlib
     import psycopg2
-    _alembic(["upgrade", "022"])
+    _alembic(["upgrade", "059"])
     with contextlib.closing(psycopg2.connect(os.environ["TELEMETRY_PG_URL_TEST"])) as conn:
         with conn.cursor() as cur:
             cur.execute("""
