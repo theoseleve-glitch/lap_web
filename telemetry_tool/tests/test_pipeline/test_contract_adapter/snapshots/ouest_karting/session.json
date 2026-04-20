@@ -1,0 +1,68 @@
+{
+  "contract_version": "1.0",
+  "session_id": "sid-summary_ouest_karting",
+  "workspace_id": "wid-test",
+  "source": "real_life",
+  "capabilities": {
+    "channels": [
+      "gps",
+      "lat_g",
+      "lon_g",
+      "yaw_rate"
+    ]
+  },
+  "data_profile": {
+    "parser": "real_life_pipeline",
+    "source_format": "racechrono_csv",
+    "data_tier": "gps_imu",
+    "channels_detected": 6
+  },
+  "driver": {
+    "driver_id": 1,
+    "name": "Theo"
+  },
+  "track": {
+    "track_id": 10,
+    "name": "Ouest Karting",
+    "layout": "short"
+  },
+  "vehicle": {
+    "vehicle_id": 42,
+    "vehicle_class": "kart",
+    "model": "Tony Kart OTK"
+  },
+  "session_start": "2026-04-19T10:00:00Z",
+  "duration_s": 180.2,
+  "laps": [
+    {
+      "lap_number": 1,
+      "lap_time_s": 60.1,
+      "is_valid": true,
+      "is_best": false,
+      "flags": []
+    },
+    {
+      "lap_number": 2,
+      "lap_time_s": 59.8,
+      "is_valid": true,
+      "is_best": true,
+      "flags": []
+    },
+    {
+      "lap_number": 3,
+      "lap_time_s": 60.3,
+      "is_valid": true,
+      "is_best": false,
+      "flags": []
+    }
+  ],
+  "events": [],
+  "scores": {
+    "pace": 80.0,
+    "consistency": 70.0,
+    "execution": 75.0,
+    "robustness": 85.0,
+    "overall": 77.0
+  },
+  "sidecar": null
+}

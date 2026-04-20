@@ -1,0 +1,20 @@
+{
+  "version": "1.0",
+  "storyline": [
+    {
+      "weakness_key": "storyline_1",
+      "state": "Insufficient",
+      "headline": "No compare evidence or weakness patterns available.",
+      "detail": null
+    }
+  ],
+  "global_focus": [],
+  "corner_coaching": {},
+  "not_evaluable_corners": [
+    "12",
+    "3",
+    "7"
+  ],
+  "validation_checks": [],
+  "next_run": []
+}

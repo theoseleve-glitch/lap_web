@@ -1,0 +1,28 @@
+{
+  "depth": "trajectory_only",
+  "method": "trajectory",
+  "theoretical_lap_time_s": 62.0,
+  "confidence": 0.67,
+  "corner_deltas": [
+    {
+      "corner_id": "2",
+      "time_loss_s": 0.15,
+      "root_cause": "early_braking",
+      "coaching_text": "brake marker too early",
+      "phase": "entry"
+    }
+  ],
+  "total_time_loss_s": 0.15,
+  "trajectory_delta": null,
+  "reconstructed_inputs": null,
+  "vehicle_model": {
+    "note": "unidentified - trajectory-only mode"
+  },
+  "validation": {
+    "method_notes": "trajectory",
+    "driver_best_s": 62.7,
+    "gap_to_theoretical_s": 0.7000000000000028,
+    "attributed_loss_s": 0.15,
+    "unattributed_loss_s": 0.5500000000000028
+  }
+}

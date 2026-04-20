@@ -1,0 +1,35 @@
+{
+  "depth": "trajectory_only",
+  "method": "trajectory",
+  "theoretical_lap_time_s": 138.0,
+  "confidence": 0.83,
+  "corner_deltas": [
+    {
+      "corner_id": "1",
+      "time_loss_s": 0.12,
+      "root_cause": "late_brake_release",
+      "coaching_text": "",
+      "phase": "brake_release"
+    },
+    {
+      "corner_id": "5",
+      "time_loss_s": 0.08,
+      "root_cause": "low_minimum_speed",
+      "coaching_text": "",
+      "phase": "apex"
+    }
+  ],
+  "total_time_loss_s": 0.2,
+  "trajectory_delta": null,
+  "reconstructed_inputs": null,
+  "vehicle_model": {
+    "note": "unidentified - trajectory-only mode"
+  },
+  "validation": {
+    "method_notes": "trajectory",
+    "driver_best_s": 138.5,
+    "gap_to_theoretical_s": 0.5,
+    "attributed_loss_s": 0.2,
+    "unattributed_loss_s": 0.3
+  }
+}

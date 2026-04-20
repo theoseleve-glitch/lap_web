@@ -29,3 +29,19 @@ __all__ = [
     "_extract_track_layout_for_picker",
     "_import",
 ]
+
+
+# --- W3 handler auto-registration ------------------------------------------
+# Deferred import so pipeline/ loads even if W2 hasn't shipped router yet.
+try:
+    from telemetry_tool.ingest.router import register_handler as _w2_register
+    from telemetry_tool.pipeline.handler import RealLifePipelineHandler as _RealLifeHandler
+
+    _w2_register(_RealLifeHandler())
+except ImportError:
+    # W2 not yet merged -- this is expected during Wave 2. Registration
+    # will activate once `telemetry_tool.ingest.router` lands.
+    pass
+except Exception:  # pragma: no cover - defensive
+    import logging as _log
+    _log.getLogger(__name__).exception("W3 handler registration failed (non-fatal)")
