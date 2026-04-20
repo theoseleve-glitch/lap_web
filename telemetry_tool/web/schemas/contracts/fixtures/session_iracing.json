@@ -1,0 +1,158 @@
+{
+  "contract_version": "1.0",
+  "session_id": "33333333-3333-3333-3333-333333333333",
+  "workspace_id": "22222222-2222-2222-2222-222222222222",
+  "source": "iracing",
+  "capabilities": {
+    "channels": [
+      "steer",
+      "gps",
+      "wheel_spd",
+      "yaw_rate",
+      "shock_defl",
+      "throttle",
+      "lat_g",
+      "lon_g",
+      "brake"
+    ]
+  },
+  "data_profile": {
+    "parser": "iracing_ibt",
+    "channels_detected": 332,
+    "sample_hz": 360
+  },
+  "driver": {
+    "driver_id": 1,
+    "name": "Theo"
+  },
+  "track": {
+    "track_id": 20,
+    "name": "Spa-Francorchamps",
+    "layout": "grand_prix"
+  },
+  "vehicle": {
+    "vehicle_id": null,
+    "vehicle_class": "gt3",
+    "model": "McLaren 720S GT3 EVO"
+  },
+  "session_start": "2026-04-18T20:30:00Z",
+  "duration_s": 2100.0,
+  "laps": [
+    {
+      "lap_number": 1,
+      "lap_time_s": null,
+      "is_valid": false,
+      "is_best": false,
+      "flags": [
+        "out_lap"
+      ]
+    },
+    {
+      "lap_number": 2,
+      "lap_time_s": 139.9,
+      "is_valid": true,
+      "is_best": false,
+      "flags": []
+    },
+    {
+      "lap_number": 3,
+      "lap_time_s": 139.2,
+      "is_valid": true,
+      "is_best": false,
+      "flags": []
+    },
+    {
+      "lap_number": 4,
+      "lap_time_s": 138.7,
+      "is_valid": true,
+      "is_best": false,
+      "flags": []
+    },
+    {
+      "lap_number": 5,
+      "lap_time_s": 138.5,
+      "is_valid": true,
+      "is_best": true,
+      "flags": []
+    },
+    {
+      "lap_number": 6,
+      "lap_time_s": 138.9,
+      "is_valid": true,
+      "is_best": false,
+      "flags": []
+    },
+    {
+      "lap_number": 7,
+      "lap_time_s": 139.4,
+      "is_valid": true,
+      "is_best": false,
+      "flags": []
+    },
+    {
+      "lap_number": 8,
+      "lap_time_s": 139.1,
+      "is_valid": true,
+      "is_best": false,
+      "flags": []
+    },
+    {
+      "lap_number": 9,
+      "lap_time_s": 138.8,
+      "is_valid": true,
+      "is_best": false,
+      "flags": []
+    },
+    {
+      "lap_number": 10,
+      "lap_time_s": 139.6,
+      "is_valid": true,
+      "is_best": false,
+      "flags": []
+    },
+    {
+      "lap_number": 11,
+      "lap_time_s": 138.9,
+      "is_valid": true,
+      "is_best": false,
+      "flags": []
+    },
+    {
+      "lap_number": 12,
+      "lap_time_s": 139.0,
+      "is_valid": true,
+      "is_best": false,
+      "flags": []
+    },
+    {
+      "lap_number": 13,
+      "lap_time_s": 138.8,
+      "is_valid": true,
+      "is_best": false,
+      "flags": []
+    },
+    {
+      "lap_number": 14,
+      "lap_time_s": null,
+      "is_valid": false,
+      "is_best": false,
+      "flags": [
+        "in_lap"
+      ]
+    }
+  ],
+  "events": [],
+  "scores": {
+    "pace": 88.0,
+    "consistency": 82.0,
+    "execution": 85.0,
+    "robustness": 90.0,
+    "overall": 86.0
+  },
+  "sidecar": {
+    "object_key": "sidecars/s3/33333333/full.parquet",
+    "format": "parquet",
+    "sha256": null,
+    "size_bytes": 12345678
+  }
+}

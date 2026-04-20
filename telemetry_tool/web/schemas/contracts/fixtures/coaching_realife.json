@@ -1,0 +1,75 @@
+{
+  "version": "1.0",
+  "storyline": [
+    {
+      "weakness_key": "late_brake_release",
+      "state": "Detected",
+      "headline": "You release the brake too late in slow corners",
+      "detail": null
+    },
+    {
+      "weakness_key": "mid_corner_throttle",
+      "state": "Insufficient",
+      "headline": "Not enough driver input data to evaluate",
+      "detail": "Real-life sessions cannot measure throttle directly."
+    }
+  ],
+  "global_focus": [
+    {
+      "rank": 1,
+      "weakness_key": "late_brake_release",
+      "title": "Release brake earlier",
+      "severity": "high",
+      "corner_ids": [
+        "3",
+        "7"
+      ],
+      "cost_ms": 520.0
+    }
+  ],
+  "corner_coaching": {
+    "3": {
+      "corner_id": "3",
+      "items": [
+        {
+          "weakness_key": "late_brake_release",
+          "phase": "brake_release",
+          "severity": "high",
+          "cue_text": "Release brake ~10m earlier",
+          "cost_ms": 280.0
+        }
+      ]
+    },
+    "7": {
+      "corner_id": "7",
+      "items": [
+        {
+          "weakness_key": "late_brake_release",
+          "phase": "brake_release",
+          "severity": "medium",
+          "cue_text": "Smoother trail-brake",
+          "cost_ms": 240.0
+        }
+      ]
+    }
+  },
+  "not_evaluable_corners": [
+    "12"
+  ],
+  "validation_checks": [
+    {
+      "check_id": "v1",
+      "description": "Beat 59.5s on lap 3",
+      "measurable_target": "lap_time_s <= 59.5",
+      "corner_id": null
+    }
+  ],
+  "next_run": [
+    {
+      "item_type": "technical_focus",
+      "title": "Brake release timing",
+      "body": "Commit to releasing the brake 10m earlier at T3 and T7.",
+      "weakness_key": "late_brake_release"
+    }
+  ]
+}
