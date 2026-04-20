@@ -177,12 +177,12 @@ THROTTLE, BRAKE, STEER, WHEEL_SPD, SHOCK_DEFL are **never** set for real-life (c
 
 **Goal:** Confirm preconditions before touching the repo.
 
-- [ ] **Step 0.1: Verify W1 contracts are reachable**
+- [x] **Step 0.1: Verify W1 contracts are reachable**
 
 Run: `git log --grep "signal:W1-done" --oneline`
 Expected: at least one commit. If empty, **stop** — wait for W1 to merge into `main` (or into the parent branch this worktree is based on).
 
-- [ ] **Step 0.2: Verify W1 contracts importable**
+- [x] **Step 0.2: Verify W1 contracts importable**
 
 Run:
 ```bash
@@ -190,7 +190,7 @@ python -c "from telemetry_tool.web.schemas.contracts import (SessionContract, Co
 ```
 Expected: `ok`. If `ImportError`, investigate before proceeding.
 
-- [ ] **Step 0.3: Verify worktree exists**
+- [x] **Step 0.3: Verify worktree exists**
 
 Run: `git worktree list | grep w3-real-life-adapter`
 Expected: one line pointing to `../worktrees/w3-real-life-adapter`. If missing, create it:
@@ -199,12 +199,12 @@ git worktree add ../worktrees/w3-real-life-adapter -b feat/ws-w3-real-life-adapt
 cd ../worktrees/w3-real-life-adapter
 ```
 
-- [ ] **Step 0.4: Confirm baseline tests are green on the worktree branch**
+- [x] **Step 0.4: Confirm baseline tests are green on the worktree branch**
 
 Run: `pytest telemetry_tool/tests/test_contracts/ -x -q`
 Expected: all pass (W1 tests — guarantees no environmental regression).
 
-- [ ] **Step 0.5: Grep-scan for prescriptive engine availability**
+- [x] **Step 0.5: Grep-scan for prescriptive engine availability**
 
 Run:
 ```bash
@@ -212,7 +212,7 @@ python -c "from telemetry_tool.track_surface.prescriptive.engine import generate
 ```
 Expected: `ok`. If `ImportError`, the prescriptive refactor is not merged on this branch — flag in plan checklist before Task 7.
 
-- [ ] **Step 0.6: Commit-less baseline**
+- [x] **Step 0.6: Commit-less baseline**
 
 No commit in this task.
 
@@ -227,7 +227,7 @@ No commit in this task.
 - Create: `telemetry_tool/tests/test_pipeline/test_contract_adapter/__init__.py`
 - Create: `telemetry_tool/tests/test_pipeline/test_contract_adapter/test_public_api.py`
 
-- [ ] **Step 1.1: Write failing public-API smoke test**
+- [x] **Step 1.1: Write failing public-API smoke test**
 
 ```python
 # telemetry_tool/tests/test_pipeline/test_contract_adapter/test_public_api.py
@@ -257,12 +257,12 @@ def test_contract_tuple_shape():
     assert set(ContractTuple._fields) == {"session", "coaching", "optimizer"}
 ```
 
-- [ ] **Step 1.2: Run tests, confirm they fail**
+- [x] **Step 1.2: Run tests, confirm they fail**
 
 Run: `pytest telemetry_tool/tests/test_pipeline/test_contract_adapter/test_public_api.py -v`
 Expected: 3 failures — `ModuleNotFoundError: telemetry_tool.pipeline.contract_adapter`.
 
-- [ ] **Step 1.3: Create package scaffolding + types**
+- [x] **Step 1.3: Create package scaffolding + types**
 
 ```python
 # telemetry_tool/pipeline/contract_adapter/_types.py
@@ -327,12 +327,12 @@ def to_contracts(summary: dict[str, Any], ctx: ContextRef) -> ContractTuple:
     raise NotImplementedError("wired progressively in Tasks 2–8")
 ```
 
-- [ ] **Step 1.4: Run tests, confirm they pass**
+- [x] **Step 1.4: Run tests, confirm they pass**
 
 Run: `pytest telemetry_tool/tests/test_pipeline/test_contract_adapter/test_public_api.py -v`
 Expected: 3 passed.
 
-- [ ] **Step 1.5: Commit**
+- [x] **Step 1.5: Commit**
 
 ```bash
 git add telemetry_tool/pipeline/contract_adapter/ telemetry_tool/tests/test_pipeline/
@@ -348,7 +348,7 @@ git commit -m "feat(pipeline-adapter): W3 scaffold — public surface + ContextR
 - Create: `telemetry_tool/tests/test_pipeline/test_contract_adapter/test_capabilities.py`
 - Create: `telemetry_tool/tests/test_pipeline/test_contract_adapter/conftest.py`
 
-- [ ] **Step 2.1: Write failing capability tests**
+- [x] **Step 2.1: Write failing capability tests**
 
 ```python
 # telemetry_tool/tests/test_pipeline/test_contract_adapter/conftest.py
@@ -441,12 +441,12 @@ def test_empty_summary_returns_empty_capabilities():
     assert isinstance(caps, SessionCapabilities)
 ```
 
-- [ ] **Step 2.2: Run tests, confirm they fail**
+- [x] **Step 2.2: Run tests, confirm they fail**
 
 Run: `pytest telemetry_tool/tests/test_pipeline/test_contract_adapter/test_capabilities.py -v`
 Expected: 4 failures — `ModuleNotFoundError`.
 
-- [ ] **Step 2.3: Implement `build_capabilities`**
+- [x] **Step 2.3: Implement `build_capabilities`**
 
 ```python
 # telemetry_tool/pipeline/contract_adapter/capabilities.py
@@ -486,12 +486,12 @@ def build_capabilities(summary: dict[str, Any]) -> SessionCapabilities:
     return SessionCapabilities(channels=frozenset(present))
 ```
 
-- [ ] **Step 2.4: Run tests, confirm they pass**
+- [x] **Step 2.4: Run tests, confirm they pass**
 
 Run: `pytest telemetry_tool/tests/test_pipeline/test_contract_adapter/test_capabilities.py -v`
 Expected: 4 passed.
 
-- [ ] **Step 2.5: Commit**
+- [x] **Step 2.5: Commit**
 
 ```bash
 git add telemetry_tool/pipeline/contract_adapter/capabilities.py telemetry_tool/tests/test_pipeline/test_contract_adapter/test_capabilities.py telemetry_tool/tests/test_pipeline/test_contract_adapter/conftest.py
@@ -509,7 +509,7 @@ Split from Task 4's metadata because these two blocks have the richest invariant
 - Create: `telemetry_tool/tests/test_pipeline/test_contract_adapter/test_session_laps.py`
 - Create: `telemetry_tool/tests/test_pipeline/test_contract_adapter/test_session_scores.py`
 
-- [ ] **Step 3.1: Write failing laps test**
+- [x] **Step 3.1: Write failing laps test**
 
 ```python
 # telemetry_tool/tests/test_pipeline/test_contract_adapter/test_session_laps.py
@@ -546,12 +546,12 @@ def test_no_best_key_means_no_best():
     assert not any(l.is_best for l in laps)
 ```
 
-- [ ] **Step 3.2: Run test, confirm it fails**
+- [x] **Step 3.2: Run test, confirm it fails**
 
 Run: `pytest telemetry_tool/tests/test_pipeline/test_contract_adapter/test_session_laps.py -v`
 Expected: 3 failures — module not found.
 
-- [ ] **Step 3.3: Write failing scores test**
+- [x] **Step 3.3: Write failing scores test**
 
 ```python
 # telemetry_tool/tests/test_pipeline/test_contract_adapter/test_session_scores.py
@@ -589,12 +589,12 @@ def test_suppressed_pace_falls_back_to_total_scaled():
     assert s.overall == 60.0
 ```
 
-- [ ] **Step 3.4: Run scores test, confirm it fails**
+- [x] **Step 3.4: Run scores test, confirm it fails**
 
 Run: `pytest telemetry_tool/tests/test_pipeline/test_contract_adapter/test_session_scores.py -v`
 Expected: 3 failures.
 
-- [ ] **Step 3.5: Implement partial session.py (laps + scores)**
+- [x] **Step 3.5: Implement partial session.py (laps + scores)**
 
 ```python
 # telemetry_tool/pipeline/contract_adapter/session.py
@@ -660,12 +660,12 @@ def build_scores(score_result: dict[str, Any] | None) -> Scores | None:
         return None
 ```
 
-- [ ] **Step 3.6: Run both tests, confirm they pass**
+- [x] **Step 3.6: Run both tests, confirm they pass**
 
 Run: `pytest telemetry_tool/tests/test_pipeline/test_contract_adapter/test_session_laps.py telemetry_tool/tests/test_pipeline/test_contract_adapter/test_session_scores.py -v`
 Expected: 6 passed.
 
-- [ ] **Step 3.7: Commit**
+- [x] **Step 3.7: Commit**
 
 ```bash
 git add telemetry_tool/pipeline/contract_adapter/session.py telemetry_tool/tests/test_pipeline/test_contract_adapter/test_session_laps.py telemetry_tool/tests/test_pipeline/test_contract_adapter/test_session_scores.py
@@ -680,7 +680,7 @@ git commit -m "feat(pipeline-adapter): build_laps + build_scores with invalid-la
 - Modify: `telemetry_tool/pipeline/contract_adapter/session.py`
 - Create: `telemetry_tool/tests/test_pipeline/test_contract_adapter/test_session_meta.py`
 
-- [ ] **Step 4.1: Write failing metadata test**
+- [x] **Step 4.1: Write failing metadata test**
 
 ```python
 # telemetry_tool/tests/test_pipeline/test_contract_adapter/test_session_meta.py
@@ -757,12 +757,12 @@ def test_duration_sums_valid_laps_only():
     assert resolve_duration_s(lap_times) == 60.1 + 59.8 + 60.5
 ```
 
-- [ ] **Step 4.2: Run tests, confirm they fail**
+- [x] **Step 4.2: Run tests, confirm they fail**
 
 Run: `pytest telemetry_tool/tests/test_pipeline/test_contract_adapter/test_session_meta.py -v`
 Expected: 9 failures — missing imports.
 
-- [ ] **Step 4.3: Extend `session.py` with metadata builders**
+- [x] **Step 4.3: Extend `session.py` with metadata builders**
 
 Append to `telemetry_tool/pipeline/contract_adapter/session.py`:
 
@@ -838,12 +838,12 @@ def resolve_duration_s(lap_times: list[Any] | None) -> float:
     return total
 ```
 
-- [ ] **Step 4.4: Run tests, confirm they pass**
+- [x] **Step 4.4: Run tests, confirm they pass**
 
 Run: `pytest telemetry_tool/tests/test_pipeline/test_contract_adapter/test_session_meta.py -v`
 Expected: 9 passed.
 
-- [ ] **Step 4.5: Commit**
+- [x] **Step 4.5: Commit**
 
 ```bash
 git add telemetry_tool/pipeline/contract_adapter/session.py telemetry_tool/tests/test_pipeline/test_contract_adapter/test_session_meta.py
@@ -858,7 +858,7 @@ git commit -m "feat(pipeline-adapter): driver/track/vehicle refs + session timin
 - Create: `telemetry_tool/pipeline/contract_adapter/events.py`
 - Create: `telemetry_tool/tests/test_pipeline/test_contract_adapter/test_events.py`
 
-- [ ] **Step 5.1: Write failing events test**
+- [x] **Step 5.1: Write failing events test**
 
 ```python
 # telemetry_tool/tests/test_pipeline/test_contract_adapter/test_events.py
@@ -899,12 +899,12 @@ def test_empty_summary_returns_empty_list():
     assert extract_events({}) == []
 ```
 
-- [ ] **Step 5.2: Run tests, confirm they fail**
+- [x] **Step 5.2: Run tests, confirm they fail**
 
 Run: `pytest telemetry_tool/tests/test_pipeline/test_contract_adapter/test_events.py -v`
 Expected: 4 failures.
 
-- [ ] **Step 5.3: Implement `events.py`**
+- [x] **Step 5.3: Implement `events.py`**
 
 ```python
 # telemetry_tool/pipeline/contract_adapter/events.py
@@ -1009,12 +1009,12 @@ def extract_events(summary: dict[str, Any]) -> list[Event]:
     )
 ```
 
-- [ ] **Step 5.4: Run tests, confirm they pass**
+- [x] **Step 5.4: Run tests, confirm they pass**
 
 Run: `pytest telemetry_tool/tests/test_pipeline/test_contract_adapter/test_events.py -v`
 Expected: 4 passed.
 
-- [ ] **Step 5.5: Commit**
+- [x] **Step 5.5: Commit**
 
 ```bash
 git add telemetry_tool/pipeline/contract_adapter/events.py telemetry_tool/tests/test_pipeline/test_contract_adapter/test_events.py
@@ -1030,7 +1030,7 @@ git commit -m "feat(pipeline-adapter): extract_events from quality/joker/channel
 - Modify: `telemetry_tool/pipeline/contract_adapter/__init__.py` (wire Session into `to_contracts`)
 - Create: `telemetry_tool/tests/test_pipeline/test_contract_adapter/test_session_contract.py`
 
-- [ ] **Step 6.1: Write failing end-to-end session test**
+- [x] **Step 6.1: Write failing end-to-end session test**
 
 ```python
 # telemetry_tool/tests/test_pipeline/test_contract_adapter/test_session_contract.py
@@ -1073,12 +1073,12 @@ def test_missing_session_datetime_defaults_to_utc(ctx, minimal_summary):
     assert c.session_start.tzinfo is not None
 ```
 
-- [ ] **Step 6.2: Run tests, confirm they fail**
+- [x] **Step 6.2: Run tests, confirm they fail**
 
 Run: `pytest telemetry_tool/tests/test_pipeline/test_contract_adapter/test_session_contract.py -v`
 Expected: 3 failures.
 
-- [ ] **Step 6.3: Implement `build_session_contract`**
+- [x] **Step 6.3: Implement `build_session_contract`**
 
 Append to `telemetry_tool/pipeline/contract_adapter/session.py`:
 
@@ -1137,12 +1137,12 @@ def build_session_contract(
     )
 ```
 
-- [ ] **Step 6.4: Run tests, confirm they pass**
+- [x] **Step 6.4: Run tests, confirm they pass**
 
 Run: `pytest telemetry_tool/tests/test_pipeline/test_contract_adapter/test_session_contract.py -v`
 Expected: 3 passed.
 
-- [ ] **Step 6.5: Commit**
+- [x] **Step 6.5: Commit**
 
 ```bash
 git add telemetry_tool/pipeline/contract_adapter/session.py telemetry_tool/tests/test_pipeline/test_contract_adapter/test_session_contract.py
@@ -1157,7 +1157,7 @@ git commit -m "feat(pipeline-adapter): complete SessionContract composition (W3.
 - Create: `telemetry_tool/pipeline/contract_adapter/optimizer.py`
 - Create: `telemetry_tool/tests/test_pipeline/test_contract_adapter/test_optimizer_mapping.py`
 
-- [ ] **Step 7.1: Write failing optimizer test**
+- [x] **Step 7.1: Write failing optimizer test**
 
 ```python
 # telemetry_tool/tests/test_pipeline/test_contract_adapter/test_optimizer_mapping.py
@@ -1231,12 +1231,12 @@ def test_optimizer_confidence_clamped_to_unit_range():
     assert 0.0 <= c.confidence <= 1.0
 ```
 
-- [ ] **Step 7.2: Run tests, confirm they fail**
+- [x] **Step 7.2: Run tests, confirm they fail**
 
 Run: `pytest telemetry_tool/tests/test_pipeline/test_contract_adapter/test_optimizer_mapping.py -v`
 Expected: 4 failures.
 
-- [ ] **Step 7.3: Implement `optimizer.py`**
+- [x] **Step 7.3: Implement `optimizer.py`**
 
 ```python
 # telemetry_tool/pipeline/contract_adapter/optimizer.py
@@ -1352,12 +1352,12 @@ def build_optimizer_contract(summary: dict[str, Any]) -> OptimizerContract:
     )
 ```
 
-- [ ] **Step 7.4: Run tests, confirm they pass**
+- [x] **Step 7.4: Run tests, confirm they pass**
 
 Run: `pytest telemetry_tool/tests/test_pipeline/test_contract_adapter/test_optimizer_mapping.py -v`
 Expected: 4 passed.
 
-- [ ] **Step 7.5: Commit**
+- [x] **Step 7.5: Commit**
 
 ```bash
 git add telemetry_tool/pipeline/contract_adapter/optimizer.py telemetry_tool/tests/test_pipeline/test_contract_adapter/test_optimizer_mapping.py
@@ -1374,7 +1374,7 @@ The largest task. Uses the prescriptive engine to materialise a `CoachingSheet` 
 - Create: `telemetry_tool/pipeline/contract_adapter/coaching.py`
 - Create: `telemetry_tool/tests/test_pipeline/test_contract_adapter/test_coaching_mapping.py`
 
-- [ ] **Step 8.1: Write failing coaching reshape tests**
+- [x] **Step 8.1: Write failing coaching reshape tests**
 
 ```python
 # telemetry_tool/tests/test_pipeline/test_contract_adapter/test_coaching_mapping.py
@@ -1502,12 +1502,12 @@ def test_build_coaching_contract_integration_with_empty_sheet():
     assert len(contract.corner_coaching) == 0
 ```
 
-- [ ] **Step 8.2: Run tests, confirm they fail**
+- [x] **Step 8.2: Run tests, confirm they fail**
 
 Run: `pytest telemetry_tool/tests/test_pipeline/test_contract_adapter/test_coaching_mapping.py -v`
 Expected: 6 failures.
 
-- [ ] **Step 8.3: Implement `coaching.py` reshape helpers + public API**
+- [x] **Step 8.3: Implement `coaching.py` reshape helpers + public API**
 
 ```python
 # telemetry_tool/pipeline/contract_adapter/coaching.py
@@ -1694,12 +1694,12 @@ def build_coaching_contract(
     )
 ```
 
-- [ ] **Step 8.4: Run tests, confirm they pass**
+- [x] **Step 8.4: Run tests, confirm they pass**
 
 Run: `pytest telemetry_tool/tests/test_pipeline/test_contract_adapter/test_coaching_mapping.py -v`
 Expected: 6 passed.
 
-- [ ] **Step 8.5: Commit**
+- [x] **Step 8.5: Commit**
 
 ```bash
 git add telemetry_tool/pipeline/contract_adapter/coaching.py telemetry_tool/tests/test_pipeline/test_contract_adapter/test_coaching_mapping.py
@@ -1714,7 +1714,7 @@ git commit -m "feat(pipeline-adapter): CoachingSheet → CoachingContract reshap
 - Modify: `telemetry_tool/pipeline/contract_adapter/__init__.py`
 - Create: `telemetry_tool/tests/test_pipeline/test_contract_adapter/test_to_contracts.py`
 
-- [ ] **Step 9.1: Write failing top-level test**
+- [x] **Step 9.1: Write failing top-level test**
 
 ```python
 # telemetry_tool/tests/test_pipeline/test_contract_adapter/test_to_contracts.py
@@ -1745,12 +1745,12 @@ def test_to_contracts_trajectory_only(ctx, minimal_summary):
     assert out.optimizer.depth.value == "trajectory_only"
 ```
 
-- [ ] **Step 9.2: Run tests, confirm they fail**
+- [x] **Step 9.2: Run tests, confirm they fail**
 
 Run: `pytest telemetry_tool/tests/test_pipeline/test_contract_adapter/test_to_contracts.py -v`
 Expected: 3 failures (NotImplementedError from Task 1 stub).
 
-- [ ] **Step 9.3: Wire the three builders together**
+- [x] **Step 9.3: Wire the three builders together**
 
 Replace `to_contracts` in `telemetry_tool/pipeline/contract_adapter/__init__.py`:
 
@@ -1789,12 +1789,12 @@ def to_contracts(summary: dict[str, Any], ctx: ContextRef) -> ContractTuple:
     return ContractTuple(session=session, coaching=coaching, optimizer=optimizer)
 ```
 
-- [ ] **Step 9.4: Run tests, confirm they pass**
+- [x] **Step 9.4: Run tests, confirm they pass**
 
 Run: `pytest telemetry_tool/tests/test_pipeline/test_contract_adapter/ -v`
 Expected: all green. Watch for regressions in earlier tests.
 
-- [ ] **Step 9.5: Commit**
+- [x] **Step 9.5: Commit**
 
 ```bash
 git add telemetry_tool/pipeline/contract_adapter/__init__.py telemetry_tool/tests/test_pipeline/test_contract_adapter/test_to_contracts.py
@@ -1810,7 +1810,7 @@ git commit -m "feat(pipeline-adapter): to_contracts() wiring — adapter public 
 - Modify: `telemetry_tool/pipeline/__init__.py`
 - Create: `telemetry_tool/tests/test_pipeline/test_contract_adapter/test_handler.py`
 
-- [ ] **Step 10.1: Write failing handler tests**
+- [x] **Step 10.1: Write failing handler tests**
 
 ```python
 # telemetry_tool/tests/test_pipeline/test_contract_adapter/test_handler.py
@@ -1851,12 +1851,12 @@ def test_lazy_registration_does_not_fail_without_router():
     from telemetry_tool import pipeline  # noqa: F401
 ```
 
-- [ ] **Step 10.2: Run tests, confirm they fail**
+- [x] **Step 10.2: Run tests, confirm they fail**
 
 Run: `pytest telemetry_tool/tests/test_pipeline/test_contract_adapter/test_handler.py -v`
 Expected: 3 failures.
 
-- [ ] **Step 10.3: Implement handler**
+- [x] **Step 10.3: Implement handler**
 
 ```python
 # telemetry_tool/pipeline/handler.py
@@ -1920,12 +1920,12 @@ except Exception:  # pragma: no cover - defensive
     _log.getLogger(__name__).exception("W3 handler registration failed (non-fatal)")
 ```
 
-- [ ] **Step 10.4: Run tests, confirm they pass**
+- [x] **Step 10.4: Run tests, confirm they pass**
 
 Run: `pytest telemetry_tool/tests/test_pipeline/test_contract_adapter/test_handler.py -v`
 Expected: 3 passed.
 
-- [ ] **Step 10.5: Commit**
+- [x] **Step 10.5: Commit**
 
 ```bash
 git add telemetry_tool/pipeline/handler.py telemetry_tool/pipeline/__init__.py telemetry_tool/tests/test_pipeline/test_contract_adapter/test_handler.py
@@ -1942,7 +1942,7 @@ Optional hook so callers that use `run_full_analysis()` directly (the CLI path) 
 - Modify: `telemetry_tool/pipeline/orchestrator.py` (single hook at return)
 - Create: `telemetry_tool/tests/test_pipeline/test_contract_adapter/test_orchestrator_hook.py`
 
-- [ ] **Step 11.1: Write failing orchestrator hook test**
+- [x] **Step 11.1: Write failing orchestrator hook test**
 
 ```python
 # telemetry_tool/tests/test_pipeline/test_contract_adapter/test_orchestrator_hook.py
@@ -1991,12 +1991,12 @@ def test_run_full_analysis_attaches_contracts_when_ctx_provided(monkeypatch, tmp
     assert "session_meta" in summary
 ```
 
-- [ ] **Step 11.2: Run, confirm it passes** (the stub doesn't require the hook — this test just frames the interface)
+- [x] **Step 11.2: Run, confirm it passes** (the stub doesn't require the hook — this test just frames the interface)
 
 Run: `pytest telemetry_tool/tests/test_pipeline/test_contract_adapter/test_orchestrator_hook.py -v`
 Expected: 1 passed. The real validation happens in Task 12's integration test.
 
-- [ ] **Step 11.3: Add the hook to the real orchestrator**
+- [x] **Step 11.3: Add the hook to the real orchestrator**
 
 At the end of `telemetry_tool/pipeline/orchestrator.py::run_full_analysis()`, **immediately before `return summary`**, insert:
 
@@ -2022,12 +2022,12 @@ At the end of `telemetry_tool/pipeline/orchestrator.py::run_full_analysis()`, **
 
 (Note: if `run_full_analysis` doesn't receive `workspace_id` in its signature, pull it from `session_meta`. See existing line: `workspace_id: Optional[int] = None` in the signature at line 143 of orchestrator.py.)
 
-- [ ] **Step 11.4: Run ALL adapter tests to verify no regression**
+- [x] **Step 11.4: Run ALL adapter tests to verify no regression**
 
 Run: `pytest telemetry_tool/tests/test_pipeline/ -v`
 Expected: every existing test remains green.
 
-- [ ] **Step 11.5: Commit**
+- [x] **Step 11.5: Commit**
 
 ```bash
 git add telemetry_tool/pipeline/orchestrator.py telemetry_tool/tests/test_pipeline/test_contract_adapter/test_orchestrator_hook.py
@@ -2045,7 +2045,7 @@ The spec's T3.5 requires 5 representative sessions. Building them from real CSVs
 - Create: `telemetry_tool/tests/test_pipeline/test_contract_adapter/snapshots/` (directory for golden JSON)
 - Create: `telemetry_tool/tests/test_pipeline/test_contract_adapter/test_snapshot_regression.py`
 
-- [ ] **Step 12.1: Author the 5 summary fixtures**
+- [x] **Step 12.1: Author the 5 summary fixtures**
 
 Each JSON contains the minimum summary keys the adapter reads. Start from `minimal_summary` in `conftest.py` and add variations:
 
@@ -2097,7 +2097,7 @@ Template (adjust per fixture):
 }
 ```
 
-- [ ] **Step 12.2: Write the snapshot test that builds contracts and diffs**
+- [x] **Step 12.2: Write the snapshot test that builds contracts and diffs**
 
 ```python
 # telemetry_tool/tests/test_pipeline/test_contract_adapter/test_snapshot_regression.py
@@ -2162,7 +2162,7 @@ def test_snapshot(fixture_path: Path):
     assert got_opt == want_opt, "OptimizerContract snapshot drift"
 ```
 
-- [ ] **Step 12.3: Generate initial golden files**
+- [x] **Step 12.3: Generate initial golden files**
 
 Run:
 ```bash
@@ -2170,12 +2170,12 @@ UPDATE_CONTRACT_SNAPSHOTS=1 pytest telemetry_tool/tests/test_pipeline/test_contr
 ```
 Expected: 5 tests pass (or 5 skipped on first write — that's OK). Verify `snapshots/<key>/{session,coaching,optimizer}.json` for all 5.
 
-- [ ] **Step 12.4: Re-run without the flag, expect green**
+- [x] **Step 12.4: Re-run without the flag, expect green**
 
 Run: `pytest telemetry_tool/tests/test_pipeline/test_contract_adapter/test_snapshot_regression.py -v`
 Expected: 5 passed.
 
-- [ ] **Step 12.5: Commit**
+- [x] **Step 12.5: Commit**
 
 ```bash
 git add telemetry_tool/tests/test_pipeline/test_contract_adapter/fixtures/ telemetry_tool/tests/test_pipeline/test_contract_adapter/snapshots/ telemetry_tool/tests/test_pipeline/test_contract_adapter/test_snapshot_regression.py
@@ -2191,7 +2191,7 @@ A real-CSV pipeline run, marked `slow`, that validates the full path on CI when 
 **Files:**
 - Create: `telemetry_tool/tests/test_pipeline/test_contract_adapter/test_e2e_smoke.py`
 
-- [ ] **Step 13.1: Write end-to-end smoke test (slow)**
+- [x] **Step 13.1: Write end-to-end smoke test (slow)**
 
 ```python
 # telemetry_tool/tests/test_pipeline/test_contract_adapter/test_e2e_smoke.py
@@ -2240,16 +2240,16 @@ def test_real_csv_produces_valid_contracts():
     assert out.coaching.version == "1.0"
 ```
 
-- [ ] **Step 13.2: Verify the full suite (skipping slow) passes**
+- [x] **Step 13.2: Verify the full suite (skipping slow) passes**
 
 Run: `pytest telemetry_tool/tests/test_pipeline/test_contract_adapter/ -v -m "not slow"`
 Expected: all green.
 
-- [ ] **Step 13.3: Update the W3 plan checklist**
+- [x] **Step 13.3: Update the W3 plan checklist**
 
 Mark every task above as `[x]`. Ensure the checklist in this file is up to date.
 
-- [ ] **Step 13.4: Final commit with signal tag**
+- [x] **Step 13.4: Final commit with signal tag**
 
 ```bash
 git add telemetry_tool/tests/test_pipeline/test_contract_adapter/test_e2e_smoke.py docs/superpowers/plans/2026-04-19-W3-real-life-adapter.md
@@ -2265,14 +2265,14 @@ Co-Authored-By: claude-flow <ruv@ruv.net>"
 
 ## Acceptance checklist (spec §11 + brief)
 
-- [ ] 5 known real-life summary fixtures produce valid `SessionContract` instances (Task 12)
-- [ ] `CoachingContract` preserves semantic equivalence with current prescriptive output (Tasks 8, 12)
-- [ ] `OptimizerContract` populated with `theoretical_lap` at stub-level fidelity (Task 7)
-- [ ] Capability declaration matches actual channel presence (no false positives) (Tasks 2, 5)
-- [ ] Snapshot regression tests green against 5 fixture sessions (Task 12)
-- [ ] Handler registers with `HandlerRegistry` on package import (Task 10)
-- [ ] Upload → pipeline → contracts end-to-end works locally with session #3's router (Task 13 + W2 integration after merge)
-- [ ] Commit ends with `[signal:W3-done]` (Task 13.4)
+- [x] 5 known real-life summary fixtures produce valid `SessionContract` instances (Task 12)
+- [x] `CoachingContract` preserves semantic equivalence with current prescriptive output (Tasks 8, 12)
+- [x] `OptimizerContract` populated with `theoretical_lap` at stub-level fidelity (Task 7)
+- [x] Capability declaration matches actual channel presence (no false positives) (Tasks 2, 5)
+- [x] Snapshot regression tests green against 5 fixture sessions (Task 12)
+- [x] Handler registers with `HandlerRegistry` on package import (Task 10)
+- [x] Upload → pipeline → contracts end-to-end works locally with session #3's router (Task 13 + W2 integration after merge)
+- [x] Commit ends with `[signal:W3-done]` (Task 13.4)
 
 ## Risks & mitigations
 
