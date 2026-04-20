@@ -10,13 +10,18 @@ import math
 from datetime import datetime, timezone
 from typing import Any
 
+from telemetry_tool.pipeline.contract_adapter._types import ContextRef
+from telemetry_tool.pipeline.contract_adapter.events import extract_events
 from telemetry_tool.web.schemas.contracts import (
     DriverRef,
     LapSummary,
     Scores,
+    SessionCapabilities,
+    SessionContract,
     TrackRef,
     VehicleRef,
 )
+from telemetry_tool.web.schemas.contracts.common import SourceLiteral
 
 logger = logging.getLogger(__name__)
 
@@ -130,3 +135,52 @@ def resolve_duration_s(lap_times: list[Any] | None) -> float:
         if isinstance(t, (int, float)) and math.isfinite(t) and t > 0:
             total += float(t)
     return total
+
+
+# --- SessionContract composition ------------------------------------------
+
+
+def _build_data_profile(summary: dict[str, Any]) -> dict[str, Any]:
+    """Free-form profiler-style dict describing how the session was parsed.
+
+    Keep the shape narrow and additive — W2's profiler is the formal owner
+    of this field. For real-life this is a best-effort reflection of the
+    adapter layer so downstream consumers have *something* to display
+    before the W2 profiler lands.
+    """
+    prof: dict[str, Any] = {
+        "parser": "real_life_pipeline",
+        "source_format": summary.get("source_format"),
+        "data_tier": summary.get("data_tier"),
+        "channels_detected": len(summary.get("available_channels") or []),
+    }
+    dq = summary.get("data_quality")
+    if isinstance(dq, dict):
+        prof["quality_overall"] = dq.get("overall_confidence")
+    elif dq is not None and hasattr(dq, "overall_confidence"):
+        prof["quality_overall"] = dq.overall_confidence
+    return {k: v for k, v in prof.items() if v is not None}
+
+
+def build_session_contract(
+    summary: dict[str, Any],
+    ctx: ContextRef,
+    capabilities: SessionCapabilities,
+) -> SessionContract:
+    meta = dict(summary.get("session_meta") or {})
+    return SessionContract(
+        session_id=ctx.session_id,
+        workspace_id=ctx.workspace_id,
+        source=SourceLiteral.REAL_LIFE,
+        capabilities=capabilities,
+        data_profile=_build_data_profile(summary),
+        driver=build_driver(meta),
+        track=build_track(summary),
+        vehicle=build_vehicle(meta),
+        session_start=resolve_session_start(meta),
+        duration_s=resolve_duration_s(summary.get("lap_times")),
+        laps=build_laps(summary),
+        events=extract_events(summary),
+        scores=build_scores(summary.get("score_result")),
+        sidecar=None,
+    )
