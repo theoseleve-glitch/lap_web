@@ -1574,4 +1574,23 @@ def run_full_analysis(
         _pipeline_status.pipeline_version,
         _degraded_tag,
     )
+
+    # ── W3 HOOK: emit unified contracts if identifiers are available ──
+    # Non-fatal: any adapter error is logged and the summary is returned
+    # as-is. The adapter is additive — callers that don't consume
+    # `summary["contracts"]` see no behaviour change.
+    try:
+        from telemetry_tool.pipeline.contract_adapter import ContextRef, to_contracts
+        sid = meta.get("session_id")
+        wid = meta.get("workspace_id") or (
+            str(workspace_id) if workspace_id is not None else None
+        )
+        if sid and wid:
+            summary["contracts"] = to_contracts(
+                summary,
+                ContextRef(session_id=str(sid), workspace_id=str(wid)),
+            )
+    except Exception:
+        logger.exception("W3 contract adapter failed; summary returned without contracts")
+
     return summary
