@@ -15,6 +15,7 @@ Public API
 """
 
 from telemetry_tool.ingest.config import INGEST_V2, IngestionConfig, IngestionLimits
+from telemetry_tool.ingest.profiler import DataProfile, Profiler, UnknownFormatError
 from telemetry_tool.ingest.progress import IngestionProgress, ProgressCallback
 
 __all__ = [
@@ -23,4 +24,7 @@ __all__ = [
     "IngestionLimits",
     "IngestionProgress",
     "ProgressCallback",
+    "DataProfile",
+    "Profiler",
+    "UnknownFormatError",
 ]
