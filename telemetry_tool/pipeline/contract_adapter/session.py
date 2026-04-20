@@ -7,9 +7,16 @@ from __future__ import annotations
 
 import logging
 import math
+from datetime import datetime, timezone
 from typing import Any
 
-from telemetry_tool.web.schemas.contracts import LapSummary, Scores
+from telemetry_tool.web.schemas.contracts import (
+    DriverRef,
+    LapSummary,
+    Scores,
+    TrackRef,
+    VehicleRef,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -59,3 +66,67 @@ def build_scores(score_result: dict[str, Any] | None) -> Scores | None:
     except Exception:
         logger.exception("scores mapping failed; returning None for safety")
         return None
+
+
+# --- metadata builders -----------------------------------------------------
+
+
+def build_driver(meta: dict[str, Any]) -> DriverRef:
+    return DriverRef(
+        driver_id=int(meta.get("driver_id") or 0),
+        name=str(meta.get("driver_name") or "Unknown")[:100],
+    )
+
+
+def build_track(summary: dict[str, Any]) -> TrackRef:
+    tm = summary.get("track_match")
+    if isinstance(tm, dict) and tm:
+        return TrackRef(
+            track_id=int(tm.get("track_row_id") or 0),
+            name=str(tm.get("track_name") or summary.get("track_id") or "unknown")[:200],
+            layout=(tm.get("layout") or None),
+        )
+    return TrackRef(
+        track_id=0,
+        name=str(summary.get("track_id") or "unknown")[:200],
+        layout=None,
+    )
+
+
+def build_vehicle(meta: dict[str, Any]) -> VehicleRef:
+    kart_id = meta.get("kart_id")
+    if kart_id is not None:
+        return VehicleRef(
+            vehicle_id=int(kart_id),
+            vehicle_class="kart",
+            model=(str(meta.get("kart_name"))[:100] if meta.get("kart_name") else None),
+        )
+    v_id = meta.get("vehicle_id")
+    return VehicleRef(
+        vehicle_id=(int(v_id) if v_id is not None else None),
+        vehicle_class=(meta.get("vehicle_class") or None),
+        model=(meta.get("vehicle_model") or None),
+    )
+
+
+def resolve_session_start(meta: dict[str, Any]) -> datetime:
+    raw = meta.get("session_datetime") or meta.get("date")
+    if isinstance(raw, str) and raw:
+        try:
+            dt = datetime.fromisoformat(raw.replace("Z", "+00:00"))
+            if dt.tzinfo is None:
+                dt = dt.replace(tzinfo=timezone.utc)
+            return dt
+        except ValueError:
+            pass
+    return datetime.now(timezone.utc)
+
+
+def resolve_duration_s(lap_times: list[Any] | None) -> float:
+    if not lap_times:
+        return 0.0
+    total = 0.0
+    for t in lap_times:
+        if isinstance(t, (int, float)) and math.isfinite(t) and t > 0:
+            total += float(t)
+    return total
