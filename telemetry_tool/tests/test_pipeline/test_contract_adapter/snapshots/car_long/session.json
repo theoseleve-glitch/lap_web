@@ -1,0 +1,210 @@
+{
+  "contract_version": "1.0",
+  "session_id": "sid-summary_car_long",
+  "workspace_id": "wid-test",
+  "source": "real_life",
+  "capabilities": {
+    "channels": [
+      "gps",
+      "lat_g",
+      "lon_g",
+      "yaw_rate"
+    ]
+  },
+  "data_profile": {
+    "parser": "real_life_pipeline",
+    "channels_detected": 6
+  },
+  "driver": {
+    "driver_id": 2,
+    "name": "Alex Rossi"
+  },
+  "track": {
+    "track_id": 20,
+    "name": "Spa-Francorchamps",
+    "layout": "GP"
+  },
+  "vehicle": {
+    "vehicle_id": 7,
+    "vehicle_class": "gt3",
+    "model": "Porsche 992 GT3 R"
+  },
+  "session_start": "2026-04-19T14:00:00Z",
+  "duration_s": 2797.5,
+  "laps": [
+    {
+      "lap_number": 1,
+      "lap_time_s": 140.5,
+      "is_valid": true,
+      "is_best": false,
+      "flags": []
+    },
+    {
+      "lap_number": 2,
+      "lap_time_s": 139.8,
+      "is_valid": true,
+      "is_best": false,
+      "flags": []
+    },
+    {
+      "lap_number": 3,
+      "lap_time_s": 139.3,
+      "is_valid": true,
+      "is_best": false,
+      "flags": []
+    },
+    {
+      "lap_number": 4,
+      "lap_time_s": 139.1,
+      "is_valid": true,
+      "is_best": false,
+      "flags": []
+    },
+    {
+      "lap_number": 5,
+      "lap_time_s": 138.9,
+      "is_valid": true,
+      "is_best": false,
+      "flags": []
+    },
+    {
+      "lap_number": 6,
+      "lap_time_s": 138.8,
+      "is_valid": true,
+      "is_best": false,
+      "flags": []
+    },
+    {
+      "lap_number": 7,
+      "lap_time_s": 138.7,
+      "is_valid": true,
+      "is_best": false,
+      "flags": []
+    },
+    {
+      "lap_number": 8,
+      "lap_time_s": 138.9,
+      "is_valid": true,
+      "is_best": false,
+      "flags": []
+    },
+    {
+      "lap_number": 9,
+      "lap_time_s": 139.0,
+      "is_valid": true,
+      "is_best": false,
+      "flags": []
+    },
+    {
+      "lap_number": 10,
+      "lap_time_s": 139.2,
+      "is_valid": true,
+      "is_best": false,
+      "flags": []
+    },
+    {
+      "lap_number": 11,
+      "lap_time_s": 138.6,
+      "is_valid": true,
+      "is_best": false,
+      "flags": []
+    },
+    {
+      "lap_number": 12,
+      "lap_time_s": 155.0,
+      "is_valid": false,
+      "is_best": false,
+      "flags": [
+        "invalid"
+      ]
+    },
+    {
+      "lap_number": 13,
+      "lap_time_s": 138.5,
+      "is_valid": true,
+      "is_best": true,
+      "flags": []
+    },
+    {
+      "lap_number": 14,
+      "lap_time_s": 138.7,
+      "is_valid": true,
+      "is_best": false,
+      "flags": []
+    },
+    {
+      "lap_number": 15,
+      "lap_time_s": 138.8,
+      "is_valid": true,
+      "is_best": false,
+      "flags": []
+    },
+    {
+      "lap_number": 16,
+      "lap_time_s": 138.9,
+      "is_valid": true,
+      "is_best": false,
+      "flags": []
+    },
+    {
+      "lap_number": 17,
+      "lap_time_s": 139.0,
+      "is_valid": true,
+      "is_best": false,
+      "flags": []
+    },
+    {
+      "lap_number": 18,
+      "lap_time_s": 139.1,
+      "is_valid": true,
+      "is_best": false,
+      "flags": []
+    },
+    {
+      "lap_number": 19,
+      "lap_time_s": 139.2,
+      "is_valid": true,
+      "is_best": false,
+      "flags": []
+    },
+    {
+      "lap_number": 20,
+      "lap_time_s": 139.5,
+      "is_valid": true,
+      "is_best": false,
+      "flags": []
+    }
+  ],
+  "events": [
+    {
+      "event_type": "lap.invalid",
+      "lap_number": 12,
+      "t_s": null,
+      "s_m": null,
+      "severity": "medium",
+      "detector": "invalid_lap_analyzer",
+      "payload": {
+        "reason": "joker lap"
+      }
+    },
+    {
+      "event_type": "lap.joker",
+      "lap_number": 12,
+      "t_s": null,
+      "s_m": null,
+      "severity": "low",
+      "detector": "joker_detector",
+      "payload": {
+        "confidence": 0.88
+      }
+    }
+  ],
+  "scores": {
+    "pace": 90.0,
+    "consistency": 85.0,
+    "execution": 88.0,
+    "robustness": 92.0,
+    "overall": 88.0
+  },
+  "sidecar": null
+}

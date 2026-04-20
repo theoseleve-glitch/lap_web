@@ -1,0 +1,20 @@
+{
+  "depth": "trajectory_only",
+  "method": "trajectory",
+  "theoretical_lap_time_s": 59.5,
+  "confidence": 0.4,
+  "corner_deltas": [],
+  "total_time_loss_s": 0.0,
+  "trajectory_delta": null,
+  "reconstructed_inputs": null,
+  "vehicle_model": {
+    "note": "unidentified - trajectory-only mode"
+  },
+  "validation": {
+    "method_notes": "trajectory",
+    "driver_best_s": 60.0,
+    "gap_to_theoretical_s": 0.5,
+    "attributed_loss_s": 0,
+    "unattributed_loss_s": 0.5
+  }
+}

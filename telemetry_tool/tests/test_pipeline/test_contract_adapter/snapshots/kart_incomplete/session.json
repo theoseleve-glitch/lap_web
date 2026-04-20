@@ -1,0 +1,62 @@
+{
+  "contract_version": "1.0",
+  "session_id": "sid-summary_kart_incomplete",
+  "workspace_id": "wid-test",
+  "source": "real_life",
+  "capabilities": {
+    "channels": [
+      "gps"
+    ]
+  },
+  "data_profile": {
+    "parser": "real_life_pipeline",
+    "channels_detected": 3
+  },
+  "driver": {
+    "driver_id": 1,
+    "name": "Theo"
+  },
+  "track": {
+    "track_id": 10,
+    "name": "Ouest Karting",
+    "layout": "short"
+  },
+  "vehicle": {
+    "vehicle_id": 42,
+    "vehicle_class": "kart",
+    "model": "Tony Kart OTK"
+  },
+  "session_start": "2026-04-19T11:00:00Z",
+  "duration_s": 60.0,
+  "laps": [
+    {
+      "lap_number": 1,
+      "lap_time_s": 60.0,
+      "is_valid": true,
+      "is_best": true,
+      "flags": []
+    },
+    {
+      "lap_number": 2,
+      "lap_time_s": null,
+      "is_valid": false,
+      "is_best": false,
+      "flags": [
+        "incomplete"
+      ]
+    }
+  ],
+  "events": [
+    {
+      "event_type": "lap.incomplete",
+      "lap_number": 2,
+      "t_s": null,
+      "s_m": null,
+      "severity": "low",
+      "detector": "incomplete_lap_analyzer",
+      "payload": {}
+    }
+  ],
+  "scores": null,
+  "sidecar": null
+}

@@ -1,0 +1,26 @@
+{
+  "session_meta": {
+    "driver_id": 1,
+    "driver_name": "Theo",
+    "session_type": "practice",
+    "track_state": "dry",
+    "date": "2026-04-19",
+    "session_datetime": "2026-04-19T11:00:00+00:00",
+    "kart_id": 42,
+    "kart_name": "Tony Kart OTK"
+  },
+  "track_id": "ouest_karting",
+  "track_match": {"track_row_id": 10, "track_name": "Ouest Karting", "layout": "short"},
+  "available_channels": ["Latitude (deg)", "Longitude (deg)", "Speed (m/s)"],
+  "lap_times": [60.0, null],
+  "lap_dict": {"1": null, "2": null},
+  "best_lap_key": 1,
+  "invalid_lap_analysis": {"invalid_laps": []},
+  "incomplete_lap_analysis": {"incomplete_laps": [2]},
+  "score_result": null,
+  "sim_method": "trajectory",
+  "theoretical_metrics": {"best_s": 59.5},
+  "theoretical_confidence": 0.4,
+  "corner_coaching": [],
+  "corners": [{"id": 1, "apex_s": 80.0}]
+}

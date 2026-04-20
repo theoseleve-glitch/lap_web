@@ -1,0 +1,79 @@
+{
+  "contract_version": "1.0",
+  "session_id": "sid-summary_car_wet",
+  "workspace_id": "wid-test",
+  "source": "real_life",
+  "capabilities": {
+    "channels": [
+      "gps",
+      "lat_g",
+      "lon_g"
+    ]
+  },
+  "data_profile": {
+    "parser": "real_life_pipeline",
+    "channels_detected": 5
+  },
+  "driver": {
+    "driver_id": 2,
+    "name": "Alex Rossi"
+  },
+  "track": {
+    "track_id": 20,
+    "name": "Spa-Francorchamps",
+    "layout": "GP"
+  },
+  "vehicle": {
+    "vehicle_id": 7,
+    "vehicle_class": "gt3",
+    "model": "Porsche 992 GT3 R"
+  },
+  "session_start": "2026-04-19T16:00:00Z",
+  "duration_s": 749.4,
+  "laps": [
+    {
+      "lap_number": 1,
+      "lap_time_s": 150.2,
+      "is_valid": true,
+      "is_best": false,
+      "flags": []
+    },
+    {
+      "lap_number": 2,
+      "lap_time_s": 149.8,
+      "is_valid": true,
+      "is_best": false,
+      "flags": []
+    },
+    {
+      "lap_number": 3,
+      "lap_time_s": 149.5,
+      "is_valid": true,
+      "is_best": true,
+      "flags": []
+    },
+    {
+      "lap_number": 4,
+      "lap_time_s": 150.0,
+      "is_valid": true,
+      "is_best": false,
+      "flags": []
+    },
+    {
+      "lap_number": 5,
+      "lap_time_s": 149.9,
+      "is_valid": true,
+      "is_best": false,
+      "flags": []
+    }
+  ],
+  "events": [],
+  "scores": {
+    "pace": 0.0,
+    "consistency": 82.0,
+    "execution": 70.0,
+    "robustness": 75.0,
+    "overall": 58.0
+  },
+  "sidecar": null
+}

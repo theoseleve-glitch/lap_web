@@ -1,0 +1,150 @@
+{
+  "contract_version": "1.0",
+  "session_id": "sid-summary_kart_joker",
+  "workspace_id": "wid-test",
+  "source": "real_life",
+  "capabilities": {
+    "channels": [
+      "gps",
+      "lat_g",
+      "lon_g",
+      "yaw_rate"
+    ]
+  },
+  "data_profile": {
+    "parser": "real_life_pipeline",
+    "channels_detected": 7
+  },
+  "driver": {
+    "driver_id": 3,
+    "name": "Sam Brown"
+  },
+  "track": {
+    "track_id": 10,
+    "name": "Ouest Karting",
+    "layout": "long"
+  },
+  "vehicle": {
+    "vehicle_id": 51,
+    "vehicle_class": "kart",
+    "model": "CRG Road Rebel"
+  },
+  "session_start": "2026-04-19T12:30:00Z",
+  "duration_s": 509.7,
+  "laps": [
+    {
+      "lap_number": 1,
+      "lap_time_s": 63.1,
+      "is_valid": true,
+      "is_best": false,
+      "flags": []
+    },
+    {
+      "lap_number": 2,
+      "lap_time_s": 62.9,
+      "is_valid": true,
+      "is_best": false,
+      "flags": []
+    },
+    {
+      "lap_number": 3,
+      "lap_time_s": 65.5,
+      "is_valid": false,
+      "is_best": false,
+      "flags": [
+        "invalid"
+      ]
+    },
+    {
+      "lap_number": 4,
+      "lap_time_s": 62.7,
+      "is_valid": true,
+      "is_best": true,
+      "flags": []
+    },
+    {
+      "lap_number": 5,
+      "lap_time_s": 63.0,
+      "is_valid": true,
+      "is_best": false,
+      "flags": []
+    },
+    {
+      "lap_number": 6,
+      "lap_time_s": 66.2,
+      "is_valid": false,
+      "is_best": false,
+      "flags": [
+        "invalid"
+      ]
+    },
+    {
+      "lap_number": 7,
+      "lap_time_s": 62.8,
+      "is_valid": true,
+      "is_best": false,
+      "flags": []
+    },
+    {
+      "lap_number": 8,
+      "lap_time_s": 63.5,
+      "is_valid": true,
+      "is_best": false,
+      "flags": []
+    }
+  ],
+  "events": [
+    {
+      "event_type": "lap.invalid",
+      "lap_number": 3,
+      "t_s": null,
+      "s_m": null,
+      "severity": "medium",
+      "detector": "invalid_lap_analyzer",
+      "payload": {
+        "reason": "joker"
+      }
+    },
+    {
+      "event_type": "lap.invalid",
+      "lap_number": 6,
+      "t_s": null,
+      "s_m": null,
+      "severity": "medium",
+      "detector": "invalid_lap_analyzer",
+      "payload": {
+        "reason": "joker"
+      }
+    },
+    {
+      "event_type": "lap.joker",
+      "lap_number": 3,
+      "t_s": null,
+      "s_m": null,
+      "severity": "low",
+      "detector": "joker_detector",
+      "payload": {
+        "confidence": 0.92
+      }
+    },
+    {
+      "event_type": "capability.unexpected_channel",
+      "lap_number": null,
+      "t_s": null,
+      "s_m": null,
+      "severity": "low",
+      "detector": "contract_adapter",
+      "payload": {
+        "channel": "Throttle (%)"
+      }
+    }
+  ],
+  "scores": {
+    "pace": 74.0,
+    "consistency": 68.0,
+    "execution": 71.0,
+    "robustness": 75.0,
+    "overall": 72.0
+  },
+  "sidecar": null
+}

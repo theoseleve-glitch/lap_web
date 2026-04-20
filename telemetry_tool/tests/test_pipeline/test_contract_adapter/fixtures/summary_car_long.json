@@ -1,0 +1,44 @@
+{
+  "session_meta": {
+    "driver_id": 2,
+    "driver_name": "Alex Rossi",
+    "session_type": "race",
+    "track_state": "dry",
+    "date": "2026-04-19",
+    "session_datetime": "2026-04-19T14:00:00+00:00",
+    "vehicle_id": 7,
+    "vehicle_class": "gt3",
+    "vehicle_model": "Porsche 992 GT3 R"
+  },
+  "track_id": "spa",
+  "track_match": {"track_row_id": 20, "track_name": "Spa-Francorchamps", "layout": "GP"},
+  "available_channels": [
+    "Latitude (deg)", "Longitude (deg)", "Speed (m/s)",
+    "Lateral acceleration (G)", "Longitudinal acceleration (G)", "Gyroscope z (rad/s)"
+  ],
+  "lap_times": [
+    140.5, 139.8, 139.3, 139.1, 138.9, 138.8, 138.7, 138.9, 139.0, 139.2,
+    138.6, 155.0, 138.5, 138.7, 138.8, 138.9, 139.0, 139.1, 139.2, 139.5
+  ],
+  "lap_dict": {},
+  "best_lap_key": 13,
+  "invalid_lap_analysis": {"invalid_laps": [12], "reasons": {"12": "joker lap"}},
+  "joker_detection_result": {"joker_lap": 12, "confidence": 0.88},
+  "score_result": {
+    "total_score": 88.0,
+    "scores": {"pace": 90.0, "consistency": 85.0, "execution": 88.0, "robustness": 92.0}
+  },
+  "sim_method": "trajectory",
+  "theoretical_metrics": {"best_s": 138.0},
+  "theoretical_confidence": 0.83,
+  "corner_coaching": [
+    {"corner_id": 1, "time_loss_s": 0.12, "root_cause": "late_brake_release", "summary": "", "phase": "brake_release"},
+    {"corner_id": 5, "time_loss_s": 0.08, "root_cause": "low_minimum_speed", "summary": "", "phase": "apex"}
+  ],
+  "corners": [
+    {"id": 1, "apex_s": 100.0},
+    {"id": 5, "apex_s": 400.0},
+    {"id": 9, "apex_s": 900.0},
+    {"id": 15, "apex_s": 1400.0}
+  ]
+}
