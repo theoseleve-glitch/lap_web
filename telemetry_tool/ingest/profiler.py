@@ -20,26 +20,44 @@ from telemetry_tool.web.schemas.contracts import ChannelTag, SourceLiteral
 _PARSER_ROUTING: Final[dict[str, tuple[SourceLiteral, str]]] = {
     "racechrono": (SourceLiteral.REAL_LIFE, "real_life_pipeline"),
     "racechrono_rcz": (SourceLiteral.REAL_LIFE, "real_life_pipeline"),
-    "racebox": (SourceLiteral.REAL_LIFE, "real_life_pipeline"),
     "racebox_csv": (SourceLiteral.REAL_LIFE, "real_life_pipeline"),
     "vbox": (SourceLiteral.REAL_LIFE, "real_life_pipeline"),
     "qstarz_csv": (SourceLiteral.REAL_LIFE, "real_life_pipeline"),
     "qstarz_binary": (SourceLiteral.REAL_LIFE, "real_life_pipeline"),
     "generic_csv": (SourceLiteral.REAL_LIFE, "real_life_pipeline"),
     "iracing_ibt": (SourceLiteral.IRACING, "sim_optimizer"),
-    "iracing_ascii": (SourceLiteral.IRACING, "sim_optimizer"),
     "iracing": (SourceLiteral.IRACING, "sim_optimizer"),
-    "ac": (SourceLiteral.AC, "ac_pipeline"),
     "acc": (SourceLiteral.AC, "ac_pipeline"),
     "lmu": (SourceLiteral.AC, "ac_pipeline"),
-    "f1": (SourceLiteral.AC, "ac_pipeline"),
     "f1_game": (SourceLiteral.AC, "ac_pipeline"),
     "motec": (SourceLiteral.AC, "ac_pipeline"),
-    "motec_binary": (SourceLiteral.AC, "ac_pipeline"),
     "motec_ld": (SourceLiteral.AC, "ac_pipeline"),
-    "aim": (SourceLiteral.REAL_LIFE, "real_life_pipeline"),
     "aim_xrk": (SourceLiteral.REAL_LIFE, "real_life_pipeline"),
 }
+
+
+def _assert_routing_keys_valid() -> None:
+    """Guard against drift between the registry and this routing table.
+
+    Called at import time — fails loudly if a key in _PARSER_ROUTING
+    is not a registered adapter FORMAT_NAME.
+    """
+    # Lazy-import to avoid a circular dependency at module load.
+    from telemetry_tool.adapters.registry import _ADAPTERS
+    known = {cls.FORMAT_NAME for cls in _ADAPTERS}
+    # If the registry is empty (adapters not yet imported), skip — the
+    # check will run again on the next import.
+    if not known:
+        return
+    unknown = set(_PARSER_ROUTING) - known
+    if unknown:
+        raise AssertionError(
+            f"_PARSER_ROUTING contains FORMAT_NAMEs not in adapter registry: "
+            f"{sorted(unknown)}. Known: {sorted(known)}."
+        )
+
+
+_assert_routing_keys_valid()
 
 # Column-name → ChannelTag mapping. Case-insensitive substring match.
 # Order matters — specific substrings (e.g. "lateral", "lat_g") should come
@@ -151,6 +169,11 @@ class Profiler:
             if not tags:
                 tags.add(ChannelTag.GPS)
             return frozenset(tags), len(columns)
+        # TODO(T2.3 handoff review): this is the maximum-possible iRacing
+        # channel set, not file-verified. Downstream detectors that gate on
+        # channels_available may run on channels that are actually absent
+        # from the .ibt and crash at parse time. Tighten by enumerating the
+        # adapter's var_headers during a header-only probe before shipping.
         if suffix == ".ibt":
             return frozenset({
                 ChannelTag.GPS, ChannelTag.LAT_G, ChannelTag.LON_G,
