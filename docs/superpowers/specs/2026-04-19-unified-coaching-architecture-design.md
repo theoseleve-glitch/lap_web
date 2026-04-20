@@ -80,17 +80,19 @@ A single-upload product surface that serves both real-life on-track sessions (GP
 ## 3. Scope
 
 ### In scope (this program)
-- Unified upload endpoint accepting real-life CSV, iRacing IBT, AC CSV
+- Unified upload endpoint accepting real-life CSV (RaceChrono / RaceBox) and iRacing IBT
+- AC telemetry flows in through our own `lap_oracle` data logger (internal ingestion path — not a user upload surface)
 - Data-profile detector + ingest router
 - Three contracts: Session, Coaching, Optimizer
 - Per-engine pipeline adapters (real-life, iRacing, AC)
 - Capability-tagged coaching library with shared detector registry
-- Per-game coach assemblers (RealLife, iRacing, AC to start)
+- Per-game coach identity (`RealLifeCoach`, `IRacingCoach`, `ACCoach`) sharing the detector registry
 - Optimizer dispatcher with trajectory-only + full-fidelity engines
-- Unified frontend: single upload, single session view, conditional panels
-- Storage layout for mixed sources (raw sidecars + metadata)
+- Unified frontend: single upload surface, single session view, small source tag in history list (see §10 decision 4), conditional panels
+- Storage layout for mixed sources (raw sidecars + metadata) with tiered retention (§10 decision 3)
 
 ### Explicitly out of scope
+- User-uploaded AC CSV or ACC log files (AC data is captured by our own `lap_oracle` automation; other sims are not in first pass)
 - Scoring system overhaul (stays as-is; wrapped by contract adapter)
 - Auth, workspace, RBAC, billing (unchanged)
 - Track surface analysis changes (Side A feature, no dispatch needed)
@@ -153,14 +155,14 @@ A single-upload product surface that serves both real-life on-track sessions (GP
 **Tasks**
 | Task | Description | Est |
 |------|-------------|-----|
-| T2.1 | Profiler: detect file type by magic bytes + header heuristics (RC CSV, IBT, AC CSV, ACC, LMU, F1) | 1d |
+| T2.1 | Profiler: detect file type by magic bytes + header heuristics. User-uploadable sources in first pass: RC CSV, IBT. Internal source routed separately: AC (via lap_oracle). Profiler should include enum scaffolding for future LMU / ACC / F1 24 without wiring them yet. | 1d |
 | T2.2 | Profiler output: `DataProfile { source, channels_available, suggested_engine, confidence }` | 0.5d |
 | T2.3 | Router: `route(profile) -> EngineHandler` | 0.5d |
-| T2.4 | Modify `POST /api/v1/sessions/upload` to accept any format, delegate to profiler + router | 1d |
-| T2.5 | Celery queue split: `pipeline` (real-life), `sim` (sim engines) | 0.5d |
-| T2.6 | Integration test: upload 3 sample files, verify correct routing | 0.5d |
+| T2.4 | Modify `POST /api/v1/sessions/upload` to accept RC CSV + iRacing IBT, delegate to profiler + router. Reject AC/ACC/LMU/F1 uploads with a 415 + message steering users to the logger. | 1d |
+| T2.5 | Celery queue split: `pipeline` (real-life), `sim` (sim engines — currently iRacing user uploads + AC internal flow) | 0.5d |
+| T2.6 | Integration test: upload 2 sample user files (RC CSV + IBT) + separately invoke the AC internal path, verify correct routing | 0.5d |
 
-**Done when**: Single endpoint accepts all three sample formats; each routes correctly; contracts returned.
+**Done when**: Single user-facing upload endpoint accepts RC CSV + IBT; AC sessions arrive via internal lap_oracle flow; all three paths route correctly; contracts returned.
 
 ---
 
@@ -209,15 +211,17 @@ A single-upload product surface that serves both real-life on-track sessions (GP
 - Reuse: `telemetry_tool/lap_oracle/extractors/ac_files.py`
 - Decide: does AC go through `sim_optimizer` or a lightweight AC-specific path?
 
+**Source flow**: AC data arrives only from our own `lap_oracle` automation (§10 decision 1). There is no user upload path for AC — T4b therefore focuses on the internal ingestion boundary (lap_oracle output → SessionContract), not on the upload endpoint.
+
 **Tasks**
 | Task | Description | Est |
 |------|-------------|-----|
-| T4b.1 | Map AC telemetry → SessionContract | 1d |
-| T4b.2 | Declare AC capabilities (likely similar to iRacing with some deltas) | 0.5d |
+| T4b.1 | Map AC telemetry (lap_oracle output) → SessionContract | 1d |
+| T4b.2 | Declare AC capabilities (likely similar to iRacing with some deltas — wheel_spd present, shock_defl may be absent depending on car) | 0.5d |
 | T4b.3 | Decide + implement: AC → sim_optimizer or dedicated AC path | 1.5d |
-| T4b.4 | Integration test | 0.5d |
+| T4b.4 | Integration test — invoke internal AC ingestion (no HTTP upload), assert SessionContract produced | 0.5d |
 
-**Done when**: iRacing + AC uploads produce valid contracts through the same endpoint.
+**Done when**: iRacing user-uploaded sessions AND internal AC-captured sessions both produce valid SessionContract + downstream contracts.
 
 ---
 
@@ -333,7 +337,7 @@ A single-upload product surface that serves both real-life on-track sessions (GP
 |------|-------------|-----|
 | T9.1 | Migration implemented in W1.T1.5 — verify + integrate | 0.5d |
 | T9.2 | `SidecarStore.save(session_id, source, df)` + `.load(session_id)` | 1.5d |
-| T9.3 | Retention policy for raw sidecars (configurable; default 30d? forever?) | 0.5d |
+| T9.3 | Tiered retention policy for raw sidecars — paid tiers keep longer; internal retention is long-term because sidecars are training data for ML models (§10 decision 3) | 1d |
 | T9.4 | Backfill existing sessions: set `source="real_life"`, default capabilities | 0.5d |
 | T9.5 | Rollback plan for migration | 0.5d |
 
@@ -475,27 +479,35 @@ Legend: ✅ can run concurrently, ❌ blocked.
 | `shared/` refactor breaks currently-passing tests | Phase 0 slows | T5.5 backward-compat re-exports kept one release cycle |
 | Two Celery queues compete for memory | Workers OOM on IBT + real-life concurrent | Queue-aware memory limits, tested in W9 + W10 |
 
-### Open questions for product owner
-1. **AC telemetry source** — do we support user-uploaded AC CSV, or only telemetry captured by our own `lap_oracle` automation? Affects W4b.T4b.3 scope.
-2. **Per-game vs capability-only coaches** — confirm: per-game coach identity (iRacingCoach, ACCoach) with shared detector registry, OR single Coach that adapts purely by capabilities? Spec currently assumes the former.
-3. **Sidecar retention** — W9.T9.3 default: 30 days? Forever? Tiered (paid users keep longer)?
-4. **Source visibility in UI** — do we show a small "iRacing" / "GPS" badge, or hide source entirely? ("Don't want user to know there are two pipelines" — interpreting strictly would hide; badge helps users understand their own data.)
-5. **Sim support priority order after iRacing + AC** — ACC? LMU? F1 24? Affects future extensibility tests.
+### Product-owner decisions (resolved 2026-04-20)
+
+1. **AC telemetry source** — **only from our own `lap_oracle` data logger**. No user-uploaded AC CSVs. W4b scope narrows: the AC adapter consumes lap_oracle output internally; the W2 router does NOT accept AC uploads. The user-facing upload surface covers real-life CSV + iRacing IBT only.
+
+2. **Per-game vs capability-only coaches** — **per-game coach identity**. `RealLifeCoach`, `IRacingCoach`, `ACCoach`, plus future `LMUCoach`, `ACCCoach`, `F1Coach`. All share the detector registry from W6; game-specific classes carry game-specific thresholds, templates, and coaching language.
+
+3. **Sidecar retention** — **tiered**. Paid tiers keep raw sidecars longer than free tier. Crucially, raw sidecars are **internally retained long-term for ML model training** — so even after a user-facing retention window expires, the data is preserved on our side for training datasets. W9.T9.3 must design the policy with two axes: user-facing retention (tier-based) vs internal retention (long-term for ML).
+
+4. **Source visibility in UI** — **small source tag, yes**. Philosophy framing: "one big brain computing whatever data you give it" — the user must NEVER feel they're using two different products. But a compact tag (`GPS` / `iRacing` / `AC` / `LMU` …) in the history list is acceptable because it helps users understand why *their own* session has richer vs simpler panels. W8 executes this as a subtle badge, not a first-class filter dimension.
+
+5. **Sim support priority order after iRacing + AC** — **LMU → ACC → F1 24**. This determines W2/W4 extensibility roadmap and which channel profile gets studied next. LMU is third sim source; ACC fourth; F1 24 fifth.
 
 ## 11. System-level Acceptance Criteria
 
-User uploads any of these via one endpoint:
+**User-uploaded sources** via the single upload endpoint:
 1. RaceChrono CSV (GPS+IMU)
 2. RaceBox CSV
 3. iRacing IBT
-4. AC telemetry CSV
 
-For each:
-- Session appears in unified history
+**Internal source** (arrives via lap_oracle automation, not exposed as an upload):
+4. AC telemetry
+
+For each of the four sources:
+- Session appears in unified history with a small source tag (`GPS` / `iRacing` / `AC`)
 - Coaching panel populates — depth matches data richness (fewer events for real-life, more for sim)
 - Optimizer panel populates — depth matches data richness (trajectory-only vs input+output)
 - No visible error for data that's genuinely absent (graceful degradation)
-- Session re-analysis possible from stored raw sidecar
+- Session re-analysis possible from stored raw sidecar (tier-gated user retention + internal long-term retention for ML)
+- User experience does not reveal that multiple pipelines exist — "one big brain" framing
 
 ## 12. What is NOT this spec
 
