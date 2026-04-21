@@ -18,6 +18,8 @@ import { TeamReport } from '@/components/app/endurance/TeamReport';
 import { DriverReport as DriverReportView } from '@/components/app/endurance/DriverReport';
 import { StintReport } from '@/components/app/endurance/StintReport';
 import type { EnduranceReportResponse } from '@/components/app/endurance/types';
+import type { SourceLiteral } from '@/types/contracts';
+import { SourceBadge } from '@/components/session/SourceBadge';
 
 /* ── Types ──────────────────────────────────────────── */
 
@@ -71,7 +73,20 @@ const TRACK_STATES = [
   { value: 'dusty', label: 'Dusty' },
 ];
 
-const ACCEPTED_EXTENSIONS = '.csv,.txt';
+const ACCEPTED_EXTENSIONS = '.csv,.txt,.ibt';
+
+/**
+ * Heuristic source classification from file name, shown immediately after
+ * drop. The backend (W2 profiler) emits the authoritative source via SSE
+ * milestones once parsing starts — that overrides this hint.
+ */
+function heuristicSource(file: File | null): SourceLiteral | null {
+  if (!file) return null;
+  const lower = file.name.toLowerCase();
+  if (lower.endsWith('.ibt')) return 'iracing';
+  if (lower.endsWith('.csv') || lower.endsWith('.txt')) return 'real_life';
+  return null;
+}
 
 /** Human-readable stage names for the progress bar. */
 const STAGE_LABELS: Record<string, string> = {
@@ -1001,7 +1016,10 @@ function UploadPage() {
                       </svg>
                     </div>
                     <div>
-                      <p className="font-telemetry text-chalk text-sm">{file.name}</p>
+                      <div className="flex items-center gap-2">
+                        <p className="font-telemetry text-chalk text-sm">{file.name}</p>
+                        <SourceBadge source={heuristicSource(file)} />
+                      </div>
                       <p className="text-steel text-xs font-body">
                         {(file.size / 1024).toFixed(1)} KB
                         {fileQueue.length > 0 && (

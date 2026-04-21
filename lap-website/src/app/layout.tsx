@@ -3,6 +3,7 @@ import type { ReactNode } from 'react';
 import { Inter, Space_Grotesk, Space_Mono } from 'next/font/google';
 import { ChunkErrorRecovery } from '@/components/providers/ChunkErrorRecovery';
 import { ConsentGatedAnalytics } from '@/components/providers/ConsentGatedAnalytics';
+import { MswBootstrap } from '@/components/providers/MswBootstrap';
 import { SentryInit } from '@/components/providers/SentryInit';
 import { WebVitalsInit } from '@/components/providers/WebVitalsInit';
 import { TranslationProvider } from '@/i18n/TranslationProvider';
@@ -291,6 +292,7 @@ export default function RootLayout({ children }: { children: ReactNode }) {
           <SentryInit />
           <WebVitalsInit />
           <ChunkErrorRecovery />
+          <MswBootstrap />
           {children}
         </TranslationProvider>
         <ConsentGatedAnalytics dataDomain={siteHostname} />

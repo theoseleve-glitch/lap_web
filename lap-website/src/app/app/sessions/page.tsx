@@ -12,6 +12,8 @@ import { PageIntro } from '@/components/ui/PageIntro';
 import { EmptyState } from '@/components/ui/EmptyState';
 import type { ContextAction } from '@/components/app/DataTable';
 import { canPrefetch, markPrefetched, incrementInFlight, decrementInFlight } from '@/lib/prefetch';
+import type { SourceLiteral, SessionCapabilities } from '@/types/contracts';
+import { SourceBadge } from '@/components/session/SourceBadge';
 
 /* ── Types ──────────────────────────────────────────────── */
 
@@ -27,6 +29,8 @@ interface SessionRow {
   grade: string | null;
   session_type: string | null;
   track_state: string | null;
+  source?: SourceLiteral | null;
+  capabilities?: SessionCapabilities;
 }
 
 interface ListResponse {
@@ -319,13 +323,14 @@ function SessionGroupedView({ sessions, onSessionClick }: { sessions: SessionRow
 /* ── Column Customization ──────────────────────────────── */
 
 const ALL_COLUMN_KEYS = [
-  'session_date', 'track_name', 'driver_name', 'session_type',
+  'session_date', 'source', 'track_name', 'driver_name', 'session_type',
   'track_state', 'n_laps', 'best_lap_time_s', 'mean_lap_time_s',
   'total_score', 'grade',
 ] as const;
 
 const COLUMN_LABELS: Record<string, string> = {
   session_date: 'Date',
+  source: 'Source',
   track_name: 'Track',
   driver_name: 'Driver',
   session_type: 'Type',
@@ -784,6 +789,13 @@ export default function SessionsPage() {
       render: (row: SessionRow) => (
         <span>{formatDate(row.session_date)}</span>
       ),
+    },
+    {
+      key: 'source',
+      header: 'Source',
+      sortable: false,
+      className: 'w-16',
+      render: (row: SessionRow) => <SourceBadge source={row.source ?? null} />,
     },
     {
       key: 'track_name',
