@@ -144,6 +144,11 @@ def make_celery(app=None) -> Celery:
                 "schedule": crontab(hour=3, minute=0),  # Daily 03:00 UTC
                 "options": {"queue": "default"},
             },
+            "enforce-sidecar-retention": {
+                "task": "tasks.retention_tasks.enforce_sidecar_retention",
+                "schedule": crontab(hour=3, minute=30),  # 30 min after tier retention
+                "options": {"queue": "default"},
+            },
             "cleanup-retention-audit": {
                 "task": "tasks.retention_tasks.cleanup_retention_audit",
                 "schedule": 2592000,  # Monthly (30 days)
