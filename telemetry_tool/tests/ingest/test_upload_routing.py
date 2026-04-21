@@ -109,3 +109,57 @@ def test_ibt_routes_to_iracing_stub_and_5xx(
 
     assert resp.status_code in (501, 502, 503), resp.get_data(as_text=True)
     assert not mock_chain.called
+
+
+@patch("preflight.run_preflight", return_value=_preflight_ok())
+@patch("telemetry_tool.ingest.handlers_real_life._redis_from_url")
+@patch("telemetry_tool.ingest.handlers_real_life.PipelineContext")
+@patch("telemetry_tool.ingest.handlers_real_life.build_pipeline_chain")
+def test_ac_csv_routes_to_ac_stub_and_501s(
+    mock_chain, mock_ctx, mock_redis, mock_preflight, client,
+):
+    """AC-style telemetry CSV → AC source → ACStubHandler → 501.
+
+    Detection classifies this sample as `motec` (heuristic match on the
+    `# AC Telemetry` comment + RPM/Gear columns). Both `motec` and `acc`
+    route to SourceLiteral.AC via _PARSER_ROUTING, so the assertion is on
+    the source-level outcome, not the specific parser name.
+    """
+    payload = (
+        b"# AC Telemetry\n"
+        b"Time,Speed,Throttle,Brake,Steer,RPM,Gear\n"
+        b"0.0,12.3,0.8,0.0,-0.1,6500,3\n"
+    )
+    with patch("web.routes.sessions_v2._get_conn", return_value=_mock_conn()):
+        resp = _upload(client, payload, "sample.ac.csv")
+
+    assert resp.status_code == 501, resp.get_data(as_text=True)
+    assert not mock_chain.called
+
+
+@patch("preflight.run_preflight", return_value=_preflight_ok())
+@patch("telemetry_tool.ingest.handlers_real_life._redis_from_url")
+@patch("telemetry_tool.ingest.handlers_real_life.PipelineContext")
+@patch("telemetry_tool.ingest.handlers_real_life.build_pipeline_chain")
+def test_three_sample_uploads_distinct_routes(
+    mock_chain, mock_ctx, mock_redis, mock_preflight, client,
+):
+    """Acceptance-criteria test: each sample routes to its correct handler."""
+    rc_payload = (
+        b'Session "x"\n"Lap","Time","Lat","Lon","Speed (m/s)","LatAcc (G)"\n'
+        b'1,0.0,43.1,5.6,12.0,0.0\n'
+    )
+    ibt_payload = b"\x03\x00" + b"\x00" * 254
+    ac_payload = (
+        b"# AC Telemetry\nTime,Speed,Throttle,Brake,Steer,RPM,Gear\n"
+        b"0.0,12.3,0.8,0.0,-0.1,6500,3\n"
+    )
+    with patch("web.routes.sessions_v2._get_conn", return_value=_mock_conn()):
+        r1 = _upload(client, rc_payload, "x.csv")
+        r2 = _upload(client, ibt_payload, "x.ibt")
+        r3 = _upload(client, ac_payload, "x.ac.csv")
+
+    assert r1.status_code == 202, r1.get_data(as_text=True)   # real-life OK
+    assert r2.status_code == 501, r2.get_data(as_text=True)   # iRacing stub
+    assert r3.status_code == 501, r3.get_data(as_text=True)   # AC stub
+    assert mock_chain.call_count == 1  # only the real-life upload dispatches
