@@ -57,6 +57,7 @@ def make_celery(app=None) -> Celery:
             "tasks.dead_letter_tasks",
             "tasks.ocp_tasks",
             "tasks.endurance_tasks",
+            "tasks.sim_tasks",
         ],
     )
     celery.conf.update(
@@ -71,6 +72,7 @@ def make_celery(app=None) -> Celery:
             "tasks.training_tasks.*": {"queue": "pipeline"},
             "tasks.ocp_tasks.*": {"queue": "pipeline"},
             "tasks.batch_tasks.*": {"queue": "default"},
+            "tasks.sim_tasks.*": {"queue": "sim"},
         },
         task_default_queue="default",
         # Beat schedule for periodic tasks
