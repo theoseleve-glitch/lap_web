@@ -14,6 +14,10 @@ import { AnimatedCounter } from '@/components/ui/AnimatedCounter';
 import { exportCanvasAsPNG } from '@/lib/export-chart';
 import { ChartSyncToggle } from '@/components/app/ChartSyncToggle';
 import { trackEvent } from '@/hooks/useTrackEvent';
+import { useSessionContract } from '@/lib/session-contracts-client';
+import { PanelRegistryHost } from '@/components/session/PanelRegistryHost';
+import { SourceBadge } from '@/components/session/SourceBadge';
+import { CapabilityDots } from '@/components/session/CapabilityDot';
 
 // Lazy-loaded tab content — only fetched when the user activates each tab/section
 const AnalyticsTab = lazy(() => import('@/components/app/analytics').then(m => ({ default: m.AnalyticsTab })));
@@ -348,6 +352,11 @@ export default function SessionDetailPage() {
     redirectTo: '/app/sessions',
   });
 
+  // W8: unified contract bundle. Graceful fallback — if the backend contract
+  // endpoint isn't live yet, this query 404s silently and the panel registry
+  // section simply doesn't render. Legacy tabs continue serving their data.
+  const { data: contractBundle } = useSessionContract(sessionId);
+
   // Fetch all data on mount
   useEffect(() => {
     let cancelled = false;
@@ -545,6 +554,12 @@ export default function SessionDetailPage() {
             {session.track_name && !session.track_unnamed ? ` \u2022 ${session.track_name}` : ''}
             {` \u2022 ${formatDate(session.session_date)}`}
           </p>
+          {contractBundle?.session && (
+            <div className="flex items-center gap-2 mt-2">
+              <SourceBadge source={contractBundle.session.source} />
+              <CapabilityDots channels={contractBundle.session.capabilities.channels ?? []} />
+            </div>
+          )}
         </div>
 
         <div className="flex items-center gap-3">
@@ -612,6 +627,17 @@ export default function SessionDetailPage() {
         entityName={session.display_name || session.csv_filename || session.session_id}
         entityType="session"
       />
+
+      {/* W8 unified-contract panels — render above existing tabs. */}
+      {contractBundle && (
+        <div className="mb-6">
+          <PanelRegistryHost
+            session={contractBundle.session}
+            coaching={contractBundle.coaching}
+            optimizer={contractBundle.optimizer}
+          />
+        </div>
+      )}
 
       {/* Tab bar */}
       <div className="flex items-center gap-1 mb-8 border-b border-steel/10">
