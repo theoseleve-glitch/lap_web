@@ -576,58 +576,63 @@ def upload_session() -> tuple[Response, int]:
         if vehicle_overrides:
             session_meta["vehicle_overrides"] = vehicle_overrides
 
-        # ── 5. Create job record ──────────────────────────────────
-        job_id = uuid.uuid4().hex
+        # ── 5. Route through profiler + handler registry (W2.T2.4) ──
+        import uuid as _uuid
+
+        from telemetry_tool.ingest.profiler import UnknownFormatError
+        from telemetry_tool.ingest.registry import NoHandlerResolvableError
+        from telemetry_tool.ingest.router import route_upload
+
+        session_uuid = _uuid.uuid4()
+        # Persist initial job row so the frontend can poll from 0%.
         conn = _get_conn()
         conn.execute(
             """INSERT INTO ingestion_jobs
                (job_id, workspace_id, file_path, file_size, sha256_partial,
                 status, stage_name, stage_index, stage_total, updated_at)
-               VALUES (%(job_id)s, %(ws)s, %(fpath)s, %(fsize)s, %(sha)s,
+               VALUES (%(job_id)s, %(ws)s, %(fpath)s, %(fsize)s, '',
                        'pending', 'Queued', 0, 14, NOW())""",
             {
-                "job_id": job_id,
+                "job_id": session_uuid.hex,
                 "ws": str(g.workspace_id),
                 "fpath": str(tmp_path),
                 "fsize": tmp_path.stat().st_size,
-                "sha": "",
             },
         )
         conn.commit()
 
-        # ── 6. Seed pipeline context in Redis ─────────────────────
-        import json as _json
-
-        import redis as _redis
-
-        from pipeline_context import PipelineContext
-        from tasks.pipeline_tasks import build_pipeline_chain
-        from web.config import Config
-
-        _r = _redis.Redis.from_url(Config.REDIS_URL)
-        ctx = PipelineContext.create(
-            redis_client=_r,
-            job_id=job_id,
-            workspace_id=str(g.workspace_id),
-            session_id=job_id,  # placeholder — worker will create real session_id
-            file_path=str(tmp_path),
-        )
-        # Store session_meta alongside context so the worker can retrieve it.
-        _r.set(
-            f"pipeline:meta:{job_id}",
-            _json.dumps(session_meta),
-            ex=7200,
-        )
-
-        # ── 7. Dispatch Celery chain ──────────────────────────────
-        timeout = _TIER_TIMEOUTS.get(plan_tier, 120)
-        build_pipeline_chain(job_id).apply_async(soft_time_limit=timeout)
+        try:
+            session_meta["_soft_timeout_s"] = _TIER_TIMEOUTS.get(plan_tier, 120)
+            job_id = route_upload(
+                file_path=tmp_path,
+                session_id=session_uuid,
+                workspace_id=str(g.workspace_id),
+                session_meta=session_meta,
+            )
+        except UnknownFormatError as exc:
+            logger.info("Upload format unrecognised: %s", exc)
+            return api_error(
+                ErrorCode.UNSUPPORTED_FORMAT, str(exc), status=400,
+            )
+        except NoHandlerResolvableError as exc:
+            logger.error("No handler for profile: %s", exc)
+            return api_error(
+                ErrorCode.ANALYSIS_FAILED,
+                "No engine available for this file type yet.",
+                status=503,
+            )
+        except NotImplementedError as exc:
+            logger.warning("Stub handler fired — sessions #5 not merged: %s", exc)
+            return api_error(
+                ErrorCode.ANALYSIS_FAILED,
+                "This source is not yet supported in this environment.",
+                status=501,
+            )
 
         logger.info(
-            "Upload accepted: job_id=%s workspace=%s file=%s tier=%s timeout=%ds",
-            job_id, g.workspace_id, safe_name, plan_tier, timeout,
+            "Upload accepted: job_id=%s ws=%s file=%s tier=%s",
+            job_id, g.workspace_id, safe_name, plan_tier,
         )
-
         return api_response(
             {"job_id": job_id, "status": "pending",
              "message": "Upload accepted. Processing started."},
