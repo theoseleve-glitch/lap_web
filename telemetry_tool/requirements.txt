@@ -23,7 +23,7 @@ matplotlib>=3.9
 Pillow>=10.0
 fpdf2>=2.8
 weasyprint>=61.0
-PyMuPDF>=1.24
+PyMuPDF>=1.27.2.3
 
 # Build (development only)
 pyinstaller>=6.0
