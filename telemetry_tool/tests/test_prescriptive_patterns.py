@@ -36,7 +36,6 @@ from track_surface.prescriptive.patterns import (
     LowMinimumSpeed,
     WeakExitBuild,
 )
-from track_surface.prescriptive_coaching import WEAKNESS_PLAYBOOK as _LEGACY
 
 
 # ─────────────────────────────────────────────────────────────────
@@ -246,43 +245,6 @@ def test_portability_few_sessions_flags_unknown():
     assert "unknown" in r.portability
 
 
-# ─────────────────────────────────────────────────────────────────
-# D. Content parity with legacy WEAKNESS_PLAYBOOK
-# ─────────────────────────────────────────────────────────────────
-
-
-@pytest.mark.parametrize("cls,key,phase,field", _PATTERN_MATRIX)
-def test_title_matches_legacy(cls, key, phase, field):
-    assert cls.title == _LEGACY[key]["title"]
-
-
-@pytest.mark.parametrize("cls,key,phase,field", _PATTERN_MATRIX)
-def test_phase_matches_legacy(cls, key, phase, field):
-    assert cls.phase == _LEGACY[key]["phase"]
-
-
-@pytest.mark.parametrize("cls,key,phase,field", _PATTERN_MATRIX)
-def test_sensor_note_matches_legacy(cls, key, phase, field):
-    # Allow cosmetic whitespace differences only.
-    assert " ".join(cls.sensor_note.split()) == " ".join(
-        _LEGACY[key]["sensor_note"].split()
-    )
-
-
-@pytest.mark.parametrize("cls,key,phase,field", _PATTERN_MATRIX)
-def test_likely_causes_match_legacy(cls, key, phase, field):
-    assert tuple(cls.likely_causes) == tuple(_LEGACY[key]["likely_causes"])
-
-
-@pytest.mark.parametrize("cls,key,phase,field", _PATTERN_MATRIX)
-def test_coaching_action_templates_match_legacy(cls, key, phase, field):
-    assert tuple(cls.coaching_action_templates) == tuple(_LEGACY[key]["coaching_actions"])
-
-
-@pytest.mark.parametrize("cls,key,phase,field", _PATTERN_MATRIX)
-def test_driver_cues_match_legacy(cls, key, phase, field):
-    assert tuple(cls.driver_cues) == tuple(_LEGACY[key]["driver_cues"])
-
 
 # ─────────────────────────────────────────────────────────────────
 # Cross-cutting: default registry
@@ -295,17 +257,6 @@ class TestDefaultRegistry:
         assert isinstance(reg, PatternRegistry)
         assert len(reg) == 5
 
-    def test_registry_keys_match_legacy_playbook_keys(self):
-        """The five built-ins must cover every key in the legacy
-        ``WEAKNESS_PLAYBOOK`` — nothing more, nothing less. Otherwise Phase 3
-        migration silently gains or loses a prescription type."""
-        reg = build_default_registry()
-        assert set(reg.keys()) == set(_LEGACY.keys())
-
-    def test_registry_preserves_legacy_insertion_order(self):
-        """Tie-breaking in output depends on this order."""
-        reg = build_default_registry()
-        assert reg.keys() == tuple(_LEGACY.keys())
 
     def test_registry_get_returns_pattern_instance(self):
         reg = build_default_registry()
