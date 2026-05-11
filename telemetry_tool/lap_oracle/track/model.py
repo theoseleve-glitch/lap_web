@@ -13,6 +13,11 @@ from telemetry_tool.lap_oracle.config import TrackModel
 
 logger = logging.getLogger(__name__)
 
+# V1 cap on per-point track widths (metres per side). Applied during
+# resample_track's channel preservation. Same cap will be enforced when the
+# GeoJSON adapter lands Day 3 across all 20 tracks.
+WIDTH_CAP_M: float = 3.0
+
 
 def build_from_xy(
     xy: np.ndarray,
@@ -92,6 +97,13 @@ def resample_track(
 ) -> TrackModel:
     """Resample *tm* onto a uniform distance grid.
 
+    Per-point channels (``width_left``, ``width_right``, ``banking``,
+    ``grip_map``, ``vert_curvature``) on the source are re-interpolated
+    onto the new uniform arc-length grid using the same parametrization
+    as the centerline. Channels whose length does not match the source
+    centerline (``n_points``) fall back to the ``build_from_xy``
+    defaults (zeros / ones / scalar width).
+
     Parameters
     ----------
     tm:
@@ -102,7 +114,8 @@ def resample_track(
     Returns
     -------
     TrackModel
-        New track model with approximately uniform spacing.
+        New track model with approximately uniform spacing and
+        per-point channels carried over from *tm*.
     """
     if tm.n_points < 2:
         logger.warning("Cannot resample track with fewer than 2 points")
@@ -127,9 +140,35 @@ def resample_track(
     y_new = np.interp(s_new, cum_dist, xy[:, 1])
 
     xy_new = np.column_stack((x_new, y_new))
-    return build_from_xy(
+    out = build_from_xy(
         xy_new,
         width=float(tm.width_left[0]) if tm.width_left.size else 5.0,
         name=tm.name,
         sim=tm.sim,
     )
+
+    # -- Preserve per-point channels by re-interpolating onto s_new --------
+    # V1 width policy: cap per-side widths at WIDTH_CAP_M. Per-point width
+    # data sources (current JSON, future GeoJSON adapter) over-promise the
+    # lateral corridor where the OCP can route the line. Uniform cap across
+    # all tracks keeps theoretical lap times credible.
+    n_src = xy.shape[0]
+    for attr in (
+        "width_left",
+        "width_right",
+        "banking",
+        "grip_map",
+        "vert_curvature",
+    ):
+        src = getattr(tm, attr, None)
+        if src is None:
+            continue
+        src_arr = np.asarray(src, dtype=np.float64)
+        if src_arr.size != n_src:
+            continue
+        new = np.interp(s_new, cum_dist, src_arr)
+        if attr in ("width_left", "width_right"):
+            new = np.minimum(new, WIDTH_CAP_M)
+        setattr(out, attr, new)
+
+    return out

@@ -50,28 +50,17 @@ def solve_minimum_time(
     weather: WeatherConditions | None = None,
     n_points: int = 500,
     max_time_s: float = 120.0,
+    envelope_caps: dict | None = None,
 ) -> OCPSolution:
     """Solve the minimum-time OCP for *track* and *vehicle*.
 
     If CasADi is not available, transparently delegates to the QSS
     fallback solver.
 
-    Parameters
-    ----------
-    track:
-        Discretized track model.
-    vehicle:
-        Vehicle parameters.
-    weather:
-        Optional weather conditions.
-    n_points:
-        Number of discretization points along the centerline.
-    max_time_s:
-        IPOPT wall-clock time limit in seconds.
-
-    Returns
-    -------
-    OCPSolution
+    envelope_caps: optional dict with keys "v_grid", "ax_drive_max",
+    "ax_brake_max" (numpy arrays in m/s vs m/s²). When provided, the
+    drive constraint becomes Ax <= min(P/(m*v), ax_drive_max(v)) and
+    the brake constraint becomes -Ax <= min(8g_hydraulic, ax_brake_max(v)).
     """
     if not HAS_CASADI:
         logger.info("CasADi not available -- falling back to QSS solver")
@@ -82,7 +71,7 @@ def solve_minimum_time(
     if weather is None:
         weather = WeatherConditions()
 
-    return _solve_casadi(track, vehicle, weather, n_points, max_time_s)
+    return _solve_casadi(track, vehicle, weather, n_points, max_time_s, envelope_caps)
 
 
 # --------------------------------------------------------------------------
@@ -95,6 +84,7 @@ def _solve_casadi(
     weather: WeatherConditions,
     n_points: int,
     max_time_s: float,
+    envelope_caps: dict | None = None,
 ) -> OCPSolution:
     """Build and solve the IPOPT NLP via CasADi Opti."""
     t0 = time.perf_counter()
@@ -136,6 +126,29 @@ def _solve_casadi(
     # -- Initial guess: cornering speed ------------------------------------
     v_guess = corner_speed(kappa, vehicle) * weather.grip_multiplier
     v_guess = np.clip(v_guess, 10.0, 100.0)
+
+    # -- Envelope-derived per-velocity caps (physics fix) -------------------
+    # When provided, drive is bounded by min(P/v, ax_drive_max(v)*m) and
+    # brake is bounded by min(8g_hydraulic, ax_brake_max(v)). The envelope's
+    # ax_drive_max is already the demonstrated CG-frame net longitudinal
+    # acceleration (no rear-axle load fraction discount applied here).
+    use_envelope_caps = (
+        envelope_caps is not None
+        and "v_grid" in envelope_caps
+        and "ax_drive_max" in envelope_caps
+        and "ax_brake_max" in envelope_caps
+    )
+    if use_envelope_caps:
+        env_v = np.asarray(envelope_caps["v_grid"], dtype=np.float64)
+        env_ax_drive = np.asarray(envelope_caps["ax_drive_max"], dtype=np.float64)
+        env_ax_brake = np.asarray(envelope_caps["ax_brake_max"], dtype=np.float64)
+        ax_drive_interp = ca.interpolant(
+            "ax_drive_lookup", "linear", [env_v.tolist()], env_ax_drive.tolist()
+        )
+        ax_brake_interp = ca.interpolant(
+            "ax_brake_lookup", "linear", [env_v.tolist()], env_ax_brake.tolist()
+        )
+    HYD_BRAKE_8G = 8.0 * G  # 8g hydraulic ceiling per spec
 
     # -- CasADi Opti -------------------------------------------------------
     opti = ca.Opti()
@@ -192,14 +205,21 @@ def _solve_casadi(
             (Ax[i] / ax_lim) ** 2 + (ay_i / ay_lim) ** 2 <= 1.0
         )
 
-        # 6. Power limit
+        # 6. Drive limit: min(power, tire-grip cap from envelope)
         drag = 0.5 * RHO_AIR * cda * V[i] ** 2 / m
         rr = 0.01 * g_eff_i  # rolling resistance scales with effective g
         v_safe = ca.fmax(V[i], 5.0)
         opti.subject_to(Ax[i] <= p_max / (m * v_safe) - drag - rr)
+        if use_envelope_caps:
+            # ax_drive_max is the demonstrated CG-frame net accel; subtract
+            # drag+rr to put it in the same units as the power constraint.
+            opti.subject_to(Ax[i] <= ax_drive_interp(V[i]) - drag - rr)
 
-        # 7. Brake limit (scales with effective grip)
+        # 7. Brake limit: min(8g hydraulic, tire-grip cap from envelope)
         opti.subject_to(Ax[i] >= -(a_brake_max * g_eff_i / G + drag + rr))
+        if use_envelope_caps:
+            opti.subject_to(Ax[i] >= -(HYD_BRAKE_8G + drag + rr))
+            opti.subject_to(Ax[i] >= -(ax_brake_interp(V[i]) + drag + rr))
 
     # 7. Speed bounds
     opti.subject_to(opti.bounded(5.0, V, 120.0))
