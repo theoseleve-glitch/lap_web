@@ -127,7 +127,7 @@ legitimate narrow-track-edge value (real kart hairpins observed at
 gt-polyline-to-centerline distance below 1 m on the dominant side of
 either polyline)."""
 
-_GT_OFFSET_CURVE_SAFETY_ALPHA: Final[float] = 0.5
+_GT_OFFSET_CURVE_SAFETY_ALPHA: Final[float] = 0.6
 """Day-10.5 F1 — offset-curve safety factor.
 
 The offset curve of a centerline at distance d on the INSIDE of a bend
@@ -144,12 +144,25 @@ stays simple in isolation, but the *transition* between clipped and
 un-clipped bins also matters: a sharp step at the clip boundary can
 itself produce a self-intersection a few bins downstream.
 
-Empirical tuning on OK_R1: alpha = 0.85 fixed the kappa-peak fold but
-left a step at the clip boundary that produced a new self-intersection
-elsewhere. alpha = 0.5 widens the clip region enough that the transition
-to un-clipped neighbours is gradual, and the polygon stays simple.
-KCT_R1 and OK_R4 are unaffected: their inside-side gt offsets are well
-below ``alpha / |kappa|`` everywhere, so the clip never fires."""
+Empirical tuning (OK_R1 + OK_R4 visual cross-check):
+  * alpha = 0.85: catches the OK_R1 kappa-peak fold but the step from
+    clipped (5 m) to un-clipped (10 m) neighbours is too sharp; new
+    self-intersection appears downstream.
+  * alpha = 0.5: fixes OK_R1 polygon but ALSO fires on OK_R4 (its
+    max |kappa * width| is 0.587 inside, just above 0.5). Visual on
+    OK_R4 shows the boundary narrowing because the extra σ=2 second
+    smooth runs when the clip activates anywhere on the session.
+  * alpha = 0.7: leaves OK_R4 untouched (its max 0.587 < 0.7) while
+    still catching OK_R1's 1.6 peak. Iterative clip-smooth-clip
+    handles the transition.
+
+Real-track ranges (max |kappa * width| in dominant-side projection):
+  OK_R4   0.587 → unaffected at alpha=0.7
+  OK_R1   1.63  → clipped (apex fold) at alpha=0.7
+  OK_R2   ≤0.5  → unaffected
+  OK_R3   ~0.6  → minimally affected (right at the edge; verified clean)
+  KCT_R1  ~2.4  → high but on the OUTSIDE of bends (no clip fires)
+  JV_R1   ~1.8  → high but on the OUTSIDE of bends (no clip fires)"""
 
 
 def _detect_coverage_gap(
