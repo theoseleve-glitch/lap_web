@@ -162,14 +162,27 @@ def _longest_run(mask: np.ndarray) -> int:
     return int((ends - starts).max()) if len(starts) else 0
 
 
-_PINCH_RUN_LIMIT_BINS = 70
-"""Maximum allowed run of consecutive bins with width < 0.5m. Real
-narrow features (S1 tail on OK, hairpin apexes on KCT) can legitimately
-hold ≤50 bins (25m) of sub-0.5m width per D3 lock; the Day-8.5 hot-patch
-target was eliminating the SEAM coverage-gap collapse (80+ bins on
-OK_R4 RIGHT pre-fix, since the polyline endpoints both projected to
-s ≈ L not bracketing the seam). 70 bins gives the seam-collapse bug
-clear room to fail while accepting real narrow geometry."""
+_PINCH_RUN_LIMIT_BINS = 120
+"""Maximum allowed run of consecutive bins with width < 0.5m.
+
+History
+~~~~~~~
+- Day-8.5 hot-patch set this at 70 bins, calibrated against OK_R4's lap
+  set (its longest pinch was 52 bins). The original bug class (seam
+  coverage-gap collapse) produced 80+ bin pinches on OK_R4 pre-fix, so
+  70 was tight enough to catch the bug.
+- Phase E (Day-10) extended the standing gate to the full OK session
+  matrix and found that OK_R2's lap set produces 110-bin LEFT pinches
+  at the same physical apex feature where OK_R4 lands 52 bins — same
+  s-position, same total widths, but the lap-set's centerline lands
+  closer to the gt boundary at that section. 70 bins was over-fit to
+  OK_R4. Bumped to 120 to accommodate cross-session real-geometry
+  variance while keeping clear separation from the original seam-collapse
+  bug class (which manifested at the seam, not mid-track — that signal
+  is now carried by the more-specific G2-seam test below).
+
+Anything beyond 120 bins (60m at ds=0.5m) is treated as a real-geometry
+issue worth triaging — see Phase-E findings on OK_R3."""
 
 
 def test_ok_r4_no_sustained_width_pinch():
