@@ -60,6 +60,9 @@ stripe>=8.0
 # Scientific computing (used by physics models, friction, etc.)
 scipy>=1.11
 
+# Solar geometry (Day-12 spatial μ sun-factor; NREL-maintained pure-Python)
+pvlib>=0.10
+
 # PDF generation (optional — install if you want PDF reports)
 # pdfkit>=1.0
 # weasyprint>=60.0
