@@ -2,7 +2,7 @@
 
 All functions are PURE: they take primitive scalar/list inputs and
 return primitive scalar outputs. No I/O, no Open-Meteo coupling. Phase
-C wires them up; Phase D consumes them in the classifier rule predicates.
+D consumes them in the classifier rule predicates.
 
 Formulae verbatim from spec §4:
 
@@ -15,35 +15,29 @@ D2 — hours since significant rain (≥ 1.0 mm cumulative)
     until cumulative sum ≥ 1.0 mm. 999.0 if none found in 48h window.
 
 D3 — cumulative solar since rain
-    Integrate W_solar × (1 - cloud_fraction) over hours from D2 to
-    session start; units kWh/m² accumulated.
+    Integrate W_solar × (1 - cloud_fraction) over the last
+    ``hours_since_rain`` hours; result in kWh/m².
 
 D4 — drying rate estimate
     drying_rate ∝ max(T_track - T_dew, 0) × (W_solar/1000) × (1 - RH/100)
                   × √(windspeed_kmh)
-    Units: simplified Penman-style; treated as a relative index.
+    Simplified Penman-style index; threshold ≈ 0.3 fires Rule 8.
 
 D5 — days since last significant rain (> 3.0 mm/day)
-    Scan 30-day daily archive backwards; return days until first day
-    with precipitation_sum > 3.0 mm. None if window contains no
-    significant-rain day (= "dry spell longer than 30 days").
-
-Implementation lands at Phase C; this module is stubs until
-``test_derived_metrics.py`` is committed FAILING.
+    Scan 30-day daily archive backwards; return days until the FIRST
+    (= most recent) day with precipitation_sum > 3.0 mm. ``None`` if
+    no day in the window passes the threshold.
 """
 from __future__ import annotations
 
-# Spec §4 D1 coefficients (treat as locked spec for V1).
+import math
+
+# Spec §4 coefficients — treat as locked for V1 (driver-feedback
+# calibration in V1.5 may retune).
 _D1_ALPHA: float = 12.0
 _D1_BETA: float = 0.15
-
-# Spec §4 D2 threshold for "significant rain" (hourly cumulative).
 _D2_SIGNIFICANT_RAIN_MM: float = 1.0
-
-# Spec §4 D5 threshold for "significant rain day" (daily total).
 _D5_SIGNIFICANT_DAY_MM: float = 3.0
-
-# Cap returned when no rain found in 48h window (spec §4 D2 wording).
 _D2_NO_RAIN_SENTINEL: float = 999.0
 
 
@@ -54,17 +48,29 @@ def compute_d1_track_temp_estimate_c(
     wind_kmh: float,
 ) -> float:
     """D1 — Linear surface-temperature model (spec §4)."""
-    raise NotImplementedError("Phase C — implement after test_derived_metrics.py FAILS")
+    solar_lift = _D1_ALPHA * (w_solar_wm2 / 1000.0) * (1.0 - 0.5 * cloud_frac)
+    wind_cooling = _D1_BETA * wind_kmh
+    return t_air_c + solar_lift - wind_cooling
 
 
 def compute_d2_hours_since_significant_rain(hourly_precip_mm: list[float]) -> float:
     """D2 — Backwards scan to ≥ 1.0 mm cumulative threshold (spec §4).
 
-    Args:
-        hourly_precip_mm: 48 entries, oldest-first. ``hourly_precip_mm[-1]``
-            is the hour ending at session start.
+    Returns the number of hours (counted from the most recent entry
+    backwards) at which cumulative precipitation first reaches 1.0 mm.
+    ``999.0`` if the entire window is below threshold.
+
+    Counting convention: h=0 means the most recent hour's precipitation
+    alone meets the threshold; h=1 means the cumulative of (most-recent
+    + previous) crosses 1.0 mm; etc.
     """
-    raise NotImplementedError("Phase C — implement after test_derived_metrics.py FAILS")
+    cumulative = 0.0
+    n = len(hourly_precip_mm)
+    for h in range(n):
+        cumulative += hourly_precip_mm[n - 1 - h]
+        if cumulative >= _D2_SIGNIFICANT_RAIN_MM:
+            return float(h)
+    return _D2_NO_RAIN_SENTINEL
 
 
 def compute_d3_cumulative_solar_since_rain(
@@ -72,12 +78,29 @@ def compute_d3_cumulative_solar_since_rain(
     hourly_cloud_frac: list[float],
     hours_since_rain: float,
 ) -> float:
-    """D3 — Drying-budget integral (spec §4).
+    """D3 — Drying-budget integral (spec §4); returns kWh/m².
 
-    If ``hours_since_rain >= len(hourly_solar_wm2)`` (no rain in window),
-    integrates over the full window.
+    Integrates ``W_solar × (1 - cloud_fraction)`` over the last
+    ``hours_since_rain`` hours. Sum is in Wh/m² (each hourly W/m² value
+    times one hour), divided by 1000 to yield kWh/m².
+
+    If ``hours_since_rain`` exceeds the available hourly window (e.g.,
+    the sentinel 999.0 from D2 when no rain found), the entire window
+    is integrated.
+
+    If ``hours_since_rain == 0`` (rain currently happening), the integral
+    over a zero-width interval is 0.
     """
-    raise NotImplementedError("Phase C — implement after test_derived_metrics.py FAILS")
+    n = len(hourly_solar_wm2)
+    # Clamp into [0, n]; honors the sentinel and the rain-now case.
+    h = min(int(hours_since_rain), n)
+    if h <= 0:
+        return 0.0
+    total_wh_m2 = 0.0
+    for i in range(h):
+        idx = n - 1 - i
+        total_wh_m2 += hourly_solar_wm2[idx] * (1.0 - hourly_cloud_frac[idx])
+    return total_wh_m2 / 1000.0
 
 
 def compute_d4_drying_rate(
@@ -87,19 +110,36 @@ def compute_d4_drying_rate(
     rh_pct: float,
     wind_kmh: float,
 ) -> float:
-    """D4 — Simplified Penman drying-rate index (spec §4)."""
-    raise NotImplementedError("Phase C — implement after test_derived_metrics.py FAILS")
+    """D4 — Simplified Penman-style drying-rate index (spec §4).
+
+    Four factors multiplied:
+        max(T_track - T_dew, 0)   — surface above dew point can dry; clamp at 0
+        W_solar / 1000            — solar energy in kW/m²
+        1 - RH/100                — atmospheric drying capacity
+        √(wind_kmh)               — wind-driven evaporation enhancement
+
+    Returns a relative-units index. Spec Rule 8 fires when D4 < 0.3.
+    """
+    temp_factor = max(t_track_c - t_dew_c, 0.0)
+    solar_factor = w_solar_wm2 / 1000.0
+    rh_factor = max(1.0 - rh_pct / 100.0, 0.0)
+    wind_factor = math.sqrt(max(wind_kmh, 0.0))
+    return temp_factor * solar_factor * rh_factor * wind_factor
 
 
 def compute_d5_days_since_significant_rain(daily_precip_mm: list[float]) -> int | None:
-    """D5 — Backwards scan over 30-day daily archive (spec §4).
+    """D5 — Backwards scan over the 30-day daily archive (spec §4).
 
-    Args:
-        daily_precip_mm: 30 entries, oldest-first. ``daily_precip_mm[-1]``
-            is the day of session start.
+    Returns the number of days from session-start back to the most
+    recent day with precipitation_sum > 3.0 mm. The day-of-session-start
+    itself is index ``n-1``; a hit there returns 0.
 
-    Returns:
-        Days since last day with precipitation > 3.0 mm, or ``None``
-        if the entire 30-day window is below threshold.
+    Returns ``None`` when no day in the window exceeds the threshold
+    (i.e., the dry-spell is longer than the window itself — Rule 5b
+    cannot fire).
     """
-    raise NotImplementedError("Phase C — implement after test_derived_metrics.py FAILS")
+    n = len(daily_precip_mm)
+    for i in range(n - 1, -1, -1):
+        if daily_precip_mm[i] > _D5_SIGNIFICANT_DAY_MM:
+            return n - 1 - i
+    return None
