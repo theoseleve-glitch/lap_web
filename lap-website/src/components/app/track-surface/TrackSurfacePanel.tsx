@@ -2,7 +2,11 @@
 
 import { useState } from 'react';
 import { TrackSurface3D, type HeatmapMode } from './TrackSurface3D';
-import { useTrackSurfaceData, type SensorQualityBlock } from './useTrackSurfaceData';
+import {
+  useTrackSurfaceData,
+  type SensorQualityBlock,
+  type WeatherConditionBlock,
+} from './useTrackSurfaceData';
 
 /* ── Types ────────────────────────────────────────────── */
 
@@ -115,6 +119,10 @@ export default function TrackSurfacePanel({ sessionId, className }: TrackSurface
           <span className="font-telemetry text-xs text-steel">{legend.highLabel}</span>
         </div>
       )}
+
+      {/* Conditions (Day-11/12). Renders nothing on pre-Day-11 sessions
+          per Day-13 Phase C lock — empty slot is the honest UI. */}
+      <ConditionRow conditions={surface?.conditions ?? null} />
 
       {/* Sensor Quality (RC6) */}
       <SensorQualityRow sq={surface?.sensor_quality ?? null} isLoading={isLoading} />
@@ -237,6 +245,100 @@ function SensorQualityRow({
         state={exc_state}
         hint="near-limit samples"
       />
+    </div>
+  );
+}
+
+/* ── Conditions sub-row (Day-13 Phase C) ──────────────────────────── */
+
+/** Label-chip palette. Tokens follow CLAUDE.md conventions:
+ *  - dry / damp / greasy → semantic tokens
+ *  - wet → chart-series-2 (#3B82F6) via CSS var. tokens.css exposes
+ *    --color-info → racing-purple, but motorsport convention pairs wet
+ *    with blue (water flag). chart-series-2 is the existing in-codebase
+ *    blue used by the elevation legend; reusing it here keeps the
+ *    palette internally consistent without introducing a raw hex. */
+const LABEL_CHIP_STYLES: Record<
+  WeatherConditionBlock['label'],
+  string
+> = {
+  dry: 'text-acid-green bg-acid-green/10 border-acid-green/30',
+  damp: 'text-marshal-yellow bg-marshal-yellow/10 border-marshal-yellow/30',
+  wet: 'text-[color:var(--chart-series-2)] bg-[color:var(--chart-series-2)]/10 border-[color:var(--chart-series-2)]/30',
+  greasy: 'text-gold bg-gold/10 border-gold/30',
+};
+
+const SOURCE_LABEL: Record<WeatherConditionBlock['source'], string> = {
+  weather: 'Weather data',
+  user: 'User override',
+  ml_fallback: 'ML fallback',
+};
+
+function ConditionRow({
+  conditions,
+}: {
+  conditions: WeatherConditionBlock | null;
+}) {
+  if (!conditions) return null;
+
+  const { label, mu_scale, confidence, dominant_factor, rationale, source } =
+    conditions;
+
+  // mu_scale bar — spec §6 lookup range is [0.55 greasy_cold, 1.00 dry];
+  // pad both ends slightly to keep the indicator off the edges.
+  const bar_min = 0.5;
+  const bar_max = 1.05;
+  const pct = Math.max(
+    0,
+    Math.min(1, (mu_scale - bar_min) / (bar_max - bar_min)),
+  );
+
+  // dominant_factor strings from the producer use snake_case (e.g.
+  // "user_override", "rain_recent_dripping"). Format as small-caps tag
+  // with the label appended.
+  const factor_caption = `${dominant_factor.replace(/_/g, ' ')} · ${label}`;
+
+  return (
+    <div className="flex flex-col gap-2 px-4 py-3 border-t border-steel/10">
+      {/* Row 1 — chip + bar + source pill */}
+      <div className="flex items-center gap-3">
+        <span
+          className={`font-telemetry text-[10px] uppercase tracking-wide px-2 py-0.5 rounded border ${LABEL_CHIP_STYLES[label]}`}
+        >
+          {label}
+        </span>
+
+        <div className="flex-1 flex items-center gap-2 max-w-[240px]">
+          <div className="flex-1 h-1.5 bg-steel/20 rounded-full overflow-hidden">
+            <div
+              className="h-full bg-chalk rounded-full"
+              style={{ width: `${pct * 100}%` }}
+            />
+          </div>
+          <span className="font-telemetry text-xs text-chalk tabular-nums w-10 text-right">
+            {mu_scale.toFixed(2)}
+          </span>
+        </div>
+
+        <div className="ml-auto flex items-center gap-2">
+          <span className="font-telemetry text-[10px] text-steel bg-steel/10 border border-steel/30 rounded px-2 py-0.5">
+            {SOURCE_LABEL[source]}
+          </span>
+          <span className="font-telemetry text-[10px] text-steel">
+            {Math.round(confidence * 100)}% conf
+          </span>
+        </div>
+      </div>
+
+      {/* Row 2 — dominant-factor caption */}
+      <div className="font-telemetry text-[10px] uppercase tracking-wide text-steel">
+        {factor_caption}
+      </div>
+
+      {/* Row 3 — rationale body text */}
+      <div className="font-body text-xs text-steel/90 leading-relaxed max-w-prose">
+        {rationale}
+      </div>
     </div>
   );
 }
