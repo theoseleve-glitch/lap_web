@@ -22,14 +22,21 @@ logger = logging.getLogger(__name__)
 _SMOOTH_SIGMA_BINS: Final[int] = 5
 
 
-def _smooth_1d(arr: np.ndarray, sigma: int) -> np.ndarray:
-    """Gaussian smooth with reflect padding."""
+def _smooth_1d(arr: np.ndarray, sigma: int, *, closed: bool = True) -> np.ndarray:
+    """Gaussian smooth a 1D array.
+
+    closed=True (default) uses wrap padding — the centerline / elevation
+    profile always represents a closed-loop kart track in build_track_surface,
+    and reflect padding produces a small step at the seam (z[0] != z[-1]
+    even though they're at the same physical location). Day-9.5 hot-patch.
+    closed=False uses reflect padding (open profile).
+    """
     if sigma <= 0 or len(arr) < 3:
         return arr.copy()
     hw = 3 * sigma
     kernel = np.exp(-0.5 * (np.arange(-hw, hw + 1) / sigma) ** 2)
     kernel /= kernel.sum()
-    padded = np.pad(arr, hw, mode="reflect")
+    padded = np.pad(arr, hw, mode="wrap" if closed else "reflect")
     return np.convolve(padded, kernel, mode="valid")[: len(arr)]
 
 

@@ -51,6 +51,19 @@ class TrackSurface:
     n_laps: int = 0
     sim_sources: list[str] = field(default_factory=list)
 
+    # How boundaries were produced. "hand_traced" = gt_*.geojson via
+    # gt_loader.load_gt; "data_derived" = percentile-99 × 1.3 margin from
+    # lap scatter (legacy). "synthesized" reserved for V1.5
+    # approximate-gt fallback. None when no boundaries computed (< 3 laps).
+    boundary_source: str | None = None
+
+    # True when gt's "left_boundary_gt" sits on the -n̂_left side of the
+    # centerline (i.e., centerline traversal direction is opposite to gt's
+    # labeling convention). The renderer must flip the normal direction
+    # for the LEFT polyline to land at the gt LEFT position. Always False
+    # for the data_derived path. (Day-8 fix for the |n| side-swap bug.)
+    boundary_side_swap: bool = False
+
     @property
     def has_boundaries(self) -> bool:
         return self.width_left is not None and self.width_right is not None
@@ -105,6 +118,8 @@ class TrackSurface:
             "n_laps": self.n_laps,
             "sim_sources": self.sim_sources,
             "quality_tier": self.quality_tier,
+            "boundary_source": self.boundary_source,
+            "boundary_side_swap": self.boundary_side_swap,
             "has_boundaries": self.has_boundaries,
             "has_elevation": self.has_elevation,
             "has_camber": self.has_camber,

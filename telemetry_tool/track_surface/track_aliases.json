@@ -1,0 +1,62 @@
+{
+  "schema_version": "1",
+  "description": "Canonical track-id registry. Maps any user-provided alias (case-insensitive) to a canonical_id. Used by gt_loader to resolve gt_*.geojson filenames and by build_track_surface to thread track identity into boundary estimation. Add a track here before adding it to the corpus; reject ambiguous aliases at PR review.",
+  "tracks": {
+    "ok": {
+      "canonical_id": "ok",
+      "display_name": "Ouest Karting / Circuit d'Essay",
+      "aliases": [
+        "ok",
+        "ouest-karting",
+        "ouest_karting",
+        "circuit-essay",
+        "circuit_essay",
+        "essay",
+        "circuit-d-essay",
+        "kart_essay"
+      ],
+      "country": "FR",
+      "notes": "V1 launch track. gt traced 2026-04-11 via Theo's custom tool: gt_circuit-d-essay.geojson (163 left + 160 right pts). File's internal track_id is 'kart_essay'; aliases cover both that and the filename slug 'circuit-d-essay' so load_gt('ok') finds it via the alias probe."
+    },
+    "kct": {
+      "canonical_id": "kct",
+      "display_name": "Karting Club du Touraine",
+      "aliases": ["kct"],
+      "country": "FR",
+      "notes": "Day 5 primary validation target. gt: 60 left + 93 right pts. Day 4b empirical baseline gap = 3.36m mean against data_derived boundaries."
+    },
+    "jv": {
+      "canonical_id": "jv",
+      "aliases": ["jv"],
+      "country": "TBD",
+      "notes": "Day 5 secondary validation target (gt + CSV both present)."
+    },
+    "cks": {
+      "canonical_id": "cks",
+      "aliases": ["cks"],
+      "country": "TBD"
+    },
+    "mkr": {
+      "canonical_id": "mkr",
+      "aliases": ["mkr"],
+      "country": "TBD"
+    },
+    "rkj": {
+      "canonical_id": "rkj",
+      "aliases": ["rkj"],
+      "country": "TBD"
+    },
+    "slk": {
+      "canonical_id": "slk",
+      "aliases": ["slk", "slk-fp1", "slk_fp1"],
+      "country": "TBD",
+      "notes": "gt filename is gt_slk-fp1.geojson (variant suffix); session CSVs are SLK_FP*.csv. Registry resolves both to slk."
+    },
+    "auxois-sud": {
+      "canonical_id": "auxois-sud",
+      "aliases": ["auxois-sud", "auxois_sud", "auxois"],
+      "country": "FR",
+      "notes": "gt exists, no production CSV. Deferred."
+    }
+  }
+}

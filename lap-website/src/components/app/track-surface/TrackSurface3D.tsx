@@ -15,7 +15,10 @@ const COLORS = {
 
 const GOLD = 0xC9A84C;
 const CHALK = 0xF0EDE5;
-const DEFAULT_TRACK_WIDTH = 8; // metres fallback
+// Fallback widths when neither width_left_m/width_right_m nor legacy width_m
+// is supplied. 4 m + 4 m matches the prior symmetric DEFAULT_TRACK_WIDTH = 8.
+const DEFAULT_WIDTH_LEFT = 4;
+const DEFAULT_WIDTH_RIGHT = 4;
 
 /* ── Types ────────────────────────────────────────────── */
 
@@ -168,7 +171,11 @@ function buildSurfaceGeometry(
   for (let i = 0; i < count; i++) {
     const pt = centerline[i]!;
     const bin = bins[i]!;
-    const halfW = (bin.width_m ?? DEFAULT_TRACK_WIDTH) / 2;
+    // Asymmetric width: prefer per-side fields, fall back to half of legacy
+    // width_m, then to DEFAULT_WIDTH_* (4 m + 4 m).
+    const legacyHalf = bin.width_m != null ? bin.width_m / 2 : null;
+    const wLeft = bin.width_left_m ?? legacyHalf ?? DEFAULT_WIDTH_LEFT;
+    const wRight = bin.width_right_m ?? legacyHalf ?? DEFAULT_WIDTH_RIGHT;
     const elev = bin.elevation_m * 0.5; // scale elevation for visibility
 
     // Compute perpendicular direction from tangent
@@ -182,18 +189,20 @@ function buildSurfaceGeometry(
       ty = pt.y - centerline[i - 1]!.y;
     }
     const tLen = Math.sqrt(tx * tx + ty * ty) || 1;
-    // Normal (perpendicular in XY): rotate tangent 90 degrees
+    // (nx, ny) is the LEFT normal: +90° CCW rotation of the tangent.
+    // → pt + (nx,ny)*w lies w metres to the LEFT of the centerline,
+    //   pt - (nx,ny)*w lies w metres to the RIGHT.
     const nx = -ty / tLen;
     const ny = tx / tLen;
 
-    const li = i * 2;
-    const ri = i * 2 + 1;
+    const li = i * 2;       // buffer slot at the RIGHT-side vertex (pt - n*wRight)
+    const ri = i * 2 + 1;   // buffer slot at the LEFT-side vertex (pt + n*wLeft)
 
-    positions[li * 3] = pt.x - nx * halfW;
-    positions[li * 3 + 1] = pt.y - ny * halfW;
+    positions[li * 3] = pt.x - nx * wRight;
+    positions[li * 3 + 1] = pt.y - ny * wRight;
     positions[li * 3 + 2] = elev;
-    positions[ri * 3] = pt.x + nx * halfW;
-    positions[ri * 3 + 1] = pt.y + ny * halfW;
+    positions[ri * 3] = pt.x + nx * wLeft;
+    positions[ri * 3 + 1] = pt.y + ny * wLeft;
     positions[ri * 3 + 2] = elev;
 
     // Vertex color from heat value

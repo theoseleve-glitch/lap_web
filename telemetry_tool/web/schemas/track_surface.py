@@ -83,6 +83,44 @@ class TrackSurfaceSummary(LenientSchema):
     bucket_sparse_count: int
 
 
+class SurfaceBin(LenientSchema):
+    """One distance bin of the aggregate track surface.
+
+    Width fields (all optional, populated based on which boundary path produced
+    the surface — see ``TrackSurfaceResponse.boundary_source``):
+
+    - ``width_left_m`` / ``width_right_m``: signed offsets from centerline to
+      the left / right edge respectively, in metres. Populated when the
+      boundary source emits asymmetric widths (e.g., ``hand_traced`` from
+      ``gt_*.geojson``).
+    - ``width_m``: legacy total width (= ``width_left_m + width_right_m`` when
+      both are present). Kept populated for backward compatibility with older
+      clients that consume a single scalar width.
+    """
+    distance_m: float
+    grip_mu: float
+    elevation_m: float
+    width_m: float | None = None
+    width_left_m: float | None = None
+    width_right_m: float | None = None
+
+
+class TrackSurfaceResponse(LenientSchema):
+    """Response body for GET /api/v1/sessions/<id>/track-surface.
+
+    ``boundary_source`` indicates how the per-bin width fields were produced:
+    - ``"hand_traced"``: projected from a ``gt_*.geojson`` polyline (asymmetric)
+    - ``"data_derived"``: percentile-99 × 1.3 lateral-scatter margin (asymmetric)
+    - ``"synthesized"``: reserved for V1.5 approximate-gt fallback
+    - ``"default_3m"``: < 3 laps available; flat 3 m fallback both sides
+    """
+    bins: list[SurfaceBin]
+    quality_tier: Literal["bronze", "silver", "gold", "platinum"] | None = None
+    boundary_source: Literal[
+        "hand_traced", "data_derived", "synthesized", "default_3m"
+    ] | None = None
+
+
 class PlannerModeResult(LenientSchema):
     mode: Literal["nominal", "robust", "exploitable"]
     mu_eff_mean: float

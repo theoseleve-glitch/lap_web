@@ -9,12 +9,24 @@ export interface SurfaceBin {
   distance_m: number;
   grip_mu: number;
   elevation_m: number;
+  /** Legacy total width (= width_left_m + width_right_m when both present). */
   width_m?: number;
+  /** Distance from centerline to left edge, in metres. */
+  width_left_m?: number;
+  /** Distance from centerline to right edge, in metres. */
+  width_right_m?: number;
 }
+
+export type BoundarySource =
+  | 'hand_traced'
+  | 'data_derived'
+  | 'synthesized'
+  | 'default_3m';
 
 export interface TrackSurfaceResponse {
   bins: SurfaceBin[];
   quality_tier?: string;
+  boundary_source?: BoundarySource;
 }
 
 export interface OptimalLinePoint {

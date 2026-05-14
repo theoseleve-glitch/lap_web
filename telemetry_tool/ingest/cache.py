@@ -51,21 +51,73 @@ _PARQUET_COMPRESSION = "snappy"
 _INT_TYPES = {pa.int8(), pa.int16(), pa.int32(), pa.int64(),
               pa.uint8(), pa.uint16(), pa.uint32(), pa.uint64()}
 
+# Floating types — pandas can land any of these depending on column origin.
+_FLOAT_TYPES = {pa.float16(), pa.float32(), pa.float64()}
 
-def _promote_schema(schema: pa.Schema) -> pa.Schema:
-    """Promote integer fields to float64 to handle cross-chunk type drift.
+# Numeric is the disjoint union — any column whose chunks only ever land on
+# these types can be safely reconciled to float64.
+_NUMERIC_TYPES = _INT_TYPES | _FLOAT_TYPES
 
-    Pandas upcasts int columns to float64 when any chunk contains NaN,
-    which causes PyArrow schema mismatches when merging chunks.  By
-    promoting all int fields upfront, all chunks share a compatible schema.
+
+def _build_unified_schema(schemas: list[pa.Schema]) -> pa.Schema:
+    """Build a single Parquet schema that every chunk can cast into.
+
+    Pandas' inferred types drift across chunks of the same CSV:
+      * An int column upcasts to float64 the first time a NaN appears
+        (this was the original reason for ``_promote_schema``).
+      * A sparse column whose chunk-0 slice is entirely empty/NaN is
+        inferred as type ``null`` by pyarrow; later chunks with actual
+        string values then fail to cast string → null
+        (``ArrowNotImplementedError: Unsupported cast from string to
+        null``). Surfaced by OK_R2.csv (Day-10 RC7).
+
+    Reconciliation rules, per column name (in chunk-0 field order, with
+    any new names appended in first-seen order):
+
+      * If every observed type is ``null``      → keep ``null`` (no data anyway).
+      * If every non-null observed type is numeric (int or float)
+                                                 → ``float64`` (NaN safety
+                                                   + handles chunk-0 int /
+                                                   chunk-N float upcast).
+      * If all non-null observed types agree      → that type.
+      * Otherwise (genuinely incompatible mix)    → ``string`` (defensive).
+
+    Parameters
+    ----------
+    schemas
+        Schemas of every chunk Parquet, in chunk-index order. Must be
+        non-empty. Metadata is inherited from ``schemas[0]``.
     """
-    fields = []
-    for f in schema:
-        if f.type in _INT_TYPES:
-            fields.append(pa.field(f.name, pa.float64(), nullable=True, metadata=f.metadata))
+    if not schemas:
+        raise ValueError("_build_unified_schema requires at least one schema")
+
+    name_to_types: dict[str, list[pa.DataType]] = {}
+    name_to_field: dict[str, pa.Field] = {}
+    field_order: list[str] = []
+    for schema in schemas:
+        for f in schema:
+            if f.name not in name_to_types:
+                name_to_types[f.name] = []
+                name_to_field[f.name] = f
+                field_order.append(f.name)
+            name_to_types[f.name].append(f.type)
+
+    null_t = pa.null()
+    fields: list[pa.Field] = []
+    for name in field_order:
+        types = name_to_types[name]
+        f = name_to_field[name]
+        non_null = [t for t in types if t != null_t]
+        if not non_null:
+            chosen = null_t
+        elif all(t in _NUMERIC_TYPES for t in non_null):
+            chosen = pa.float64()
+        elif all(t == non_null[0] for t in non_null):
+            chosen = non_null[0]
         else:
-            fields.append(f)
-    return pa.schema(fields, metadata=schema.metadata)
+            chosen = pa.string()
+        fields.append(pa.field(name, chosen, nullable=True, metadata=f.metadata))
+    return pa.schema(fields, metadata=schemas[0].metadata)
 
 
 # ---------------------------------------------------------------------------
@@ -362,17 +414,20 @@ class IngestCache:
         ))
 
         try:
-            unified_schema: pa.Schema | None = None
+            # First pass: read every chunk's schema (metadata only, no data)
+            # and reconcile cross-chunk type drift. Building the unified
+            # schema from chunk 0 alone misses sparse-string columns that
+            # chunk 0 saw as all-null but later chunks see as string
+            # (OK_R2.csv repro of the Day-10 RC7 bug).
+            chunk_schemas = [
+                pq.read_schema(self._chunk_path(idx)) for idx in range(n_chunks)
+            ]
+            unified_schema = _build_unified_schema(chunk_schemas)
+            writer = pq.ParquetWriter(
+                output_path, unified_schema, compression=_PARQUET_COMPRESSION,
+            )
             for idx in range(n_chunks):
                 table = pq.read_table(self._chunk_path(idx))
-                if writer is None:
-                    # Build a unified schema: promote int→float for columns
-                    # that may have NaN in later chunks (pandas upcast).
-                    unified_schema = _promote_schema(table.schema)
-                    writer = pq.ParquetWriter(
-                        output_path, unified_schema, compression=_PARQUET_COMPRESSION,
-                    )
-                # Cast table to the unified schema so all chunks match.
                 if table.schema != unified_schema:
                     table = table.cast(unified_schema)
                 writer.write_table(table)
