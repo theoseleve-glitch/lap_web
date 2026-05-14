@@ -190,3 +190,96 @@ def sun_factor(
         factors *= _SUN_LOW_ALTITUDE_MODIFIER
 
     return factors
+
+
+# ── Factor 3: Wind exposure ───────────────────────────────────────────
+
+
+# Spec §7 Factor 3 zone boundaries (in degrees) + wind-speed thresholds
+# (km/h) + factors. Zones: angle from wind-FROM direction to segment
+# tangent (direction of travel).
+_WIND_ZONE_WINDWARD_DEG: float = 60.0   # angle < 60° → windward
+_WIND_ZONE_LEEWARD_DEG: float = 120.0   # angle > 120° → leeward
+_WIND_SPEED_HIGH_KMH: float = 15.0      # > 15 = high
+_WIND_SPEED_WEAK_KMH: float = 5.0       # < 5 = weak
+
+_WIND_FACTOR_WINDWARD_HIGH: float = 0.85
+_WIND_FACTOR_WINDWARD_MODERATE: float = 0.95
+_WIND_FACTOR_NEUTRAL: float = 1.00
+_WIND_FACTOR_LEEWARD: float = 1.10
+_WIND_FACTOR_LEEWARD_WEAK: float = 1.15
+
+# FP boundary tolerance: arccos(±0.5) in numpy float64 gives
+# 60.00000000000001° / 120.00000000000001° (both ε above the
+# exact boundary). Bucket inclusion at the boundary per spec
+# semantics: windward INCLUSIVE at 60°, leeward EXCLUSIVE at 120°
+# (boundary stays perpendicular).
+_WIND_BOUNDARY_TOL_DEG: float = 1e-6
+
+
+def wind_factor(
+    wind_direction_deg: float,
+    wind_speed_kmh: float,
+    segment_tangents: np.ndarray,
+) -> np.ndarray:
+    """Spec §7 Factor 3 — per-segment wind-exposure factor.
+
+    Args:
+        wind_direction_deg: compass-FROM degrees per Open-Meteo
+            (0°=N wind FROM north, 90°=E, etc.).
+        wind_speed_kmh: wind speed (km/h).
+        segment_tangents: shape (N_s, 3) tangent vectors per s-bin in
+            ENU frame (direction of travel). Z-component is dropped;
+            wind is horizontal.
+
+    Returns:
+        Per-segment factor in {0.85, 0.95, 1.00, 1.10, 1.15}.
+
+    Lookup:
+        angle = arccos(dot(t_xy_unit, wind_from_xy)) ∈ [0°, 180°]
+        windward (angle < 60°):
+            wind > 15 km/h → 0.85; 5 ≤ wind ≤ 15 → 0.95; wind < 5 → 1.00
+        perpendicular (60° ≤ angle ≤ 120°): 1.00 (any wind speed)
+        leeward (angle > 120°):
+            wind < 5 → 1.15; wind ≥ 5 → 1.10
+
+    Grounding: Penman evaporation includes wind-speed term
+    ``f(u) = a + b·u``; iRacing dynamic-water uses identical
+    per-segment wind reasoning.
+    """
+    segment_tangents = np.asarray(segment_tangents, dtype=np.float64)
+    # Horizontal projection (drop z) + renormalize
+    t_xy = segment_tangents[:, :2]
+    norms = np.linalg.norm(t_xy, axis=1, keepdims=True)
+    norms = np.where(norms < 1e-9, 1.0, norms)
+    t_xy_unit = t_xy / norms
+
+    # Wind-FROM unit vector in ENU XY (compass convention 0=N → (0, 1))
+    wind_rad = np.deg2rad(wind_direction_deg)
+    wind_from_xy = np.array([np.sin(wind_rad), np.cos(wind_rad)])
+
+    # Per-segment angle in degrees ∈ [0, 180]
+    cos_theta = np.clip(t_xy_unit @ wind_from_xy, -1.0, 1.0)
+    angle_deg = np.rad2deg(np.arccos(cos_theta))
+
+    n = len(angle_deg)
+    factors = np.full(n, _WIND_FACTOR_NEUTRAL, dtype=np.float64)
+
+    windward_mask = angle_deg < _WIND_ZONE_WINDWARD_DEG + _WIND_BOUNDARY_TOL_DEG
+    leeward_mask = angle_deg > _WIND_ZONE_LEEWARD_DEG + _WIND_BOUNDARY_TOL_DEG
+    # Perpendicular zone stays at neutral default.
+
+    # Windward bucket depends on overall wind speed.
+    if wind_speed_kmh > _WIND_SPEED_HIGH_KMH:
+        factors[windward_mask] = _WIND_FACTOR_WINDWARD_HIGH
+    elif wind_speed_kmh >= _WIND_SPEED_WEAK_KMH:
+        factors[windward_mask] = _WIND_FACTOR_WINDWARD_MODERATE
+    # else weak wind → windward stays at neutral (1.00)
+
+    # Leeward bucket.
+    if wind_speed_kmh < _WIND_SPEED_WEAK_KMH:
+        factors[leeward_mask] = _WIND_FACTOR_LEEWARD_WEAK
+    else:
+        factors[leeward_mask] = _WIND_FACTOR_LEEWARD
+
+    return factors
