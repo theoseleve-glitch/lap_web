@@ -34,6 +34,21 @@ export const SPATIAL_GRIP_FEEDBACK_THRESHOLD = 0.7;
 /* Confidence below this threshold dims the surface to flag low trust */
 export const SPATIAL_GRIP_LOW_CONFIDENCE = 0.5;
 
+/* Day-13 Phase E iso-factor mode: when isolating a single factor
+ * (drainage / sun / wind), color-normalize across the natural producer
+ * range [0.85 driest, 1.30 wettest]. Inverted from the combined view —
+ * LOW factor (drier baseline) renders green, HIGH factor (water pooling
+ * or shaded) renders red. Same green=more-grip semantic as Combined,
+ * just sourced from a single component rather than the product. */
+export const INDIVIDUAL_FACTOR_MIN = 0.85;
+export const INDIVIDUAL_FACTOR_MAX = 1.30;
+
+/** Which spatial component to isolate on the mesh under spatial-grip mode.
+ *  'combined' renders the producer's clamped factor_values × mu × grip_mu;
+ *  'drainage'/'sun'/'wind' render that single component verbatim with
+ *  the iso-factor color range applied. */
+export type SpatialFactor = 'combined' | 'drainage' | 'sun' | 'wind';
+
 const GOLD = 0xC9A84C;
 const CHALK = 0xF0EDE5;
 // Fallback widths when neither width_left_m/width_right_m nor legacy width_m
@@ -48,6 +63,9 @@ export type HeatmapMode = 'grip' | 'elevation' | 'line-delta' | 'spatial-grip';
 export interface TrackSurface3DProps {
   sessionId: string;
   mode?: HeatmapMode;
+  /** When `mode === 'spatial-grip'`, choose which factor to isolate.
+   *  Defaults to 'combined' (effective μ). Ignored in other modes. */
+  spatialFactor?: SpatialFactor;
   showOptimalLine?: boolean;
   showActualLine?: boolean;
   className?: string;
@@ -131,6 +149,7 @@ function binHeatValues(
   mode: HeatmapMode,
   lineDelta: LineDeltaPoint[] | null,
   conditions: WeatherConditionBlock | null | undefined,
+  spatialFactor: SpatialFactor = 'combined',
 ): number[] {
   if (mode === 'grip') {
     let minMu = Infinity;
@@ -149,13 +168,19 @@ function binHeatValues(
   }
 
   if (mode === 'spatial-grip') {
-    // Day-13 Phase D: effective_mu(s) = mu_data × mu_scale × spatial_factor(s)
-    // The spatial factor arrays are aligned to spatial_modifier.arclength_samples
-    // (length N_s = number of Frenet segments), NOT to bins[].distance_m. We
-    // resample by walking arclength_samples in lockstep with bin distances —
-    // nearest-neighbor is sufficient at typical 1-2m bin / 5m segment density.
-    // Falls back to plain min/max-grip if spatial data is absent (defensive;
-    // the panel disables the mode button so we shouldn't normally reach here).
+    // Day-13 Phase D/E: render the Day-12 spatial μ modifier on the mesh.
+    // Combined (default): effective_mu(s) = mu_data × mu_scale × factor_values(s).
+    // Iso-factor: render one of drainage/sun/wind components on its own,
+    // normalized to [0.85, 1.30] with the higher factor (= wetter) rendered
+    // red and the lower factor (= drier baseline) rendered green. Same
+    // green=more-grip semantic across all four sub-modes.
+    //
+    // Spatial arrays are aligned to spatial_modifier.arclength_samples (length
+    // N_s = Frenet segments), NOT to bins[].distance_m. We resample by walking
+    // samples in lockstep with bin distances (nearest-neighbor; sufficient at
+    // typical 1-2 m bin / 5 m segment density). Falls back to plain min/max
+    // grip when spatial data is absent — the panel disables the mode button
+    // upstream so we shouldn't normally reach this branch.
     const sm = conditions?.spatial_modifier;
     if (!conditions || !sm || sm.arclength_samples.length < 2) {
       let minMu = Infinity;
@@ -164,19 +189,33 @@ function binHeatValues(
       const range = maxMu - minMu || 1;
       return bins.map((b) => (b.grip_mu - minMu) / range);
     }
-    const muScale = conditions.mu_scale;
+
     const samples = sm.arclength_samples;
-    const factors = sm.factor_values;
+    const isCombined = spatialFactor === 'combined';
+
+    // Pick which array to sample + the color range to normalize across.
+    const factorArr: readonly number[] =
+      spatialFactor === 'drainage' ? sm.drainage_components
+      : spatialFactor === 'sun' ? sm.sun_components
+      : spatialFactor === 'wind' ? sm.wind_components
+      : sm.factor_values;
+    const colorMin = isCombined ? SPATIAL_GRIP_COLOR_MIN : INDIVIDUAL_FACTOR_MIN;
+    const colorMax = isCombined ? SPATIAL_GRIP_COLOR_MAX : INDIVIDUAL_FACTOR_MAX;
+
+    const muScale = conditions.mu_scale;
     let smIdx = 0;
     return bins.map((b) => {
       while (smIdx < samples.length - 2 && samples[smIdx + 1]! < b.distance_m) {
         smIdx++;
       }
-      const factor = factors[smIdx] ?? 1.0;
-      const effectiveMu = b.grip_mu * muScale * factor;
-      const t = (effectiveMu - SPATIAL_GRIP_COLOR_MIN) /
-        (SPATIAL_GRIP_COLOR_MAX - SPATIAL_GRIP_COLOR_MIN);
-      return Math.max(0, Math.min(1, t));
+      const raw = factorArr[smIdx] ?? 1.0;
+      // Combined: convert producer factor_values into effective_mu before
+      // normalizing. Iso-factor: use the raw component verbatim, then
+      // invert (high factor → wetter → red).
+      const value = isCombined ? b.grip_mu * muScale * raw : raw;
+      let t = (value - colorMin) / (colorMax - colorMin);
+      t = Math.max(0, Math.min(1, t));
+      return isCombined ? t : 1 - t;
     });
   }
 
@@ -360,13 +399,14 @@ interface SceneProps {
   optimalLine: OptimalLinePoint[] | null;
   lineDelta: LineDeltaPoint[] | null;
   conditions: WeatherConditionBlock | null | undefined;
+  spatialFactor: SpatialFactor;
   showOptimalLine: boolean;
   showActualLine: boolean;
 }
 
 function Scene({
   bins, mode, gpsXY, gpsDistances, optimalLine, lineDelta, conditions,
-  showOptimalLine, showActualLine,
+  spatialFactor, showOptimalLine, showActualLine,
 }: SceneProps) {
   const { camera, gl } = useThree();
   const orbitState = useRef({
@@ -387,8 +427,8 @@ function Scene({
   useAutoFit(centerline, orbitState);
 
   const heatValues = useMemo(
-    () => binHeatValues(bins, mode, lineDelta, conditions),
-    [bins, mode, lineDelta, conditions],
+    () => binHeatValues(bins, mode, lineDelta, conditions, spatialFactor),
+    [bins, mode, lineDelta, conditions, spatialFactor],
   );
 
   const surfaceGeo = useMemo(
@@ -523,6 +563,7 @@ function Scene({
 export function TrackSurface3D({
   sessionId,
   mode = 'grip',
+  spatialFactor = 'combined',
   showOptimalLine = true,
   showActualLine = false,
   className,
@@ -569,6 +610,7 @@ export function TrackSurface3D({
           optimalLine={optimalLine}
           lineDelta={lineDelta}
           conditions={surface.conditions ?? null}
+          spatialFactor={spatialFactor}
           showOptimalLine={showOptimalLine}
           showActualLine={showActualLine}
         />

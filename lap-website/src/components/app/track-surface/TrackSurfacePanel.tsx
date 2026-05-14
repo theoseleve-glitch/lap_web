@@ -1,7 +1,11 @@
 'use client';
 
-import { useState } from 'react';
-import { TrackSurface3D, type HeatmapMode } from './TrackSurface3D';
+import { useEffect, useState } from 'react';
+import {
+  TrackSurface3D,
+  type HeatmapMode,
+  type SpatialFactor,
+} from './TrackSurface3D';
 import {
   useTrackSurfaceData,
   type SensorQualityBlock,
@@ -39,6 +43,20 @@ const LEGEND: Record<
   'spatial-grip': { lowLabel: 'μ 0.5', highLabel: 'μ 1.0+', lowHex: '#FF2A2A', highHex: '#22C55E' },
 };
 
+/** Day-13 Phase E: per-factor legend labels under iso-factor mode.
+ *  All four sub-modes share the red→green palette but the iso-factor
+ *  versions invert (high factor → red = wetter), so the LEFT-side label
+ *  describes the wetter end and the RIGHT-side label describes the
+ *  drier end. */
+const SPATIAL_FACTOR_LEGEND: Record<
+  Exclude<SpatialFactor, 'combined'>,
+  { lowLabel: string; highLabel: string }
+> = {
+  drainage: { lowLabel: 'Pooling (1.30)', highLabel: 'Drains (0.85)' },
+  sun: { lowLabel: 'Shaded (1.20)', highLabel: 'Sunny (0.85)' },
+  wind: { lowLabel: 'Leeward (1.15)', highLabel: 'Windward (0.85)' },
+};
+
 /* 0.7 effective μ is the spec's "track feels slippery" driver threshold;
  * it maps to (0.7 − 0.5) / (1.0 − 0.5) = 40 % along the legend gradient. */
 const SPATIAL_GRIP_THRESHOLD_PCT = 40;
@@ -47,11 +65,11 @@ const SPATIAL_GRIP_THRESHOLD_PCT = 40;
 
 export default function TrackSurfacePanel({ sessionId, className }: TrackSurfacePanelProps) {
   const [mode, setMode] = useState<HeatmapMode>('grip');
+  const [spatialFactor, setSpatialFactor] = useState<SpatialFactor>('combined');
   const [showOptimal, setShowOptimal] = useState(true);
   const [showActual, setShowActual] = useState(false);
   const { surface, isLoading } = useTrackSurfaceData(sessionId);
 
-  const legend = LEGEND[mode];
   const qualityTier = surface?.quality_tier ?? null;
 
   // Day-13 Phase D: spatial-grip mode requires a spatial_modifier on the
@@ -62,6 +80,23 @@ export default function TrackSurfacePanel({ sessionId, className }: TrackSurface
     mode === 'spatial-grip' &&
     typeof surface?.conditions?.confidence === 'number' &&
     surface.conditions.confidence < 0.5;
+
+  // Day-13 Phase E: when the user switches away from spatial-grip, reset
+  // the factor selector so re-entering the mode starts at the combined
+  // view (the default state).
+  useEffect(() => {
+    if (mode !== 'spatial-grip') setSpatialFactor('combined');
+  }, [mode]);
+
+  // Day-13 Phase E: legend labels follow the active sub-factor when
+  // isolating a single component on the mesh.
+  const legend =
+    mode === 'spatial-grip' && spatialFactor !== 'combined'
+      ? {
+          ...LEGEND['spatial-grip'],
+          ...SPATIAL_FACTOR_LEGEND[spatialFactor],
+        }
+      : LEGEND[mode];
 
   return (
     <div className={`bg-concrete border border-steel/20 rounded-lg overflow-hidden ${className ?? ''}`}>
@@ -133,6 +168,7 @@ export default function TrackSurfacePanel({ sessionId, className }: TrackSurface
       <TrackSurface3D
         sessionId={sessionId}
         mode={mode}
+        spatialFactor={spatialFactor}
         showOptimalLine={showOptimal}
         showActualLine={showActual}
         className="w-full aspect-[16/9]"
@@ -180,6 +216,18 @@ export default function TrackSurfacePanel({ sessionId, className }: TrackSurface
       {/* Conditions (Day-11/12). Renders nothing on pre-Day-11 sessions
           per Day-13 Phase C lock — empty slot is the honest UI. */}
       <ConditionRow conditions={surface?.conditions ?? null} />
+
+      {/* Spatial diagnostics (Day-13 Phase E). Per-factor breakdown
+          of the Day-12 producer output AND the iso-factor selector that
+          isolates a single component on the 3D mesh. Collapsible,
+          default-collapsed. Renders only in spatial-grip mode when
+          spatial data is present. */}
+      <SpatialDiagnosticsPanel
+        conditions={surface?.conditions ?? null}
+        visible={mode === 'spatial-grip'}
+        activeFactor={spatialFactor}
+        onFactorChange={setSpatialFactor}
+      />
 
       {/* Sensor Quality (RC6) */}
       <SensorQualityRow sq={surface?.sensor_quality ?? null} isLoading={isLoading} />
@@ -397,5 +445,213 @@ export function ConditionRow({
         {rationale}
       </div>
     </div>
+  );
+}
+
+/* ── Spatial diagnostics panel (Day-13 Phase E) ───────── */
+
+/** Variance across a per-segment factor array, expressed as
+ *  (max − min) / max — bounded to [0, 1], 0 means "uniform". This is
+ *  the contribution to the combined spatial spread; sun_components on
+ *  flat tracks come out 0 because every segment_normal ≈ (0, 0, 1) and
+ *  the solar angle of incidence is therefore constant. That zero is
+ *  load-bearing UX information (V1.5 ray-tracing unlocks variation on
+ *  hilly tracks), so the panel surfaces it explicitly rather than
+ *  hiding it behind a one-decimal rounding. */
+function factorSpread(arr: readonly number[]): {
+  min: number;
+  max: number;
+  spreadPct: number;
+} {
+  if (arr.length === 0) return { min: 0, max: 0, spreadPct: 0 };
+  let min = Infinity;
+  let max = -Infinity;
+  for (const v of arr) {
+    if (v < min) min = v;
+    if (v > max) max = v;
+  }
+  if (!isFinite(min) || !isFinite(max) || max <= 0) {
+    return { min: 0, max: 0, spreadPct: 0 };
+  }
+  return { min, max, spreadPct: ((max - min) / max) * 100 };
+}
+
+export function SpatialDiagnosticsPanel({
+  conditions,
+  visible,
+  activeFactor = 'combined',
+  onFactorChange,
+  defaultOpen = false,
+}: {
+  conditions: WeatherConditionBlock | null;
+  visible: boolean;
+  activeFactor?: SpatialFactor;
+  onFactorChange?: (factor: SpatialFactor) => void;
+  defaultOpen?: boolean;
+}) {
+  const [open, setOpen] = useState(defaultOpen);
+  if (!visible) return null;
+  const sm = conditions?.spatial_modifier;
+  if (!sm) return null;
+
+  const drainage = factorSpread(sm.drainage_components);
+  const sun = factorSpread(sm.sun_components);
+  const wind = factorSpread(sm.wind_components);
+  const combined = factorSpread(sm.factor_values);
+  const spreadRatio =
+    combined.min > 0 ? combined.max / combined.min : 1;
+
+  const select = (f: SpatialFactor) => {
+    onFactorChange?.(f);
+    // Toggling the same factor twice falls back to combined view.
+    if (activeFactor === f && f !== 'combined') onFactorChange?.('combined');
+  };
+
+  return (
+    <div className="border-t border-steel/10">
+      <button
+        type="button"
+        onClick={() => setOpen((o) => !o)}
+        className="w-full px-4 py-2 font-telemetry text-xs text-steel uppercase tracking-wide flex items-center justify-between hover:bg-steel/5 transition-colors"
+      >
+        <span>
+          Spatial diagnostics ·{' '}
+          <span className="text-chalk normal-case tabular-nums">
+            {spreadRatio.toFixed(2)}× combined spread
+          </span>
+          {activeFactor !== 'combined' && (
+            <span className="text-gold normal-case ml-2">
+              (isolating {activeFactor})
+            </span>
+          )}
+        </span>
+        <span className="text-[10px]">{open ? '▾' : '▸'}</span>
+      </button>
+      {open && (
+        <div className="px-4 py-3 space-y-3 border-t border-steel/10">
+          {/* Iso-factor selector — clickable row tells the 3D mesh which
+              component to isolate. Active factor highlighted in gold. */}
+          <div className="font-body text-[10px] text-steel/60 leading-relaxed">
+            Click a factor below to isolate it on the track ribbon —
+            the colors then show where THAT component is wettest (red)
+            vs driest (green). Click an active factor again to revert
+            to the combined view.
+          </div>
+
+          <FactorBreakdown
+            factorKey="combined"
+            label="Combined"
+            spreadPct={
+              combined.spreadPct
+            }
+            min={combined.min}
+            max={combined.max}
+            active={activeFactor === 'combined'}
+            onSelect={select}
+            hint="effective μ = grip_mu × mu_scale × factor_values"
+          />
+          <FactorBreakdown
+            factorKey="drainage"
+            label="Drainage"
+            spreadPct={drainage.spreadPct}
+            min={drainage.min}
+            max={drainage.max}
+            active={activeFactor === 'drainage'}
+            onSelect={select}
+            hint="1D summary shown. Phase D adds per-tile inside-pools / outside-drains variation on banked sections."
+          />
+          <FactorBreakdown
+            factorKey="sun"
+            label="Sun"
+            spreadPct={sun.spreadPct}
+            min={sun.min}
+            max={sun.max}
+            active={activeFactor === 'sun'}
+            onSelect={select}
+            hint="1D summary stays uniform when banking is mild. Phase D (3D mesh) adds per-tile incidence variation from banking. Adjacent-terrain shadowing unlocks in V1.5 with a terrain data pipeline."
+            extra={`solar pos: ${sm.sun_altitude_deg.toFixed(1)}° altitude · ${sm.sun_azimuth_deg.toFixed(0)}° azimuth`}
+          />
+          <FactorBreakdown
+            factorKey="wind"
+            label="Wind"
+            spreadPct={wind.spreadPct}
+            min={wind.min}
+            max={wind.max}
+            active={activeFactor === 'wind'}
+            onSelect={select}
+            hint="1D summary keyed on track tangent. Phase D adds per-tile windward/lee variation from banking on the 3D mesh. Adjacent-terrain shielding is V1.5."
+            extra={`wind: ${sm.wind_direction_deg.toFixed(0)}° · ${sm.wind_speed_kmh.toFixed(0)} km/h`}
+          />
+
+          {/* Mesh source provenance */}
+          <div className="font-telemetry text-[10px] text-steel/60 pt-2 border-t border-steel/10">
+            Mesh: <span className="text-steel">{sm.mesh_source}</span> ·{' '}
+            Spec version: <span className="text-steel">{sm.spatial_version}</span>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function FactorBreakdown({
+  factorKey,
+  label,
+  spreadPct,
+  min,
+  max,
+  active,
+  onSelect,
+  hint,
+  extra,
+}: {
+  factorKey: SpatialFactor;
+  label: string;
+  spreadPct: number;
+  min: number;
+  max: number;
+  active: boolean;
+  onSelect: (factor: SpatialFactor) => void;
+  hint?: string;
+  extra?: string;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={() => onSelect(factorKey)}
+      aria-pressed={active}
+      className={`w-full text-left space-y-0.5 px-2 py-1.5 rounded transition-colors border ${
+        active
+          ? 'border-gold/40 bg-gold/5'
+          : 'border-transparent hover:bg-steel/5 hover:border-steel/20'
+      }`}
+    >
+      <div className="flex items-baseline gap-3 font-telemetry text-xs flex-wrap">
+        <span
+          className={`uppercase tracking-wide w-20 shrink-0 ${active ? 'text-gold' : 'text-chalk'}`}
+        >
+          {label}
+        </span>
+        <span className="text-chalk tabular-nums">
+          {spreadPct.toFixed(0)}% spread
+        </span>
+        <span className="text-steel/50">·</span>
+        <span className="text-steel tabular-nums">
+          {spreadPct === 0
+            ? `uniform ${min.toFixed(3)}`
+            : `${min.toFixed(3)} → ${max.toFixed(3)}`}
+        </span>
+      </div>
+      {hint && (
+        <div className="font-body text-[10px] text-steel/70 leading-relaxed ml-[5.25rem]">
+          {hint}
+        </div>
+      )}
+      {extra && (
+        <div className="font-telemetry text-[10px] text-steel ml-[5.25rem]">
+          {extra}
+        </div>
+      )}
+    </button>
   );
 }
