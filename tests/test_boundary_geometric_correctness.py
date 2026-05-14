@@ -204,19 +204,34 @@ def test_ok_r4_no_sustained_width_pinch():
     )
 
 
+_SEAM_GUARD_BINS = 15
+"""Width of the seam guard band in bins (0.5m/bin = 7.5m each side).
+
+Day-8.5 originally set this at 30 bins (15m). Day-10.5 F3 found that
+OK_R2's gt RIGHT polyline genuinely runs ≈0.4-0.6m from OK_R2's
+centerline across s=1100..1230m (the centerline stays close to the
+inside edge through a 130m section); the substrate's smoothing floor
+lands at ≈0.50m at the seam-adjacent bins, fractionally below the gate's
+< 0.5 threshold, producing a false-positive seam pinch. The original
+seam-coverage-collapse bug class (Day-8.5 motivation) produced 80+ bins
+of sub-0.5m widths, so a 15-bin guard is comfortably wider than needed
+to catch the actual bug class without false-positiving on real narrow
+geometry."""
+
+
 def test_ok_r4_no_seam_pinch():
-    """G2-seam: no pinch in the first 30 bins (15m) or last 30 bins of
+    """G2-seam: no pinch in the first or last _SEAM_GUARD_BINS bins of
     the centerline. The seam region (s ≈ 0 ≈ L) should NEVER pinch —
     if it does, the polyline coverage-gap collapse bug is back."""
     mesh = _load_mesh(_generate_mesh_if_needed("OK_R4.csv", "ok"))
     dL, dR = _per_bin_widths(mesh)
-    SEAM_BINS = 30
+    SEAM_BINS = _SEAM_GUARD_BINS
     assert (dL[:SEAM_BINS] >= 0.5).all() and (dL[-SEAM_BINS:] >= 0.5).all(), (
-        "OK_R4 LEFT has a pinch in the seam region (first/last 15m of s) — "
+        "OK_R4 LEFT has a pinch in the seam guard band — "
         "polyline coverage-gap collapse regression"
     )
     assert (dR[:SEAM_BINS] >= 0.5).all() and (dR[-SEAM_BINS:] >= 0.5).all(), (
-        "OK_R4 RIGHT has a pinch in the seam region (first/last 15m of s) — "
+        "OK_R4 RIGHT has a pinch in the seam guard band — "
         "polyline coverage-gap collapse regression"
     )
 
@@ -234,7 +249,7 @@ def test_kct_r1_no_seam_pinch():
     """G2-seam regression: KCT seam must not pinch."""
     mesh = _load_mesh(_generate_mesh_if_needed("KCT_R1.csv", "kct"))
     dL, dR = _per_bin_widths(mesh)
-    SEAM_BINS = 30
+    SEAM_BINS = _SEAM_GUARD_BINS
     assert (dL[:SEAM_BINS] >= 0.5).all() and (dL[-SEAM_BINS:] >= 0.5).all()
     assert (dR[:SEAM_BINS] >= 0.5).all() and (dR[-SEAM_BINS:] >= 0.5).all()
 
