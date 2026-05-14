@@ -1213,14 +1213,15 @@ def run_full_analysis(
             except ImportError:
                 logger.debug("sensor_quality module not available; skipping")
 
-    # Step 10f — conditions classifier (Day-11)
+    # Step 10f — conditions classifier (Day-11) + spatial modifier (Day-12)
     # Scalar weather-based μ classifier per LAP_V1_CONDITIONS_ENGINE_SPEC.md.
     # User metadata ``condition`` (dry/damp/wet/greasy) wins via source="user";
     # otherwise weather is classified from Open-Meteo gridded data with
-    # safe-dry fallback on API failure. Result lands in summary["conditions"]
-    # and is persisted to the analysis JSON via sessions_v2._persist_analysis_json.
+    # safe-dry fallback on API failure. After scalar classification, the
+    # Day-12 spatial producer attaches per-segment drainage/sun/wind factor
+    # arrays to spatial_modifier when a session TrackSurface is available.
     try:
-        from conditions import SessionInputs, classify_conditions
+        from conditions import SessionInputs, attach_spatial_modifier, classify_conditions
 
         _started_at_utc = None
         if resampled_laps:
@@ -1245,6 +1246,19 @@ def run_full_analysis(
             )
             _record("10f_conditions", conditions, c_err)
             if conditions is not None:
+                # Day-12 spatial layer: attach per-segment factor arrays
+                # from the session's TrackSurface (when available).
+                _session_surface_for_spatial = None
+                if surface_result:
+                    _session_surface_for_spatial = (
+                        surface_result.get("session_surface")
+                        or surface_result.get("track_surface")
+                    )
+                if _session_surface_for_spatial is not None:
+                    conditions = attach_spatial_modifier(
+                        conditions, track_id, _session_inputs,
+                        _session_surface_for_spatial,
+                    )
                 summary["conditions"] = conditions.to_dict()
     except ImportError:
         logger.debug("conditions module not available; skipping")

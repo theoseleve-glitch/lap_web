@@ -21,9 +21,12 @@ from __future__ import annotations
 
 from .types import SessionInputs, SpatialMuModifier, WeatherCondition
 from .classifier import classify_conditions
+from .spatial_producer import attach_spatial_modifier, compute_spatial_modifier
 
 __all__ = [
     "classify_conditions",
+    "attach_spatial_modifier",
+    "compute_spatial_modifier",
     "WeatherCondition",
     "SpatialMuModifier",
     "SessionInputs",
