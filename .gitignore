@@ -19,6 +19,7 @@ build/
 # Cache
 .ingest_cache/
 .pytest_cache/
+data/cache/
 
 # Claude Code
 .claude/

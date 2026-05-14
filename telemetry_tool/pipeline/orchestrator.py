@@ -1213,6 +1213,42 @@ def run_full_analysis(
             except ImportError:
                 logger.debug("sensor_quality module not available; skipping")
 
+    # Step 10f — conditions classifier (Day-11)
+    # Scalar weather-based μ classifier per LAP_V1_CONDITIONS_ENGINE_SPEC.md.
+    # User metadata ``condition`` (dry/damp/wet/greasy) wins via source="user";
+    # otherwise weather is classified from Open-Meteo gridded data with
+    # safe-dry fallback on API failure. Result lands in summary["conditions"]
+    # and is persisted to the analysis JSON via sessions_v2._persist_analysis_json.
+    try:
+        from conditions import SessionInputs, classify_conditions
+
+        _started_at_utc = None
+        if resampled_laps:
+            _first_lap = resampled_laps[0]
+            if "Time (s)" in _first_lap.columns and len(_first_lap) > 0:
+                from datetime import datetime as _dt, timezone as _tz
+                _started_at_utc = _dt.fromtimestamp(
+                    float(_first_lap["Time (s)"].iloc[0]), tz=_tz.utc
+                )
+        _user_condition = None
+        if isinstance(meta, dict):
+            _candidate = meta.get("condition")
+            if _candidate and _candidate in ("dry", "damp", "wet", "greasy"):
+                _user_condition = _candidate
+        if _started_at_utc is not None:
+            _session_inputs = SessionInputs(
+                started_at_utc=_started_at_utc, user_condition=_user_condition
+            )
+            conditions, c_err = _safe_step(
+                "10f_conditions", classify_conditions,
+                _session_inputs, track_id,
+            )
+            _record("10f_conditions", conditions, c_err)
+            if conditions is not None:
+                summary["conditions"] = conditions.to_dict()
+    except ImportError:
+        logger.debug("conditions module not available; skipping")
+
     # ══════════════════════════════════════════════════════════════
     # PHASE 5: Features, ML, Scoring, Reports, Persist (steps 11-15)
     # ══════════════════════════════════════════════════════════════
