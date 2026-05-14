@@ -297,6 +297,11 @@ def _persist_analysis_json(conn: sqlite3.Connection, session_id: str, summary: d
     if fe and isinstance(fe, dict):
         blob["friction_envelope"] = fe
 
+    # Sensor quality + map confidence (RC6, Day-10)
+    sq = summary.get("sensor_quality")
+    if sq and isinstance(sq, dict):
+        blob["sensor_quality"] = sq
+
     # Coaching V3 (physics-based corner coaching, drills, narrative)
     cv3 = summary.get("coaching_v3")
     if cv3 and isinstance(cv3, dict):

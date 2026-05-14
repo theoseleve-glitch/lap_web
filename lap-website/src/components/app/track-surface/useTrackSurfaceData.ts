@@ -23,10 +23,37 @@ export type BoundarySource =
   | 'synthesized'
   | 'default_3m';
 
+/** Per-session sensor quality + map confidence (RC6, Day-10).
+ *
+ * Populated when the pipeline producer at `track_surface.sensor_quality`
+ * had enough data; `null` when it skipped (sparse data, missing IMU
+ * columns, etc.). Frontend renders `null` as a grey low-confidence state
+ * — never as placeholder "--". */
+export interface SensorQualityBlock {
+  /** Per-bin scalar in [0, 1] — sample density × excitation × calibration. */
+  orientation_quality: number[];
+  /** Per-bin median |a_lat| / |v^2 * kappa|. 1.0 = perfect agreement. */
+  curvature_agreement: number[];
+  /** Per-bin bank-angle inferred from centripetal residual, clamped to [-5, +5] deg. */
+  bank_sensitivity_deg: number[];
+  /** Session-aggregated attitude_correction diagnostics block. */
+  attitude_correction?: Record<string, number | string | null>;
+  /** Map confidence scalars + the same orientation_quality echoed
+   *  under `confidence_per_bin` for backward compatibility. */
+  map_confidence?: {
+    excited_sample_frac: number;
+    sample_density_per_bin: number;
+    n_bins: number;
+    confidence_per_bin: number[];
+  };
+}
+
 export interface TrackSurfaceResponse {
   bins: SurfaceBin[];
   quality_tier?: string;
   boundary_source?: BoundarySource;
+  /** RC6: per-session sensor quality block; null when the producer skipped. */
+  sensor_quality?: SensorQualityBlock | null;
 }
 
 export interface OptimalLinePoint {

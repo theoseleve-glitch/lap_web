@@ -1194,6 +1194,25 @@ def run_full_analysis(
             except Exception as _surf_exc:
                 logger.warning("Global surface upsert skipped: %s", _surf_exc)
 
+    # Step 10e — sensor_quality + map_confidence (RC6, Day-10)
+    # Runs after 10d so it can use the just-built session_surface. Result
+    # lands in summary["sensor_quality"] and is exposed via the
+    # /sessions/<id>/track-surface API response.
+    if surface_result:
+        _session_surface_for_sq = surface_result.get("session_surface") or surface_result.get("track_surface")
+        if _session_surface_for_sq is not None:
+            try:
+                from track_surface.sensor_quality import compute_session_sensor_quality
+                sensor_quality, sq_err = _safe_step(
+                    "10e_sensor_quality", compute_session_sensor_quality,
+                    resampled_laps, _session_surface_for_sq,
+                )
+                _record("10e_sensor_quality", sensor_quality, sq_err)
+                if sensor_quality is not None:
+                    summary["sensor_quality"] = sensor_quality
+            except ImportError:
+                logger.debug("sensor_quality module not available; skipping")
+
     # ══════════════════════════════════════════════════════════════
     # PHASE 5: Features, ML, Scoring, Reports, Persist (steps 11-15)
     # ══════════════════════════════════════════════════════════════

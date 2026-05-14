@@ -5236,6 +5236,15 @@ def get_track_surface(session_id: str) -> tuple[dict, int]:
             status=404,
         )
 
+    # RC6 (Day-10): attach this session's sensor_quality + map_confidence
+    # block from analysis_json so the frontend Sensor Quality panel can
+    # populate. None when the producer skipped (sparse data / missing
+    # IMU columns) — the panel renders that as a grey low-confidence
+    # state rather than placeholder "--" strings.
+    sq = (analysis or {}).get("sensor_quality") if isinstance(analysis, dict) else None
+    if isinstance(surface, dict):
+        surface["sensor_quality"] = sq if isinstance(sq, dict) else None
+
     return api_response(surface)
 
 
