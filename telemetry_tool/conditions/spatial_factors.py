@@ -283,3 +283,62 @@ def wind_factor(
         factors[leeward_mask] = _WIND_FACTOR_LEEWARD
 
     return factors
+
+
+# ── Combined factor + condition-aware clamping ────────────────────────
+
+
+# Spec §7 combined formula clamps. Dry conditions: variance muted to
+# [0.9, 1.1] (still some sunny-vs-shaded effect on track temp, but
+# nothing dramatic). Wet/damp/greasy: full [0.6, 1.5] range — this is
+# where the spatial grip-map story matters most.
+_DRY_CLAMP_LOW: float = 0.9
+_DRY_CLAMP_HIGH: float = 1.1
+_WET_CLAMP_LOW: float = 0.6
+_WET_CLAMP_HIGH: float = 1.5
+
+_VALID_CONDITION_LABELS = frozenset({"dry", "damp", "wet", "greasy"})
+
+
+def compute_spatial_factor(
+    drainage: np.ndarray,
+    sun: np.ndarray,
+    wind: np.ndarray,
+    condition_label: str,
+) -> np.ndarray:
+    """Spec §7 combined per-segment spatial μ multiplier.
+
+    Args:
+        drainage: per-segment Factor 1 (drainage), shape (N_s,).
+        sun: per-segment Factor 2 (sun exposure), shape (N_s,).
+        wind: per-segment Factor 3 (wind exposure), shape (N_s,).
+        condition_label: one of {dry, damp, wet, greasy} from
+            :class:`WeatherCondition.label`. Determines clamp range:
+              dry         → [0.9, 1.1] (tight)
+              damp/wet/greasy → [0.6, 1.5] (full spatial story)
+
+    Returns:
+        Per-segment mu_spatial_factor in the chosen clamp range.
+
+    Formula (spec §7):
+        mu_spatial_factor(s) = 1.0 / (drainage(s) · sun(s) · wind(s))
+        mu_spatial_factor(s) = clamp(mu_spatial_factor(s), lower, upper)
+
+    Inversion: factor > 1 means "wetter section" (drains less, sun-shaded,
+    leeward). We want the effective μ multiplier lower on wetter
+    sections → divide by the product.
+    """
+    if condition_label not in _VALID_CONDITION_LABELS:
+        raise ValueError(
+            f"condition_label {condition_label!r} not in {sorted(_VALID_CONDITION_LABELS)}"
+        )
+    drainage = np.asarray(drainage, dtype=np.float64)
+    sun = np.asarray(sun, dtype=np.float64)
+    wind = np.asarray(wind, dtype=np.float64)
+
+    product = drainage * sun * wind
+    factor = 1.0 / product
+
+    if condition_label == "dry":
+        return np.clip(factor, _DRY_CLAMP_LOW, _DRY_CLAMP_HIGH)
+    return np.clip(factor, _WET_CLAMP_LOW, _WET_CLAMP_HIGH)
