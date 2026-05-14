@@ -99,6 +99,58 @@ metres INSIDE the non-gap region. Avoids using the polyline-endpoint
 signed_n values (which are typically anomalously small because hand-
 traced polylines often end right next to the centerline at the seam)."""
 
+_GT_DOMINANT_SIDE_FLOOR_M: Final[float] = 0.3
+"""Day-10.5 F1 — dominant-side minimum-offset floor.
+
+A polyline projection bin is flagged as "broken-down" (and bridged like
+a coverage-gap bin) when its dominant-side signed offset is less than
+this threshold. That is, the bin satisfies::
+
+    signed_offsets[i] * dominant_sign < _GT_DOMINANT_SIDE_FLOOR_M
+
+which catches BOTH wrong-sign bins (their dominant-side projection is
+negative) AND near-zero bins on the correct side (their dominant-side
+projection is small).
+
+Empirical motivation (OK_R1 apex at s=228m): a centerline that runs
+slightly off-track at a tight apex (the lap-set's racing lines vary
+widely there) causes the gt polyline projection's signed_n to flip
+sign through zero. ``np.interp`` then linearly bridges across the
+crossings, leaving signed_n collapsed near zero across a 25 m run.
+The downstream polygon assembly self-intersects because the boundary
+curve folds back on itself at the high-curvature apex.
+
+Threshold 0.3 m: below this on the dominant side, the bin is considered
+projection-broken and gets bridged. This is well clear of any
+legitimate narrow-track-edge value (real kart hairpins observed at
+≥ 4 m total width = ≥ 2 m per side; KCT and OK never legitimately have
+gt-polyline-to-centerline distance below 1 m on the dominant side of
+either polyline)."""
+
+_GT_OFFSET_CURVE_SAFETY_ALPHA: Final[float] = 0.5
+"""Day-10.5 F1 — offset-curve safety factor.
+
+The offset curve of a centerline at distance d on the INSIDE of a bend
+(where ``signed_n * kappa > 0``) self-intersects when ``d > 1 / |kappa|``
+— the boundary crosses past the curvature centre and folds back.
+On OK_R1 at bin 450 the centerline has |kappa| = 0.163 /m (radius 6 m)
+while the gt LEFT polyline projects to signed_n = -9.97 m on the
+inside; that's |kappa * signed_n| = 1.63 — the polygon's LEFT
+linestring loops around (52.3, -22.8) and shapely.is_simple() fails.
+
+We clip signed_offsets on the inside side to keep ``|signed_n * kappa|
+≤ alpha`` per bin. Choosing alpha < 1 guarantees the offset curve
+stays simple in isolation, but the *transition* between clipped and
+un-clipped bins also matters: a sharp step at the clip boundary can
+itself produce a self-intersection a few bins downstream.
+
+Empirical tuning on OK_R1: alpha = 0.85 fixed the kappa-peak fold but
+left a step at the clip boundary that produced a new self-intersection
+elsewhere. alpha = 0.5 widens the clip region enough that the transition
+to un-clipped neighbours is gradual, and the polygon stays simple.
+KCT_R1 and OK_R4 are unaffected: their inside-side gt offsets are well
+below ``alpha / |kappa|`` everywhere, so the clip never fires."""
+
 
 def _detect_coverage_gap(
     s_projected: np.ndarray, L: float, threshold_m: float,
@@ -192,42 +244,119 @@ def _gt_boundary_signed_offsets(
     # collapses toward zero) and represents the boundary's typical
     # offset across the bulk of the track.
     gap = _detect_coverage_gap(s_arr, L, _GT_COVERAGE_GAP_THRESHOLD_M)
+    s_grid = frenet.s_grid
     smooth_sigma = _GT_SMOOTH_SIGMA_BINS
+    in_gap = np.zeros_like(s_grid, dtype=bool)
     if gap is not None:
         gap_start, gap_end = gap  # gap_end may be > L for seam gap
-        s_grid = frenet.s_grid
         if gap_end <= L:
             in_gap = (s_grid > gap_start) & (s_grid < gap_end)
         else:
             in_gap = (s_grid > gap_start) | (s_grid < (gap_end - L))
-        if in_gap.any() and not in_gap.all():
-            # Use the polyline's interior median signed_n (computed from
-            # s-bin values OUTSIDE the gap, away from endpoint artifacts).
-            # An additional inner guard band of _GT_GAP_EDGE_GUARD_M is
-            # excluded from the median calculation to avoid bias from the
-            # bins immediately adjacent to the gap (which may be pulled
-            # toward zero by np.interp's linear bridge into the gap).
-            guard_bins = int(round(_GT_GAP_EDGE_GUARD_M / max(s_grid[1] - s_grid[0], 1e-6)))
-            interior_mask = ~in_gap
-            if guard_bins > 0:
-                # Erode the non-gap region by guard_bins on each side of
-                # the gap boundary (cyclic — handled by np.roll).
-                erode = np.ones(2 * guard_bins + 1, dtype=bool)
-                # Convolve: keep only bins that are at least guard_bins
-                # away from the gap, modulo cyclic.
-                in_gap_dil = in_gap.copy()
-                for _ in range(guard_bins):
-                    in_gap_dil = in_gap_dil | np.roll(in_gap_dil, 1) | np.roll(in_gap_dil, -1)
-                interior_mask = ~in_gap_dil
 
-            interior_vals = signed_offsets[interior_mask]
-            bridge_value = float(np.median(interior_vals)) if interior_vals.size else 0.0
-            signed_offsets[in_gap] = bridge_value
-            # Bump smoothing in the presence of a bridged gap to absorb
-            # the step at the gap boundary. 10 bins ≈ 5m on a 0.5m grid.
-            smooth_sigma = max(smooth_sigma, 10)
+    # 4b. Day-10.5 F1 — detect projection-broken bins where the np.interp
+    # output collapses toward (or past) zero on the dominant side of the
+    # polyline. These arise when the centerline runs slightly off-track
+    # at a tight apex (lap-set's racing lines vary widely → centerline
+    # median lands on top of the polyline). np.interp linearly bridges
+    # across the zero-crossings, leaving signed_n collapsed near zero
+    # across a long run; the polygon assembly then self-intersects at
+    # high curvature. Same bridge-fill treatment as a coverage gap.
+    dominant_sign_pool = signed_offsets[np.abs(signed_offsets) > 0.5]
+    if dominant_sign_pool.size > 0:
+        dominant_sign = float(np.sign(np.median(dominant_sign_pool)))
+    else:
+        dominant_sign = float(np.sign(np.median(signed_offsets))) if signed_offsets.size else 1.0
+    if dominant_sign == 0:
+        dominant_sign = 1.0
+    # Flag any bin whose dominant-side projection is below the floor —
+    # this captures both wrong-sign bins AND near-zero bins on the
+    # correct side, in one expression.
+    broken_side = (signed_offsets * dominant_sign) < _GT_DOMINANT_SIDE_FLOOR_M
 
+    # Combine coverage-gap bins + projection-broken bins under one fill.
+    bad_bins = in_gap | broken_side
+    if bad_bins.any() and not bad_bins.all():
+        # Use the polyline's interior median signed_n (computed from
+        # s-bin values OUTSIDE the bad region, away from endpoint and
+        # zero-crossing artifacts). An additional inner guard band of
+        # _GT_GAP_EDGE_GUARD_M is excluded from the median calculation
+        # to avoid bias from bins immediately adjacent to bad regions
+        # (which may be pulled toward zero by np.interp's linear bridge
+        # into the bad region).
+        guard_bins = int(round(_GT_GAP_EDGE_GUARD_M / max(s_grid[1] - s_grid[0], 1e-6)))
+        interior_mask = ~bad_bins
+        if guard_bins > 0:
+            bad_dil = bad_bins.copy()
+            for _ in range(guard_bins):
+                bad_dil = bad_dil | np.roll(bad_dil, 1) | np.roll(bad_dil, -1)
+            interior_mask = ~bad_dil
+
+        interior_vals = signed_offsets[interior_mask]
+        bridge_value = float(np.median(interior_vals)) if interior_vals.size else 0.0
+        # Apply dominant sign defensively (the median should already match it).
+        if dominant_sign != 0 and np.sign(bridge_value) != dominant_sign:
+            bridge_value = dominant_sign * abs(bridge_value or 0.5)
+        signed_offsets[bad_bins] = bridge_value
+        # Bump smoothing in the presence of a bridged region to absorb
+        # the step at the boundary. 10 bins ≈ 5m on a 0.5m grid.
+        smooth_sigma = max(smooth_sigma, 10)
+
+    # Final Gaussian smooth FIRST — this handles the bridge step (where
+    # smoothing absorbs the discontinuity at the gap boundary) and any
+    # natural noise in the polyline projection.
     signed_offsets = _smooth_1d(signed_offsets, smooth_sigma)
+
+    # 5. Day-10.5 F1 — offset-curve safety clip, applied AFTER the smooth
+    # so the smoothing can't pull clipped values back toward their original
+    # un-clipped neighbours. On the INSIDE of a bend (signed_n * kappa > 0),
+    # the polygon's boundary linestring folds back through the curvature
+    # centre when |signed_n| > 1/|kappa|. Clip inside-side offsets so
+    # |signed_n * kappa| stays under _GT_OFFSET_CURVE_SAFETY_ALPHA,
+    # guaranteeing the offset curve is simple. The resulting step at the
+    # clip boundary is acceptable: the boundary curve takes a slightly
+    # sharper turn there, but it stays simple, which is what G1 requires.
+    # OUTSIDE-side offsets are not affected (they only stretch the boundary,
+    # never fold it).
+    kappa = frenet.curvature_1pm
+    if kappa is not None and kappa.shape == signed_offsets.shape:
+        inside_metric = signed_offsets * kappa  # > 0 on the inside side
+        is_inside = inside_metric > 0
+        if is_inside.any():
+            kappa_safe = np.maximum(np.abs(kappa), 1e-3)
+            max_inside_abs = _GT_OFFSET_CURVE_SAFETY_ALPHA / kappa_safe
+            current_abs = np.abs(signed_offsets)
+            needs_clip = is_inside & (current_abs > max_inside_abs)
+            if needs_clip.any():
+                signed_offsets = np.where(
+                    needs_clip,
+                    np.sign(signed_offsets) * max_inside_abs,
+                    signed_offsets,
+                )
+                # Narrow second smooth (σ ≈ 2 bins) softens the step between
+                # clipped and un-clipped neighbours. Wider σ would defeat
+                # the clip; narrower would leave a sharp boundary-curve
+                # jump that itself can cause a self-intersection. σ=2 is
+                # tuned empirically: OK_R1 polygon becomes simple, OK_R4
+                # and KCT_R1 unaffected (their inside_metric never reaches
+                # alpha so the clip doesn't fire).
+                signed_offsets = _smooth_1d(signed_offsets, 2)
+                # Re-apply the clip after smoothing — smoothing may have
+                # nudged a few clipped values upward toward the
+                # un-clipped neighbours. One iteration of (clip → smooth)
+                # → clip is the minimal fixpoint that preserves the
+                # geometric constraint AND has no step discontinuity.
+                inside_metric = signed_offsets * kappa
+                is_inside = inside_metric > 0
+                current_abs = np.abs(signed_offsets)
+                needs_clip = is_inside & (current_abs > max_inside_abs)
+                if needs_clip.any():
+                    signed_offsets = np.where(
+                        needs_clip,
+                        np.sign(signed_offsets) * max_inside_abs,
+                        signed_offsets,
+                    )
+
     return signed_offsets
 
 
