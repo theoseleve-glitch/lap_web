@@ -105,6 +105,55 @@ class SurfaceBin(LenientSchema):
     width_right_m: float | None = None
 
 
+class SpatialMuModifierResponse(LenientSchema):
+    """Per-arclength spatial μ modifier (Day-12; spec §7 / §8).
+
+    The producer emits per-segment factor arrays + diagnostics for drainage
+    (slope-based), sun (solar geometry × segment normal), and wind
+    (wind direction × segment tangent). All per-segment arrays are aligned
+    to ``arclength_samples`` (length = N_s segments).
+
+    ``mesh_source`` describes how the underlying TrackSurface was built:
+    - ``"hand_traced"``: from a ``gt_*.geojson`` polyline
+    - ``"data_derived"``: from data-derived lateral-scatter widths
+    - ``"multihead"``: reserved for V1.5 multi-source merge
+    """
+    arclength_samples: list[float]
+    factor_values: list[float]
+    drainage_components: list[float]
+    sun_components: list[float]
+    wind_components: list[float]
+    sun_altitude_deg: float
+    sun_azimuth_deg: float
+    wind_direction_deg: float
+    wind_speed_kmh: float
+    mesh_source: Literal["hand_traced", "data_derived", "multihead"]
+    spatial_version: str
+
+
+class WeatherConditionResponse(LenientSchema):
+    """Scalar conditions output (Day-11; spec §5/§6/§8) + Day-12 spatial layer.
+
+    Mirrors the producer's ``WeatherCondition`` dataclass minus ``raw_inputs``
+    (debug-only reproducibility data, intentionally excluded from API
+    contract). ``spatial_modifier`` is ``None`` on pre-Day-12 sessions or
+    when the spatial producer failed (e.g., safe-dry fallback).
+    """
+    label: Literal["dry", "damp", "wet", "greasy"]
+    mu_scale: float
+    confidence: float
+    track_temp_estimate_c: float | None = None
+    water_film_estimate: Literal["none", "thin", "thick"] | None = None
+    hours_since_rain: float | None = None
+    days_since_significant_rain: int | None = None
+    drying_rate_estimate: float | None = None
+    dominant_factor: str
+    rationale: str
+    source: Literal["weather", "user", "ml_fallback"]
+    spatial_modifier: SpatialMuModifierResponse | None = None
+    classifier_version: str
+
+
 class TrackSurfaceResponse(LenientSchema):
     """Response body for GET /api/v1/sessions/<id>/track-surface.
 
@@ -113,12 +162,18 @@ class TrackSurfaceResponse(LenientSchema):
     - ``"data_derived"``: percentile-99 × 1.3 lateral-scatter margin (asymmetric)
     - ``"synthesized"``: reserved for V1.5 approximate-gt fallback
     - ``"default_3m"``: < 3 laps available; flat 3 m fallback both sides
+
+    ``conditions`` (Day-11/12) carries the session-time scalar weather
+    classification plus an optional per-segment spatial μ modifier. ``None``
+    on pre-Day-11 sessions (no classifier output in analysis_json) and on
+    safe-dry fallback sessions where the weather API was unavailable.
     """
     bins: list[SurfaceBin]
     quality_tier: Literal["bronze", "silver", "gold", "platinum"] | None = None
     boundary_source: Literal[
         "hand_traced", "data_derived", "synthesized", "default_3m"
     ] | None = None
+    conditions: WeatherConditionResponse | None = None
 
 
 class PlannerModeResult(LenientSchema):

@@ -5245,6 +5245,25 @@ def get_track_surface(session_id: str) -> tuple[dict, int]:
     if isinstance(surface, dict):
         surface["sensor_quality"] = sq if isinstance(sq, dict) else None
 
+    # Day-13: attach Day-11 scalar conditions + Day-12 spatial μ modifier
+    # from analysis_json. Validates through WeatherConditionResponse at
+    # the boundary so raw_inputs (debug-only per spec §8) is stripped
+    # via LenientSchema extra="ignore", and exclude_none=True keeps
+    # absent optional fields out of the JSON output. Producer drift
+    # surfaces as a logger.warning + omitted "conditions" key rather
+    # than a 500 — schema parity test catches drift at CI time.
+    conditions_blob = (analysis or {}).get("conditions") if isinstance(analysis, dict) else None
+    if isinstance(surface, dict) and isinstance(conditions_blob, dict):
+        try:
+            from web.schemas.track_surface import WeatherConditionResponse
+            cond_response = WeatherConditionResponse.model_validate(conditions_blob)
+            surface["conditions"] = cond_response.model_dump(exclude_none=True, mode="json")
+        except Exception as exc:
+            logger.warning(
+                "conditions blob failed Pydantic validation: %s. Omitting from response.",
+                exc,
+            )
+
     return api_response(surface)
 
 
