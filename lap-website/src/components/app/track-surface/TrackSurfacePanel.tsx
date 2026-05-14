@@ -19,17 +19,29 @@ interface TrackSurfacePanelProps {
 
 const MODES: { key: HeatmapMode; label: string }[] = [
   { key: 'grip', label: 'Grip' },
+  { key: 'spatial-grip', label: 'Spatial Grip' },
   { key: 'elevation', label: 'Elevation' },
   { key: 'line-delta', label: 'Line Delta' },
 ];
 
 /* ── Legend color stops (matching WebGL palette) ──────── */
 
-const LEGEND: Record<HeatmapMode, { lowLabel: string; highLabel: string; lowHex: string; highHex: string }> = {
+const LEGEND: Record<
+  HeatmapMode,
+  { lowLabel: string; highLabel: string; lowHex: string; highHex: string }
+> = {
   grip: { lowLabel: 'Low', highLabel: 'High', lowHex: '#FF2A2A', highHex: '#22C55E' },
   elevation: { lowLabel: 'Low', highLabel: 'High', lowHex: '#3B82F6', highHex: '#F0EDE5' },
   'line-delta': { lowLabel: 'Off-line', highLabel: 'On-line', lowHex: '#FF2A2A', highHex: '#22C55E' },
+  // Day-13 Phase D: effective μ range fixed at [0.5, 1.0] — see
+  // SPATIAL_GRIP_COLOR_MIN/MAX in TrackSurface3D.tsx. The dashed tick at
+  // 40 % marks the spec's 0.7 driver-feedback threshold.
+  'spatial-grip': { lowLabel: 'μ 0.5', highLabel: 'μ 1.0+', lowHex: '#FF2A2A', highHex: '#22C55E' },
 };
+
+/* 0.7 effective μ is the spec's "track feels slippery" driver threshold;
+ * it maps to (0.7 − 0.5) / (1.0 − 0.5) = 40 % along the legend gradient. */
+const SPATIAL_GRIP_THRESHOLD_PCT = 40;
 
 /* ── Component ────────────────────────────────────────── */
 
@@ -41,6 +53,15 @@ export default function TrackSurfacePanel({ sessionId, className }: TrackSurface
 
   const legend = LEGEND[mode];
   const qualityTier = surface?.quality_tier ?? null;
+
+  // Day-13 Phase D: spatial-grip mode requires a spatial_modifier on the
+  // conditions blob; pre-Day-12 sessions (or safe-dry fallback runs) keep
+  // the button visible but disabled with an explanatory tooltip.
+  const spatialDisabled = !surface?.conditions?.spatial_modifier;
+  const spatialLowConfidence =
+    mode === 'spatial-grip' &&
+    typeof surface?.conditions?.confidence === 'number' &&
+    surface.conditions.confidence < 0.5;
 
   return (
     <div className={`bg-concrete border border-steel/20 rounded-lg overflow-hidden ${className ?? ''}`}>
@@ -59,19 +80,30 @@ export default function TrackSurfacePanel({ sessionId, className }: TrackSurface
 
       {/* Mode selector */}
       <div className="flex items-center gap-1 px-4 py-2 border-b border-steel/10">
-        {MODES.map(({ key, label }) => (
-          <button
-            key={key}
-            onClick={() => setMode(key)}
-            className={`font-telemetry text-xs px-3 py-1.5 rounded transition-colors ${
-              mode === key
-                ? 'text-gold'
-                : 'text-steel hover:text-chalk'
-            }`}
-          >
-            {label}
-          </button>
-        ))}
+        {MODES.map(({ key, label }) => {
+          const disabled = key === 'spatial-grip' && spatialDisabled;
+          const titleAttr = disabled
+            ? 'Spatial μ requires Day-12+ analysis (session uploaded before this feature, or weather lookup unavailable).'
+            : undefined;
+          return (
+            <button
+              key={key}
+              type="button"
+              onClick={() => !disabled && setMode(key)}
+              disabled={disabled}
+              title={titleAttr}
+              className={`font-telemetry text-xs px-3 py-1.5 rounded transition-colors ${
+                disabled
+                  ? 'text-steel/40 cursor-not-allowed'
+                  : mode === key
+                    ? 'text-gold'
+                    : 'text-steel hover:text-chalk'
+              }`}
+            >
+              {label}
+            </button>
+          );
+        })}
 
         <div className="ml-auto flex items-center gap-3">
           <label className="flex items-center gap-1.5 cursor-pointer">
@@ -108,15 +140,40 @@ export default function TrackSurfacePanel({ sessionId, className }: TrackSurface
 
       {/* Legend bar */}
       {!isLoading && (
-        <div className="flex items-center gap-2 px-4 py-2 border-t border-steel/10">
-          <span className="font-telemetry text-xs text-steel">{legend.lowLabel}</span>
-          <div
-            className="flex-1 h-2 rounded-full"
-            style={{
-              background: `linear-gradient(to right, ${legend.lowHex}, ${legend.highHex})`,
-            }}
-          />
-          <span className="font-telemetry text-xs text-steel">{legend.highLabel}</span>
+        <div className="flex flex-col gap-1 px-4 py-2 border-t border-steel/10">
+          <div className="flex items-center gap-2">
+            <span className="font-telemetry text-xs text-steel">{legend.lowLabel}</span>
+            <div className="relative flex-1 h-2">
+              <div
+                className="absolute inset-0 rounded-full"
+                style={{
+                  background: `linear-gradient(to right, ${legend.lowHex}, ${legend.highHex})`,
+                }}
+              />
+              {mode === 'spatial-grip' && (
+                <div
+                  className="absolute top-0 bottom-0 w-px bg-chalk/70"
+                  style={{ left: `${SPATIAL_GRIP_THRESHOLD_PCT}%` }}
+                  title="μ = 0.7 — driver feedback threshold"
+                  aria-label="μ = 0.7 driver feedback threshold"
+                />
+              )}
+            </div>
+            <span className="font-telemetry text-xs text-steel">{legend.highLabel}</span>
+          </div>
+          {mode === 'spatial-grip' && (
+            <div className="flex items-center justify-between font-telemetry text-[10px] text-steel/70">
+              <span>Effective μ = mu_data × mu_scale × spatial_factor</span>
+              <span title="0.7 effective μ ≈ track feels slippery">μ = 0.7 threshold</span>
+            </div>
+          )}
+          {spatialLowConfidence && surface?.conditions && (
+            <div className="font-telemetry text-[10px] text-marshal-yellow">
+              ⚠ Low classifier confidence
+              ({Math.round(surface.conditions.confidence * 100)}%) —
+              spatial grip rendering uses reduced opacity; data may be unreliable
+            </div>
+          )}
         </div>
       )}
 
@@ -274,7 +331,7 @@ const SOURCE_LABEL: Record<WeatherConditionBlock['source'], string> = {
   ml_fallback: 'ML fallback',
 };
 
-function ConditionRow({
+export function ConditionRow({
   conditions,
 }: {
   conditions: WeatherConditionBlock | null;

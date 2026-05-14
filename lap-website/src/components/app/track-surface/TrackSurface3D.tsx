@@ -3,7 +3,13 @@
 import { useCallback, useMemo, useRef } from 'react';
 import { Canvas, useFrame, useThree } from '@react-three/fiber';
 import * as THREE from 'three';
-import { useTrackSurfaceData, type SurfaceBin, type OptimalLinePoint, type LineDeltaPoint } from './useTrackSurfaceData';
+import {
+  useTrackSurfaceData,
+  type SurfaceBin,
+  type OptimalLinePoint,
+  type LineDeltaPoint,
+  type WeatherConditionBlock,
+} from './useTrackSurfaceData';
 
 /* ── Heatmap palette hex values (WebGL, not CSS tokens) ── */
 
@@ -11,7 +17,22 @@ const COLORS = {
   grip: { high: 0x22C55E, low: 0xFF2A2A },
   elevation: { high: 0xF0EDE5, low: 0x3B82F6 },
   'line-delta': { high: 0x22C55E, low: 0xFF2A2A },
+  'spatial-grip': { high: 0x22C55E, low: 0xFF2A2A },
 } as const;
+
+/* Day-13 Phase D: fixed color-normalization range for spatial-grip
+ * effective_mu = mu_data × mu_scale × mu_spatial_factor.  Keeping the
+ * range FIXED across sessions (rather than min/max-normalized) means the
+ * same effective_mu always renders the same color — a wet OK session
+ * reads visibly redder than a dry KCT session at the same point, which
+ * is the whole point of the spatial layer. 0.5 = red anchor (severely
+ * slippery), 1.0 = green anchor (baseline dry asphalt).  The 0.7 mark
+ * is the spec's "driver feedback threshold" — see legend annotation. */
+export const SPATIAL_GRIP_COLOR_MIN = 0.5;
+export const SPATIAL_GRIP_COLOR_MAX = 1.0;
+export const SPATIAL_GRIP_FEEDBACK_THRESHOLD = 0.7;
+/* Confidence below this threshold dims the surface to flag low trust */
+export const SPATIAL_GRIP_LOW_CONFIDENCE = 0.5;
 
 const GOLD = 0xC9A84C;
 const CHALK = 0xF0EDE5;
@@ -22,7 +43,7 @@ const DEFAULT_WIDTH_RIGHT = 4;
 
 /* ── Types ────────────────────────────────────────────── */
 
-export type HeatmapMode = 'grip' | 'elevation' | 'line-delta';
+export type HeatmapMode = 'grip' | 'elevation' | 'line-delta' | 'spatial-grip';
 
 export interface TrackSurface3DProps {
   sessionId: string;
@@ -109,6 +130,7 @@ function binHeatValues(
   bins: SurfaceBin[],
   mode: HeatmapMode,
   lineDelta: LineDeltaPoint[] | null,
+  conditions: WeatherConditionBlock | null | undefined,
 ): number[] {
   if (mode === 'grip') {
     let minMu = Infinity;
@@ -124,6 +146,38 @@ function binHeatValues(
     for (const b of bins) { minE = Math.min(minE, b.elevation_m); maxE = Math.max(maxE, b.elevation_m); }
     const range = maxE - minE || 1;
     return bins.map((b) => (b.elevation_m - minE) / range);
+  }
+
+  if (mode === 'spatial-grip') {
+    // Day-13 Phase D: effective_mu(s) = mu_data × mu_scale × spatial_factor(s)
+    // The spatial factor arrays are aligned to spatial_modifier.arclength_samples
+    // (length N_s = number of Frenet segments), NOT to bins[].distance_m. We
+    // resample by walking arclength_samples in lockstep with bin distances —
+    // nearest-neighbor is sufficient at typical 1-2m bin / 5m segment density.
+    // Falls back to plain min/max-grip if spatial data is absent (defensive;
+    // the panel disables the mode button so we shouldn't normally reach here).
+    const sm = conditions?.spatial_modifier;
+    if (!conditions || !sm || sm.arclength_samples.length < 2) {
+      let minMu = Infinity;
+      let maxMu = -Infinity;
+      for (const b of bins) { minMu = Math.min(minMu, b.grip_mu); maxMu = Math.max(maxMu, b.grip_mu); }
+      const range = maxMu - minMu || 1;
+      return bins.map((b) => (b.grip_mu - minMu) / range);
+    }
+    const muScale = conditions.mu_scale;
+    const samples = sm.arclength_samples;
+    const factors = sm.factor_values;
+    let smIdx = 0;
+    return bins.map((b) => {
+      while (smIdx < samples.length - 2 && samples[smIdx + 1]! < b.distance_m) {
+        smIdx++;
+      }
+      const factor = factors[smIdx] ?? 1.0;
+      const effectiveMu = b.grip_mu * muScale * factor;
+      const t = (effectiveMu - SPATIAL_GRIP_COLOR_MIN) /
+        (SPATIAL_GRIP_COLOR_MAX - SPATIAL_GRIP_COLOR_MIN);
+      return Math.max(0, Math.min(1, t));
+    });
   }
 
   // line-delta: build lookup by distance, fallback to 0.5
@@ -305,12 +359,14 @@ interface SceneProps {
   gpsDistances: number[] | null;
   optimalLine: OptimalLinePoint[] | null;
   lineDelta: LineDeltaPoint[] | null;
+  conditions: WeatherConditionBlock | null | undefined;
   showOptimalLine: boolean;
   showActualLine: boolean;
 }
 
 function Scene({
-  bins, mode, gpsXY, gpsDistances, optimalLine, lineDelta, showOptimalLine, showActualLine,
+  bins, mode, gpsXY, gpsDistances, optimalLine, lineDelta, conditions,
+  showOptimalLine, showActualLine,
 }: SceneProps) {
   const { camera, gl } = useThree();
   const orbitState = useRef({
@@ -330,17 +386,30 @@ function Scene({
 
   useAutoFit(centerline, orbitState);
 
-  const heatValues = useMemo(() => binHeatValues(bins, mode, lineDelta), [bins, mode, lineDelta]);
+  const heatValues = useMemo(
+    () => binHeatValues(bins, mode, lineDelta, conditions),
+    [bins, mode, lineDelta, conditions],
+  );
 
   const surfaceGeo = useMemo(
     () => buildSurfaceGeometry(centerline, bins, heatValues, mode),
     [centerline, bins, heatValues, mode],
   );
 
-  const surfaceMat = useMemo(
-    () => new THREE.MeshBasicMaterial({ vertexColors: true, side: THREE.DoubleSide }),
-    [],
-  );
+  // Day-13 Phase D: low-confidence spatial-grip sessions render at reduced
+  // opacity to flag low trust — the legend separately annotates the warning.
+  const surfaceMat = useMemo(() => {
+    const lowConfidence =
+      mode === 'spatial-grip' &&
+      typeof conditions?.confidence === 'number' &&
+      conditions.confidence < SPATIAL_GRIP_LOW_CONFIDENCE;
+    return new THREE.MeshBasicMaterial({
+      vertexColors: true,
+      side: THREE.DoubleSide,
+      transparent: lowConfidence,
+      opacity: lowConfidence ? 0.6 : 1.0,
+    });
+  }, [mode, conditions?.confidence]);
 
   // Optimal line geometry
   const optimalGeo = useMemo(() => {
@@ -499,6 +568,7 @@ export function TrackSurface3D({
           gpsDistances={gpsDistances}
           optimalLine={optimalLine}
           lineDelta={lineDelta}
+          conditions={surface.conditions ?? null}
           showOptimalLine={showOptimalLine}
           showActualLine={showActualLine}
         />
