@@ -199,7 +199,14 @@ export default function TrackSurfacePanel({ sessionId, className }: TrackSurface
           </div>
           {mode === 'spatial-grip' && (
             <div className="flex items-center justify-between font-telemetry text-[10px] text-steel/70">
-              <span>Effective μ = mu_data × mu_scale × spatial_factor</span>
+              <span>
+                Effective μ = mu_data × mu_scale × spatial_factor
+                {surface?.conditions?.spatial_modifier?.tile_grid_shape && (
+                  <span className="ml-2 text-gold" title="Per-tile 2D fields rendered across the cross-section (banking-driven). Adjacent-terrain shadowing + shielding unlock in V1.5.">
+                    · 2D per-tile
+                  </span>
+                )}
+              </span>
               <span title="0.7 effective μ ≈ track feels slippery">μ = 0.7 threshold</span>
             </div>
           )}
@@ -558,7 +565,7 @@ export function SpatialDiagnosticsPanel({
             max={drainage.max}
             active={activeFactor === 'drainage'}
             onSelect={select}
-            hint="1D summary shown. Phase D adds per-tile inside-pools / outside-drains variation on banked sections."
+            hint="2D field on the mesh — inside-pools / outside-drains variation across banked sections. Magnitude scales with banking present in the track."
           />
           <FactorBreakdown
             factorKey="sun"
@@ -568,7 +575,7 @@ export function SpatialDiagnosticsPanel({
             max={sun.max}
             active={activeFactor === 'sun'}
             onSelect={select}
-            hint="1D summary stays uniform when banking is mild. Phase D (3D mesh) adds per-tile incidence variation from banking. Adjacent-terrain shadowing unlocks in V1.5 with a terrain data pipeline."
+            hint="2D field on the mesh — per-tile angle-of-incidence variation from banking. Adjacent-terrain shadowing (treelines, grandstands, buildings) unlocks in V1.5 with a terrain data pipeline."
             extra={`solar pos: ${sm.sun_altitude_deg.toFixed(1)}° altitude · ${sm.sun_azimuth_deg.toFixed(0)}° azimuth`}
           />
           <FactorBreakdown
@@ -579,7 +586,7 @@ export function SpatialDiagnosticsPanel({
             max={wind.max}
             active={activeFactor === 'wind'}
             onSelect={select}
-            hint="1D summary keyed on track tangent. Phase D adds per-tile windward/lee variation from banking on the 3D mesh. Adjacent-terrain shielding is V1.5."
+            hint="2D field on the mesh — windward / lee variation across banked surfaces. Adjacent-terrain shielding (diffraction past treelines + structures) unlocks in V1.5."
             extra={`wind: ${sm.wind_direction_deg.toFixed(0)}° · ${sm.wind_speed_kmh.toFixed(0)} km/h`}
           />
 

@@ -48,16 +48,25 @@ export interface SensorQualityBlock {
   };
 }
 
-/** Day-12 per-arclength spatial μ modifier (spec §7/§8).
+/** Day-12 1D per-arclength spatial μ modifier + Day-13 Phase D optional
+ *  2D per-tile fields.
  *
- * Five aligned per-segment arrays (length N_s = number of Frenet
- * segments): the combined factor + the three components (drainage from
- * slope buckets, sun from solar geometry × segment normal, wind from
- * wind direction × segment tangent). Scalar fields document the inputs
- * that produced the factors. ``mesh_source`` describes how the
- * underlying TrackSurface was built. Absent (null) when classifier ran
- * but the spatial producer skipped — e.g., safe-dry fallback or no
- * TrackSurface was available for the session. */
+ *  1D layer (Day 12) — five aligned per-segment arrays (length N_s =
+ *  number of Frenet segments): the combined factor + the three
+ *  components (drainage, sun, wind). Authoritative for the diagnostic
+ *  panel readouts + the arc-length summary.
+ *
+ *  2D layer (Day 13 Phase D) — when ``elevation_surface`` was available
+ *  on the producer side, flat row-major lists (length M_s × M_n) for
+ *  each factor + the combined product. Drive per-tile cross-track
+ *  coloring on the 3D mesh. Absent (undefined or null) when the
+ *  producer didn't have a z(s, n) substrate — the renderer falls back
+ *  to per-bin longitudinal bands keyed on the 1D arrays.
+ *
+ *  Substrate note: the producer routes around the noisy camber_rad
+ *  estimator (±48° spikes on flat kart tracks). See CLEANUP_LOG.md
+ *  Day 13 deferred investigation.
+ */
 export interface SpatialMuModifierBlock {
   arclength_samples: number[];
   factor_values: number[];
@@ -70,6 +79,16 @@ export interface SpatialMuModifierBlock {
   wind_speed_kmh: number;
   mesh_source: 'hand_traced' | 'data_derived' | 'multihead';
   spatial_version: string;
+  // Day-13 Phase D — optional 2D per-tile fields. Flat row-major;
+  // index a tile (i_s, j_n) at flat[i_s * M_n + j_n].
+  drainage_field_2d?: number[] | null;
+  sun_field_2d?: number[] | null;
+  wind_field_2d?: number[] | null;
+  factor_field_2d?: number[] | null;
+  tile_arclength_samples?: number[] | null;
+  tile_lateral_offsets?: number[] | null;
+  /** (M_s, M_n) — longitudinal × lateral cell counts for the 2D grid. */
+  tile_grid_shape?: [number, number] | null;
 }
 
 /** Day-11 scalar weather classification (spec §5/§6/§8) + Day-12 spatial layer.

@@ -239,6 +239,75 @@ function binHeatValues(
   return bins.map(() => 0.5);
 }
 
+/* ── Day-13 Phase D — per-edge 2D field sampling ──────── */
+
+/** Sample the per-tile 2D field at the LEFT and RIGHT edge of each
+ *  bin's cross-section. The renderer then assigns different colors to
+ *  the two edge vertices → cross-track gradients become visible on the
+ *  3D ribbon (e.g., inside-pools / outside-drains on banked sections).
+ *
+ *  Returns ``null`` when 2D fields aren't available — the renderer
+ *  falls back to longitudinal-only coloring via the 1D per-bin
+ *  heatValues. */
+function binEdgeHeatValuesFromField2D(
+  bins: SurfaceBin[],
+  conditions: WeatherConditionBlock | null | undefined,
+  spatialFactor: SpatialFactor,
+): { left: number[]; right: number[] } | null {
+  const sm = conditions?.spatial_modifier;
+  if (!sm) return null;
+  const field =
+    spatialFactor === 'drainage' ? sm.drainage_field_2d
+    : spatialFactor === 'sun' ? sm.sun_field_2d
+    : spatialFactor === 'wind' ? sm.wind_field_2d
+    : sm.factor_field_2d;
+  const shape = sm.tile_grid_shape;
+  const tileS = sm.tile_arclength_samples;
+  const tileN = sm.tile_lateral_offsets;
+  if (!field || !shape || !tileS || !tileN) return null;
+  const [M_s, M_n] = shape;
+  if (M_s < 1 || M_n < 1) return null;
+
+  const isCombined = spatialFactor === 'combined';
+  const colorMin = isCombined ? SPATIAL_GRIP_COLOR_MIN : INDIVIDUAL_FACTOR_MIN;
+  const colorMax = isCombined ? SPATIAL_GRIP_COLOR_MAX : INDIVIDUAL_FACTOR_MAX;
+  const muScale = conditions.mu_scale;
+
+  // Nearest-neighbor sampling. tileS is monotonic; cache si across bins
+  // (bins[].distance_m is also monotonic in lap order so the walk
+  // amortizes to O(M_s + bins.length)).
+  let siCache = 0;
+  function sample(sQ: number, nQ: number): number {
+    while (siCache < M_s - 1 && (tileS![siCache + 1] ?? Infinity) < sQ) siCache++;
+    let ni = 0;
+    while (ni < M_n - 1 && (tileN![ni + 1] ?? Infinity) < nQ) ni++;
+    return field![siCache * M_n + ni] ?? 1.0;
+  }
+
+  const left: number[] = new Array(bins.length);
+  const right: number[] = new Array(bins.length);
+  for (let i = 0; i < bins.length; i++) {
+    const bin = bins[i]!;
+    const legacyHalf = bin.width_m != null ? bin.width_m / 2 : null;
+    const wLeft = bin.width_left_m ?? legacyHalf ?? DEFAULT_WIDTH_LEFT;
+    const wRight = bin.width_right_m ?? legacyHalf ?? DEFAULT_WIDTH_RIGHT;
+    // Convention: +n = LEFT of centerline (matches FrenetFrame). The
+    // LEFT vertex lives at n = +wLeft, the RIGHT vertex at n = -wRight.
+    const rawL = sample(bin.distance_m, wLeft);
+    const rawR = sample(bin.distance_m, -wRight);
+    // Combined view converts the producer factor into effective_mu
+    // before normalizing; iso-factor uses the raw component verbatim.
+    const valL = isCombined ? bin.grip_mu * muScale * rawL : rawL;
+    const valR = isCombined ? bin.grip_mu * muScale * rawR : rawR;
+    let tL = Math.max(0, Math.min(1, (valL - colorMin) / (colorMax - colorMin)));
+    let tR = Math.max(0, Math.min(1, (valR - colorMin) / (colorMax - colorMin)));
+    if (!isCombined) { tL = 1 - tL; tR = 1 - tR; }
+    left[i] = tL;
+    right[i] = tR;
+  }
+  return { left, right };
+}
+
 /* ── Ribbon mesh geometry builder ─────────────────────── */
 
 function buildSurfaceGeometry(
@@ -246,6 +315,7 @@ function buildSurfaceGeometry(
   bins: SurfaceBin[],
   heatValues: number[],
   mode: HeatmapMode,
+  edgeValues: { left: number[]; right: number[] } | null = null,
 ): THREE.BufferGeometry {
   const count = centerline.length;
   if (count < 2) return new THREE.BufferGeometry();
@@ -298,15 +368,30 @@ function buildSurfaceGeometry(
     positions[ri * 3 + 1] = pt.y + ny * wLeft;
     positions[ri * 3 + 2] = elev;
 
-    // Vertex color from heat value
-    const t = heatValues[i] ?? 0.5;
-    tmpColor.copy(colLow).lerp(colHigh, t);
-    colors[li * 3] = tmpColor.r;
-    colors[li * 3 + 1] = tmpColor.g;
-    colors[li * 3 + 2] = tmpColor.b;
-    colors[ri * 3] = tmpColor.r;
-    colors[ri * 3 + 1] = tmpColor.g;
-    colors[ri * 3 + 2] = tmpColor.b;
+    // Vertex colors — per-edge when 2D fields are sampled (Day-13
+    // Phase D), single per-bin otherwise. li is the RIGHT physical
+    // vertex; ri is the LEFT physical vertex (see comment above).
+    if (edgeValues) {
+      const tLeft = edgeValues.left[i] ?? 0.5;
+      const tRight = edgeValues.right[i] ?? 0.5;
+      tmpColor.copy(colLow).lerp(colHigh, tRight);
+      colors[li * 3] = tmpColor.r;
+      colors[li * 3 + 1] = tmpColor.g;
+      colors[li * 3 + 2] = tmpColor.b;
+      tmpColor.copy(colLow).lerp(colHigh, tLeft);
+      colors[ri * 3] = tmpColor.r;
+      colors[ri * 3 + 1] = tmpColor.g;
+      colors[ri * 3 + 2] = tmpColor.b;
+    } else {
+      const t = heatValues[i] ?? 0.5;
+      tmpColor.copy(colLow).lerp(colHigh, t);
+      colors[li * 3] = tmpColor.r;
+      colors[li * 3 + 1] = tmpColor.g;
+      colors[li * 3 + 2] = tmpColor.b;
+      colors[ri * 3] = tmpColor.r;
+      colors[ri * 3 + 1] = tmpColor.g;
+      colors[ri * 3 + 2] = tmpColor.b;
+    }
   }
 
   for (let i = 0; i < count - 1; i++) {
@@ -431,9 +516,20 @@ function Scene({
     [bins, mode, lineDelta, conditions, spatialFactor],
   );
 
+  // Day-13 Phase D — per-edge 2D field sampling. null when 2D fields
+  // aren't available; buildSurfaceGeometry then falls back to 1D
+  // (single color per bin, both edge vertices identical).
+  const edgeValues = useMemo(
+    () =>
+      mode === 'spatial-grip'
+        ? binEdgeHeatValuesFromField2D(bins, conditions, spatialFactor)
+        : null,
+    [bins, mode, conditions, spatialFactor],
+  );
+
   const surfaceGeo = useMemo(
-    () => buildSurfaceGeometry(centerline, bins, heatValues, mode),
-    [centerline, bins, heatValues, mode],
+    () => buildSurfaceGeometry(centerline, bins, heatValues, mode, edgeValues),
+    [centerline, bins, heatValues, mode, edgeValues],
   );
 
   // Day-13 Phase D: low-confidence spatial-grip sessions render at reduced
