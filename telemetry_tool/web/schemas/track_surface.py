@@ -106,12 +106,20 @@ class SurfaceBin(LenientSchema):
 
 
 class SpatialMuModifierResponse(LenientSchema):
-    """Per-arclength spatial μ modifier (Day-12; spec §7 / §8).
+    """Per-arclength spatial μ modifier (Day-12; spec §7/§8) + optional
+    per-tile 2D fields (Day-13 Phase D).
 
-    The producer emits per-segment factor arrays + diagnostics for drainage
-    (slope-based), sun (solar geometry × segment normal), and wind
-    (wind direction × segment tangent). All per-segment arrays are aligned
-    to ``arclength_samples`` (length = N_s segments).
+    1D layer (Day 12): per-segment arrays for drainage / sun / wind +
+    the clamped combined ``factor_values``. All aligned to
+    ``arclength_samples`` (length = N_s segments).
+
+    2D layer (Day 13 Phase D): per-tile fields driven by
+    ``ElevationSurface`` z(s, n) finite-difference normals. ``None`` on
+    sessions where elevation surface unavailable; otherwise flat
+    row-major lists of length M_s × M_n indexed by
+    ``tile_arclength_samples × tile_lateral_offsets``. The producer
+    routes around the noisy camber_rad estimator — see CLEANUP_LOG.md
+    Day 13 deferred investigation.
 
     ``mesh_source`` describes how the underlying TrackSurface was built:
     - ``"hand_traced"``: from a ``gt_*.geojson`` polyline
@@ -129,6 +137,15 @@ class SpatialMuModifierResponse(LenientSchema):
     wind_speed_kmh: float
     mesh_source: Literal["hand_traced", "data_derived", "multihead"]
     spatial_version: str
+
+    # Day-13 Phase D — 2D per-tile fields (optional). Flat row-major.
+    drainage_field_2d: list[float] | None = None
+    sun_field_2d: list[float] | None = None
+    wind_field_2d: list[float] | None = None
+    factor_field_2d: list[float] | None = None
+    tile_arclength_samples: list[float] | None = None
+    tile_lateral_offsets: list[float] | None = None
+    tile_grid_shape: tuple[int, int] | None = None
 
 
 class WeatherConditionResponse(LenientSchema):

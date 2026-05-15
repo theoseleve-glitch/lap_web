@@ -122,6 +122,24 @@ def compute_spatial_modifier(
     # Combined per-segment factor + clamp.
     combined = compute_spatial_factor(drainage, sun, wind, weather_condition.label)
 
+    # Day-13 Phase D — 2D per-tile fields driven by elevation_surface
+    # z(s, n). Routed around the camber_rad estimator (see CLEANUP_LOG
+    # Day 13 deferred investigation: ±48° spikes on flat kart tracks).
+    # ``elevation_surface`` is the smoothed 2D height field built by
+    # ``track_surface.elevation``; finite-differences on it give clean
+    # per-tile normals. Absent (None) on bronze-tier sessions and any
+    # session where the elevation pipeline didn't have lateral spread.
+    fields_2d = _compute_2d_fields(
+        track_surface=track_surface,
+        weather_condition=weather_condition,
+        session_inputs=session_inputs,
+        lat=lat,
+        lon=lon,
+        wind_dir_deg=wind_dir_deg,
+        wind_speed_kmh=wind_speed_kmh,
+        wind_1d=wind,
+    )
+
     return SpatialMuModifier(
         arclength_samples=s_grid.tolist(),
         factor_values=combined.tolist(),
@@ -136,7 +154,96 @@ def compute_spatial_modifier(
             getattr(track_surface, "boundary_source", None) or "data_derived"
         ),
         spatial_version="spatial-v1.0",
+        **fields_2d,
     )
+
+
+def _compute_2d_fields(
+    *,
+    track_surface: Any,
+    weather_condition: WeatherCondition,
+    session_inputs: SessionInputs,
+    lat: float,
+    lon: float,
+    wind_dir_deg: float,
+    wind_speed_kmh: float,
+    wind_1d: np.ndarray,
+) -> dict[str, Any]:
+    """Day-13 Phase D — per-tile 2D field block.
+
+    Returns a dict of kwargs to splat into SpatialMuModifier — either the
+    seven 2D fields populated (when elevation_surface is available and
+    the geometry pipeline succeeds) or all None (graceful fallback —
+    callers see the same shape, the renderer drops to 1D longitudinal
+    bands keyed on the existing per-segment arrays).
+    """
+    none_block = {
+        "drainage_field_2d": None,
+        "sun_field_2d": None,
+        "wind_field_2d": None,
+        "factor_field_2d": None,
+        "tile_arclength_samples": None,
+        "tile_lateral_offsets": None,
+        "tile_grid_shape": None,
+    }
+
+    es = getattr(track_surface, "elevation_surface", None)
+    if es is None:
+        return none_block
+
+    try:
+        from .mesh_geometry import compute_tile_geometry, wind_bank_modulator
+        geom = compute_tile_geometry(es, track_surface.frenet)
+    except Exception as exc:
+        logger.warning(
+            "compute_tile_geometry failed: %s. Falling back to 1D-only spatial.",
+            exc,
+        )
+        return none_block
+
+    M, K = geom.slope_pct.shape
+
+    # Drainage 2D: re-apply the bucket function to the per-tile slope%.
+    # drainage_factor accepts any-shape arrays.
+    drainage_2d = drainage_factor(geom.slope_pct)  # (M, K)
+
+    # Sun 2D: sun_factor wants (N, 3) normals → flatten + reshape.
+    sun_flat = sun_factor(
+        session_inputs.started_at_utc, lat, lon,
+        geom.normals.reshape(-1, 3),
+    )
+    sun_2d = sun_flat.reshape(M, K)
+
+    # Wind 2D: the 1D wind_factor uses tangent direction, which doesn't
+    # vary per-n. To get genuine per-tile windward/lee variation on
+    # banked sections, multiply the 1D wind_components (resampled to
+    # the elevation grid) by a normal-direction modulator. On flat
+    # tiles the modulator is 1.0 → wind_2D = wind_1D (no spurious
+    # variation introduced).
+    wind_1d_at_tile_s = np.interp(
+        geom.s_bins,
+        np.asarray(track_surface.frenet.s_grid, dtype=np.float64),
+        np.asarray(wind_1d, dtype=np.float64),
+    )
+    wind_modulator = wind_bank_modulator(
+        geom.normals, wind_dir_deg,
+    )
+    wind_2d = wind_1d_at_tile_s[:, None] * wind_modulator
+
+    # Combined per-tile: 1 / (drainage · sun · wind), clamped by label.
+    factor_2d = compute_spatial_factor(
+        drainage_2d, sun_2d, wind_2d, weather_condition.label,
+    )
+
+    return {
+        "drainage_field_2d": drainage_2d.ravel().tolist(),
+        "sun_field_2d": sun_2d.ravel().tolist(),
+        "wind_field_2d": wind_2d.ravel().tolist(),
+        "factor_field_2d": factor_2d.ravel().tolist(),
+        "tile_arclength_samples": geom.s_bins.tolist(),
+        "tile_lateral_offsets": geom.n_bins.tolist(),
+        "tile_grid_shape": (int(M), int(K)),
+    }
 
 
 def attach_spatial_modifier(

@@ -206,3 +206,115 @@ def test_spatial_array_lengths_must_match_arclength():
     assert len(sm.drainage_components) == n
     assert len(sm.sun_components) == n
     assert len(sm.wind_components) == n
+
+
+# ── Day-13 Phase D — 2D per-tile fields ──────────────────────────────
+
+
+def _ok_r4_spatial_payload_with_2d() -> dict:
+    """5-segment × 3-lateral synthetic with 2D fields populated.
+
+    M_s=5, M_n=3 → 15 tile values per factor. Mirrors the shape the
+    real producer emits (flat row-major; client reshapes via
+    tile_grid_shape).
+    """
+    base = _ok_r4_spatial_payload()
+    base.update({
+        "drainage_field_2d": [
+            1.30, 1.00, 1.30,  # row 0
+            1.10, 0.85, 1.10,  # row 1
+            1.30, 1.00, 1.30,  # row 2
+            1.10, 0.85, 1.10,  # row 3
+            1.30, 1.00, 1.30,  # row 4
+        ],
+        "sun_field_2d": [0.95] * 15,
+        "wind_field_2d": [
+            1.10, 0.98, 0.85,
+            1.05, 0.98, 0.90,
+            1.00, 1.00, 1.00,
+            0.90, 0.98, 1.05,
+            0.85, 0.98, 1.10,
+        ],
+        "factor_field_2d": [
+            0.736, 1.039, 1.000,
+            0.900, 1.039, 1.000,
+            0.736, 1.039, 0.736,
+            0.900, 1.039, 0.900,
+            0.736, 1.039, 0.736,
+        ],
+        "tile_arclength_samples": [0.0, 200.0, 400.0, 600.0, 800.0],
+        "tile_lateral_offsets": [-4.0, 0.0, 4.0],
+        "tile_grid_shape": [5, 3],
+    })
+    return base
+
+
+def test_2d_fields_roundtrip_via_pydantic():
+    """2D fields survive Pydantic → JSON → Pydantic."""
+    payload = _ok_r4_spatial_payload_with_2d()
+    sm = SpatialMuModifierResponse.model_validate(payload)
+    assert sm.drainage_field_2d is not None
+    assert sm.sun_field_2d is not None
+    assert sm.wind_field_2d is not None
+    assert sm.factor_field_2d is not None
+    assert sm.tile_grid_shape == (5, 3)
+    assert len(sm.tile_arclength_samples or []) == 5
+    assert len(sm.tile_lateral_offsets or []) == 3
+    # Flat row-major: 5 × 3 = 15
+    assert len(sm.drainage_field_2d) == 15
+
+    blob = sm.model_dump_json()
+    rehydrated = SpatialMuModifierResponse.model_validate_json(blob)
+    assert rehydrated.tile_grid_shape == (5, 3)
+    assert rehydrated.drainage_field_2d == sm.drainage_field_2d
+
+
+def test_2d_fields_optional_when_absent():
+    """1D-only sessions: 2D fields default to None and don't round-trip
+    into the JSON output via exclude_none=True."""
+    payload = _ok_r4_spatial_payload()  # 1D only
+    sm = SpatialMuModifierResponse.model_validate(payload)
+    assert sm.drainage_field_2d is None
+    assert sm.tile_grid_shape is None
+
+    # exclude_none drops the absent 2D keys from the wire format
+    dumped = sm.model_dump(exclude_none=True)
+    for key in (
+        "drainage_field_2d", "sun_field_2d", "wind_field_2d",
+        "factor_field_2d", "tile_arclength_samples",
+        "tile_lateral_offsets", "tile_grid_shape",
+    ):
+        assert key not in dumped, f"{key} should be omitted when None"
+
+
+def test_2d_fields_flat_length_matches_grid_shape():
+    """Pydantic doesn't enforce M_s × M_n parity (variable per session);
+    the contract is documented via this test."""
+    payload = _ok_r4_spatial_payload_with_2d()
+    sm = SpatialMuModifierResponse.model_validate(payload)
+    M, K = sm.tile_grid_shape or (0, 0)
+    expected = M * K
+    for arr_name in (
+        "drainage_field_2d", "sun_field_2d",
+        "wind_field_2d", "factor_field_2d",
+    ):
+        arr = getattr(sm, arr_name)
+        assert arr is not None
+        assert len(arr) == expected, (
+            f"{arr_name} length {len(arr)} != M_s × M_n = {expected}"
+        )
+
+
+def test_full_response_with_2d_fields_in_conditions():
+    """End-to-end: TrackSurfaceResponse.conditions.spatial_modifier with
+    2D fields round-trips through the API contract."""
+    cond = _ok_r4_conditions_payload(with_spatial=True)
+    cond["spatial_modifier"] = _ok_r4_spatial_payload_with_2d()
+    surface = TrackSurfaceResponse.model_validate(_surface_payload(cond))
+    assert surface.conditions is not None
+    assert surface.conditions.spatial_modifier is not None
+    sm = surface.conditions.spatial_modifier
+    assert sm.tile_grid_shape == (5, 3)
+    assert sm.factor_field_2d is not None
+    # Combined 2D matches the 1D factor_values count multiplied across n
+    assert len(sm.factor_field_2d) == 15

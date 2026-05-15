@@ -32,10 +32,20 @@ class SessionInputs:
 
 @dataclass(frozen=True)
 class SpatialMuModifier:
-    """Per-arclength spatial μ-modifier (spec §7).
+    """Per-arclength spatial μ-modifier (spec §7) + optional 2D fields.
 
-    SCHEMA ONLY in Day 11. Day 12 will populate factor_values + the
-    three component arrays + the session-time solar/wind metadata.
+    1D layer (Day 12): per-segment arrays keyed on ``arclength_samples``;
+    ``factor_values`` is the clamped combined product per spec §7.
+
+    2D layer (Day 13 Phase D): per-tile fields keyed on
+    ``tile_arclength_samples × tile_lateral_offsets`` derived from the
+    ``ElevationSurface`` z(s, n) grid via finite-difference normals.
+    Present only when ``elevation_surface`` is available; ``None`` on
+    sessions where the elevation pipeline didn't produce a 2D grid
+    (bronze tier, no z-data, or insufficient lateral spread). When
+    present, the 2D fields drive per-tile coloring on the 3D mesh
+    while the 1D arrays remain authoritative for arc-length summary
+    stats + the diagnostic panel readouts.
     """
 
     arclength_samples: list[float]
@@ -49,6 +59,17 @@ class SpatialMuModifier:
     wind_speed_kmh: float
     mesh_source: Literal["hand_traced", "data_derived", "multihead"]
     spatial_version: str = "spatial-v1.0"
+
+    # Day-13 Phase D — 2D per-tile fields. None when ``elevation_surface``
+    # is unavailable for the session. Flat row-major lists of length
+    # M_s × M_n; the client reshapes via ``tile_grid_shape``.
+    drainage_field_2d: Optional[list[float]] = None
+    sun_field_2d: Optional[list[float]] = None
+    wind_field_2d: Optional[list[float]] = None
+    factor_field_2d: Optional[list[float]] = None
+    tile_arclength_samples: Optional[list[float]] = None
+    tile_lateral_offsets: Optional[list[float]] = None
+    tile_grid_shape: Optional[tuple[int, int]] = None  # (M_s, M_n)
 
 
 @dataclass(frozen=True)
