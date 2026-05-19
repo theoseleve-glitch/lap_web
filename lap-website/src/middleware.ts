@@ -49,14 +49,19 @@ function chooseVariant(cookieName: string, persona: string, attribution: Record<
 const CANONICAL_HOST = 'www.lap-coach.racing';
 
 export function middleware(request: NextRequest) {
-  // Canonical domain redirect: bare domain → www (301 permanent)
   const host = request.headers.get('host') ?? '';
+  const isCanonicalHost = host === CANONICAL_HOST;
+
+  // Canonical domain redirect: bare domain → www (301 permanent)
   if (host === 'lap-coach.racing') {
     const url = request.nextUrl.clone();
     url.host = CANONICAL_HOST;
     url.port = '';
     const redirect = NextResponse.redirect(url, 301);
     redirect.headers.set('Strict-Transport-Security', 'max-age=31536000; includeSubDomains');
+    // The redirect response itself is FROM the bare apex (non-canonical);
+    // belt-and-suspenders noindex so the 301 doesn't get crawled/cached.
+    redirect.headers.set('X-Robots-Tag', 'noindex, nofollow');
     return redirect;
   }
 
@@ -65,13 +70,23 @@ export function middleware(request: NextRequest) {
   if (pathname.length > 1 && pathname.endsWith('/')) {
     const url = request.nextUrl.clone();
     url.pathname = pathname.replace(/\/+$/, '');
-    return NextResponse.redirect(url, 301);
+    const redirect = NextResponse.redirect(url, 301);
+    if (!isCanonicalHost) {
+      redirect.headers.set('X-Robots-Tag', 'noindex, nofollow');
+    }
+    return redirect;
   }
 
   const response = NextResponse.next();
 
   // M-01: HSTS with 1-year max-age + includeSubDomains
   response.headers.set('Strict-Transport-Security', 'max-age=31536000; includeSubDomains');
+
+  // Block search-engine indexing of any non-canonical host (workers.dev,
+  // preview deploys, localhost). www.lap-coach.racing remains indexable.
+  if (!isCanonicalHost) {
+    response.headers.set('X-Robots-Tag', 'noindex, nofollow');
+  }
 
   if (!request.cookies.get('lap_session_id')?.value) {
     response.cookies.set('lap_session_id', crypto.randomUUID(), {
