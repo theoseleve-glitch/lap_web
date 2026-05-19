@@ -239,20 +239,39 @@ def run_preflight(file_path: str) -> PreflightResult:
             support_ref=support_ref,
         ))
 
-    # Try to detect delimiter from first few data-like lines
+    # Loggers like RaceChrono Pro emit a banner + ~10 metadata rows before the
+    # column header (banner line has zero commas). The previous predicate
+    # `all(c > 0 for c in first_5_lines)` rejected every delimiter on these
+    # files. Instead, scan further down and anchor on the first line whose
+    # delimiter count is repeated by the next line — that pair is the header
+    # row + first data row.
+    _SCAN_WINDOW = 50
+    _MIN_DELIM_COUNT = 2  # 3-column CSV (time,lat,lon) = 2 separators
+
     delimiter = None
-    for delim in [",", ";", "\t"]:
-        # Count delimiters in the first few non-empty lines
-        counts = [l.count(delim) for l in non_empty_lines[:5]]
-        if all(c > 0 for c in counts) and len(set(counts)) <= 2:
-            delimiter = delim
+    anchor_index = None
+    scan_upper = min(_SCAN_WINDOW, len(non_empty_lines) - 1)
+    for i in range(scan_upper):
+        line = non_empty_lines[i]
+        next_line = non_empty_lines[i + 1]
+        for delim in (",", ";", "\t"):
+            c = line.count(delim)
+            if c >= _MIN_DELIM_COUNT and c == next_line.count(delim):
+                delimiter = delim
+                anchor_index = i
+                break
+        if delimiter is not None:
             break
 
     if delimiter is None:
-        # Try pipe as last resort
-        for l in non_empty_lines[:5]:
-            if "|" in l:
+        # Pipe fallback — same anchor rule
+        for i in range(scan_upper):
+            line = non_empty_lines[i]
+            next_line = non_empty_lines[i + 1]
+            c = line.count("|")
+            if c >= _MIN_DELIM_COUNT and c == next_line.count("|"):
                 delimiter = "|"
+                anchor_index = i
                 break
 
     if delimiter is None:
@@ -260,6 +279,13 @@ def run_preflight(file_path: str) -> PreflightResult:
             ImportErrorCode.CSV_DELIMITER_NOT_RECOGNIZED,
             support_ref=support_ref,
         ))
+
+    if anchor_index and anchor_index > 0:
+        logger.debug(
+            "preflight: skipped %d metadata header line(s) before delimiter "
+            "anchor at line %d (delimiter=%r)",
+            anchor_index, anchor_index, delimiter,
+        )
 
     # ── 5. Header detection ───────────────────────────────────────
     header_row = None
