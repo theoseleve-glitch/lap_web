@@ -1421,13 +1421,19 @@ def estimate_track_boundaries(
     """Estimate L/R boundaries from perpendicular offsets of all lap XY traces."""
     if not resampled_laps:
         return None
+    if ref_line is None or len(ref_line) == 0:
+        return None
 
-    ref_dist = ref_line[_COL_DIST].values
-    ref_x = ref_line[_COL_X].values
-    ref_y = ref_line[_COL_Y].values
+    # ref_line is produced by compute_reference_line() which uses snake_case
+    # OUT_* names ("distance_m", "x_ref_m", "y_ref_m"). The lap_df values below
+    # come straight from the resampled pipeline and use RaceChrono _COL_* names
+    # ("Distance (m)", "X (m)", "Y (m)"). Do NOT conflate the two schemas.
+    ref_dist = ref_line[OUT_DIST].values
+    ref_x = ref_line[OUT_X].values
+    ref_y = ref_line[OUT_Y].values
 
-    if "heading_rad" in ref_line.columns:
-        heading = ref_line["heading_rad"].values
+    if OUT_HEADING in ref_line.columns:
+        heading = ref_line[OUT_HEADING].values
     else:
         dx = np.gradient(ref_x)
         dy = np.gradient(ref_y)

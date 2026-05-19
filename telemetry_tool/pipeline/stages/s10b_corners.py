@@ -510,11 +510,20 @@ def run_raceline_optimizer(
     if rl_mod is None:
         return None
 
-    _COL_DIST_LOCAL = "Distance (m)"
+    # compute_reference_line() emits "distance_m" (snake_case OUT_DIST),
+    # not the RaceChrono "Distance (m)". Accept both for resilience.
+    _ref_dist_col = next(
+        (
+            c
+            for c in ("distance_m", "Distance (m)")
+            if isinstance(reference_line, pd.DataFrame) and c in reference_line.columns
+        ),
+        None,
+    )
     ref_dict = {
         "distance_m": (
-            reference_line[_COL_DIST_LOCAL].values
-            if isinstance(reference_line, pd.DataFrame) and _COL_DIST_LOCAL in reference_line.columns
+            reference_line[_ref_dist_col].values
+            if _ref_dist_col is not None
             else np.array([])
         ),
         "curvature": (

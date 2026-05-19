@@ -18,21 +18,31 @@ from telemetry_tool.reference_line import (
 
 
 def _make_ref_line(n_points: int = 100, length_m: float = 500.0) -> pd.DataFrame:
-    """Create a straight reference line along the X axis."""
+    """Create a straight reference line along the X axis.
+
+    Columns mirror what compute_reference_line() actually produces:
+    snake_case OUT_* names (distance_m, x_ref_m, y_ref_m), NOT the
+    RaceChrono _COL_* names used inside resampled_laps DataFrames.
+    """
     dist = np.linspace(0, length_m, n_points)
     return pd.DataFrame({
-        "Distance (m)": dist,
-        "X (m)": dist,
-        "Y (m)": np.zeros(n_points),
+        "distance_m": dist,
+        "x_ref_m": dist,
+        "y_ref_m": np.zeros(n_points),
     })
 
 
 def _make_lap(ref_line: pd.DataFrame, y_offset: float = 0.0) -> pd.DataFrame:
-    """Create a lap DataFrame offset laterally from the reference line."""
+    """Create a lap DataFrame offset laterally from the reference line.
+
+    Lap DataFrames use RaceChrono _COL_* names ("Distance (m)", "X (m)",
+    "Y (m)") regardless of the ref_line schema, mirroring what the real
+    pipeline feeds estimate_track_boundaries via resampled_laps.
+    """
     return pd.DataFrame({
-        "Distance (m)": ref_line["Distance (m)"].values.copy(),
-        "X (m)": ref_line["X (m)"].values.copy(),
-        "Y (m)": ref_line["Y (m)"].values + y_offset,
+        "Distance (m)": ref_line["distance_m"].values.copy(),
+        "X (m)": ref_line["x_ref_m"].values.copy(),
+        "Y (m)": ref_line["y_ref_m"].values + y_offset,
     })
 
 
@@ -106,3 +116,37 @@ class TestTrackBoundaries:
         ref = _make_ref_line()
         result = estimate_track_boundaries({}, ref)
         assert result is None
+
+    def test_none_ref_line_returns_none(self):
+        """A None ref_line should return None rather than raise."""
+        ref = _make_ref_line()
+        laps = {"lap_0": _make_lap(ref, y_offset=1.0)}
+        assert estimate_track_boundaries(laps, None) is None
+
+    def test_empty_ref_line_returns_none(self):
+        """An empty ref_line DataFrame should return None rather than raise."""
+        ref = _make_ref_line()
+        laps = {"lap_0": _make_lap(ref, y_offset=1.0)}
+        assert estimate_track_boundaries(laps, pd.DataFrame()) is None
+
+    def test_integrates_with_compute_reference_line(self):
+        """Regression: estimate_track_boundaries must accept the schema
+        that compute_reference_line() actually produces (snake_case OUT_*).
+        Before this test existed, a column-name mismatch caused KeyError
+        for every real session — silently swallowed by _safe_step."""
+        from telemetry_tool.reference_line import compute_reference_line
+
+        dist = np.linspace(0, 500, 100)
+
+        def make_lap(y_offset):
+            return pd.DataFrame({
+                "Distance (m)": dist,
+                "X (m)": dist,
+                "Y (m)": np.full(100, y_offset),
+            })
+
+        laps = {1: make_lap(0.5), 2: make_lap(-0.5), 3: make_lap(0.3)}
+        ref = compute_reference_line(laps, method="median")
+        result = estimate_track_boundaries(laps, ref)
+        assert result is not None
+        assert len(result.distance_m) == len(ref)
