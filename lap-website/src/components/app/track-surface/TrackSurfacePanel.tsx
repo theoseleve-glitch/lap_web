@@ -11,6 +11,7 @@ import {
   type SensorQualityBlock,
   type WeatherConditionBlock,
 } from './useTrackSurfaceData';
+import { useSpatialFlag } from '@/hooks/useSpatialFlag';
 
 /* ── Types ────────────────────────────────────────────── */
 
@@ -70,6 +71,23 @@ export default function TrackSurfacePanel({ sessionId, className }: TrackSurface
   const [showActual, setShowActual] = useState(false);
   const { surface, isLoading } = useTrackSurfaceData(sessionId);
 
+  // Day-13 Phase 7.5: conditions UI (ConditionRow + Spatial Grip mode +
+  // SpatialDiagnosticsPanel) is gated behind ?debug=spatial until bug-4
+  // (09a2 Distance(m) cascade) is fixed in Day-14.
+  const spatialEnabled = useSpatialFlag();
+  const visibleModes = spatialEnabled
+    ? MODES
+    : MODES.filter((m) => m.key !== 'spatial-grip');
+
+  // Defensive: if the flag flips off (URL changed) while spatial-grip is
+  // active, fall back to the default grip mode so the panel can't render
+  // a hidden mode.
+  useEffect(() => {
+    if (!spatialEnabled && mode === 'spatial-grip') {
+      setMode('grip');
+    }
+  }, [spatialEnabled, mode]);
+
   const qualityTier = surface?.quality_tier ?? null;
 
   // Day-13 Phase D: spatial-grip mode requires a spatial_modifier on the
@@ -115,7 +133,7 @@ export default function TrackSurfacePanel({ sessionId, className }: TrackSurface
 
       {/* Mode selector */}
       <div className="flex items-center gap-1 px-4 py-2 border-b border-steel/10">
-        {MODES.map(({ key, label }) => {
+        {visibleModes.map(({ key, label }) => {
           const disabled = key === 'spatial-grip' && spatialDisabled;
           const titleAttr = disabled
             ? 'Spatial μ requires Day-12+ analysis (session uploaded before this feature, or weather lookup unavailable).'
@@ -221,20 +239,24 @@ export default function TrackSurfacePanel({ sessionId, className }: TrackSurface
       )}
 
       {/* Conditions (Day-11/12). Renders nothing on pre-Day-11 sessions
-          per Day-13 Phase C lock — empty slot is the honest UI. */}
-      <ConditionRow conditions={surface?.conditions ?? null} />
+          per Day-13 Phase C lock — empty slot is the honest UI.
+          Phase 7.5: gated behind ?debug=spatial until bug-4 resolved. */}
+      {spatialEnabled && <ConditionRow conditions={surface?.conditions ?? null} />}
 
       {/* Spatial diagnostics (Day-13 Phase E). Per-factor breakdown
           of the Day-12 producer output AND the iso-factor selector that
           isolates a single component on the 3D mesh. Collapsible,
           default-collapsed. Renders only in spatial-grip mode when
-          spatial data is present. */}
-      <SpatialDiagnosticsPanel
-        conditions={surface?.conditions ?? null}
-        visible={mode === 'spatial-grip'}
-        activeFactor={spatialFactor}
-        onFactorChange={setSpatialFactor}
-      />
+          spatial data is present.
+          Phase 7.5: gated behind ?debug=spatial until bug-4 resolved. */}
+      {spatialEnabled && (
+        <SpatialDiagnosticsPanel
+          conditions={surface?.conditions ?? null}
+          visible={mode === 'spatial-grip'}
+          activeFactor={spatialFactor}
+          onFactorChange={setSpatialFactor}
+        />
+      )}
 
       {/* Sensor Quality (RC6) */}
       <SensorQualityRow sq={surface?.sensor_quality ?? null} isLoading={isLoading} />
