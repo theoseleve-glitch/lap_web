@@ -95,7 +95,7 @@ def _safe_step(
         tb = traceback.format_exc()
         msg = f"{type(exc).__name__}: {exc}"
         logger.warning("Step [%s] --  FAILED: %s  (%.0f ms)", step_name, msg, duration_ms)
-        logger.debug("Step [%s] traceback:\n%s", step_name, tb)
+        logger.warning("Step [%s] traceback:\n%s", step_name, tb)
         _last_step_status = StepStatus(
             name=step_name,
             status=StepState.FAIL,

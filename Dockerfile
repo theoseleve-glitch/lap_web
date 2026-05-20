@@ -22,7 +22,7 @@ COPY --from=builder /install /usr/local
 
 # Non-root user
 RUN adduser --system --no-create-home --group app \
-    && mkdir -p /data/uploads /data/parquet /data/exports /data/models \
+    && mkdir -p /data/uploads /data/parquet /data/exports /data/models /data/sidecars \
     && chown -R app:app /data
 
 COPY --chown=app:app telemetry_tool/ telemetry_tool/

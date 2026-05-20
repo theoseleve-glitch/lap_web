@@ -12,6 +12,7 @@ Every session enriches the model; the solver reads the accumulated model.
 from __future__ import annotations
 
 import logging
+import os
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -33,8 +34,27 @@ _MAX_LENGTH_RATIO = 0.10  # 10% length mismatch → reject
 
 
 def _default_sidecar_root() -> Path:
-    """Resolve sidecar root, matching theoretical.py convention."""
-    root = Path(__file__).resolve().parent.parent.parent / "data" / "sidecars"
+    """Resolve sidecar root.
+
+    Precedence:
+      1. ``SIDECAR_ROOT`` env var (production layout — set in docker-compose
+         to ``/data/sidecars``, a Docker-volume-backed directory).
+      2. ``<repo>/data/sidecars`` via ``parent.parent.parent`` from this file
+         (dev / desktop layout).
+
+    The env-var path exists because the Docker runtime layout has
+    ``__file__`` at ``/app/telemetry_tool/track_surface/store.py``, which
+    resolves the dev fallback to ``/app/data/sidecars`` — but ``/app/`` is
+    root-owned in the runtime image, so the unprivileged ``app`` user can't
+    create the directory. SIDECAR_ROOT lets the deployment point at a
+    pre-created, writable, volume-backed path matching the existing
+    ``/data/uploads`` etc. pattern.
+    """
+    env_root = os.environ.get("SIDECAR_ROOT")
+    if env_root:
+        root = Path(env_root)
+    else:
+        root = Path(__file__).resolve().parent.parent.parent / "data" / "sidecars"
     root.mkdir(parents=True, exist_ok=True)
     return root
 

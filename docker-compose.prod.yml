@@ -8,11 +8,13 @@ services:
       TELEMETRY_LOG_FORMAT: json
       SENTRY_DSN_API: ${SENTRY_DSN_API}
       SENTRY_ENVIRONMENT: production
+      SIDECAR_ROOT: /data/sidecars
     volumes:
       - upload_data:/data/uploads
       - parquet_data:/data/parquet
       - export_data:/data/exports
       - models_data:/data/models
+      - sidecar_data:/data/sidecars
     depends_on:
       postgres:
         condition: service_healthy
@@ -99,10 +101,12 @@ services:
       TELEMETRY_LOG_FORMAT: json
       SENTRY_DSN_WORKER: ${SENTRY_DSN_WORKER}
       SENTRY_ENVIRONMENT: production
+      SIDECAR_ROOT: /data/sidecars
     volumes:
       - upload_data:/data/uploads
       - parquet_data:/data/parquet
       - models_data:/data/models
+      - sidecar_data:/data/sidecars
     healthcheck:
       test: ["CMD-SHELL", "celery -A telemetry_tool.celery_app inspect ping --timeout 5"]
       interval: 30s
@@ -133,6 +137,9 @@ services:
       TELEMETRY_LOG_FORMAT: json
       SENTRY_DSN_WORKER: ${SENTRY_DSN_WORKER}
       SENTRY_ENVIRONMENT: production
+      SIDECAR_ROOT: /data/sidecars
+    volumes:
+      - sidecar_data:/data/sidecars
     healthcheck:
       test: ["CMD-SHELL", "celery -A telemetry_tool.celery_app inspect ping --timeout 5"]
       interval: 30s
@@ -159,6 +166,9 @@ services:
       TELEMETRY_LOG_FORMAT: json
       SENTRY_DSN_WORKER: ${SENTRY_DSN_WORKER}
       SENTRY_ENVIRONMENT: production
+      SIDECAR_ROOT: /data/sidecars
+    volumes:
+      - sidecar_data:/data/sidecars
     depends_on:
       redis:
         condition: service_healthy
@@ -187,6 +197,7 @@ volumes:
   parquet_data:
   export_data:
   models_data:
+  sidecar_data:
   caddy_data:
   caddy_config:
 
