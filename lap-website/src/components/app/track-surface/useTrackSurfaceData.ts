@@ -190,13 +190,37 @@ export function useTrackSurfaceData(sessionId: string) {
   });
 
   const isLoading = surface.isLoading;
-  const error = surface.error ?? optimalLine.error ?? gpsTrace.error ?? lineDelta.error ?? null;
+
+  // Day-14: only the surface query's error trips the panel-level error
+  // state. Missing optimal-line / line-delta is the common case for a
+  // new user's first upload (no aggregate surface yet, no kart vehicle
+  // profile) and now returns 200 + {available:false} from the API. The
+  // panel must degrade gracefully — render surface + conditions, omit
+  // the optimal/delta overlays — rather than show "Failed to load".
+  // gps-trace already had this shape and was never rolled up as a hard
+  // error; aligning optimal-line + line-delta to the same pattern.
+  const error = surface.error ?? null;
+
+  // Endpoints with {available: false} payloads return that shape rather
+  // than the canonical {points: [...]} shape. Detect via the `points`
+  // key presence so the consumer sees null instead of an unexpected
+  // available-flag object.
+  const optimalPoints = optimalLine.data && Array.isArray(
+    (optimalLine.data as { points?: unknown }).points,
+  )
+    ? (optimalLine.data as OptimalLineResponse).points
+    : null;
+  const lineDeltaPoints = lineDelta.data && Array.isArray(
+    (lineDelta.data as { points?: unknown }).points,
+  )
+    ? (lineDelta.data as LineDeltaResponse).points
+    : null;
 
   return {
     surface: surface.data ?? null,
-    optimalLine: optimalLine.data?.points ?? null,
+    optimalLine: optimalPoints,
     gpsTrace: gpsTrace.data ?? null,
-    lineDelta: lineDelta.data?.points ?? null,
+    lineDelta: lineDeltaPoints,
     isLoading,
     error,
   };

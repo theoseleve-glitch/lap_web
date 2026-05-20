@@ -386,6 +386,20 @@ def _build_analysis_blob(result: dict) -> dict:
                 serialisable[k] = sorted(v) if isinstance(v, set) else v
             blob[key] = serialisable
 
+    # Day-14 (C): port V2 bug-2 fix (V2 commit bdef6a4c) — conditions +
+    # sensor_quality from the orchestrator (steps 10e and 10f) were never
+    # copied into the persisted blob on the lap_web celery flow. Without
+    # this, the /track-surface route's `analysis.get("conditions")` returns
+    # None and ConditionRow has nothing to render. The sync upload path
+    # (_persist_analysis_json) already includes these keys; this brings
+    # the celery flow to parity.
+    sq = result.get("sensor_quality")
+    if sq and isinstance(sq, dict):
+        blob["sensor_quality"] = sq
+    cond = result.get("conditions")
+    if cond and isinstance(cond, dict):
+        blob["conditions"] = cond
+
     return blob
 
 

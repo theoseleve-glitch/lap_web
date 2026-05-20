@@ -5289,15 +5289,20 @@ def get_optimal_line(session_id: str) -> tuple[dict, int]:
     if not analysis or not isinstance(analysis, dict):
         return api_error(ErrorCode.NOT_FOUND, "No analysis data", status=404)
 
-    # Check for precomputed optimal line in pipeline summary
+    # Check for precomputed optimal line in pipeline summary.
+    # Day-14 (B1): missing optimal_line is the common-case for kart sessions
+    # (no canonical vehicle_params, CasADi gating). Return 200 with
+    # available=false rather than 404 so the frontend useTrackSurfaceData
+    # rollup doesn't trip the surface-error state on partial data. Same
+    # pattern as /gps-trace already uses.
     pipeline = analysis.get("pipeline", {})
     optimal = pipeline.get("optimal_line")
     if optimal is None:
-        return api_error(
-            ErrorCode.NOT_FOUND,
-            "Optimal line not computed for this session (requires boundaries + CasADi)",
-            status=404,
-        )
+        return api_response({
+            "available": False,
+            "reason_code": "optimal_line_not_computed",
+            "message": "Optimal line not computed for this session (requires boundaries + CasADi + vehicle params)",
+        })
 
     return api_response(optimal)
 
@@ -5330,12 +5335,16 @@ def get_line_delta(session_id: str) -> tuple[dict, int]:
     corner_losses = pipeline.get("corner_line_losses", [])
     spatial_coaching = pipeline.get("spatial_coaching", [])
 
+    # Day-14 (B1): missing line_delta is the cascade-of-missing-optimal_line
+    # case (kart sessions, sessions without canonical vehicle profiles).
+    # Return 200 with available=false rather than 404 so the panel renders
+    # surface + conditions even when line-delta isn't computable.
     if line_delta_data is None:
-        return api_error(
-            ErrorCode.NOT_FOUND,
-            "Line delta not computed (requires optimal line + position data)",
-            status=404,
-        )
+        return api_response({
+            "available": False,
+            "reason_code": "requires_optimal_line",
+            "message": "Line delta not computed (requires optimal line + position data)",
+        })
 
     return api_response({
         "line_delta": line_delta_data,

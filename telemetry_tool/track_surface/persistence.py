@@ -336,47 +336,116 @@ def get_track_surface(
     """Read the aggregate track surface for an API response.
 
     Returns a dict suitable for JSON serialization, or None if no data.
-    RLS handles workspace filtering automatically.
+
+    Day-14 (A1): Workspace-first-then-global-fallback. Read
+    ``track_surfaces`` (workspace-scoped, RLS-protected) first; if it
+    has no rows for this (track, class, condition) tuple, fall back to
+    ``track_surfaces_global`` (cross-workspace aggregate physics
+    reference, no RLS by design).
+
+    Why the fallback: today's surface writer (``upsert_global_surface``,
+    fixed in Day-14) lands rows in ``track_surfaces_global``. The
+    workspace-scoped ``track_surfaces`` table is populated by
+    ``upsert_session_grip``, which currently fails silently in celery
+    workers because ``track_surfaces.workspace_id`` defaults to
+    ``current_setting('app.current_workspace_id')`` and that GUC isn't
+    set on celery's fresh PG connections (Day-15 follow-up, A2). Once
+    A2 lands, ``track_surfaces`` will populate and this function will
+    naturally prefer the workspace row over the global aggregate.
+
+    Cross-workspace concern: ``track_surfaces_global`` is the
+    aggregate physics reference — width / elevation / slope / mu_lat
+    derived from many sessions across all workspaces. Returning it
+    from the API without workspace scoping is the *intended* behaviour
+    (the model is global by construction). No user-specific PII leaks
+    via this path — only the per-bin physics samples.
     """
-    sql = """
+    base_params = {
+        "track_id": track_id,
+        "vehicle_class": vehicle_class,
+        "condition": condition,
+    }
+
+    # 1) Workspace-scoped read (the intended-long-term path).
+    workspace_sql = """
         SELECT distance_m, mu_lat_p95, mu_lat_mean,
                mu_lon_accel, mu_lon_brake,
                elevation_m, lateral_scatter_m,
-               sample_count, session_count, last_updated
+               sample_count, session_count, last_updated,
+               NULL::double precision AS slope_pct,
+               NULL::double precision AS vert_curvature_1pm,
+               NULL::double precision AS width_left_m,
+               NULL::double precision AS width_right_m,
+               NULL::double precision AS camber_rad
         FROM track_surfaces
         WHERE track_id = %(track_id)s
           AND vehicle_class = %(vehicle_class)s
           AND condition = %(condition)s
         ORDER BY distance_m
     """
+    rows = None
+    source = "workspace"
     try:
-        rows = conn.execute(sql, {
-            "track_id": track_id,
-            "vehicle_class": vehicle_class,
-            "condition": condition,
-        }).fetchall()
+        rows = conn.execute(workspace_sql, base_params).fetchall()
     except Exception:
-        return None
+        rows = None
+
+    # 2) Fall back to the cross-workspace global aggregate.
+    if not rows:
+        global_sql = """
+            SELECT distance_m, mu_lat_p95, mu_lat_mean,
+                   mu_lon_accel, mu_lon_brake,
+                   elevation_m, lateral_scatter_m,
+                   sample_count, session_count, last_updated,
+                   slope_pct, vert_curvature_1pm,
+                   width_left_m, width_right_m, camber_rad
+            FROM track_surfaces_global
+            WHERE track_id = %(track_id)s
+              AND vehicle_class = %(vehicle_class)s
+              AND condition = %(condition)s
+            ORDER BY distance_m
+        """
+        try:
+            rows = conn.execute(global_sql, base_params).fetchall()
+            source = "global"
+        except Exception:
+            return None
 
     if not rows:
         return None
 
+    # PgConnectionWrapper uses psycopg2's RealDictCursor — rows are dict-like
+    # keyed by column name, not positional. The pre-Day-14 code used r[0]/r[1]
+    # because it was reading through a different cursor factory path; now
+    # accessing via column name to match the actual runtime shape.
+    def _get(row, key):
+        if hasattr(row, "get"):
+            return row.get(key)
+        return row[key]
+
     bins = []
     for r in rows:
         bins.append({
-            "distance_m": r[0],
-            "mu_lat_p95": r[1],
-            "mu_lat_mean": r[2],
-            "mu_lon_accel": r[3],
-            "mu_lon_brake": r[4],
-            "elevation_m": r[5],
-            "lateral_scatter_m": r[6],
-            "sample_count": r[7],
-            "session_count": r[8],
+            "distance_m": _get(r, "distance_m"),
+            "mu_lat_p95": _get(r, "mu_lat_p95"),
+            "mu_lat_mean": _get(r, "mu_lat_mean"),
+            "mu_lon_accel": _get(r, "mu_lon_accel"),
+            "mu_lon_brake": _get(r, "mu_lon_brake"),
+            "elevation_m": _get(r, "elevation_m"),
+            "lateral_scatter_m": _get(r, "lateral_scatter_m"),
+            "sample_count": _get(r, "sample_count"),
+            "session_count": _get(r, "session_count"),
+            "slope_pct": _get(r, "slope_pct"),
+            "vert_curvature_1pm": _get(r, "vert_curvature_1pm"),
+            "width_left_m": _get(r, "width_left_m"),
+            "width_right_m": _get(r, "width_right_m"),
+            "camber_rad": _get(r, "camber_rad"),
         })
 
-    total_sessions = max((b["session_count"] for b in bins), default=0)
-    total_samples = sum(b["sample_count"] for b in bins)
+    total_sessions = max((b["session_count"] for b in bins if b["session_count"] is not None), default=0)
+    total_samples = sum((b["sample_count"] for b in bins if b["sample_count"] is not None))
+
+    last_updated_val = _get(rows[-1], "last_updated") if rows else None
 
     return {
         "track_id": track_id,
@@ -384,7 +453,8 @@ def get_track_surface(
         "bin_count": len(bins),
         "total_sessions": total_sessions,
         "total_samples": total_samples,
-        "last_updated": str(rows[-1][9]) if rows else None,
+        "source": source,  # "workspace" or "global" — diagnostic provenance
+        "last_updated": str(last_updated_val) if last_updated_val is not None else None,
     }
 
 
