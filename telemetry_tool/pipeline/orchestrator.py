@@ -1189,7 +1189,24 @@ def run_full_analysis(
                 from track_surface.store import upsert_global_surface
                 from web.db import get_db_connection as _get_surf_conn
                 _surf_conn = _get_surf_conn()
-                _surf_updated = upsert_global_surface(_surf_conn, track_id, _session_surface)
+                # Day-14: pass vehicle_class + condition so the upsert
+                # matches the 4-column unique constraint (was 2-column,
+                # which raised InvalidColumnReference on every INSERT).
+                # Use the same meta sourcing as the step 09j grip path.
+                _surf_updated = upsert_global_surface(
+                    _surf_conn, track_id, _session_surface,
+                    vehicle_class=meta.get("vehicle_class", "car"),
+                    condition=meta.get("track_state", "dry"),
+                )
+                # Day-14: commit explicitly. psycopg2 starts an implicit
+                # transaction on first query; without commit, the 762 INSERTs
+                # roll back when the connection is GC'd at request end.
+                # Wrapped in its own try so a commit failure doesn't hide
+                # the upsert work that already succeeded server-side.
+                try:
+                    _surf_conn.commit()
+                except Exception as _commit_exc:
+                    logger.warning("Global surface commit failed: %s", _commit_exc)
                 summary["track_surface_global_bins"] = _surf_updated
             except Exception as _surf_exc:
                 logger.warning("Global surface upsert skipped: %s", _surf_exc)
@@ -1225,7 +1242,11 @@ def run_full_analysis(
 
         _started_at_utc = None
         if resampled_laps:
-            _first_lap = resampled_laps[0]
+            # Day-14: resampled_laps is a dict keyed by lap_number (1-indexed),
+            # not a list. resampled_laps[0] raised KeyError. Sister of the
+            # V2 fix at orchestrator.py:1209 (Day-13 commit a5af8efa) that
+            # never landed on lap_web for this second occurrence.
+            _first_lap = next(iter(resampled_laps.values()))
             if "Time (s)" in _first_lap.columns and len(_first_lap) > 0:
                 from datetime import datetime as _dt, timezone as _tz
                 _started_at_utc = _dt.fromtimestamp(

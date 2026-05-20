@@ -577,6 +577,16 @@ def run_track_decomposition_v2(
                 return _user_corners_to_sections(rows, best_lap_df, td_mod)
         except Exception:
             logger.debug("user_corners table check failed, using autonomous", exc_info=True)
+            # Day-14: roll back the aborted transaction so subsequent
+            # queries on this shared connection (S10h_fetch_user_corners
+            # uses the same conn) don't cascade with InFailedSqlTransaction.
+            # The actual user_corners table is now created by migration
+            # 059, so this guard is belt-and-suspenders for any future
+            # query failure on the same connection.
+            try:
+                conn.rollback()
+            except Exception:
+                pass
 
     # Autonomous decomposition
     sections = td_mod.decompose_track(best_lap_df)

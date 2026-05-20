@@ -540,11 +540,25 @@ def upsert_global_surface(
     conn: Any,
     track_id: str,
     surface: TrackSurface,
+    *,
+    vehicle_class: str = "car",
+    condition: str = "dry",
 ) -> int:
     """Upsert 1D surface properties into track_surfaces_global.
 
     Extends the existing grip data with elevation, width, camber,
     vertical curvature, and slope.
+
+    Day-14 fix: ``ON CONFLICT`` was previously ``(track_id, distance_m)``
+    — but the table's unique constraint is
+    ``uq_track_surface_global_bin (track_id, distance_m, vehicle_class, condition)``.
+    The mismatch raised ``InvalidColumnReference`` on every INSERT, leaving
+    the connection in failed-txn state and zero bins written. The fix:
+    (a) accept vehicle_class + condition kwargs to satisfy the constraint
+    columns; (b) match the 4-column ON CONFLICT exactly; (c) keep mu_lat
+    NOT NULL satisfied via the column defaults added in migration 059
+    (this function doesn't carry mu_lat per bin — that's the grip path's
+    job via ``upsert_global_grip``).
 
     Returns number of bins upserted.
     """
@@ -561,7 +575,9 @@ def upsert_global_surface(
         params: dict[str, Any] = {
             "track_id": track_id,
             "distance_m": round(float(s), 1),
-            "now": now,
+            "vehicle_class": vehicle_class,
+            "condition": condition,
+            "last_updated": now,
         }
 
         # Collect available values
@@ -604,7 +620,7 @@ def upsert_global_surface(
         sql = f"""
             INSERT INTO track_surfaces_global ({insert_cols})
             VALUES ({insert_vals})
-            ON CONFLICT (track_id, distance_m)
+            ON CONFLICT (track_id, distance_m, vehicle_class, condition)
             DO UPDATE SET {set_clause}
         """
 
@@ -612,7 +628,11 @@ def upsert_global_surface(
             conn.execute(sql, params)
             updated += 1
         except Exception as exc:
-            logger.debug("Global surface upsert skip d=%.1f: %s", s, exc)
+            # Day-14: was DEBUG-level — escalated to WARNING. This pattern
+            # has now hidden 4 critical bugs in 48h (column-name mismatch,
+            # filesystem perms, track-detection mis-keying, ON CONFLICT
+            # mismatch); silent swallows stop here too.
+            logger.warning("Global surface upsert skip d=%.1f: %s", s, exc)
 
     if updated > 0:
         logger.info("Global surface upserted: track=%s, bins=%d", track_id, updated)
