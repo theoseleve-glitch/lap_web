@@ -112,11 +112,45 @@ def upsert_session(
     _pvh = _pipeline_info.get("pipeline_version", "unknown")
     _mv = _pipeline_info.get("model_version", "none")
 
+    # Day-14: Upsert guard for track_id. The Celery pipeline can return the
+    # "unknown_track" sentinel when the analyze->finalize boundary loses the
+    # real UUID (resume_from_step8 skips step 05). Without this guard, the
+    # INSERT OR REPLACE clobbers a previously-detected real UUID with the
+    # sentinel. The guard inspects the existing row and preserves the real
+    # UUID. UUID-over-UUID still proceeds normally; only sentinel-over-UUID
+    # is blocked.
+    _incoming_tid = summary.get("track_id") or "unknown_track"
+    _final_tid = _incoming_tid
+    if _incoming_tid == "unknown_track":
+        try:
+            _existing_row = conn.execute(
+                "SELECT track_id FROM sessions WHERE session_id = :sid",
+                {"sid": session_id},
+            ).fetchone()
+            if _existing_row:
+                _existing_tid = (
+                    _existing_row[0] if not isinstance(_existing_row, dict)
+                    else _existing_row.get("track_id")
+                )
+                if _existing_tid and _existing_tid != "unknown_track":
+                    logger.warning(
+                        "upsert_session: refused to overwrite track_id %s with sentinel for session %s",
+                        _existing_tid, session_id,
+                    )
+                    _final_tid = _existing_tid
+        except Exception:
+            # If the guard lookup fails, fall through to the original
+            # (incoming) behaviour rather than blocking the upsert.
+            logger.warning(
+                "upsert_session: track_id guard lookup failed for session %s",
+                session_id, exc_info=True,
+            )
+
     conn.execute(Q.INSERT_SESSION, {
         "session_id":        session_id,
         "csv_filename":      Path(str(summary.get("csv_path", ""))).name,
         "driver_id":         driver_id,
-        "track_id":          summary.get("track_id") or "unknown_track",
+        "track_id":          _final_tid,
         "session_type":      meta.get("session_type", "practice"),
         "track_state":       meta.get("track_state", "dry"),
         "session_date":      _session_date,

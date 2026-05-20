@@ -246,6 +246,19 @@ def _build_session_meta(ctx: PipelineContext) -> dict:
     except Exception:
         logger.warning("Failed to read pipeline:meta for job %s", ctx.job_id, exc_info=True)
 
+    # Day-14: Bridge step 05's track_id from the analyze stage so the
+    # finalize stage's resume-from-step8 path doesn't fall through to the
+    # sentinel default. Paired with the write in _run_analyze_stages.
+    try:
+        r2 = _get_redis()
+        tid_raw = r2.get(f"pipeline:track_id:{ctx.job_id}")
+        if tid_raw:
+            tid = tid_raw.decode("utf-8") if isinstance(tid_raw, (bytes, bytearray)) else tid_raw
+            if tid and tid != "unknown_track":
+                meta["track_id"] = tid
+    except Exception:
+        logger.warning("Failed to read pipeline:track_id for job %s", ctx.job_id, exc_info=True)
+
     # Ensure session_id is always from context
     meta["session_id"] = ctx.session_id
 
@@ -558,6 +571,7 @@ def _run_analyze_stages(ctx: PipelineContext, job_id: str | None = None, conn=No
     resampled_laps = result.get("resampled_laps") or {}
     corners = result.get("corners") or []
     track_layout = result.get("track_layout")
+    track_id = result.get("track_id")
 
     # Persist resampled laps to temp dir (Parquet) for finalize to load
     for lap_num, df in resampled_laps.items():
@@ -576,6 +590,19 @@ def _run_analyze_stages(ctx: PipelineContext, job_id: str | None = None, conn=No
         r.set(
             f"pipeline:layout:{ctx.job_id}",
             _json.dumps(track_layout),
+            ex=7200,
+        )
+
+    # Day-14: Bridge step 05's track_id across the analyze->finalize boundary.
+    # _run_finalize_stages calls run_full_analysis(resume_from_step8=True), which
+    # skips step 05 and would otherwise fall back to meta.get("track_id",
+    # "unknown_track") -> sentinel. Storing the real UUID here lets
+    # _build_session_meta inject it back into meta so the resume path keeps
+    # a valid track_id.
+    if track_id and track_id != "unknown_track":
+        r.set(
+            f"pipeline:track_id:{ctx.job_id}",
+            track_id,
             ex=7200,
         )
 
