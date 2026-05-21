@@ -120,8 +120,16 @@ def build_grip_surface(
     mu_count = np.zeros((M, K), dtype=int)
 
     for lap_df in laps:
-        # Extract required channels
+        # Extract required channels.
+        # Day-15: dual-name speed lookup. The resampled lap DataFrames carry
+        # RaceChrono-style column names ("Speed (m/s)") that never get
+        # renamed to the canonical snake_case "speed_mps" this function was
+        # written against. Pre-fix, this hit the continue-swallow and
+        # build_grip_surface produced an empty grid for every prod session.
+        # "Speed (m/s)" is already in m/s — no unit conversion needed.
         speed = lap_df.get("speed_mps")
+        if speed is None:
+            speed = lap_df.get("Speed (m/s)")
         a_lat = lap_df.get("accel_lat_mps2")
         if speed is None or a_lat is None:
             continue
@@ -216,6 +224,25 @@ def build_grip_surface(
 
     # Confidence: based on sample count (saturates at ~50 samples)
     confidence = np.clip(mu_count / 50.0, 0.0, 1.0)
+
+    # Day-15 silent-empty guard. 5th silent-empty failure surfaced this week
+    # (yesterday: reference_line OUT_*, then sidecar perms, then track-detection
+    # sentinel, then ON CONFLICT mismatch, today: speed_mps vs "Speed (m/s)").
+    # If the gate passed but zero cells got observations, log what was looked
+    # for vs what the input actually had so the next mismatch surfaces at
+    # ingest time instead of three days downstream.
+    if int(mu_count.sum()) == 0:
+        sample_cols = list(laps[0].columns) if laps else []
+        logger.warning(
+            "build_grip_surface: %d lap(s) processed but count_grid is "
+            "empty — expected one of {%s} for speed AND %r for a_lat. "
+            "First lap actually has %d columns; sample: %s",
+            len(laps),
+            "'speed_mps', 'Speed (m/s)'",
+            "accel_lat_mps2",
+            len(sample_cols),
+            sample_cols[:12] + (["..."] if len(sample_cols) > 12 else []),
+        )
 
     return GripSurface(
         s_bins=s_bins,

@@ -536,6 +536,46 @@ def _save_grip_2d(path: Path, grip: GripSurface) -> None:
 # -- PG upsert ----------------------------------------------------------------
 
 
+def _grip_lat_stats_at(grip_2d: Any, s: float) -> tuple[float | None, float | None]:
+    """Day-15 denorm helper: per-arclength mu_lat (p95, mean) from grip_2d.
+
+    ``GripSurface`` stores a (M_s, K_n) grid of friction coefficient + sample
+    counts per cell. To populate ``track_surfaces_global.mu_lat_*`` (which are
+    per-arclength scalars), we aggregate the lateral slice at the nearest
+    s-bin, weighted by per-cell sample count. Returns ``(None, None)`` when
+    the slice has no observed samples — the loop then leaves mu_lat unset and
+    the column default (0.0 from migration 059) covers the NOT NULL row.
+    """
+    if grip_2d is None:
+        return None, None
+    if not hasattr(grip_2d, "mu_grid") or not hasattr(grip_2d, "count_grid"):
+        return None, None
+    if grip_2d.mu_grid.size == 0:
+        return None, None
+    si = int(np.argmin(np.abs(grip_2d.s_bins - s)))
+    counts = grip_2d.count_grid[si, :]
+    mus = grip_2d.mu_grid[si, :]
+    mask = (counts > 0) & np.isfinite(mus)
+    if not mask.any():
+        return None, None
+    mus_w = mus[mask]
+    counts_w = counts[mask].astype(float)
+    total = float(counts_w.sum())
+    if total <= 0:
+        return None, None
+    mu_mean = float((mus_w * counts_w).sum() / total)
+    # Weighted 95th-percentile via sample-count expansion (cheap, M_n is small).
+    order = np.argsort(mus_w)
+    sorted_mus = mus_w[order]
+    sorted_counts = counts_w[order]
+    cum = np.cumsum(sorted_counts)
+    threshold = 0.95 * cum[-1]
+    idx = int(np.searchsorted(cum, threshold))
+    idx = min(idx, len(sorted_mus) - 1)
+    mu_p95 = float(sorted_mus[idx])
+    return mu_p95, mu_mean
+
+
 def upsert_global_surface(
     conn: Any,
     track_id: str,
@@ -566,6 +606,7 @@ def upsert_global_surface(
         return 0
 
     frenet = surface.frenet
+    grip_2d = getattr(surface, "grip_2d", None)
     updated = 0
     now = datetime.now(timezone.utc).isoformat()
 
@@ -594,6 +635,16 @@ def upsert_global_surface(
             if arr is not None and i < len(arr) and np.isfinite(arr[i]):
                 params[col] = round(float(arr[i]), 6)
                 col_updates.append((col, merge))
+
+        # Day-15 denorm: pull mu_lat (p95, mean) from grip_2d for this bin.
+        # avg merge mirrors the elevation/slope online-weighted-average pattern.
+        mu_p95, mu_mean = _grip_lat_stats_at(grip_2d, float(s))
+        if mu_p95 is not None:
+            params["mu_lat_p95"] = round(mu_p95, 6)
+            col_updates.append(("mu_lat_p95", "avg"))
+        if mu_mean is not None:
+            params["mu_lat_mean"] = round(mu_mean, 6)
+            col_updates.append(("mu_lat_mean", "avg"))
 
         if not col_updates:
             continue
