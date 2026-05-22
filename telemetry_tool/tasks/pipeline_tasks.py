@@ -400,6 +400,16 @@ def _build_analysis_blob(result: dict) -> dict:
     if cond and isinstance(cond, dict):
         blob["conditions"] = cond
 
+    # Day-15 Stage B Issue 2: same V2-bug-2 shape — track_surface_summary
+    # (the JSON-safe TrackSurface.to_summary_dict() output set by
+    # orchestrator step 10d) was never copied into the persisted blob.
+    # Without this, analysis_json.track_surface_summary.boundary_source is
+    # missing — which is the definitive acceptance gate for the
+    # hand_traced vs data_derived switch.
+    tss = result.get("track_surface_summary")
+    if tss and isinstance(tss, dict):
+        blob["track_surface_summary"] = tss
+
     return blob
 
 

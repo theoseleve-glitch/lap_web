@@ -25,7 +25,9 @@ from typing import Final
 import numpy as np
 
 from track_surface.frenet import FrenetFrame
-from track_surface.gt_loader import GroundTruth, load_gt, resolve_track_id
+from track_surface.gt_loader import (
+    GroundTruth, load_gt, resolve_canonical_via_pg, resolve_track_id,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -643,6 +645,13 @@ def estimate_boundaries_with_source(
     """
     if track_id and lat_ref_rad is not None and lon_ref_rad is not None:
         canonical = resolve_track_id(track_id)
+        if canonical is None:
+            # Day-15 Phase 2 Stage B: pipeline passes the PG track_id (UUID
+            # or sentinel), not the registry alias. Bridge to canonical_id
+            # via the tracks.canonical_id column (migration 060). The
+            # helper uses its own autocommit'd connection so it can't
+            # poison or be poisoned by the surface-build's txn state.
+            canonical = resolve_canonical_via_pg(track_id)
         if canonical is not None:
             gt = load_gt(canonical)
             if gt is not None:

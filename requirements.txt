@@ -82,3 +82,8 @@ sentry-sdk[flask,celery]>=2.0,<3.0
 
 # OCP theoretical solver
 casadi>=3.6,<4.0
+
+# GeoJSON-geometric track matching (Day-15 Stage B): point-in-polygon
+# against hand-traced gt_*.geojson boundaries to canonical_id-resolve
+# session GPS in register_or_match_track.
+shapely>=2.0,<3.0

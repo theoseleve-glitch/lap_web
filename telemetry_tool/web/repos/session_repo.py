@@ -146,6 +146,58 @@ def upsert_session(
                 session_id, exc_info=True,
             )
 
+    # Day-15 Stage B "Option D" guard: refuse to overwrite a session
+    # whose existing tracks.canonical_id IS NOT NULL with a non-canonical
+    # incoming track_id. This is the exact revert that bit us when the
+    # legacy tracks.json fingerprint matcher routed a re-keyed KCT session
+    # back to the placeholder UUID. Once the gt-polygon matcher is the
+    # primary path this guard becomes belt-and-suspenders, but it stays
+    # as durable defense against any future regression of the same shape.
+    elif _incoming_tid:
+        try:
+            _check_row = conn.execute(
+                "SELECT t_existing.canonical_id AS existing_canonical, "
+                "       t_incoming.canonical_id AS incoming_canonical, "
+                "       s.track_id AS existing_track_id "
+                "  FROM sessions s "
+                "  LEFT JOIN tracks t_existing ON s.track_id = t_existing.track_id "
+                "  LEFT JOIN tracks t_incoming ON t_incoming.track_id = :incoming "
+                " WHERE s.session_id = :sid",
+                {"sid": session_id, "incoming": _incoming_tid},
+            ).fetchone()
+            if _check_row:
+                _row_dict = (
+                    _check_row if isinstance(_check_row, dict)
+                    else {"existing_canonical": _check_row[0],
+                          "incoming_canonical": _check_row[1],
+                          "existing_track_id":  _check_row[2]}
+                )
+                _existing_canonical = _row_dict.get("existing_canonical")
+                _incoming_canonical = _row_dict.get("incoming_canonical")
+                _existing_track_id = _row_dict.get("existing_track_id")
+                # Block only when existing IS canonical AND incoming is NOT.
+                # canonical-over-canonical is allowed (re-mapping between
+                # known canonical tracks should still proceed).
+                if (
+                    _existing_track_id
+                    and _existing_track_id != _incoming_tid
+                    and _existing_canonical
+                    and not _incoming_canonical
+                ):
+                    logger.warning(
+                        "upsert_session: refused to overwrite canonical "
+                        "track_id %s (canonical=%r) with non-canonical %r "
+                        "for session %s",
+                        _existing_track_id, _existing_canonical,
+                        _incoming_tid, session_id,
+                    )
+                    _final_tid = _existing_track_id
+        except Exception:
+            logger.warning(
+                "upsert_session: canonical guard lookup failed for session %s",
+                session_id, exc_info=True,
+            )
+
     conn.execute(Q.INSERT_SESSION, {
         "session_id":        session_id,
         "csv_filename":      Path(str(summary.get("csv_path", ""))).name,

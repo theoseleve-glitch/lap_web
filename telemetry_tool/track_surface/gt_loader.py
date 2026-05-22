@@ -154,6 +154,212 @@ def _build_alias_index() -> dict[str, str]:
     return index
 
 
+@lru_cache(maxsize=1)
+def load_all_canonical_polygons() -> list[tuple[str, "object", tuple[float, float, float, float]]]:
+    """Day-15 Stage B: load every gt_*.geojson in the corpus, combine
+    left_boundary_gt + reversed(right_boundary_gt) into a closed
+    Shapely Polygon, repair self-intersection at the seam via buffer(0)
+    when needed.
+
+    Returns ``[(canonical_id, Polygon, bbox), ...]``. Bbox is
+    ``(minx, miny, maxx, maxy)`` matching Shapely's ``Polygon.bounds``.
+
+    Cached at module level (lru_cache size 1) — gt files don't change at
+    runtime; the build cost (Shapely Polygon construction + buffer(0)
+    repair for ~6 of 8 tracks) is paid once per worker process.
+    """
+    from shapely.geometry import Polygon
+    from shapely import make_valid
+
+    results: list[tuple[str, "object", tuple[float, float, float, float]]] = []
+    if not _GT_DIR.exists():
+        logger.warning("gt corpus dir does not exist: %s — matcher will fall through", _GT_DIR)
+        return results
+
+    for gt_path in sorted(_GT_DIR.glob("gt_*.geojson")):
+        try:
+            with open(gt_path, encoding="utf-8") as fh:
+                gt = json.load(fh)
+        except Exception as exc:
+            logger.warning("failed to load %s: %s — skipping", gt_path.name, exc)
+            continue
+        canon = (gt.get("properties", {}) or {}).get("track_name")
+        if not canon:
+            continue
+        features = {
+            f.get("properties", {}).get("role"): f.get("geometry", {}).get("coordinates")
+            for f in gt.get("features", []) or []
+        }
+        left = features.get("left_boundary_gt")
+        right = features.get("right_boundary_gt")
+        if not left or not right:
+            logger.warning("gt %s missing left/right_boundary_gt — skipping", gt_path.name)
+            continue
+        ring = list(left) + list(reversed(right))
+        if ring[0] != ring[-1]:
+            ring = ring + [ring[0]]
+        try:
+            poly = Polygon(ring)
+        except Exception as exc:
+            logger.warning("Polygon construction failed for %s: %s", gt_path.name, exc)
+            continue
+        if not poly.is_valid:
+            fixed = poly.buffer(0)
+            if not (fixed.is_valid and not fixed.is_empty):
+                fixed = make_valid(poly)
+            if not (fixed.is_valid and not fixed.is_empty):
+                logger.warning("gt %s polygon invalid + unrepairable", gt_path.name)
+                continue
+            poly = fixed
+        if poly.geom_type == "MultiPolygon":
+            poly = max(poly.geoms, key=lambda g: g.area)
+        results.append((str(canon).strip().lower(), poly, poly.bounds))
+    return results
+
+
+def match_session_to_canonical(
+    lats: list[float] | None,
+    lons: list[float] | None,
+    *,
+    sample_n_min: int = 500,
+    threshold_abs: float = 0.30,
+    threshold_gap: float = 0.30,
+) -> dict:
+    """Day-15 Stage B: match a session's GPS to a canonical_id by
+    point-in-polygon against the hand-traced gt corpus.
+
+    Algorithm (Phase 1 dry-run validated, 2026-05-21):
+      1. Build session bbox from lats/lons.
+      2. Adaptive sampling: max(sample_n_min, len(points)//50) target.
+      3. For each gt polygon: bbox-prefilter (O(1) reject), then
+         point-in-polygon on sampled points → confidence = in_poly / n.
+      4. Pick best canonical_id; require confidence >= threshold_abs
+         AND (best - runner_up) >= threshold_gap to declare a match.
+
+    Returns dict with keys:
+      canonical_id, confidence, in_bbox_frac, runner_up,
+      runner_up_confidence, status ("matched" | "pending"), reason.
+
+    Pure read-only; safe to call from anywhere.
+    """
+    if not lats or not lons or len(lats) < 10:
+        return {
+            "canonical_id": None, "confidence": 0.0, "in_bbox_frac": 0.0,
+            "runner_up": None, "runner_up_confidence": 0.0,
+            "status": "pending", "reason": "no_gps_data",
+        }
+
+    from shapely.geometry import Point
+
+    polys = load_all_canonical_polygons()
+    if not polys:
+        return {
+            "canonical_id": None, "confidence": 0.0, "in_bbox_frac": 0.0,
+            "runner_up": None, "runner_up_confidence": 0.0,
+            "status": "pending", "reason": "gt_corpus_empty",
+        }
+
+    s_min_lon, s_max_lon = min(lons), max(lons)
+    s_min_lat, s_max_lat = min(lats), max(lats)
+    target = max(sample_n_min, len(lats) // 50)
+    step = max(1, len(lats) // target)
+    sampled = [(lons[i], lats[i]) for i in range(0, len(lats), step)]
+    n = len(sampled)
+
+    scores: list[tuple[str, float, float]] = []  # (canon, in_poly_frac, in_bbox_frac)
+    for canon, poly, (minx, miny, maxx, maxy) in polys:
+        if s_max_lon < minx or s_min_lon > maxx or s_max_lat < miny or s_min_lat > maxy:
+            scores.append((canon, 0.0, 0.0))
+            continue
+        in_bbox = sum(1 for lon, lat in sampled if minx <= lon <= maxx and miny <= lat <= maxy)
+        in_poly = sum(1 for p in sampled if poly.contains(Point(p)))
+        scores.append((canon, in_poly / n, in_bbox / n))
+
+    scores.sort(key=lambda x: -x[1])
+    best = scores[0]
+    runner = scores[1] if len(scores) > 1 else ("", 0.0, 0.0)
+
+    if best[1] >= threshold_abs and (best[1] - runner[1]) >= threshold_gap:
+        return {
+            "canonical_id": best[0], "confidence": round(best[1], 4),
+            "in_bbox_frac": round(best[2], 4),
+            "runner_up": runner[0] or None,
+            "runner_up_confidence": round(runner[1], 4),
+            "status": "matched", "reason": None,
+        }
+    return {
+        "canonical_id": None, "confidence": round(best[1], 4),
+        "in_bbox_frac": round(best[2], 4),
+        "runner_up": (best[0] or None) if best[1] > 0 else None,
+        "runner_up_confidence": round(runner[1], 4),
+        "status": "pending",
+        "reason": "low_polygon_coverage" if best[1] < threshold_abs else "ambiguous_match",
+    }
+
+
+def resolve_canonical_via_pg(track_id: str | None) -> str | None:
+    """Bridge PG `tracks.track_id` → `tracks.canonical_id` for sessions
+    keyed by UUID rather than a registry alias.
+
+    Day-15 Phase 2 Stage B: the pipeline passes the PG `track_id` (UUID
+    or sentinel) down to the surface build, but `resolve_track_id`
+    only matches strings present in `track_aliases.json`. This helper
+    closes that gap by doing a single read-only lookup against the
+    `tracks.canonical_id` column (added in migration 060).
+
+    Connection sourcing: uses its OWN raw psycopg2 connection with
+    `autocommit=True` so this query cannot poison and cannot be poisoned
+    by any surrounding transaction state (the surface-build context has
+    a history of txn-abort cascades — this lookup must stay isolated).
+
+    Error handling:
+      - track_id falsy → return None (no log).
+      - Row found, `canonical_id` IS NULL → return None (no log; this
+        is the expected case for placeholder tracks like the
+        `unknown_track` sentinel and pipeline-auto-registered UUIDs).
+      - Row not found → return None (no log; unknown track is expected).
+      - Connection / query exception → log WARNING and return None
+        (never silently swallow). The surface build falls back to the
+        data_derived envelope, which is the safe default.
+    """
+    if not track_id:
+        return None
+    raw = None
+    try:
+        # Lazy import — web.db_pg is in a sibling package; keeping it out of
+        # module-load avoids any circular-dep risk in the track_surface tree.
+        from web.db_pg import _new_connection
+        # _new_connection() returns a fresh psycopg2 conn (RealDictCursor).
+        # We force autocommit ON for this single SELECT so we never share
+        # txn state with anything upstream/downstream.
+        raw = _new_connection()
+        raw.autocommit = True
+        with raw.cursor() as cur:
+            cur.execute(
+                "SELECT canonical_id FROM tracks WHERE track_id = %(t)s",
+                {"t": track_id},
+            )
+            row = cur.fetchone()
+    except Exception as exc:
+        logger.warning(
+            "canonical_id bridge query failed for track_id=%r: %s",
+            track_id, exc,
+        )
+        return None
+    finally:
+        if raw is not None:
+            try:
+                raw.close()
+            except Exception:
+                pass
+    if row is None:
+        return None
+    val = row.get("canonical_id") if hasattr(row, "get") else row[0]
+    if val is None or not str(val).strip():
+        return None
+    return str(val).strip().lower()
+
+
 def resolve_track_id(input_name: str | None) -> str | None:
     """Resolve any alias to canonical_id.
 

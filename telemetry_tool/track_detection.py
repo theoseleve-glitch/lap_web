@@ -604,6 +604,97 @@ def register_or_match_track(
     fingerprint = compute_track_fingerprint(df)
     database    = load_track_database(db_path)
 
+    # ── Day-15 Stage B: PREPEND gt-polygon match ───────────────────────
+    # Authoritative for any session whose GPS lands inside one of the
+    # hand-traced canonical polygons. Bypasses both the metadata-first
+    # name match AND the tracks.json fingerprint geometry path below
+    # (which has been silently routing prod sessions to placeholder
+    # UUIDs for 3 months). Falls through when there's no gt hit, so
+    # non-gt tracks keep their existing behaviour — pending-state is
+    # a later generalization.
+    try:
+        from track_surface.gt_loader import match_session_to_canonical
+        lat_col = next((c for c in df.columns if "Latitude" in c), None)
+        lon_col = next((c for c in df.columns if "Longitude" in c), None)
+        if lat_col and lon_col:
+            lat_s = pd.to_numeric(df[lat_col], errors="coerce").dropna()
+            lon_s = pd.to_numeric(df[lon_col], errors="coerce").dropna()
+            gt_match = match_session_to_canonical(
+                lat_s.tolist(), lon_s.tolist(),
+            )
+            if gt_match.get("status") == "matched":
+                canonical = gt_match["canonical_id"]
+                # Look up the PG `tracks` row that has this canonical_id.
+                # Use the celery-safe accessor verified during Stage A:
+                # _new_connection() with autocommit, isolated from any
+                # surrounding txn.
+                pg_track_id = None
+                pg_track_name = None
+                pg_lap_length = None
+                raw_conn = None
+                try:
+                    from web.db_pg import _new_connection
+                    raw_conn = _new_connection()
+                    raw_conn.autocommit = True
+                    with raw_conn.cursor() as cur:
+                        cur.execute(
+                            "SELECT track_id, track_name, lap_length_m "
+                            "FROM tracks WHERE canonical_id = %(c)s LIMIT 1",
+                            {"c": canonical},
+                        )
+                        row = cur.fetchone()
+                    if row is not None:
+                        if hasattr(row, "get"):
+                            pg_track_id   = row.get("track_id")
+                            pg_track_name = row.get("track_name")
+                            pg_lap_length = row.get("lap_length_m")
+                        else:
+                            pg_track_id, pg_track_name, pg_lap_length = row[0], row[1], row[2]
+                except Exception as exc:
+                    logger.warning(
+                        "gt-match PG lookup failed for canonical=%r: %s — "
+                        "falling through to tracks.json path",
+                        canonical, exc,
+                    )
+                finally:
+                    if raw_conn is not None:
+                        try: raw_conn.close()
+                        except Exception: pass
+
+                if pg_track_id:
+                    logger.info(
+                        "gt-polygon match: canonical=%s -> PG track_id=%s "
+                        "(name=%r, confidence=%.3f, runner_up=%s @ %.3f)",
+                        canonical, pg_track_id, pg_track_name,
+                        gt_match["confidence"], gt_match.get("runner_up"),
+                        gt_match.get("runner_up_confidence", 0.0),
+                    )
+                    return MatchResult(
+                        matched=True,
+                        track_id=str(pg_track_id),
+                        track_name=str(pg_track_name) if pg_track_name else "Unknown Track",
+                        is_new=False,
+                        lap_length_m=float(pg_lap_length) if pg_lap_length else fingerprint.lap_length_m,
+                        iou=float(gt_match.get("in_bbox_frac", 0.0)),
+                        length_ratio=0.0,
+                        confidence=float(gt_match["confidence"]),
+                    ), database
+                # gt matched canonical but no PG row exists with that
+                # canonical_id — fall through. Log once at WARNING so
+                # this state is visible (canonical_id backfill gap).
+                logger.warning(
+                    "gt-polygon matched canonical=%r at confidence=%.3f "
+                    "but no PG tracks row has that canonical_id set — "
+                    "falling through to tracks.json path",
+                    canonical, gt_match["confidence"],
+                )
+    except Exception as exc:
+        logger.warning(
+            "gt-polygon match path raised %s: %s — falling through to "
+            "tracks.json fingerprint match",
+            type(exc).__name__, exc,
+        )
+
     # -- Metadata-first: prefer name match over pure geometry ----------
     if track_name and track_name != "Unknown Track":
         name_lower = track_name.strip().lower()
