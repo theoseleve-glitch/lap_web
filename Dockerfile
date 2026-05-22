@@ -29,6 +29,11 @@ COPY --chown=app:app telemetry_tool/ telemetry_tool/
 COPY --chown=app:app kart_envelope/ kart_envelope/
 COPY --chown=app:app predefined_kart_list.csv predefined_track_list.csv ./
 COPY --chown=app:app gunicorn.conf.py ./
+# Day-15 Phase 2: hand-traced gt_*.geojson polygons consumed by the
+# (future) GeoJSON-geometric track matcher. Loader resolves /app/data/
+# ground_truth/ via lap_web's gt_loader._resolve_gt_dir() repo-root
+# fallback (which now lands inside the image).
+COPY --chown=app:app data/ground_truth/ data/ground_truth/
 
 ARG APP_VERSION=1.4.0
 ENV PYTHONPATH=/app:/app/telemetry_tool \
