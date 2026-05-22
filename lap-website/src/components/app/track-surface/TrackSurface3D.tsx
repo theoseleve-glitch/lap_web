@@ -44,7 +44,7 @@ export const INDIVIDUAL_FACTOR_MIN = 0.85;
 export const INDIVIDUAL_FACTOR_MAX = 1.30;
 
 /** Which spatial component to isolate on the mesh under spatial-grip mode.
- *  'combined' renders the producer's clamped factor_values × mu × grip_mu;
+ *  'combined' renders the producer's clamped factor_values × mu × mu_lat_p95;
  *  'drainage'/'sun'/'wind' render that single component verbatim with
  *  the iso-factor color range applied. */
 export type SpatialFactor = 'combined' | 'drainage' | 'sun' | 'wind';
@@ -154,9 +154,9 @@ function binHeatValues(
   if (mode === 'grip') {
     let minMu = Infinity;
     let maxMu = -Infinity;
-    for (const b of bins) { minMu = Math.min(minMu, b.grip_mu); maxMu = Math.max(maxMu, b.grip_mu); }
+    for (const b of bins) { minMu = Math.min(minMu, b.mu_lat_p95); maxMu = Math.max(maxMu, b.mu_lat_p95); }
     const range = maxMu - minMu || 1;
-    return bins.map((b) => (b.grip_mu - minMu) / range);
+    return bins.map((b) => (b.mu_lat_p95 - minMu) / range);
   }
 
   if (mode === 'elevation') {
@@ -185,9 +185,9 @@ function binHeatValues(
     if (!conditions || !sm || sm.arclength_samples.length < 2) {
       let minMu = Infinity;
       let maxMu = -Infinity;
-      for (const b of bins) { minMu = Math.min(minMu, b.grip_mu); maxMu = Math.max(maxMu, b.grip_mu); }
+      for (const b of bins) { minMu = Math.min(minMu, b.mu_lat_p95); maxMu = Math.max(maxMu, b.mu_lat_p95); }
       const range = maxMu - minMu || 1;
-      return bins.map((b) => (b.grip_mu - minMu) / range);
+      return bins.map((b) => (b.mu_lat_p95 - minMu) / range);
     }
 
     const samples = sm.arclength_samples;
@@ -212,7 +212,7 @@ function binHeatValues(
       // Combined: convert producer factor_values into effective_mu before
       // normalizing. Iso-factor: use the raw component verbatim, then
       // invert (high factor → wetter → red).
-      const value = isCombined ? b.grip_mu * muScale * raw : raw;
+      const value = isCombined ? b.mu_lat_p95 * muScale * raw : raw;
       let t = (value - colorMin) / (colorMax - colorMin);
       t = Math.max(0, Math.min(1, t));
       return isCombined ? t : 1 - t;
@@ -297,8 +297,8 @@ function binEdgeHeatValuesFromField2D(
     const rawR = sample(bin.distance_m, -wRight);
     // Combined view converts the producer factor into effective_mu
     // before normalizing; iso-factor uses the raw component verbatim.
-    const valL = isCombined ? bin.grip_mu * muScale * rawL : rawL;
-    const valR = isCombined ? bin.grip_mu * muScale * rawR : rawR;
+    const valL = isCombined ? bin.mu_lat_p95 * muScale * rawL : rawL;
+    const valR = isCombined ? bin.mu_lat_p95 * muScale * rawR : rawR;
     let tL = Math.max(0, Math.min(1, (valL - colorMin) / (colorMax - colorMin)));
     let tR = Math.max(0, Math.min(1, (valR - colorMin) / (colorMax - colorMin)));
     if (!isCombined) { tL = 1 - tL; tR = 1 - tR; }

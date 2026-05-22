@@ -7,7 +7,12 @@ import { api } from '@/lib/api-client';
 
 export interface SurfaceBin {
   distance_m: number;
-  grip_mu: number;
+  /** Per-bin 95th-percentile lateral mu — the canonical surface channel for
+   *  the GRIP colormap. API key: `mu_lat_p95`. */
+  mu_lat_p95: number;
+  /** Per-bin mean lateral mu — companion read for diagnostics / future
+   *  channel selector. API key: `mu_lat_mean`. */
+  mu_lat_mean: number;
   elevation_m: number;
   /** Legacy total width (= width_left_m + width_right_m when both present). */
   width_m?: number;
