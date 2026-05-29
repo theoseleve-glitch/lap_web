@@ -26,7 +26,9 @@ from track_surface.elevation import (
 )
 from track_surface.frenet import FrenetFrame
 from track_surface.grip_2d import build_grip_surface
-from track_surface.gt_loader import load_gt, resolve_track_id
+from track_surface.gt_loader import (
+    GroundTruth, load_gt, resolve_canonical_via_pg, resolve_track_id,
+)
 from track_surface.model import TrackSurface
 from track_surface.normalizer import detect_coordinate_system, normalize_positions
 
@@ -167,14 +169,101 @@ def build_track_surface(
     logger.info("Building track surface: track=%s, laps=%d, format=%s",
                 track_id, n_laps, adapter_format)
 
-    # 2. Extract centerline. Plumb per-lap times through so the Day-7
-    #    out-lap rejection can fire on time outliers (out-lap / in-lap)
-    #    in addition to arclength outliers. Pass None when no parseable
-    #    time column exists (graceful fallback to arclength-only).
-    times_arg = lap_times_s if any(np.isfinite(t) for t in lap_times_s) else None
-    cl_xy, total_length = extract_centerline(
-        xy_list, ds_m=0.5, lap_times_s=times_arg,
-    )
+    # 1b. Resolve the global GPS reference (used for both gt midline
+    #     projection in step 2 and corridor-filter gt boundaries in step 4b).
+    coord_sys = detect_coordinate_system(adapter_format)
+    lat_ref_rad, lon_ref_rad = _compute_global_gps_ref(laps, coord_sys)
+
+    # 1c. Stage 1 of the gt-anchor re-architecture: try to load gt for this
+    #     track and project its midline into the session-local frame. When
+    #     successful, the midline becomes the Frenet centerline below (frame
+    #     anchored to the actual track geometry, not the driven median).
+    #     When it fails (no gt file, midline failed to compute, non-GPS
+    #     adapter), we fall through to the legacy driven-median centerline.
+    gt: GroundTruth | None = None
+    gt_centerline_xy: np.ndarray | None = None
+    if coord_sys == "gps" and lat_ref_rad is not None and lon_ref_rad is not None:
+        # track_id may be either a registry alias (e.g., "kct") or a PG UUID
+        # like "2063bb27-893". Try the alias lookup first; on miss, fall
+        # back to the PG bridge that joins on tracks.canonical_id (added
+        # in migration 060). Same dual-path pattern as
+        # estimate_boundaries_with_source uses for the legacy hand_traced
+        # boundary path.
+        canonical_id = resolve_track_id(track_id) or resolve_canonical_via_pg(track_id)
+        if canonical_id is not None:
+            gt = load_gt(canonical_id)
+            if gt is not None and gt.gt_centerline_lonlat is not None:
+                gt_centerline_xy = _gt_project_to_xy(
+                    gt.gt_centerline_lonlat, lat_ref_rad, lon_ref_rad,
+                )
+                if gt_centerline_xy is None or len(gt_centerline_xy) < 2:
+                    logger.warning(
+                        "gt midline projection collapsed for track_id=%r — "
+                        "falling back to driven-median frame", track_id,
+                    )
+                    gt_centerline_xy = None
+
+    # 1d. centerline_pred sanity cross-check (WARN-only, never gates).
+    #     Compares the midpoint-walk midline against the gt file's
+    #     pipeline-predicted centerline via closest-point distance
+    #     (rotation-invariant). > ~2m median divergence likely indicates
+    #     a gt tracing issue worth re-checking.
+    if (
+        gt is not None
+        and gt.centerline_pred_polyline
+        and gt.gt_centerline_lonlat
+        and lat_ref_rad is not None and lon_ref_rad is not None
+    ):
+        pred_xy = _gt_project_to_xy(gt.centerline_pred_polyline, lat_ref_rad, lon_ref_rad)
+        mid_xy = _gt_project_to_xy(gt.gt_centerline_lonlat, lat_ref_rad, lon_ref_rad)
+        if len(pred_xy) >= 2 and len(mid_xy) >= 2:
+            diff = mid_xy[:, None, :] - pred_xy[None, :, :]
+            d = np.sqrt((diff ** 2).sum(axis=2))
+            nearest = d.min(axis=1)
+            median_div = float(np.median(nearest))
+            max_div = float(nearest.max())
+            if median_div > 2.0:
+                logger.warning(
+                    "centerline_pred cross-check: midline diverges from "
+                    "prediction by median=%.2fm max=%.2fm — gt tracing may "
+                    "need re-check (canonical_id=%s)",
+                    median_div, max_div, gt.canonical_track_id,
+                )
+            else:
+                logger.info(
+                    "centerline_pred cross-check: median=%.2fm max=%.2fm "
+                    "(canonical_id=%s)",
+                    median_div, max_div, gt.canonical_track_id,
+                )
+
+    surface_frame = "gt_anchored" if gt_centerline_xy is not None else "driven_median"
+
+    # 2. Centerline construction. gt-anchored: midline IS the centerline.
+    #    driven-median: legacy extract_centerline RC1 7-stage pipeline.
+    if surface_frame == "gt_anchored":
+        cl_xy = gt_centerline_xy
+        seg = np.sqrt(((np.diff(cl_xy, axis=0)) ** 2).sum(axis=1))
+        total_length = float(seg.sum())
+        gt_diag = gt.gt_midline_diagnostics or {}
+        gt_warns = gt_diag.get("warnings") or []
+        logger.info(
+            "surface_frame=gt_anchored: midline_source=%s width_source=%s "
+            "(canonical_id=%s, midline_pts=%d, total_length_m=%.1f, "
+            "gt_warns=%d)",
+            gt_diag.get("midline_source", "?"),
+            gt_diag.get("width_source", "?"),
+            gt.canonical_track_id, len(cl_xy), total_length, len(gt_warns),
+        )
+    else:
+        times_arg = lap_times_s if any(np.isfinite(t) for t in lap_times_s) else None
+        cl_xy, total_length = extract_centerline(
+            xy_list, ds_m=0.5, lap_times_s=times_arg,
+        )
+        logger.info(
+            "surface_frame=driven_median: extract_centerline produced "
+            "%d pts, total_length_m=%.1f",
+            len(cl_xy), total_length,
+        )
 
     # 3. Build Frenet frame
     frenet = FrenetFrame.from_centerline(cl_xy)
@@ -197,21 +286,15 @@ def build_track_surface(
     #     statistics are already robust to the small fraction of off-track
     #     samples, and filtering DataFrames would require row-index mapping
     #     back through normalize_positions' valid mask.
-    coord_sys = detect_coordinate_system(adapter_format)
-    lat_ref_rad, lon_ref_rad = _compute_global_gps_ref(laps, coord_sys)
-
+    #     gt + lat_ref_rad/lon_ref_rad already resolved in step 1b-1c.
     gt_left_xy = gt_right_xy = None
-    if coord_sys == "gps" and lat_ref_rad is not None and lon_ref_rad is not None:
-        canonical_id = resolve_track_id(track_id)
-        if canonical_id is not None:
-            gt = load_gt(canonical_id)
-            if gt is not None:
-                gt_left_xy = _gt_project_to_xy(
-                    gt.left_polyline, lat_ref_rad, lon_ref_rad,
-                )
-                gt_right_xy = _gt_project_to_xy(
-                    gt.right_polyline, lat_ref_rad, lon_ref_rad,
-                )
+    if gt is not None and lat_ref_rad is not None and lon_ref_rad is not None:
+        gt_left_xy = _gt_project_to_xy(
+            gt.left_polyline, lat_ref_rad, lon_ref_rad,
+        )
+        gt_right_xy = _gt_project_to_xy(
+            gt.right_polyline, lat_ref_rad, lon_ref_rad,
+        )
 
     lap_sizes = [xy.shape[0] for xy in xy_list]
     all_xy = np.vstack(xy_list)
@@ -242,23 +325,59 @@ def build_track_surface(
     laps_sz = laps_sz_filt
     laps_snz = laps_snz_filt
 
-    # 5. Boundaries (>= 3 laps): prefer hand_traced gt when available, fall
-    #    back to data_derived percentile×1.3 path otherwise. Track identity
-    #    is threaded via the alias registry; GPS reference comes from union
-    #    of all lap GPS samples (None for sim Cartesian formats — those
-    #    skip the gt path).
-    boundaries = estimate_boundaries_with_source(
-        frenet, laps_sn,
-        track_id=track_id,
-        lat_ref_rad=lat_ref_rad,
-        lon_ref_rad=lon_ref_rad,
-    )
-    if boundaries is not None:
-        width_left, width_right, boundary_source, side_swap = boundaries
-    else:
-        width_left = width_right = None
-        boundary_source = None
+    # 5. Boundaries. gt-anchored: widths are NATIVE outputs of the midline
+    #    midpoint-walk (perpendicular distances midline→left, midline→right),
+    #    resampled from the gt's 300-station grid onto frenet.s_grid via
+    #    arclength interpolation. No projection of gt polylines onto a
+    #    different centerline frame — eliminates the entire class of
+    #    coordinate-mismatch bugs that the legacy hand_traced path battled.
+    #    driven-median: legacy estimate_boundaries_with_source — picks
+    #    hand_traced (gt projected onto driven centerline) when available,
+    #    falls back to data_derived percentile envelope otherwise.
+    if surface_frame == "gt_anchored":
+        gt_n = len(gt.gt_width_left_m)
+        gt_s_stations = np.linspace(0.0, frenet.total_length_m, gt_n)
+        width_left = np.interp(frenet.s_grid, gt_s_stations, gt.gt_width_left_m)
+        width_right = np.interp(frenet.s_grid, gt_s_stations, gt.gt_width_right_m)
+        boundary_source = "gt_anchored_native"
         side_swap = False
+        logger.info(
+            "boundaries: gt_anchored_native (width_left median=%.2fm max=%.2fm; "
+            "width_right median=%.2fm max=%.2fm)",
+            float(np.median(width_left)), float(np.max(width_left)),
+            float(np.median(width_right)), float(np.max(width_right)),
+        )
+    else:
+        boundaries = estimate_boundaries_with_source(
+            frenet, laps_sn,
+            track_id=track_id,
+            lat_ref_rad=lat_ref_rad,
+            lon_ref_rad=lon_ref_rad,
+        )
+        if boundaries is not None:
+            width_left, width_right, boundary_source, side_swap = boundaries
+        else:
+            width_left = width_right = None
+            boundary_source = None
+            side_swap = False
+
+    # 5b. n_range_m for the 2D field grids (elevation_surface, grip_2d).
+    #     gt-anchored: bound by the actual track's max half-width + 1m
+    #     margin. Shrinks the grid from the legacy ±8m envelope to the
+    #     real track interior. driven-median: legacy ±8m default preserved.
+    if surface_frame == "gt_anchored":
+        max_half_width_m = max(
+            float(np.nanmax(gt.gt_width_left_m)) if gt.gt_width_left_m is not None else 0.0,
+            float(np.nanmax(gt.gt_width_right_m)) if gt.gt_width_right_m is not None else 0.0,
+        )
+        n_range_m_eff = max(max_half_width_m + 1.0, 4.0)  # never below 4m
+        logger.info(
+            "n_range_m derived from gt widths: max_half_width=%.2fm → "
+            "n_range_m_eff=%.2fm (legacy default was 8.0m)",
+            max_half_width_m, n_range_m_eff,
+        )
+    else:
+        n_range_m_eff = 8.0
 
     # 6. Elevation + vertical curvature (if z-data available)
     has_z = any(np.any(np.abs(z) > 0.01) for _, z in laps_sz)
@@ -280,7 +399,7 @@ def build_track_surface(
     elev_surface = None
     curbs = None
     if has_z and n_laps >= 3:
-        elev_surface = build_elevation_surface(frenet, laps_snz)
+        elev_surface = build_elevation_surface(frenet, laps_snz, n_range_m=n_range_m_eff)
         if elev_surface is not None:
             curbs = detect_curbs(elev_surface)
 
@@ -289,7 +408,7 @@ def build_track_surface(
     if n_laps >= 5:
         grip_2d = build_grip_surface(
             frenet, enriched_laps,
-            s_bin_m=2.0, n_bin_m=0.5, n_range_m=8.0,
+            s_bin_m=2.0, n_bin_m=0.5, n_range_m=n_range_m_eff,
             vert_curvature=vert_curvature,
         )
 

@@ -130,6 +130,64 @@ export interface TrackSurfaceResponse {
    *  Absent (undefined) on pre-Day-11 sessions; the Phase B serializer
    *  omits the field rather than emitting `"conditions": null`. */
   conditions?: WeatherConditionBlock | null;
+  /** Stage 1 Step A — literal hand-traced edge polylines (Path F renderer).
+   *  Present when the track has a gt_*.geojson and the session has GPS.
+   *  All four arrays are in the session's local xy frame (= mean of best
+   *  lap's GPS, equirectangular — same convention as the FE's projectGPS).
+   *  TrackSurface3D's dispatcher renders the literal-edge mesh when these
+   *  are present; falls back to legacy spine±width ribbon otherwise. */
+  left_edge_xy_local?: [number, number][] | null;
+  right_edge_xy_local?: [number, number][] | null;
+  /** Pre-computed per-vertex (s, n) on the spine — for 2D-field colour lookup
+   *  without a JS port of FrenetFrame.xy_to_sn. */
+  left_edge_sn?: [number, number][] | null;
+  right_edge_sn?: [number, number][] | null;
+  midline_total_length_m?: number | null;
+  edge_source?: 'hand_traced_gt' | null;
+
+  /** Stage 1 medial-axis M×K grid fields. Present when gt + medial_axis
+   *  topology succeeded (annulus track). FE dispatcher renders the
+   *  M×K triangulated mesh when present; falls back to literal-edge
+   *  ribbon otherwise. */
+  mesh_spine_xy?: [number, number][] | null;
+  mesh_L_xy?: [number, number][] | null;
+  mesh_R_xy?: [number, number][] | null;
+  mesh_spine_s?: number[] | null;
+  mesh_hw_L?: number[] | null;
+  mesh_hw_R?: number[] | null;
+  mesh_M?: number | null;
+  mesh_K?: number | null;
+  mesh_spine_source?: 'medial_axis' | 'cross_section_hand_traced' | string | null;
+  /** Full M×K per-vertex grid (xy in session frame + (s,n) coordinates).
+   *  Preferred over the spine+hw_L/hw_R derivation when present — the
+   *  FE just reads the nodes directly. */
+  mesh_grid_xy?: [number, number][][] | null;
+  mesh_grid_sn?: [number, number][][] | null;
+  /** Periodic-loop contract: ``mesh_s_periodic=true`` + ``mesh_lap_length_m=L``
+   *  means s=L identifies s=0. The renderer's wrap ring (between station
+   *  M-1 and station 0) is what makes the tube watertight. */
+  mesh_s_periodic?: boolean | null;
+  mesh_lap_length_m?: number | null;
+
+  /** Constrained Delaunay triangulation — PRIMARY render path. Replaces
+   *  the M×K structured grid (which inverts at apex where R_medial < hw).
+   *  Per-vertex (s, n) preserved for grip-field lookup at render time.
+   *  Per-vertex grip + source already attached on the producer side so
+   *  the FE doesn't need to re-do the 2D/1D combine logic. The M×K and
+   *  literal-edge fields stay as dispatcher fallbacks. */
+  mesh_tri_xy?: [number, number][] | null;
+  mesh_tri_indices?: [number, number, number][] | null;
+  mesh_tri_sn?: [number, number][] | null;
+  mesh_tri_grip?: number[] | null;
+  /** Per-vertex grip source: "2d_combined" | "meteo_default" |
+   *  "1d_fallback" | "default". Surfaces whether the producer's 2D
+   *  meteo layer is actually populating values for this session. */
+  mesh_tri_grip_source?: string[] | null;
+  mesh_tri_grip_source_counts?: Record<string, number> | null;
+  mesh_tri_vertex_count?: number | null;
+  mesh_tri_triangle_count?: number | null;
+  mesh_tri_min_signed_area_m2?: number | null;
+  mesh_tri_sha256?: string | null;
 }
 
 export interface OptimalLinePoint {
@@ -220,11 +278,24 @@ export function useTrackSurfaceData(sessionId: string) {
   )
     ? (lineDelta.data as LineDeltaResponse).points
     : null;
+  // Same {available: false} shape detection as optimalLine / lineDelta —
+  // sessions without a GPS lap return that envelope on /gps-trace, and
+  // letting it leak through as a truthy object caused gpsToLocalXY in
+  // the renderer's gpsXY useMemo to crash on `latitudes.length` because
+  // latitudes was undefined. Filter to canonical {latitudes, longitudes,
+  // distances, speeds} shape; null otherwise.
+  const gpsTraceValid = gpsTrace.data && Array.isArray(
+    (gpsTrace.data as { latitudes?: unknown }).latitudes,
+  ) && Array.isArray(
+    (gpsTrace.data as { longitudes?: unknown }).longitudes,
+  )
+    ? (gpsTrace.data as GpsTraceResponse)
+    : null;
 
   return {
     surface: surface.data ?? null,
     optimalLine: optimalPoints,
-    gpsTrace: gpsTrace.data ?? null,
+    gpsTrace: gpsTraceValid,
     lineDelta: lineDeltaPoints,
     isLoading,
     error,

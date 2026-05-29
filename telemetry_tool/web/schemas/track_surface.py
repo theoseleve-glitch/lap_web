@@ -192,6 +192,23 @@ class TrackSurfaceResponse(LenientSchema):
     ] | None = None
     conditions: WeatherConditionResponse | None = None
 
+    # Stage 1 Step A — literal hand-traced edge polylines (Path F renderer).
+    # Present when the track has a gt_*.geojson and the session has GPS.
+    # All four arrays are projected into the session's local xy frame
+    # (= mean of the best lap's GPS lat/lon, equirectangular) — same
+    # convention as the FE's projectGPS so the mesh aligns with the
+    # centerline + optimal-line + line-delta overlays.
+    # FE dispatcher renders literal-edge mesh when these fields are
+    # present; falls back to spine±width ribbon otherwise.
+    left_edge_xy_local: list[list[float]] | None = None
+    right_edge_xy_local: list[list[float]] | None = None
+    # Pre-computed per-vertex (s, n) on the spine — saves the FE from
+    # porting FrenetFrame.xy_to_sn to JS for the 2D-field color lookup.
+    left_edge_sn: list[list[float]] | None = None
+    right_edge_sn: list[list[float]] | None = None
+    midline_total_length_m: float | None = None
+    edge_source: Literal["hand_traced_gt"] | None = None
+
 
 class PlannerModeResult(LenientSchema):
     mode: Literal["nominal", "robust", "exploitable"]

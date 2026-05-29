@@ -21,9 +21,15 @@
     "kct": {
       "canonical_id": "kct",
       "display_name": "Karting Club du Touraine",
-      "aliases": ["kct"],
+      "aliases": [
+        "kct",
+        "karting-club-de-tours-kct-",
+        "karting-club-de-tours-kct",
+        "karting-club-du-touraine",
+        "karting club du touraine"
+      ],
       "country": "FR",
-      "notes": "Day 5 primary validation target. gt: 60 left + 93 right pts. Day 4b empirical baseline gap = 3.36m mean against data_derived boundaries."
+      "notes": "Day 5 primary validation target. Re-traced 2026-05-26 (clean): 42 left + 33 right pts (was 60+93 with self-intersection). New gt file's properties.track_name is 'karting-club-de-tours-kct-' (annotator slug) — added as alias so match_session_to_canonical's polygon result resolves back to kct via the alias registry."
     },
     "jv": {
       "canonical_id": "jv",

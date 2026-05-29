@@ -5264,7 +5264,37 @@ def get_track_surface(session_id: str) -> tuple[dict, int]:
                 exc,
             )
 
-    return api_response(surface)
+    # Stage 1 Step A: attach literal hand-traced edge polylines + per-vertex
+    # (s, n) when the track has a gt file. FE dispatcher uses these to
+    # render the mesh boundary directly from the hand-tracing (Path F
+    # literal-edge approach) instead of reconstructing from spine±width.
+    # Null-safe — omitted entirely on any prerequisite miss (gt absent,
+    # no GPS, midline compute failure); FE then falls back to legacy
+    # spine±width ribbon via dispatcher's null-check.
+    if isinstance(surface, dict):
+        try:
+            from track_surface.api_edge_payload import build_edge_payload
+            edge_payload = build_edge_payload(conn, session_id, track_id, surface=surface)
+        except Exception as exc:
+            logger.warning(
+                "edge_payload build failed (%s) — FE will fall back to spine ribbon",
+                exc,
+            )
+            edge_payload = None
+        if edge_payload:
+            surface.update(edge_payload)
+
+    # No-store on the track-surface route specifically: the mesh
+    # topology can change when the producer's triangulation logic is
+    # iterated on (centroid filter → PSLG → area-fraction filter →
+    # ...). Without no-store, RQ in-memory cache + browser disk cache
+    # serve the old payload for staleTime+ minutes after each producer
+    # change, masking deploys. Track-surface is a few hundred KB and
+    # gets fetched once on session view — no perf cost to recomputing.
+    response, status = api_response(surface)
+    if hasattr(response, "headers"):
+        response.headers["Cache-Control"] = "no-store"
+    return response, status
 
 
 # ══════════════════════════════════════════════════════════════════

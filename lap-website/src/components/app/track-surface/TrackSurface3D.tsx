@@ -1,8 +1,9 @@
 'use client';
 
-import { useCallback, useMemo, useRef } from 'react';
+import { useEffect, useMemo, useRef } from 'react';
 import { Canvas, useFrame, useThree } from '@react-three/fiber';
 import * as THREE from 'three';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import {
   useTrackSurfaceData,
   type SurfaceBin,
@@ -56,9 +57,94 @@ const CHALK = 0xF0EDE5;
 const DEFAULT_WIDTH_LEFT = 4;
 const DEFAULT_WIDTH_RIGHT = 4;
 
+// Visual elevation exaggeration. Real-world elevation_m values are in
+// metres, but track-surface bbox is also in metres — true 1:1 z would
+// be visually flat (most karting tracks have <5 m total vert range
+// over a 400 m loop). Multiplier tunes how pronounced the bumps look
+// in the 3D view. Applied uniformly across every builder so the
+// surface, edge tubes, optimal/actual lines all sit on the same
+// elevation profile.
+const ELEVATION_SCALE = 2.0;
+
+/* ── EXEC-4: colour ramp system ───────────────────────────
+ * Colour is precomputed into per-mode Float32 vertex buffers and swapped
+ * onto the geometry without rebuilding it. Fixed domains (not per-session
+ * min/max) so a value always maps to the same colour. */
+const GREY = 0x666666;
+const GRIP_STOPS = [
+  { t: 0.0, color: 0xFF2A2A },  // μ 0.5 — low grip (red)
+  { t: 0.5, color: 0xFFD400 },  // mid (yellow)
+  { t: 1.0, color: 0x22C55E },  // μ 1.1 — high grip (green)
+] as const;
+
+/** Build an (N×3) RGB vertex buffer from scalar values via a multi-stop
+ *  ramp over a fixed domain. null/NaN → grey. */
+function makeColorBuffer(
+  scalars: ArrayLike<number | null | undefined>,
+  stops: ReadonlyArray<{ t: number; color: number }>,
+  domain: readonly [number, number],
+): Float32Array {
+  const n = scalars.length;
+  const out = new Float32Array(n * 3);
+  const [d0, d1] = domain;
+  const span = (d1 - d0) || 1;
+  const stopColors = stops.map((s) => new THREE.Color(s.color));
+  const grey = new THREE.Color(GREY);
+  const tmp = new THREE.Color();
+  for (let i = 0; i < n; i++) {
+    const v = scalars[i];
+    if (v == null || Number.isNaN(v)) {
+      out[i * 3] = grey.r; out[i * 3 + 1] = grey.g; out[i * 3 + 2] = grey.b;
+      continue;
+    }
+    let t = (v - d0) / span;
+    t = Math.max(0, Math.min(1, t));
+    let lo = 0;
+    while (lo < stops.length - 2 && stops[lo + 1]!.t < t) lo++;
+    const a = stops[lo]!; const b = stops[lo + 1]!;
+    const seg = (b.t - a.t) || 1;
+    const u = Math.max(0, Math.min(1, (t - a.t) / seg));
+    tmp.copy(stopColors[lo]!).lerp(stopColors[lo + 1]!, u);
+    out[i * 3] = tmp.r; out[i * 3 + 1] = tmp.g; out[i * 3 + 2] = tmp.b;
+  }
+  return out;
+}
+
+/** Flat grey buffer (degenerate-grip + not-yet-implemented modes). */
+function greyBuffer(n: number): Float32Array {
+  const out = new Float32Array(n * 3);
+  const g = new THREE.Color(GREY);
+  for (let i = 0; i < n; i++) { out[i * 3] = g.r; out[i * 3 + 1] = g.g; out[i * 3 + 2] = g.b; }
+  return out;
+}
+
+/** Mean of bin.elevation_m (finite values only). Used to mean-subtract
+ *  z = (elev - mean) × ELEVATION_SCALE so the rendered surface is
+ *  centred at z = 0 regardless of AMSL altitude. Without this, OK
+ *  (Essay plateau ~178 m) renders 270 m above the auto-fit camera
+ *  target (0, 0, 0) and is invisible — only sea-level tracks happen
+ *  to render in-frustum. Returns 0 if bins is empty / all elevations
+ *  are non-finite (defensive — keeps mesh at origin instead of NaN). */
+function meanElevationFromBins(bins: SurfaceBin[]): number {
+  let sum = 0;
+  let n = 0;
+  for (const b of bins) {
+    const e = b.elevation_m;
+    if (typeof e === 'number' && Number.isFinite(e)) {
+      sum += e;
+      n++;
+    }
+  }
+  return n > 0 ? sum / n : 0;
+}
+
 /* ── Types ────────────────────────────────────────────── */
 
-export type HeatmapMode = 'grip' | 'elevation' | 'line-delta' | 'spatial-grip';
+// EXEC-4/5: 'speed' + 'gradient' are the new V1 modes; the legacy
+// 'elevation'/'line-delta'/'spatial-grip' remain in the union until
+// EXEC-5 removes their panel buttons. The buffer-swap colour system
+// only populates grip/speed/gradient; legacy modes fall back to grip.
+export type HeatmapMode = 'grip' | 'speed' | 'gradient' | 'elevation' | 'line-delta' | 'spatial-grip';
 
 export interface TrackSurface3DProps {
   sessionId: string;
@@ -310,6 +396,86 @@ function binEdgeHeatValuesFromField2D(
 
 /* ── Ribbon mesh geometry builder ─────────────────────── */
 
+/* ── Constrained Delaunay triangulated surface (PRIMARY render) ─── */
+
+/** Indexed BufferGeometry from per-vertex xy + per-triangle indices +
+ *  per-vertex grip (already combined 2D/1D-fallback on the producer side).
+ *  Replaces the M×K structured grid for the actual render — the M×K stays
+ *  available as a dispatcher fallback and is still the logical coordinate
+ *  system for the optimiser + grip cache key. Per-vertex elevation is
+ *  picked up from ``bins`` by nearest s. */
+function buildTriangulatedSurface(
+  triXy: [number, number][],
+  triIndices: [number, number, number][],
+  triSn: [number, number][],
+  bins: SurfaceBin[],
+): THREE.BufferGeometry {
+  const V = triXy.length;
+  const T = triIndices.length;
+  if (V === 0 || T === 0) return new THREE.BufferGeometry();
+
+  const positions = new Float32Array(V * 3);
+  // EXEC-4: colour is no longer baked here — it is mode-driven via
+  // colorBuffers + a swap effect in Scene. We seed a flat grey
+  // placeholder so MeshLambertMaterial (vertexColors:true) has a valid
+  // colour attribute on first paint before the swap effect runs.
+  const colors = new Float32Array(V * 3).fill(0.4);
+  const indices = new Uint32Array(T * 3);
+
+  // Elevation by s: sort bins once, binary-search per vertex.
+  // Mean-subtract elev so z is centred at 0 (otherwise tracks on plateaus
+  // like Essay @ ~178m AMSL render way above the auto-fit camera target).
+  const meanElev = meanElevationFromBins(bins);
+  const sortedBins = bins.slice().sort((a, b) => a.distance_m - b.distance_m);
+  const sArr = sortedBins.map((b) => b.distance_m);
+  const eArr = sortedBins.map((b) => b.elevation_m ?? meanElev);
+  const sMax = sArr.length > 0 ? sArr[sArr.length - 1]! : 0;
+
+  for (let i = 0; i < V; i++) {
+    const [x, y] = triXy[i]!;
+    const [s] = triSn[i]!;
+    // Linear interp of elevation by s; clamp to [0, sMax].
+    let elev = 0;
+    if (sArr.length >= 2) {
+      const sClamped = Math.max(0, Math.min(sMax, s));
+      // Binary search for the s bracket.
+      let lo = 0;
+      let hi = sArr.length - 1;
+      while (hi - lo > 1) {
+        const mid = (lo + hi) >> 1;
+        if (sArr[mid]! <= sClamped) lo = mid; else hi = mid;
+      }
+      const span = sArr[hi]! - sArr[lo]!;
+      const u = span > 1e-9 ? (sClamped - sArr[lo]!) / span : 0;
+      const elevAbs = eArr[lo]! + u * (eArr[hi]! - eArr[lo]!);
+      elev = (elevAbs - meanElev) * ELEVATION_SCALE;
+    }
+    positions[i * 3] = x;
+    positions[i * 3 + 1] = y;
+    positions[i * 3 + 2] = elev;
+  }
+
+  for (let t = 0; t < T; t++) {
+    const [a, b, c] = triIndices[t]!;
+    indices[t * 3] = a;
+    indices[t * 3 + 1] = b;
+    indices[t * 3 + 2] = c;
+  }
+
+  const geo = new THREE.BufferGeometry();
+  geo.setIndex(new THREE.BufferAttribute(indices, 1));
+  geo.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+  geo.setAttribute('color', new THREE.BufferAttribute(colors, 3));
+  // EXEC-3: smooth (averaged) vertex normals so adjacent triangles
+  // shade as one continuous lit membrane under Lambert, not hard-edged
+  // flat patches. boundingBox feeds the EXEC-2 fit-to-bbox camera.
+  geo.computeVertexNormals();
+  geo.computeBoundingBox();
+  geo.computeBoundingSphere();
+  return geo;
+}
+
+
 function buildSurfaceGeometry(
   centerline: CenterlinePoint[],
   bins: SurfaceBin[],
@@ -330,6 +496,7 @@ function buildSurfaceGeometry(
   const colHigh = new THREE.Color(palette.high);
   const colLow = new THREE.Color(palette.low);
   const tmpColor = new THREE.Color();
+  const meanElev = meanElevationFromBins(bins);
 
   for (let i = 0; i < count; i++) {
     const pt = centerline[i]!;
@@ -339,7 +506,7 @@ function buildSurfaceGeometry(
     const legacyHalf = bin.width_m != null ? bin.width_m / 2 : null;
     const wLeft = bin.width_left_m ?? legacyHalf ?? DEFAULT_WIDTH_LEFT;
     const wRight = bin.width_right_m ?? legacyHalf ?? DEFAULT_WIDTH_RIGHT;
-    const elev = bin.elevation_m * 0.5; // scale elevation for visibility
+    const elev = (bin.elevation_m - meanElev) * ELEVATION_SCALE;
 
     // Compute perpendicular direction from tangent
     let tx: number;
@@ -412,8 +579,423 @@ function buildSurfaceGeometry(
   geo.setIndex(new THREE.BufferAttribute(indices, 1));
   geo.setAttribute('position', new THREE.BufferAttribute(positions, 3));
   geo.setAttribute('color', new THREE.BufferAttribute(colors, 3));
+  geo.computeVertexNormals();
+  geo.computeBoundingBox();
   geo.computeBoundingSphere();
   return geo;
+}
+
+/* ── Path F literal-edge mesh geometry builder ────────── */
+
+/** Resample a closed polyline to ``n`` points at uniform arclength.
+ *  Matches the Python ``_resample_polyline_arclength`` convention. */
+function resamplePolylineArclength(
+  xy: [number, number][],
+  n: number,
+): [number, number][] {
+  if (xy.length < 2) return xy.length === 1 ? Array(n).fill(xy[0]!) : [];
+  const cum: number[] = [0];
+  for (let i = 1; i < xy.length; i++) {
+    const dx = xy[i]![0] - xy[i - 1]![0];
+    const dy = xy[i]![1] - xy[i - 1]![1];
+    cum.push(cum[i - 1]! + Math.sqrt(dx * dx + dy * dy));
+  }
+  const total = cum[cum.length - 1]!;
+  if (total <= 0) return Array(n).fill(xy[0]!);
+  const out: [number, number][] = new Array(n);
+  let j = 0;
+  for (let i = 0; i < n; i++) {
+    const t = (i / n) * total;
+    while (j < cum.length - 2 && cum[j + 1]! < t) j++;
+    const span = cum[j + 1]! - cum[j]!;
+    const u = span > 1e-9 ? (t - cum[j]!) / span : 0;
+    out[i] = [
+      xy[j]![0] + u * (xy[j + 1]![0] - xy[j]![0]),
+      xy[j]![1] + u * (xy[j + 1]![1] - xy[j]![1]),
+    ];
+  }
+  return out;
+}
+
+/** Build a triangulated ribbon mesh BETWEEN two hand-traced edge polylines.
+ *  Shape == hand-tracing by construction (mesh boundary lies on the
+ *  resampled polyline within numerical precision). Path F architecture
+ *  fix for the gate failure under Path E spine±width rendering. */
+function buildLiteralEdgeMesh(
+  leftEdgeRaw: [number, number][],
+  rightEdgeRaw: [number, number][],
+  leftEdgeSn: [number, number][] | null | undefined,
+  rightEdgeSn: [number, number][] | null | undefined,
+  bins: SurfaceBin[],
+  heatValues: number[],
+  mode: HeatmapMode,
+  conditions: WeatherConditionBlock | null | undefined,
+  spatialFactor: SpatialFactor,
+  midlineLength: number,
+): THREE.BufferGeometry {
+  // n_stations = max(300, midline_length / 1.5) per the staging spec.
+  const nStations = Math.max(300, Math.floor(midlineLength / 1.5));
+  const left = resamplePolylineArclength(leftEdgeRaw, nStations);
+  const right = resamplePolylineArclength(rightEdgeRaw, nStations);
+  if (left.length < 2 || right.length < 2) return new THREE.BufferGeometry();
+
+  // Resample the per-vertex (s, n) arrays to nStations the same way so
+  // each mesh vertex retains its (s, n) coordinate. We can resample by
+  // arclength on the ORIGINAL edge polyline since the s/n values are
+  // attached 1:1 to the original points.
+  const leftSnResampled = leftEdgeSn
+    ? resamplePolylineArclength(leftEdgeSn as [number, number][], nStations)
+    : null;
+  const rightSnResampled = rightEdgeSn
+    ? resamplePolylineArclength(rightEdgeSn as [number, number][], nStations)
+    : null;
+
+  const vertCount = nStations * 2;
+  const positions = new Float32Array(vertCount * 3);
+  const colors = new Float32Array(vertCount * 3);
+
+  const palette = COLORS[mode];
+  const colHigh = new THREE.Color(palette.high);
+  const colLow = new THREE.Color(palette.low);
+  const tmpColor = new THREE.Color();
+
+  // Per-vertex elevation from nearest bin by arclength s (when available).
+  // Mean-subtracted so plateau tracks (Essay @ ~178m AMSL) don't render
+  // off-frustum. meanElevLE is named so the inner-loop substitution is
+  // unambiguous; same value as meanElevationFromBins(bins).
+  const meanElevLE = meanElevationFromBins(bins);
+  const binsByDist = bins;
+  const binDistances = bins.map((b) => b.distance_m);
+  const nearestBinIdx = (sVal: number): number => {
+    if (binsByDist.length === 0) return 0;
+    let lo = 0;
+    let hi = binDistances.length - 1;
+    while (lo < hi) {
+      const mid = (lo + hi) >>> 1;
+      if (binDistances[mid]! < sVal) lo = mid + 1; else hi = mid;
+    }
+    return Math.max(0, Math.min(binDistances.length - 1, lo));
+  };
+
+  // 2D-field sampling helper — mirrors binEdgeHeatValuesFromField2D but
+  // takes an explicit (s, n) directly (no width-derived n). Used when
+  // mode === 'spatial-grip' AND we have per-vertex (s, n) AND the 2D
+  // fields are present.
+  const sm = conditions?.spatial_modifier;
+  const tileShape = sm?.tile_grid_shape ?? null;
+  const tileS = sm?.tile_arclength_samples ?? null;
+  const tileN = sm?.tile_lateral_offsets ?? null;
+  const fieldArr =
+    mode === 'spatial-grip'
+      ? (spatialFactor === 'drainage' ? sm?.drainage_field_2d
+        : spatialFactor === 'sun' ? sm?.sun_field_2d
+        : spatialFactor === 'wind' ? sm?.wind_field_2d
+        : sm?.factor_field_2d)
+      : null;
+  const isCombined = spatialFactor === 'combined';
+  const colorMin = isCombined ? SPATIAL_GRIP_COLOR_MIN : INDIVIDUAL_FACTOR_MIN;
+  const colorMax = isCombined ? SPATIAL_GRIP_COLOR_MAX : INDIVIDUAL_FACTOR_MAX;
+  const muScale = conditions?.mu_scale ?? 1.0;
+  const useField2D =
+    mode === 'spatial-grip'
+    && fieldArr != null && tileShape != null && tileS != null && tileN != null
+    && leftSnResampled != null && rightSnResampled != null;
+
+  function sampleField2D(sVal: number, nVal: number): number {
+    if (!useField2D) return 1.0;
+    const [M_s, M_n] = tileShape!;
+    let si = 0;
+    while (si < M_s - 1 && (tileS![si + 1] ?? Infinity) < sVal) si++;
+    let ni = 0;
+    while (ni < M_n - 1 && (tileN![ni + 1] ?? Infinity) < nVal) ni++;
+    return (fieldArr as readonly number[])[si * M_n + ni] ?? 1.0;
+  }
+
+  for (let i = 0; i < nStations; i++) {
+    // Pick (s, n) per vertex; default to mid-distance fallback when absent.
+    const sL = leftSnResampled?.[i]?.[0] ?? (i / nStations) * midlineLength;
+    const nL = leftSnResampled?.[i]?.[1] ?? 0;
+    const sR = rightSnResampled?.[i]?.[0] ?? (i / nStations) * midlineLength;
+    const nR = rightSnResampled?.[i]?.[1] ?? 0;
+
+    // Elevation per vertex from nearest spine bin, mean-subtracted.
+    const elevLBin = binsByDist[nearestBinIdx(sL)];
+    const elevRBin = binsByDist[nearestBinIdx(sR)];
+    const elevL = ((elevLBin?.elevation_m ?? meanElevLE) - meanElevLE) * ELEVATION_SCALE;
+    const elevR = ((elevRBin?.elevation_m ?? meanElevLE) - meanElevLE) * ELEVATION_SCALE;
+
+    // li = LEFT physical vertex; ri = RIGHT physical vertex.
+    const li = i * 2;
+    const ri = i * 2 + 1;
+    positions[li * 3] = left[i]![0];
+    positions[li * 3 + 1] = left[i]![1];
+    positions[li * 3 + 2] = elevL;
+    positions[ri * 3] = right[i]![0];
+    positions[ri * 3 + 1] = right[i]![1];
+    positions[ri * 3 + 2] = elevR;
+
+    // Color: per-vertex via 2D field when present, else per-spine-bin scalar.
+    let tL: number;
+    let tR: number;
+    if (useField2D) {
+      const rawL = sampleField2D(sL, nL);
+      const rawR = sampleField2D(sR, nR);
+      const muL = binsByDist[nearestBinIdx(sL)]?.mu_lat_p95 ?? 0;
+      const muR = binsByDist[nearestBinIdx(sR)]?.mu_lat_p95 ?? 0;
+      const valL = isCombined ? muL * muScale * rawL : rawL;
+      const valR = isCombined ? muR * muScale * rawR : rawR;
+      tL = Math.max(0, Math.min(1, (valL - colorMin) / (colorMax - colorMin)));
+      tR = Math.max(0, Math.min(1, (valR - colorMin) / (colorMax - colorMin)));
+      if (!isCombined) { tL = 1 - tL; tR = 1 - tR; }
+    } else {
+      // Use the per-bin scalar heatValues — both edge vertices get the
+      // same colour for a station (gradient across the cross-section
+      // requires 2D field data).
+      const iL = nearestBinIdx(sL);
+      const iR = nearestBinIdx(sR);
+      tL = heatValues[iL] ?? 0.5;
+      tR = heatValues[iR] ?? 0.5;
+    }
+    tmpColor.copy(colLow).lerp(colHigh, tL);
+    colors[li * 3] = tmpColor.r;
+    colors[li * 3 + 1] = tmpColor.g;
+    colors[li * 3 + 2] = tmpColor.b;
+    tmpColor.copy(colLow).lerp(colHigh, tR);
+    colors[ri * 3] = tmpColor.r;
+    colors[ri * 3 + 1] = tmpColor.g;
+    colors[ri * 3 + 2] = tmpColor.b;
+  }
+
+  // Closed-loop triangulation: each station i pairs to (i+1) % n; last
+  // quad wraps i+1 → 0 so the mesh closes at the start/finish seam.
+  const triCount = nStations * 2;
+  const indices = new Uint32Array(triCount * 3);
+  for (let i = 0; i < nStations; i++) {
+    const iNext = (i + 1) % nStations;
+    const li = i * 2;
+    const ri = i * 2 + 1;
+    const liN = iNext * 2;
+    const riN = iNext * 2 + 1;
+    const ti = i * 6;
+    indices[ti] = li;
+    indices[ti + 1] = ri;
+    indices[ti + 2] = liN;
+    indices[ti + 3] = ri;
+    indices[ti + 4] = riN;
+    indices[ti + 5] = liN;
+  }
+
+  const geo = new THREE.BufferGeometry();
+  geo.setIndex(new THREE.BufferAttribute(indices, 1));
+  geo.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+  geo.setAttribute('color', new THREE.BufferAttribute(colors, 3));
+  geo.computeVertexNormals();
+  geo.computeBoundingBox();
+  geo.computeBoundingSphere();
+  return geo;
+}
+
+/* ── Stage 1 M×K mesh from medial-axis spine ─────────────── */
+
+/** Triangulate the M×K grid as (M)×(K-1)×2 triangles. Each "cell" is one
+ *  longitudinal step × one lateral step on the grid. Closed-loop wrap
+ *  on M handled by connecting station M-1 to station 0. */
+function buildMxKMesh(
+  spineXy: [number, number][],
+  L_xy: [number, number][],
+  R_xy: [number, number][],
+  spineS: number[],
+  hwL: number[],
+  hwR: number[],
+  K: number,
+  bins: SurfaceBin[],
+  mode: HeatmapMode,
+  conditions: WeatherConditionBlock | null | undefined,
+  spatialFactor: SpatialFactor,
+): THREE.BufferGeometry {
+  const M = spineXy.length;
+  if (M < 2 || L_xy.length !== M || R_xy.length !== M || K < 2) {
+    return new THREE.BufferGeometry();
+  }
+
+  // Per-vertex positions: M × K = 7200 for KCT (300×24).
+  const vertCount = M * K;
+  const positions = new Float32Array(vertCount * 3);
+  const colors = new Float32Array(vertCount * 3);
+
+  // Per-vertex elevation from nearest spine-bin via s.
+  const binDistances = bins.map((b) => b.distance_m);
+  const nearestBinIdx = (sVal: number): number => {
+    if (binDistances.length === 0) return 0;
+    let lo = 0;
+    let hi = binDistances.length - 1;
+    while (lo < hi) {
+      const mid = (lo + hi) >>> 1;
+      if (binDistances[mid]! < sVal) lo = mid + 1; else hi = mid;
+    }
+    return Math.max(0, Math.min(binDistances.length - 1, lo));
+  };
+
+  // 2D-field sampler for spatial-grip mode.
+  const sm = conditions?.spatial_modifier;
+  const tileShape = sm?.tile_grid_shape ?? null;
+  const tileS = sm?.tile_arclength_samples ?? null;
+  const tileN = sm?.tile_lateral_offsets ?? null;
+  const fieldArr =
+    mode === 'spatial-grip'
+      ? (spatialFactor === 'drainage' ? sm?.drainage_field_2d
+        : spatialFactor === 'sun' ? sm?.sun_field_2d
+        : spatialFactor === 'wind' ? sm?.wind_field_2d
+        : sm?.factor_field_2d)
+      : null;
+  const useField2D =
+    mode === 'spatial-grip'
+    && fieldArr != null && tileShape != null && tileS != null && tileN != null;
+  const isCombined = spatialFactor === 'combined';
+  const colorMin = isCombined ? SPATIAL_GRIP_COLOR_MIN : INDIVIDUAL_FACTOR_MIN;
+  const colorMax = isCombined ? SPATIAL_GRIP_COLOR_MAX : INDIVIDUAL_FACTOR_MAX;
+  const muScale = conditions?.mu_scale ?? 1.0;
+  function sampleField2D(sVal: number, nVal: number): number {
+    if (!useField2D) return 1.0;
+    const [M_s, M_n] = tileShape!;
+    let si = 0;
+    while (si < M_s - 1 && (tileS![si + 1] ?? Infinity) < sVal) si++;
+    let ni = 0;
+    while (ni < M_n - 1 && (tileN![ni + 1] ?? Infinity) < nVal) ni++;
+    return (fieldArr as readonly number[])[si * M_n + ni] ?? 1.0;
+  }
+
+  // Per-bin scalar heatmap (grip / elevation / line-delta).
+  let heatMin = Infinity;
+  let heatMax = -Infinity;
+  if (mode === 'grip') {
+    for (const b of bins) { heatMin = Math.min(heatMin, b.mu_lat_p95); heatMax = Math.max(heatMax, b.mu_lat_p95); }
+  } else if (mode === 'elevation') {
+    for (const b of bins) { heatMin = Math.min(heatMin, b.elevation_m); heatMax = Math.max(heatMax, b.elevation_m); }
+  }
+  const heatRange = (heatMax - heatMin) || 1;
+
+  const palette = COLORS[mode];
+  const colHigh = new THREE.Color(palette.high);
+  const colLow = new THREE.Color(palette.low);
+  const tmpColor = new THREE.Color();
+  const meanElev = meanElevationFromBins(bins);
+
+  for (let i = 0; i < M; i++) {
+    const L = L_xy[i]!;
+    const R = R_xy[i]!;
+    const s = spineS[i] ?? 0;
+    const hl = hwL[i] ?? 0;
+    const hr = hwR[i] ?? 0;
+    const totalW = hl + hr;
+    const elevBin = bins[nearestBinIdx(s)];
+    const elev = ((elevBin?.elevation_m ?? meanElev) - meanElev) * ELEVATION_SCALE;
+    const heat = mode === 'grip'
+      ? ((elevBin?.mu_lat_p95 ?? 0) - heatMin) / heatRange
+      : mode === 'elevation'
+      ? ((elevBin?.elevation_m ?? 0) - heatMin) / heatRange
+      : 0.5;
+    for (let k = 0; k < K; k++) {
+      const t = K > 1 ? k / (K - 1) : 0;
+      const x = L[0] + t * (R[0] - L[0]);
+      const y = L[1] + t * (R[1] - L[1]);
+      const n = hl - t * totalW;  // signed lateral offset (+ = left)
+      const idx = i * K + k;
+      positions[idx * 3] = x;
+      positions[idx * 3 + 1] = y;
+      positions[idx * 3 + 2] = elev;
+      let colorT: number;
+      if (useField2D) {
+        const raw = sampleField2D(s, n);
+        const muLocal = elevBin?.mu_lat_p95 ?? 0;
+        const val = isCombined ? muLocal * muScale * raw : raw;
+        let ct = Math.max(0, Math.min(1, (val - colorMin) / (colorMax - colorMin)));
+        if (!isCombined) ct = 1 - ct;
+        colorT = ct;
+      } else {
+        colorT = Math.max(0, Math.min(1, heat));
+      }
+      tmpColor.copy(colLow).lerp(colHigh, colorT);
+      colors[idx * 3] = tmpColor.r;
+      colors[idx * 3 + 1] = tmpColor.g;
+      colors[idx * 3 + 2] = tmpColor.b;
+    }
+  }
+
+  // Triangulation: M × (K-1) cells, 2 triangles each, cyclic on M.
+  const triCount = M * (K - 1) * 2;
+  const indices = new Uint32Array(triCount * 3);
+  let ti = 0;
+  for (let i = 0; i < M; i++) {
+    const iNext = (i + 1) % M;
+    for (let k = 0; k < K - 1; k++) {
+      const a = i * K + k;
+      const b = i * K + (k + 1);
+      const c = iNext * K + k;
+      const d = iNext * K + (k + 1);
+      indices[ti++] = a;
+      indices[ti++] = b;
+      indices[ti++] = c;
+      indices[ti++] = b;
+      indices[ti++] = d;
+      indices[ti++] = c;
+    }
+  }
+
+  const geo = new THREE.BufferGeometry();
+  geo.setIndex(new THREE.BufferAttribute(indices, 1));
+  geo.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+  geo.setAttribute('color', new THREE.BufferAttribute(colors, 3));
+  geo.computeVertexNormals();
+  geo.computeBoundingBox();
+  geo.computeBoundingSphere();
+  return geo;
+}
+
+/* ── Edge outline tube (Path F: thick black boundary on mesh) ── */
+
+/** Build a closed-loop TubeGeometry along a hand-traced edge polyline.
+ *  WebGL line primitives don't render thick lines reliably (most browsers
+ *  cap linewidth at 1px), so we use 3D tubes — small radius gives the
+ *  visual effect of a thick outline that scales with camera zoom. */
+function buildEdgeTubeGeometry(
+  edgeXY: [number, number][],
+  edgeSn: [number, number][] | null | undefined,
+  bins: SurfaceBin[],
+  radius: number = 0.25,
+  liftZ: number = 0.1,
+): THREE.BufferGeometry | null {
+  if (edgeXY.length < 2) return null;
+
+  const binDistances = bins.map((b) => b.distance_m);
+  const nearestBinIdx = (sVal: number): number => {
+    if (binDistances.length === 0) return 0;
+    let lo = 0;
+    let hi = binDistances.length - 1;
+    while (lo < hi) {
+      const mid = (lo + hi) >>> 1;
+      if (binDistances[mid]! < sVal) lo = mid + 1; else hi = mid;
+    }
+    return Math.max(0, Math.min(binDistances.length - 1, lo));
+  };
+
+  const meanElev = meanElevationFromBins(bins);
+  const points: THREE.Vector3[] = [];
+  for (let i = 0; i < edgeXY.length; i++) {
+    const s = edgeSn?.[i]?.[0] ?? 0;
+    const absElev = bins[nearestBinIdx(s)]?.elevation_m ?? meanElev;
+    const elev = (absElev - meanElev) * ELEVATION_SCALE + liftZ;
+    points.push(new THREE.Vector3(edgeXY[i]![0], edgeXY[i]![1], elev));
+  }
+
+  // CatmullRom needs ≥ 4 points to interpolate cleanly; below that pad
+  // the polyline by duplicating the first point so the tube still
+  // generates without throwing.
+  while (points.length < 4) points.push(points[0]!.clone());
+
+  const curve = new THREE.CatmullRomCurve3(points, /* closed */ true);
+  const tubularSegments = Math.max(64, edgeXY.length * 2);
+  return new THREE.TubeGeometry(curve, tubularSegments, radius, 8, true);
 }
 
 /* ── Line geometry builder ────────────────────────────── */
@@ -424,6 +1006,7 @@ function buildLineGeometry(
   elevationBins: SurfaceBin[],
   liftZ: number,
 ): THREE.BufferGeometry {
+  const meanElev = meanElevationFromBins(elevationBins);
   const pts: number[] = [];
   for (let i = 0; i < centerline.length; i++) {
     const pt = centerline[i]!;
@@ -445,7 +1028,8 @@ function buildLineGeometry(
       nx = -ty / tLen;
       ny = tx / tLen;
     }
-    const elev = (elevationBins[i]?.elevation_m ?? 0) * 0.5 + liftZ;
+    const absElev = elevationBins[i]?.elevation_m ?? meanElev;
+    const elev = (absElev - meanElev) * ELEVATION_SCALE + liftZ;
     pts.push(pt.x + nx * offset, pt.y + ny * offset, elev);
   }
   const geo = new THREE.BufferGeometry();
@@ -453,26 +1037,10 @@ function buildLineGeometry(
   return geo;
 }
 
-/* ── Auto-fit camera to geometry bounds ───────────────── */
-
-function useAutoFit(
-  centerline: CenterlinePoint[],
-  cameraState: React.MutableRefObject<{ target: THREE.Vector3; radius: number }>,
-) {
-  const fitted = useRef(false);
-  if (centerline.length > 1 && !fitted.current) {
-    let minX = Infinity; let maxX = -Infinity;
-    let minY = Infinity; let maxY = -Infinity;
-    for (const pt of centerline) {
-      minX = Math.min(minX, pt.x); maxX = Math.max(maxX, pt.x);
-      minY = Math.min(minY, pt.y); maxY = Math.max(maxY, pt.y);
-    }
-    cameraState.current.target.set((minX + maxX) / 2, (minY + maxY) / 2, 0);
-    const span = Math.max(maxX - minX, maxY - minY, 20);
-    cameraState.current.radius = span * 0.8;
-    fitted.current = true;
-  }
-}
+/* ── Camera framing: see EXEC-2 OrbitControls + fit-to-bbox effects
+ *    inside Scene. The legacy hand-rolled spherical useAutoFit rig was
+ *    removed (no listener cleanup → leak) in favour of three/addons
+ *    OrbitControls + an orthographic isometric fit. */
 
 /* ── Scene content ────────────────────────────────────── */
 
@@ -487,29 +1055,46 @@ interface SceneProps {
   spatialFactor: SpatialFactor;
   showOptimalLine: boolean;
   showActualLine: boolean;
+  // Stage 1 Path F — literal hand-traced edges from API. When present
+  // (track has gt_*.geojson + session has GPS), the renderer triangulates
+  // directly between these edges; mesh boundary == hand-tracing by
+  // construction. Null → fall back to legacy spine±width ribbon.
+  leftEdgeXyLocal: [number, number][] | null;
+  rightEdgeXyLocal: [number, number][] | null;
+  leftEdgeSn: [number, number][] | null;
+  rightEdgeSn: [number, number][] | null;
+  midlineLengthM: number | null;
+  // Stage 1 medial-axis M×K grid (preferred over literal-edge when present).
+  meshSpineXy: [number, number][] | null;
+  meshLXy: [number, number][] | null;
+  meshRXy: [number, number][] | null;
+  meshSpineS: number[] | null;
+  meshHwL: number[] | null;
+  meshHwR: number[] | null;
+  meshM: number | null;
+  meshK: number | null;
+  // PRIMARY render path: constrained Delaunay triangulation. M×K, literal-
+  // edge and spine±width all stay as dispatcher fallbacks below it.
+  meshTriXy: [number, number][] | null;
+  meshTriIndices: [number, number, number][] | null;
+  meshTriSn: [number, number][] | null;
+  meshTriGrip: number[] | null;
 }
 
 function Scene({
   bins, mode, gpsXY, gpsDistances, optimalLine, lineDelta, conditions,
   spatialFactor, showOptimalLine, showActualLine,
+  leftEdgeXyLocal, rightEdgeXyLocal, leftEdgeSn, rightEdgeSn, midlineLengthM,
+  meshSpineXy, meshLXy, meshRXy, meshSpineS, meshHwL, meshHwR, meshM, meshK,
+  meshTriXy, meshTriIndices, meshTriSn, meshTriGrip,
 }: SceneProps) {
   const { camera, gl } = useThree();
-  const orbitState = useRef({
-    isDragging: false,
-    prevX: 0,
-    prevY: 0,
-    theta: Math.PI / 4,
-    phi: Math.PI / 3,
-    radius: 100,
-    target: new THREE.Vector3(0, 0, 0),
-  });
+  const controlsRef = useRef<OrbitControls | null>(null);
 
   const centerline = useMemo(
     () => buildCenterline(bins, gpsXY, gpsDistances),
     [bins, gpsXY, gpsDistances],
   );
-
-  useAutoFit(centerline, orbitState);
 
   const heatValues = useMemo(
     () => binHeatValues(bins, mode, lineDelta, conditions, spatialFactor),
@@ -527,25 +1112,134 @@ function Scene({
     [bins, mode, conditions, spatialFactor],
   );
 
-  const surfaceGeo = useMemo(
-    () => buildSurfaceGeometry(centerline, bins, heatValues, mode, edgeValues),
-    [centerline, bins, heatValues, mode, edgeValues],
-  );
+  // Render dispatcher, in priority order:
+  //   1) Constrained Delaunay triangulation (PRIMARY) — touches both
+  //      kerbs, non-inverting by construction, per-vertex grip from
+  //      the 2D field where available, 1d_fallback elsewhere.
+  //   2) M×K medial-axis grid — Stage 1 structured fallback (known
+  //      to invert at apex; kept for tracks without a triangulation).
+  //   3) Literal-edge ribbon (Path F) — pre-Stage-1 fallback.
+  //   4) Legacy spine ± width — no gt available.
+  // Each preference is dispatched on null-check of its inputs.
+  const surfaceGeo = useMemo(() => {
+    if (
+      meshTriXy && meshTriIndices && meshTriGrip && meshTriSn
+      && meshTriXy.length >= 3
+      && meshTriIndices.length >= 1
+    ) {
+      return buildTriangulatedSurface(
+        meshTriXy, meshTriIndices, meshTriSn, bins,
+      );
+    }
+    if (
+      meshSpineXy && meshLXy && meshRXy
+      && meshSpineS && meshHwL && meshHwR
+      && meshM != null && meshK != null
+      && meshSpineXy.length >= 2
+    ) {
+      return buildMxKMesh(
+        meshSpineXy, meshLXy, meshRXy,
+        meshSpineS, meshHwL, meshHwR,
+        meshK, bins, mode, conditions, spatialFactor,
+      );
+    }
+    if (
+      leftEdgeXyLocal && rightEdgeXyLocal
+      && leftEdgeXyLocal.length >= 2
+      && rightEdgeXyLocal.length >= 2
+      && midlineLengthM != null && midlineLengthM > 0
+    ) {
+      return buildLiteralEdgeMesh(
+        leftEdgeXyLocal, rightEdgeXyLocal,
+        leftEdgeSn, rightEdgeSn,
+        bins, heatValues, mode, conditions, spatialFactor,
+        midlineLengthM,
+      );
+    }
+    return buildSurfaceGeometry(centerline, bins, heatValues, mode, edgeValues);
+  }, [
+    meshTriXy, meshTriIndices, meshTriGrip, meshTriSn,
+    meshSpineXy, meshLXy, meshRXy, meshSpineS, meshHwL, meshHwR, meshM, meshK,
+    leftEdgeXyLocal, rightEdgeXyLocal, leftEdgeSn, rightEdgeSn, midlineLengthM,
+    centerline, bins, heatValues, mode, edgeValues, conditions, spatialFactor,
+  ]);
 
-  // Day-13 Phase D: low-confidence spatial-grip sessions render at reduced
-  // opacity to flag low trust — the legend separately annotates the warning.
+  // EXEC-4: per-mode vertex-colour buffers (Delaunay path only — keyed
+  // on the per-vertex mesh_tri_grip set). null for fallback paths, which
+  // keep their own baked colour. speed/gradient are grey stubs until
+  // EXEC-7/EXEC-6 populate them.
+  const colorBuffers = useMemo(() => {
+    if (!meshTriGrip || meshTriGrip.length === 0) return null;
+    let mn = Infinity; let mx = -Infinity;
+    for (const g of meshTriGrip) { if (g < mn) mn = g; if (g > mx) mx = g; }
+    // Degenerate grip → grey (range<0.02, or all≈0/1). Panel computes the
+    // same availability flag from surface.mesh_tri_grip to disable GRIP.
+    const avail = (mx - mn > 0.02) && !(mx <= 0.02) && !(mn >= 0.98);
+    const n = meshTriGrip.length;
+    return {
+      grip: avail ? makeColorBuffer(meshTriGrip, GRIP_STOPS, [0.5, 1.1]) : greyBuffer(n),
+      speed: greyBuffer(n),
+      gradient: greyBuffer(n),
+    };
+  }, [meshTriGrip]);
+
+  // Mode swap: set the colour attribute from the active mode's buffer
+  // WITHOUT rebuilding geometry. Guarded by vertex-count match so it
+  // only touches the Delaunay surface (fallback paths keep baked colour).
+  useEffect(() => {
+    if (!colorBuffers) return;
+    const posCount = surfaceGeo.attributes.position?.count ?? 0;
+    const buf =
+      mode === 'speed' ? colorBuffers.speed
+      : mode === 'gradient' ? colorBuffers.gradient
+      : colorBuffers.grip;
+    if (!buf || buf.length !== posCount * 3) return;
+    surfaceGeo.setAttribute('color', new THREE.BufferAttribute(buf, 3));
+    surfaceGeo.attributes.color.needsUpdate = true;
+  }, [surfaceGeo, mode, colorBuffers]);
+
+  // EXEC-3: lit relief. MeshLambertMaterial + per-vertex normals shades
+  // adjacent triangles as one continuous membrane; polygonOffset pushes
+  // the fill back so the racing-line/edge overlays sit cleanly on top.
   const surfaceMat = useMemo(() => {
     const lowConfidence =
       mode === 'spatial-grip' &&
       typeof conditions?.confidence === 'number' &&
       conditions.confidence < SPATIAL_GRIP_LOW_CONFIDENCE;
-    return new THREE.MeshBasicMaterial({
+    return new THREE.MeshLambertMaterial({
       vertexColors: true,
       side: THREE.DoubleSide,
+      polygonOffset: true,
+      polygonOffsetFactor: 1,
+      polygonOffsetUnits: 1,
       transparent: lowConfidence,
       opacity: lowConfidence ? 0.6 : 1.0,
     });
   }, [mode, conditions?.confidence]);
+
+  // Path F edge outline tubes — thick black boundaries along the
+  // hand-traced left + right polylines when the literal-edge mesh is
+  // active. Null when on the legacy spine-ribbon path (no literal edges
+  // to outline). WebGL doesn't render thick lines reliably so we use
+  // 3D tubes for visual thickness.
+  const leftEdgeTube = useMemo(
+    () =>
+      leftEdgeXyLocal && leftEdgeXyLocal.length >= 2
+        ? buildEdgeTubeGeometry(leftEdgeXyLocal, leftEdgeSn, bins, 0.5, 0.15)
+        : null,
+    [leftEdgeXyLocal, leftEdgeSn, bins],
+  );
+  const rightEdgeTube = useMemo(
+    () =>
+      rightEdgeXyLocal && rightEdgeXyLocal.length >= 2
+        ? buildEdgeTubeGeometry(rightEdgeXyLocal, rightEdgeSn, bins, 0.5, 0.15)
+        : null,
+    [rightEdgeXyLocal, rightEdgeSn, bins],
+  );
+  const edgeTubeMat = useMemo(
+    () => new THREE.MeshBasicMaterial({ color: 0x000000 }),
+    [],
+  );
 
   // Optimal line geometry
   const optimalGeo = useMemo(() => {
@@ -577,61 +1271,82 @@ function Scene({
     [],
   );
 
-  // Manual orbit controls
-  const onPointerDown = useCallback((e: PointerEvent) => {
-    orbitState.current.isDragging = true;
-    orbitState.current.prevX = e.clientX;
-    orbitState.current.prevY = e.clientY;
-    (e.target as HTMLElement).setPointerCapture?.(e.pointerId);
-  }, []);
+  // EXEC-2: OrbitControls (imperative — three/addons class, instantiated
+  // directly rather than via extend()+<orbitControls> JSX). Identical
+  // end-state to the declarative form but avoids r3f-8.18 JSX-intrinsic
+  // typing/registration risk. z-up scene (positions are [x, y, elev]).
+  useEffect(() => {
+    camera.up.set(0, 0, 1);
+    const controls = new OrbitControls(camera, gl.domElement);
+    controls.enableDamping = true;
+    controls.dampingFactor = 0.08;
+    controls.screenSpacePanning = true;
+    controls.minPolarAngle = 0.05;
+    controls.maxPolarAngle = Math.PI / 2 - 0.02;
+    controlsRef.current = controls;
+    return () => {
+      controls.dispose();
+      controlsRef.current = null;
+    };
+  }, [camera, gl]);
 
-  const onPointerMove = useCallback((e: PointerEvent) => {
-    if (!orbitState.current.isDragging) return;
-    const dx = e.clientX - orbitState.current.prevX;
-    const dy = e.clientY - orbitState.current.prevY;
-    orbitState.current.prevX = e.clientX;
-    orbitState.current.prevY = e.clientY;
-    orbitState.current.theta -= dx * 0.005;
-    orbitState.current.phi = Math.max(0.1, Math.min(Math.PI / 2 - 0.05, orbitState.current.phi - dy * 0.005));
-  }, []);
+  // Fit-to-bbox isometric framing — once per geometry change (keyed on
+  // surfaceGeo identity, NOT on resize, so user orbit isn't reset).
+  useEffect(() => {
+    const controls = controlsRef.current;
+    const cam = camera as THREE.OrthographicCamera;
+    if (!surfaceGeo.boundingBox) surfaceGeo.computeBoundingBox();
+    const box = surfaceGeo.boundingBox;
+    if (!box || !cam.isOrthographicCamera) return;
+    const center = new THREE.Vector3();
+    box.getCenter(center);
+    const sphere = new THREE.Sphere();
+    box.getBoundingSphere(sphere);
+    const r = Math.max(sphere.radius, 1);
+    const w = gl.domElement.clientWidth || 1;
+    const h = gl.domElement.clientHeight || 1;
+    // 3/4 isometric: camera offset along (1,1,1) by 4r; ortho zoom frames
+    // the bounding sphere into the smaller viewport dimension at 90%.
+    cam.position.copy(center).add(new THREE.Vector3(1, 1, 1).normalize().multiplyScalar(r * 4));
+    cam.zoom = (Math.min(w, h) / (2 * r)) * 0.9;
+    cam.near = 0.1;
+    cam.far = r * 20;
+    cam.updateProjectionMatrix();
+    if (controls) {
+      controls.target.copy(center);
+      controls.update();
+    } else {
+      cam.lookAt(center);
+    }
+  }, [surfaceGeo, camera, gl]);
 
-  const onPointerUp = useCallback(() => {
-    orbitState.current.isDragging = false;
-  }, []);
-
-  const onWheel = useCallback((e: WheelEvent) => {
-    e.preventDefault();
-    orbitState.current.radius = Math.max(10, Math.min(500, orbitState.current.radius + e.deltaY * 0.1));
-  }, []);
-
-  // Attach pointer/wheel listeners once
-  const attached = useRef(false);
-  if (!attached.current && gl.domElement) {
-    const el = gl.domElement;
-    el.addEventListener('pointerdown', onPointerDown);
-    el.addEventListener('pointermove', onPointerMove);
-    el.addEventListener('pointerup', onPointerUp);
-    el.addEventListener('pointerleave', onPointerUp);
-    el.addEventListener('wheel', onWheel, { passive: false });
-    attached.current = true;
-  }
-
+  // Damping needs a per-frame update.
   useFrame(() => {
-    const s = orbitState.current;
-    const x = s.target.x + s.radius * Math.sin(s.phi) * Math.cos(s.theta);
-    const y = s.target.y + s.radius * Math.sin(s.phi) * Math.sin(s.theta);
-    const z = s.target.z + s.radius * Math.cos(s.phi);
-    camera.position.set(x, y, z);
-    camera.lookAt(s.target);
+    controlsRef.current?.update();
   });
 
   return (
     <>
-      {/* Track surface mesh */}
+      {/* Track surface mesh — single continuous membrane.
+       *  Per-vertex grip vertexColors interpolate smoothly across each
+       *  triangle (Gouraud); MeshBasicMaterial is unlit so there are
+       *  no facet steps from per-face normals either. */}
       <mesh frustumCulled={false}>
         <primitive object={surfaceGeo} attach="geometry" />
         <primitive object={surfaceMat} attach="material" />
       </mesh>
+      {leftEdgeTube && (
+        <mesh frustumCulled={false}>
+          <primitive object={leftEdgeTube} attach="geometry" />
+          <primitive object={edgeTubeMat} attach="material" />
+        </mesh>
+      )}
+      {rightEdgeTube && (
+        <mesh frustumCulled={false}>
+          <primitive object={rightEdgeTube} attach="geometry" />
+          <primitive object={edgeTubeMat} attach="material" />
+        </mesh>
+      )}
 
       {/* Optimal racing line */}
       {optimalGeo && (
@@ -649,9 +1364,75 @@ function Scene({
         </line>
       )}
 
-      <ambientLight intensity={0.6} />
+      {/* EXEC-3: ambient fill + one directional light so Lambert shades
+       *  the elevation relief. Direction matters (z-up scene), not
+       *  magnitude. */}
+      <ambientLight intensity={0.55} />
+      <directionalLight position={[0.4, 0.6, 1]} intensity={1.15} />
     </>
   );
+}
+
+/* ── EXEC-1: verification oracle ──────────────────────────
+ * Mounted inside <Canvas>. One rAF after each surface-data change it
+ * console.asserts the invariants every downstream EXEC depends on, and
+ * exposes window.__surfacePNG() for a deterministic console screenshot.
+ * This is the tool that proves EXEC-2..10 didn't silently break the
+ * render — it must go green on a known-good KCT session first. */
+function DebugAsserts({ dep }: { dep: string | number | null }) {
+  const { gl, scene } = useThree();
+
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      (window as { __surfacePNG?: () => string }).__surfacePNG = () =>
+        gl.domElement.toDataURL('image/png');
+    }
+    const raf = requestAnimationFrame(() => {
+      const tris = gl.info.render.triangles;
+      console.assert(tris > 0, 'ASSERT_FAIL: no triangles drawn');
+
+      let maxZSpan = 0;
+      let reliefOK = false;
+      let nanAttr = '';
+      let vertTotal = 0;
+      scene.traverse((obj) => {
+        const mesh = obj as THREE.Mesh;
+        if (!(mesh as unknown as { isMesh?: boolean }).isMesh || !mesh.geometry) return;
+        const g = mesh.geometry as THREE.BufferGeometry;
+        if (!g.boundingBox) g.computeBoundingBox();
+        const bb = g.boundingBox;
+        if (bb && Number.isFinite(bb.max.z) && Number.isFinite(bb.min.z)) {
+          const span = bb.max.z - bb.min.z;
+          if (span > maxZSpan) maxZSpan = span;
+          if (span > 0) reliefOK = true;
+        }
+        const pos = g.attributes.position?.array;
+        if (pos) {
+          vertTotal += pos.length / 3;
+          for (let i = 0; i < pos.length; i++) {
+            if (Number.isNaN(pos[i]!)) { nanAttr = 'position'; break; }
+          }
+        }
+        const col = g.attributes.color?.array;
+        if (col && !nanAttr) {
+          for (let i = 0; i < col.length; i++) {
+            if (Number.isNaN(col[i]!)) { nanAttr = 'color'; break; }
+          }
+        }
+      });
+
+      console.assert(reliefOK, 'ASSERT_FAIL: no elevation relief');
+      console.assert(!nanAttr, `ASSERT_FAIL: NaN in ${nanAttr}`);
+
+      if (tris > 0 && reliefOK && !nanAttr) {
+        // eslint-disable-next-line no-console
+        console.log(`[SURF-OK] tris=${tris} zspan=${maxZSpan.toFixed(3)} verts=${vertTotal}`);
+      }
+    });
+    return () => cancelAnimationFrame(raf);
+  }, [gl, scene, dep]);
+
+  return null;
 }
 
 /* ── Main exported component ──────────────────────────── */
@@ -666,12 +1447,25 @@ export function TrackSurface3D({
 }: TrackSurface3DProps) {
   const { surface, optimalLine, gpsTrace, lineDelta, isLoading, error } = useTrackSurfaceData(sessionId);
 
+  // Guard: /gps-trace can return 200 with {available: false} for sessions
+  // without a GPS lap; gpsTrace.latitudes is then undefined. Without the
+  // Array.isArray check, gpsToLocalXY throws "Cannot read properties of
+  // undefined (reading 'length')" because this useMemo runs BEFORE the
+  // early-return surface guard below — so the entire panel crashes before
+  // we ever get to "show empty state."
   const gpsXY = useMemo(() => {
-    if (!gpsTrace) return null;
+    if (
+      !gpsTrace
+      || !Array.isArray(gpsTrace.latitudes)
+      || !Array.isArray(gpsTrace.longitudes)
+      || gpsTrace.latitudes.length === 0
+    ) {
+      return null;
+    }
     return gpsToLocalXY(gpsTrace.latitudes, gpsTrace.longitudes);
   }, [gpsTrace]);
 
-  const gpsDistances = gpsTrace?.distances ?? null;
+  const gpsDistances = Array.isArray(gpsTrace?.distances) ? gpsTrace!.distances : null;
 
   if (isLoading) {
     return (
@@ -681,7 +1475,32 @@ export function TrackSurface3D({
     );
   }
 
-  if (error || !surface || surface.bins.length < 2) {
+  // 404 on /track-surface = session has no recognised track (no aggregate
+  // surface for its track_id). Distinct from other failure modes (auth,
+  // network). Render graceful empty state — NEVER fall through to the
+  // Canvas / Scene path, where any builder reading .length on the
+  // missing surface arrays would throw.
+  const is404 = !!(
+    error
+    && typeof error === 'object'
+    && 'status' in error
+    && (error as { status: unknown }).status === 404
+  );
+  if (is404) {
+    return (
+      <div className={`flex items-center justify-center bg-concrete rounded-lg ${className ?? ''}`}>
+        <p className="font-telemetry text-steel text-sm">
+          Track not recognized — no surface for this session
+        </p>
+      </div>
+    );
+  }
+  if (
+    error
+    || !surface
+    || !Array.isArray(surface.bins)
+    || surface.bins.length < 2
+  ) {
     return (
       <div className={`flex items-center justify-center bg-concrete rounded-lg ${className ?? ''}`}>
         <p className="font-telemetry text-safety-red text-sm">
@@ -694,10 +1513,12 @@ export function TrackSurface3D({
   return (
     <div className={`bg-asphalt rounded-lg overflow-hidden ${className ?? ''}`}>
       <Canvas
-        camera={{ fov: 50, near: 0.1, far: 2000 }}
-        gl={{ antialias: true, alpha: false }}
+        orthographic
+        camera={{ near: 0.1, far: 10000, position: [1, 1, 1], zoom: 10 }}
+        gl={{ antialias: true, alpha: false, preserveDrawingBuffer: true }}
         style={{ background: '#000000' }}
       >
+        <DebugAsserts dep={surface.mesh_tri_sha256 ?? surface.bins.length} />
         <Scene
           bins={surface.bins}
           mode={mode}
@@ -707,6 +1528,23 @@ export function TrackSurface3D({
           lineDelta={lineDelta}
           conditions={surface.conditions ?? null}
           spatialFactor={spatialFactor}
+          leftEdgeXyLocal={surface.left_edge_xy_local ?? null}
+          rightEdgeXyLocal={surface.right_edge_xy_local ?? null}
+          leftEdgeSn={surface.left_edge_sn ?? null}
+          rightEdgeSn={surface.right_edge_sn ?? null}
+          midlineLengthM={surface.midline_total_length_m ?? null}
+          meshSpineXy={surface.mesh_spine_xy ?? null}
+          meshLXy={surface.mesh_L_xy ?? null}
+          meshRXy={surface.mesh_R_xy ?? null}
+          meshSpineS={surface.mesh_spine_s ?? null}
+          meshHwL={surface.mesh_hw_L ?? null}
+          meshHwR={surface.mesh_hw_R ?? null}
+          meshM={surface.mesh_M ?? null}
+          meshK={surface.mesh_K ?? null}
+          meshTriXy={surface.mesh_tri_xy ?? null}
+          meshTriIndices={surface.mesh_tri_indices ?? null}
+          meshTriSn={surface.mesh_tri_sn ?? null}
+          meshTriGrip={surface.mesh_tri_grip ?? null}
           showOptimalLine={showOptimalLine}
           showActualLine={showActualLine}
         />
