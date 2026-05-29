@@ -223,10 +223,16 @@ export interface LineDeltaResponse {
 
 const STALE = 5 * 60 * 1000;
 
-export function useTrackSurfaceData(sessionId: string) {
+export function useTrackSurfaceData(sessionId: string, lap?: number | null) {
+  // ?lap=N drives the lap-specific channels — SPEED colouring (mesh_tri_speed
+  // is computed for the requested lap) and the driven-line overlay. Geometry
+  // + grip are lap-independent but ride along on the same lap-keyed surface
+  // payload. optimal-line / line-delta stay lap-agnostic.
+  const lapQ = lap != null ? `?lap=${lap}` : '';
+
   const surface = useQuery({
-    queryKey: ['track-surface', sessionId],
-    queryFn: () => api.get<TrackSurfaceResponse>(`/sessions/${sessionId}/track-surface`),
+    queryKey: ['track-surface', sessionId, lap ?? null],
+    queryFn: () => api.get<TrackSurfaceResponse>(`/sessions/${sessionId}/track-surface${lapQ}`),
     staleTime: STALE,
     enabled: !!sessionId,
   });
@@ -239,8 +245,8 @@ export function useTrackSurfaceData(sessionId: string) {
   });
 
   const gpsTrace = useQuery({
-    queryKey: ['gps-trace-surface', sessionId],
-    queryFn: () => api.get<GpsTraceResponse>(`/sessions/${sessionId}/gps-trace`),
+    queryKey: ['gps-trace-surface', sessionId, lap ?? null],
+    queryFn: () => api.get<GpsTraceResponse>(`/sessions/${sessionId}/gps-trace${lapQ}`),
     staleTime: STALE,
     enabled: !!sessionId,
   });

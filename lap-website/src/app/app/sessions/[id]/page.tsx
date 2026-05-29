@@ -1318,7 +1318,7 @@ function OverviewTab({
 
         <section className="space-y-4">
           <h2 className="font-monument text-lg text-chalk">Track Surface</h2>
-          <TrackSurfacePanel sessionId={sessionId} />
+          <TrackSurfacePanel sessionId={sessionId} laps={laps} />
         </section>
       </div>
     </div>

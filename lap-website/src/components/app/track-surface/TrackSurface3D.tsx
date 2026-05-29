@@ -118,6 +118,18 @@ function greyBuffer(n: number): Float32Array {
   return out;
 }
 
+/** Degenerate-grip test, shared with TrackSurfacePanel (which calls it on
+ *  surface.mesh_tri_grip to disable the GRIP control + pick the default
+ *  mode). Grip is "available" only when the per-vertex μ has real spread:
+ *  range > 0.02 and not effectively all-0 or all-1. Empty/absent → false
+ *  (also the no-gt / provisional case, where there is no per-vertex grip). */
+export function isGripAvailable(grip: readonly number[] | null | undefined): boolean {
+  if (!grip || grip.length === 0) return false;
+  let mn = Infinity; let mx = -Infinity;
+  for (const g of grip) { if (g < mn) mn = g; if (g > mx) mx = g; }
+  return (mx - mn > 0.02) && !(mx <= 0.02) && !(mn >= 0.98);
+}
+
 /** Mean of bin.elevation_m (finite values only). Used to mean-subtract
  *  z = (elev - mean) × ELEVATION_SCALE so the rendered surface is
  *  centred at z = 0 regardless of AMSL altitude. Without this, OK
@@ -148,6 +160,11 @@ export type HeatmapMode = 'grip' | 'speed' | 'gradient' | 'elevation' | 'line-de
 
 export interface TrackSurface3DProps {
   sessionId: string;
+  /** Selected A-lap (lap_number). Threaded into useTrackSurfaceData so the
+   *  surface + gps-trace fetches request this lap (?lap=N) — drives SPEED
+   *  colouring (EXEC-7) and the driven-line overlay (EXEC-8). null/undefined
+   *  = server default (best lap). */
+  lap?: number | null;
   mode?: HeatmapMode;
   /** When `mode === 'spatial-grip'`, choose which factor to isolate.
    *  Defaults to 'combined' (effective μ). Ignored in other modes. */
@@ -1079,6 +1096,11 @@ interface SceneProps {
   meshTriIndices: [number, number, number][] | null;
   meshTriSn: [number, number][] | null;
   meshTriGrip: number[] | null;
+  // Stable, lap-INDEPENDENT geometry identity for the camera fit. Switching
+  // laps refetches the surface (new object refs → surfaceGeo rebuilds), but
+  // fitKey stays constant, so the isometric framing does NOT reset on a lap
+  // change (EXEC-5 gate). Changes only when the actual track/geometry does.
+  fitKey: string | number;
 }
 
 function Scene({
@@ -1086,7 +1108,7 @@ function Scene({
   spatialFactor, showOptimalLine, showActualLine,
   leftEdgeXyLocal, rightEdgeXyLocal, leftEdgeSn, rightEdgeSn, midlineLengthM,
   meshSpineXy, meshLXy, meshRXy, meshSpineS, meshHwL, meshHwR, meshM, meshK,
-  meshTriXy, meshTriIndices, meshTriSn, meshTriGrip,
+  meshTriXy, meshTriIndices, meshTriSn, meshTriGrip, fitKey,
 }: SceneProps) {
   const { camera, gl } = useThree();
   const controlsRef = useRef<OrbitControls | null>(null);
@@ -1170,11 +1192,10 @@ function Scene({
   // EXEC-7/EXEC-6 populate them.
   const colorBuffers = useMemo(() => {
     if (!meshTriGrip || meshTriGrip.length === 0) return null;
-    let mn = Infinity; let mx = -Infinity;
-    for (const g of meshTriGrip) { if (g < mn) mn = g; if (g > mx) mx = g; }
-    // Degenerate grip → grey (range<0.02, or all≈0/1). Panel computes the
-    // same availability flag from surface.mesh_tri_grip to disable GRIP.
-    const avail = (mx - mn > 0.02) && !(mx <= 0.02) && !(mn >= 0.98);
+    // Degenerate grip → grey. isGripAvailable() is shared with the panel
+    // (which calls it on surface.mesh_tri_grip to disable the GRIP control
+    // and pick the default mode) so the two can never disagree.
+    const avail = isGripAvailable(meshTriGrip);
     const n = meshTriGrip.length;
     return {
       grip: avail ? makeColorBuffer(meshTriGrip, GRIP_STOPS, [0.5, 1.1]) : greyBuffer(n),
@@ -1318,7 +1339,11 @@ function Scene({
     } else {
       cam.lookAt(center);
     }
-  }, [surfaceGeo, camera, gl]);
+    // Keyed on fitKey (lap-independent geometry identity), NOT surfaceGeo:
+    // a lap switch rebuilds surfaceGeo but must not re-frame the camera.
+    // surfaceGeo is read via closure (its bbox is identical across laps).
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [fitKey, camera, gl]);
 
   // Damping needs a per-frame update.
   useFrame(() => {
@@ -1439,13 +1464,14 @@ function DebugAsserts({ dep }: { dep: string | number | null }) {
 
 export function TrackSurface3D({
   sessionId,
+  lap = null,
   mode = 'grip',
   spatialFactor = 'combined',
   showOptimalLine = true,
   showActualLine = false,
   className,
 }: TrackSurface3DProps) {
-  const { surface, optimalLine, gpsTrace, lineDelta, isLoading, error } = useTrackSurfaceData(sessionId);
+  const { surface, optimalLine, gpsTrace, lineDelta, isLoading, error } = useTrackSurfaceData(sessionId, lap);
 
   // Guard: /gps-trace can return 200 with {available: false} for sessions
   // without a GPS lap; gpsTrace.latitudes is then undefined. Without the
@@ -1545,6 +1571,7 @@ export function TrackSurface3D({
           meshTriIndices={surface.mesh_tri_indices ?? null}
           meshTriSn={surface.mesh_tri_sn ?? null}
           meshTriGrip={surface.mesh_tri_grip ?? null}
+          fitKey={surface.mesh_tri_sha256 ?? surface.bins.length}
           showOptimalLine={showOptimalLine}
           showActualLine={showActualLine}
         />

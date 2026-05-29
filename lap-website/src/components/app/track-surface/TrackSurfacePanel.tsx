@@ -1,8 +1,9 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import {
   TrackSurface3D,
+  isGripAvailable,
   type HeatmapMode,
   type SpatialFactor,
 } from './TrackSurface3D';
@@ -15,15 +16,37 @@ import { useSpatialFlag } from '@/hooks/useSpatialFlag';
 
 /* ── Types ────────────────────────────────────────────── */
 
+/** Minimal lap shape the A-lap selector needs. Structurally compatible with
+ *  the session page's richer LapData — declared locally so the component
+ *  directory doesn't import upward from app/. */
+export interface LapOption {
+  lap_number: number;
+  lap_time_s: number | null;
+  is_best: number;
+  is_valid: number;
+}
+
 interface TrackSurfacePanelProps {
   sessionId: string;
+  /** All laps for the session (from the session page). Drives the A-lap
+   *  dropdown; the selected lap is threaded into the surface + gps fetches
+   *  via ?lap=N. Empty/absent → no selector, server default (best) lap. */
+  laps?: LapOption[];
   className?: string;
 }
 
 /* ── Mode config ──────────────────────────────────────── */
 
+// Shipped V1 modes. spatial-grip / elevation / line-delta remain only as
+// debug tooling behind ?debug=spatial (appended in visibleModes); hidden in
+// production per the locked V1 decision.
 const MODES: { key: HeatmapMode; label: string }[] = [
   { key: 'grip', label: 'Grip' },
+  { key: 'speed', label: 'Speed' },
+  { key: 'gradient', label: 'Gradient' },
+];
+
+const DEBUG_MODES: { key: HeatmapMode; label: string }[] = [
   { key: 'spatial-grip', label: 'Spatial Grip' },
   { key: 'elevation', label: 'Elevation' },
   { key: 'line-delta', label: 'Line Delta' },
@@ -33,9 +56,13 @@ const MODES: { key: HeatmapMode; label: string }[] = [
 
 const LEGEND: Record<
   HeatmapMode,
-  { lowLabel: string; highLabel: string; lowHex: string; highHex: string }
+  { lowLabel: string; highLabel: string; lowHex: string; highHex: string; stops?: string[] }
 > = {
-  grip: { lowLabel: 'Low', highLabel: 'High', lowHex: '#FF2A2A', highHex: '#22C55E' },
+  grip: { lowLabel: 'Low', highLabel: 'High', lowHex: '#FF2A2A', highHex: '#22C55E', stops: ['#FF2A2A', '#FFD400', '#22C55E'] },
+  // SPEED ramp mirrors the FE colour buffer (EXEC-7): blue→green→yellow→red.
+  speed: { lowLabel: 'Slow', highLabel: 'Fast', lowHex: '#3B82F6', highHex: '#FF2A2A', stops: ['#3B82F6', '#22C55E', '#FFD400', '#FF2A2A'] },
+  // GRADIENT ramp mirrors EXEC-6: blue (downhill) → grey (flat) → red (uphill).
+  gradient: { lowLabel: 'Downhill', highLabel: 'Uphill', lowHex: '#3B82F6', highHex: '#FF2A2A', stops: ['#3B82F6', '#DDDDDD', '#FF2A2A'] },
   elevation: { lowLabel: 'Low', highLabel: 'High', lowHex: '#3B82F6', highHex: '#F0EDE5' },
   'line-delta': { lowLabel: 'Off-line', highLabel: 'On-line', lowHex: '#FF2A2A', highHex: '#22C55E' },
   // Day-13 Phase D: effective μ range fixed at [0.5, 1.0] — see
@@ -62,22 +89,49 @@ const SPATIAL_FACTOR_LEGEND: Record<
  * it maps to (0.7 − 0.5) / (1.0 − 0.5) = 40 % along the legend gradient. */
 const SPATIAL_GRIP_THRESHOLD_PCT = 40;
 
+/** m:ss.mmm lap-time formatter for the A-lap selector. */
+function formatLapTime(s: number): string {
+  if (!Number.isFinite(s) || s <= 0) return '—';
+  const m = Math.floor(s / 60);
+  const sec = s - m * 60;
+  return `${m}:${sec.toFixed(3).padStart(6, '0')}`;
+}
+
 /* ── Component ────────────────────────────────────────── */
 
-export default function TrackSurfacePanel({ sessionId, className }: TrackSurfacePanelProps) {
+export default function TrackSurfacePanel({ sessionId, laps = [], className }: TrackSurfacePanelProps) {
   const [mode, setMode] = useState<HeatmapMode>('grip');
+  const [userTouchedMode, setUserTouchedMode] = useState(false);
   const [spatialFactor, setSpatialFactor] = useState<SpatialFactor>('combined');
   const [showOptimal, setShowOptimal] = useState(true);
   const [showActual, setShowActual] = useState(false);
-  const { surface, isLoading } = useTrackSurfaceData(sessionId);
+
+  // A-lap selection. Best lap is the default; null until laps resolve, at
+  // which point the effect below settles it (the server default is also the
+  // best lap, so the brief null window renders the same data).
+  const bestLapNumber = useMemo(() => {
+    if (laps.length === 0) return null;
+    return laps.find((l) => l.is_best)?.lap_number ?? laps[0]!.lap_number;
+  }, [laps]);
+  const [selectedLap, setSelectedLap] = useState<number | null>(null);
+  useEffect(() => {
+    if (selectedLap == null && bestLapNumber != null) setSelectedLap(bestLapNumber);
+  }, [selectedLap, bestLapNumber]);
+
+  const { surface, isLoading } = useTrackSurfaceData(sessionId, selectedLap);
+
+  // GRIP availability — degenerate μ (no spread / all-0 / all-1) or a
+  // provisional (no-gt) surface with no per-vertex grip → GRIP greyed +
+  // disabled and the default mode falls to GRADIENT. Same shared flag the
+  // renderer's colour buffer uses, so panel + mesh never disagree.
+  const gripAvailable = isGripAvailable(surface?.mesh_tri_grip ?? null);
+  const gripDecided = !isLoading && !!surface;
 
   // Day-13 Phase 7.5: conditions UI (ConditionRow + Spatial Grip mode +
   // SpatialDiagnosticsPanel) is gated behind ?debug=spatial until bug-4
   // (09a2 Distance(m) cascade) is fixed in Day-14.
   const spatialEnabled = useSpatialFlag();
-  const visibleModes = spatialEnabled
-    ? MODES
-    : MODES.filter((m) => m.key !== 'spatial-grip');
+  const visibleModes = spatialEnabled ? [...MODES, ...DEBUG_MODES] : MODES;
 
   // Defensive: if the flag flips off (URL changed) while spatial-grip is
   // active, fall back to the default grip mode so the panel can't render
@@ -87,6 +141,14 @@ export default function TrackSurfacePanel({ sessionId, className }: TrackSurface
       setMode('grip');
     }
   }, [spatialEnabled, mode]);
+
+  // Default mode = grip-if-real-else-gradient. Applied once the surface
+  // resolves; never overrides an explicit user pick (userTouchedMode).
+  useEffect(() => {
+    if (gripDecided && !userTouchedMode && !gripAvailable && mode === 'grip') {
+      setMode('gradient');
+    }
+  }, [gripDecided, userTouchedMode, gripAvailable, mode]);
 
   const qualityTier = surface?.quality_tier ?? null;
 
@@ -131,66 +193,108 @@ export default function TrackSurfacePanel({ sessionId, className }: TrackSurface
         )}
       </div>
 
-      {/* Mode selector */}
-      <div className="flex items-center gap-1 px-4 py-2 border-b border-steel/10">
-        {visibleModes.map(({ key, label }) => {
-          const disabled = key === 'spatial-grip' && spatialDisabled;
-          const titleAttr = disabled
-            ? 'Spatial μ requires Day-12+ analysis (session uploaded before this feature, or weather lookup unavailable).'
-            : undefined;
-          return (
-            <button
-              key={key}
-              type="button"
-              onClick={() => !disabled && setMode(key)}
-              disabled={disabled}
-              title={titleAttr}
-              className={`font-telemetry text-xs px-3 py-1.5 rounded transition-colors ${
-                disabled
-                  ? 'text-steel/40 cursor-not-allowed'
-                  : mode === key
-                    ? 'text-gold'
-                    : 'text-steel hover:text-chalk'
-              }`}
-            >
-              {label}
-            </button>
-          );
-        })}
+      {/* 3D canvas with the control bar floating over it (the bar does not
+          push the canvas down — it sits top-left, above the render). */}
+      <div className="relative">
+        <TrackSurface3D
+          sessionId={sessionId}
+          lap={selectedLap}
+          mode={mode}
+          spatialFactor={spatialFactor}
+          showOptimalLine={showOptimal}
+          showActualLine={showActual}
+          className="w-full aspect-[16/9]"
+        />
 
-        <div className="ml-auto flex items-center gap-3">
-          <label className="flex items-center gap-1.5 cursor-pointer">
-            <input
-              type="checkbox"
-              checked={showOptimal}
-              onChange={(e) => setShowOptimal(e.target.checked)}
-              className="sr-only peer"
-            />
-            <span className="block w-3 h-3 rounded-sm border border-steel/40 peer-checked:bg-gold peer-checked:border-gold transition-colors" />
-            <span className="font-telemetry text-xs text-steel">Optimal</span>
-          </label>
-          <label className="flex items-center gap-1.5 cursor-pointer">
-            <input
-              type="checkbox"
-              checked={showActual}
-              onChange={(e) => setShowActual(e.target.checked)}
-              className="sr-only peer"
-            />
-            <span className="block w-3 h-3 rounded-sm border border-steel/40 peer-checked:bg-chalk peer-checked:border-chalk transition-colors" />
-            <span className="font-telemetry text-xs text-steel">Actual</span>
-          </label>
+        {/* Floating control bar. pointer-events scoped to the pills so the
+            gaps pass through to the canvas → OrbitControls keeps orbit/pan/
+            zoom over the whole drawing area. */}
+        <div className="absolute top-3 left-3 z-10 flex flex-wrap items-center gap-2 pointer-events-none">
+          {/* Mode pills */}
+          <div className="flex items-center gap-1 rounded-lg bg-concrete/85 backdrop-blur-sm border border-steel/20 p-1 pointer-events-auto">
+            {visibleModes.map(({ key, label }) => {
+              const spatialBtn = key === 'spatial-grip';
+              const gripBtn = key === 'grip';
+              const disabled =
+                (spatialBtn && spatialDisabled) || (gripBtn && gripDecided && !gripAvailable);
+              const titleAttr = spatialBtn && spatialDisabled
+                ? 'Spatial μ requires Day-12+ analysis (session uploaded before this feature, or weather lookup unavailable).'
+                : gripBtn && disabled
+                  ? 'Grip data is flat / unavailable for this session — showing gradient instead.'
+                  : undefined;
+              return (
+                <button
+                  key={key}
+                  type="button"
+                  onClick={() => { if (!disabled) { setMode(key); setUserTouchedMode(true); } }}
+                  disabled={disabled}
+                  title={titleAttr}
+                  className={`font-telemetry text-xs px-3 min-h-[2.75rem] rounded-md transition-colors ${
+                    disabled
+                      ? 'text-steel/40 cursor-not-allowed'
+                      : mode === key
+                        ? 'bg-gold/15 text-gold'
+                        : 'text-steel hover:text-chalk'
+                  }`}
+                >
+                  {label}
+                </button>
+              );
+            })}
+          </div>
+
+          {/* A-lap selector (only when there's more than one lap to pick) */}
+          {laps.length > 1 && (
+            <label className="flex items-center gap-1.5 rounded-lg bg-concrete/85 backdrop-blur-sm border border-steel/20 px-2 min-h-[2.75rem] pointer-events-auto">
+              <span className="font-telemetry text-[10px] uppercase tracking-wide text-steel">Lap</span>
+              <select
+                value={selectedLap ?? bestLapNumber ?? ''}
+                onChange={(e) => setSelectedLap(Number(e.target.value))}
+                className="bg-transparent font-telemetry text-xs text-chalk focus:outline-none cursor-pointer"
+                aria-label="Select lap"
+              >
+                {laps.map((l) => (
+                  <option
+                    key={l.lap_number}
+                    value={l.lap_number}
+                    disabled={!l.is_valid}
+                    className="bg-concrete text-chalk"
+                  >
+                    {`Lap ${l.lap_number}`}
+                    {l.lap_time_s != null ? ` · ${formatLapTime(l.lap_time_s)}` : ''}
+                    {l.is_best ? ' ★' : ''}
+                    {!l.is_valid ? ' (invalid)' : ''}
+                  </option>
+                ))}
+              </select>
+            </label>
+          )}
+
+          {/* Line overlays */}
+          <div className="flex items-center gap-3 rounded-lg bg-concrete/85 backdrop-blur-sm border border-steel/20 px-3 min-h-[2.75rem] pointer-events-auto">
+            <label className="flex items-center gap-1.5 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={showOptimal}
+                onChange={(e) => setShowOptimal(e.target.checked)}
+                className="sr-only peer"
+              />
+              <span className="block w-3 h-3 rounded-sm border border-steel/40 peer-checked:bg-gold peer-checked:border-gold transition-colors" />
+              <span className="font-telemetry text-xs text-steel">Optimal</span>
+            </label>
+            <label className="flex items-center gap-1.5 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={showActual}
+                onChange={(e) => setShowActual(e.target.checked)}
+                className="sr-only peer"
+              />
+              <span className="block w-3 h-3 rounded-sm border border-steel/40 peer-checked:bg-chalk peer-checked:border-chalk transition-colors" />
+              <span className="font-telemetry text-xs text-steel">Actual</span>
+            </label>
+          </div>
         </div>
       </div>
-
-      {/* 3D canvas */}
-      <TrackSurface3D
-        sessionId={sessionId}
-        mode={mode}
-        spatialFactor={spatialFactor}
-        showOptimalLine={showOptimal}
-        showActualLine={showActual}
-        className="w-full aspect-[16/9]"
-      />
 
       {/* Legend bar */}
       {!isLoading && (
@@ -201,7 +305,7 @@ export default function TrackSurfacePanel({ sessionId, className }: TrackSurface
               <div
                 className="absolute inset-0 rounded-full"
                 style={{
-                  background: `linear-gradient(to right, ${legend.lowHex}, ${legend.highHex})`,
+                  background: `linear-gradient(to right, ${legend.stops ? legend.stops.join(', ') : `${legend.lowHex}, ${legend.highHex}`})`,
                 }}
               />
               {mode === 'spatial-grip' && (
