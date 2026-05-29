@@ -104,8 +104,9 @@ export default function TrackSurfacePanel({ sessionId, laps = [], className }: T
   const [mode, setMode] = useState<HeatmapMode>('grip');
   const [userTouchedMode, setUserTouchedMode] = useState(false);
   const [spatialFactor, setSpatialFactor] = useState<SpatialFactor>('combined');
-  const [showOptimal, setShowOptimal] = useState(true);
-  const [showActual, setShowActual] = useState(false);
+  // EXEC-8: gold optimal line dropped for this ship; only the driven (actual)
+  // lap line remains, on by default.
+  const [showActual, setShowActual] = useState(true);
 
   // A-lap selection. Best lap is the default; null until laps resolve, at
   // which point the effect below settles it (the server default is also the
@@ -212,7 +213,7 @@ export default function TrackSurfacePanel({ sessionId, laps = [], className }: T
           lap={selectedLap}
           mode={mode}
           spatialFactor={spatialFactor}
-          showOptimalLine={showOptimal}
+          showOptimalLine={false}
           showActualLine={showActual}
           className="w-full aspect-[16/9]"
         />
@@ -281,29 +282,18 @@ export default function TrackSurfacePanel({ sessionId, laps = [], className }: T
             </label>
           )}
 
-          {/* Line overlays */}
-          <div className="flex items-center gap-3 rounded-lg bg-concrete/85 backdrop-blur-sm border border-steel/20 px-3 min-h-[2.75rem] pointer-events-auto">
-            <label className="flex items-center gap-1.5 cursor-pointer">
-              <input
-                type="checkbox"
-                checked={showOptimal}
-                onChange={(e) => setShowOptimal(e.target.checked)}
-                className="sr-only peer"
-              />
-              <span className="block w-3 h-3 rounded-sm border border-steel/40 peer-checked:bg-gold peer-checked:border-gold transition-colors" />
-              <span className="font-telemetry text-xs text-steel">Optimal</span>
-            </label>
-            <label className="flex items-center gap-1.5 cursor-pointer">
-              <input
-                type="checkbox"
-                checked={showActual}
-                onChange={(e) => setShowActual(e.target.checked)}
-                className="sr-only peer"
-              />
-              <span className="block w-3 h-3 rounded-sm border border-steel/40 peer-checked:bg-chalk peer-checked:border-chalk transition-colors" />
-              <span className="font-telemetry text-xs text-steel">Actual</span>
-            </label>
-          </div>
+          {/* Driven-line toggle (EXEC-8). The gold optimal line is out of
+              scope for this ship, so only the selected lap's line remains. */}
+          <label className="flex items-center gap-1.5 rounded-lg bg-concrete/85 backdrop-blur-sm border border-steel/20 px-3 min-h-[2.75rem] cursor-pointer pointer-events-auto">
+            <input
+              type="checkbox"
+              checked={showActual}
+              onChange={(e) => setShowActual(e.target.checked)}
+              className="sr-only peer"
+            />
+            <span className="block w-3 h-3 rounded-sm border border-steel/40 peer-checked:bg-chalk peer-checked:border-chalk transition-colors" />
+            <span className="font-telemetry text-xs text-steel">Lap line</span>
+          </label>
         </div>
       </div>
 

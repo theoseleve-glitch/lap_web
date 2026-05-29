@@ -4,6 +4,9 @@ import { useEffect, useMemo, useRef } from 'react';
 import { Canvas, useFrame, useThree } from '@react-three/fiber';
 import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+import { Line2 } from 'three/addons/lines/Line2.js';
+import { LineGeometry } from 'three/addons/lines/LineGeometry.js';
+import { LineMaterial } from 'three/addons/lines/LineMaterial.js';
 import {
   useTrackSurfaceData,
   type SurfaceBin,
@@ -52,6 +55,9 @@ export type SpatialFactor = 'combined' | 'drainage' | 'sun' | 'wind';
 
 const GOLD = 0xC9A84C;
 const CHALK = 0xF0EDE5;
+// EXEC-8: the gold "optimal" reference line is out of scope for this ship
+// (Reference C). Kept wired but unmounted behind this flag.
+const SHOW_OPTIMAL_LINE = false;
 // Fallback widths when neither width_left_m/width_right_m nor legacy width_m
 // is supplied. 4 m + 4 m matches the prior symmetric DEFAULT_TRACK_WIDTH = 8.
 const DEFAULT_WIDTH_LEFT = 4;
@@ -1123,6 +1129,47 @@ function buildLineGeometry(
   return geo;
 }
 
+/* ── EXEC-8: driven-line positions lifted along the surface normal ──── */
+
+/** Flat [x,y,z, …] positions for the selected lap's driven line, each point
+ *  lifted by ε along the estimated surface normal (z-up scene). The normal
+ *  is N = T × B with T the 3D centreline tangent and B the horizontal
+ *  cross-track direction — so the lift leans with the longitudinal slope
+ *  rather than going straight +z (banking is unknown from the centreline,
+ *  but the polygonOffset + depthWrite:false handle the rest). Flat track →
+ *  N ≈ (0,0,1) → a plain +z lift, as expected. */
+function buildDrivenLinePositions(
+  centerline: CenterlinePoint[],
+  bins: SurfaceBin[],
+  eps: number,
+): number[] {
+  const meanElev = meanElevationFromBins(bins);
+  const N = centerline.length;
+  const zAt = (i: number) =>
+    (((bins[i]?.elevation_m ?? meanElev) - meanElev) * ELEVATION_SCALE);
+  const out: number[] = [];
+  for (let i = 0; i < N; i++) {
+    const pt = centerline[i]!;
+    const z = zAt(i);
+    const iPrev = Math.max(0, i - 1);
+    const iNext = Math.min(N - 1, i + 1);
+    const dx = centerline[iNext]!.x - centerline[iPrev]!.x;
+    const dy = centerline[iNext]!.y - centerline[iPrev]!.y;
+    const dz = zAt(iNext) - zAt(iPrev);
+    const xyLen = Math.hypot(dx, dy) || 1;
+    const ux = dx / xyLen;
+    const uy = dy / xyLen;
+    // N = T × B, T=(dx,dy,dz), B=(-uy,ux,0) → (-dz·ux, -dz·uy, xyLen)
+    let nx = -dz * ux;
+    let ny = -dz * uy;
+    let nz = dx * ux + dy * uy; // = xyLen, always positive → N points +z
+    const nLen = Math.hypot(nx, ny, nz) || 1;
+    nx /= nLen; ny /= nLen; nz /= nLen;
+    out.push(pt.x + nx * eps, pt.y + ny * eps, z + nz * eps);
+  }
+  return out;
+}
+
 /* ── Camera framing: see EXEC-2 OrbitControls + fit-to-bbox effects
  *    inside Scene. The legacy hand-rolled spherical useAutoFit rig was
  *    removed (no listener cleanup → leak) in favour of three/addons
@@ -1179,7 +1226,7 @@ function Scene({
   meshSpineXy, meshLXy, meshRXy, meshSpineS, meshHwL, meshHwR, meshM, meshK,
   meshTriXy, meshTriIndices, meshTriSn, meshTriGrip, fitKey,
 }: SceneProps) {
-  const { camera, gl } = useThree();
+  const { camera, gl, size } = useThree();
   const controlsRef = useRef<OrbitControls | null>(null);
 
   const centerline = useMemo(
@@ -1348,18 +1395,53 @@ function Scene({
     return buildLineGeometry(centerline, offsets, bins, 0.3);
   }, [showOptimalLine, optimalLine, centerline, bins]);
 
-  // Actual driving line geometry (offset = 0, on-center)
-  const actualGeo = useMemo(() => {
-    if (!showActualLine) return null;
-    return buildLineGeometry(centerline, null, bins, 0.15);
-  }, [showActualLine, centerline, bins]);
+  // EXEC-8: the actual driven line (selected lap) as a fat Line2 ribbon that
+  // floats just above the surface. Lifted along the estimated surface normal
+  // by ε = 0.004·zspan; renderOrder=1 + depthWrite=false + the surface's
+  // polygonOffset keep it from z-fighting on slopes. Rebuilt only when the
+  // path/geometry changes (resolution is updated separately on resize).
+  const actualLine2 = useMemo(() => {
+    if (!showActualLine || centerline.length < 2) return null;
+    const bb = surfaceGeo.boundingBox;
+    const zspan = bb ? bb.max.z - bb.min.z : 0;
+    const eps = Math.max(0.004 * zspan, 0.01);
+    const positions = buildDrivenLinePositions(centerline, bins, eps);
+    if (positions.length < 6) return null;
+    const geo = new LineGeometry();
+    geo.setPositions(positions);
+    const mat = new LineMaterial({
+      color: CHALK,
+      linewidth: 3,
+      worldUnits: false,
+      transparent: true,
+      depthWrite: false,
+    });
+    const line = new Line2(geo, mat);
+    line.renderOrder = 1;
+    return line;
+  }, [showActualLine, centerline, bins, surfaceGeo]);
+
+  // LineMaterial needs the viewport resolution or it renders ~1px. Update on
+  // mount + every resize, separate from the geometry build so a resize
+  // doesn't rebuild the line's GPU buffers.
+  useEffect(() => {
+    if (actualLine2) {
+      (actualLine2.material as LineMaterial).resolution.set(size.width || 1, size.height || 1);
+    }
+  }, [actualLine2, size.width, size.height]);
+
+  // Dispose the previous fat line's GPU buffers when it is replaced/unmounted.
+  useEffect(() => {
+    return () => {
+      if (actualLine2) {
+        actualLine2.geometry.dispose();
+        (actualLine2.material as LineMaterial).dispose();
+      }
+    };
+  }, [actualLine2]);
 
   const optimalLineMat = useMemo(
     () => new THREE.LineBasicMaterial({ color: GOLD, linewidth: 2 }),
-    [],
-  );
-  const actualLineMat = useMemo(
-    () => new THREE.LineBasicMaterial({ color: CHALK, linewidth: 1, transparent: true, opacity: 0.7 }),
     [],
   );
 
@@ -1444,21 +1526,16 @@ function Scene({
         </mesh>
       )}
 
-      {/* Optimal racing line */}
-      {optimalGeo && (
+      {/* Optimal racing line — flagged off for this ship (EXEC-8). */}
+      {SHOW_OPTIMAL_LINE && optimalGeo && (
         <line frustumCulled={false}>
           <primitive object={optimalGeo} attach="geometry" />
           <primitive object={optimalLineMat} attach="material" />
         </line>
       )}
 
-      {/* Actual driving line */}
-      {actualGeo && (
-        <line frustumCulled={false}>
-          <primitive object={actualGeo} attach="geometry" />
-          <primitive object={actualLineMat} attach="material" />
-        </line>
-      )}
+      {/* Actual driven line (selected lap) — EXEC-8 fat Line2 ribbon. */}
+      {actualLine2 && <primitive object={actualLine2} />}
 
       {/* EXEC-3: ambient fill + one directional light so Lambert shades
        *  the elevation relief. Direction matters (z-up scene), not
