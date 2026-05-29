@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from 'react';
 import {
   TrackSurface3D,
   isGripAvailable,
+  gradientProfile,
   type HeatmapMode,
   type SpatialFactor,
 } from './TrackSurface3D';
@@ -170,13 +171,23 @@ export default function TrackSurfacePanel({ sessionId, laps = [], className }: T
 
   // Day-13 Phase E: legend labels follow the active sub-factor when
   // isolating a single component on the mesh.
-  const legend =
-    mode === 'spatial-grip' && spatialFactor !== 'combined'
-      ? {
-          ...LEGEND['spatial-grip'],
-          ...SPATIAL_FACTOR_LEGEND[spatialFactor],
-        }
-      : LEGEND[mode];
+  // EXEC-6: GRADIENT legend shows the symmetric ±G domain as a percentage.
+  const gradientG = useMemo(
+    () => (mode === 'gradient' && surface?.bins ? gradientProfile(surface.bins).G : null),
+    [mode, surface],
+  );
+
+  const legend = (() => {
+    const base =
+      mode === 'spatial-grip' && spatialFactor !== 'combined'
+        ? { ...LEGEND['spatial-grip'], ...SPATIAL_FACTOR_LEGEND[spatialFactor] }
+        : LEGEND[mode];
+    if (mode === 'gradient' && gradientG != null) {
+      const pct = (gradientG * 100).toFixed(1);
+      return { ...base, lowLabel: `−${pct}%`, highLabel: `+${pct}%` };
+    }
+    return base;
+  })();
 
   return (
     <div className={`bg-concrete border border-steel/20 rounded-lg overflow-hidden ${className ?? ''}`}>
@@ -319,6 +330,11 @@ export default function TrackSurfacePanel({ sessionId, laps = [], className }: T
             </div>
             <span className="font-telemetry text-xs text-steel">{legend.highLabel}</span>
           </div>
+          {mode === 'gradient' && (
+            <div className="font-telemetry text-[10px] text-steel/70">
+              Slope along the lap · elevation ×2 for visibility; gradient values are physical.
+            </div>
+          )}
           {mode === 'spatial-grip' && (
             <div className="flex items-center justify-between font-telemetry text-[10px] text-steel/70">
               <span>

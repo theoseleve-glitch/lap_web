@@ -77,6 +77,16 @@ const GRIP_STOPS = [
   { t: 1.0, color: 0x22C55E },  // μ 1.1 — high grip (green)
 ] as const;
 
+/* EXEC-6: GRADIENT ramp — blue (downhill) → grey (flat) → red (uphill),
+ * over a symmetric domain [-G, +G]. The slope is the UNSCALED physical
+ * d(elevation_m)/d(distance_m); ELEVATION_SCALE only exaggerates the z
+ * geometry for visibility and must never leak into the gradient value. */
+const GRADIENT_STOPS = [
+  { t: 0.0, color: 0x3B82F6 },  // downhill (blue)
+  { t: 0.5, color: 0xDDDDDD },  // flat (grey)
+  { t: 1.0, color: 0xFF2A2A },  // uphill (red)
+] as const;
+
 /** Build an (N×3) RGB vertex buffer from scalar values via a multi-stop
  *  ramp over a fixed domain. null/NaN → grey. */
 function makeColorBuffer(
@@ -148,6 +158,65 @@ function meanElevationFromBins(bins: SurfaceBin[]): number {
     }
   }
   return n > 0 ? sum / n : 0;
+}
+
+/* ── EXEC-6: longitudinal gradient profile ────────────────
+ * Per-bin slope g(s) = d(elevation_m)/d(distance_m) via central differences
+ * over bins sorted by arclength. RAW elevation (the 2× z exaggeration is
+ * geometry-only). G = max(|g|) with a 0.05 (5 %) floor so a dead-flat track
+ * doesn't normalise sensor noise into a saturated rainbow. Exported so the
+ * panel legend can label the symmetric ±G domain as a percentage. */
+export function gradientProfile(
+  bins: SurfaceBin[],
+): { sSorted: number[]; gPerBin: number[]; G: number } {
+  const usable = bins.filter(
+    (b) => Number.isFinite(b.elevation_m) && Number.isFinite(b.distance_m),
+  );
+  const sorted = usable.slice().sort((a, b) => a.distance_m - b.distance_m);
+  const nB = sorted.length;
+  const sSorted = sorted.map((b) => b.distance_m);
+  const e = sorted.map((b) => b.elevation_m);
+  const gPerBin = new Array<number>(nB).fill(0);
+  if (nB >= 2) {
+    for (let i = 0; i < nB; i++) {
+      const lo = Math.max(0, i - 1);
+      const hi = Math.min(nB - 1, i + 1);
+      const ds = sSorted[hi]! - sSorted[lo]!;
+      gPerBin[i] = ds > 1e-9 ? (e[hi]! - e[lo]!) / ds : 0;
+    }
+  }
+  let G = 0;
+  for (const v of gPerBin) { const a = Math.abs(v); if (a > G) G = a; }
+  G = Math.max(G, 0.05);
+  return { sSorted, gPerBin, G };
+}
+
+/** Per-vertex GRADIENT colour buffer (EXEC-6). Samples the 1D gradient
+ *  profile at each vertex's arclength s (binary-search + linear interp,
+ *  mirroring the elevation interp in buildTriangulatedSurface), then maps
+ *  over the symmetric [-G, +G] domain with the blue→grey→red ramp. */
+function buildGradientBuffer(
+  meshTriSn: [number, number][],
+  bins: SurfaceBin[],
+): Float32Array {
+  const { sSorted, gPerBin, G } = gradientProfile(bins);
+  const nB = sSorted.length;
+  const V = meshTriSn.length;
+  const scalars = new Array<number>(V);
+  for (let i = 0; i < V; i++) {
+    const s = meshTriSn[i]![0];
+    if (nB < 2) { scalars[i] = 0; continue; }
+    const sClamped = Math.max(sSorted[0]!, Math.min(sSorted[nB - 1]!, s));
+    let lo = 0; let hi = nB - 1;
+    while (hi - lo > 1) {
+      const mid = (lo + hi) >> 1;
+      if (sSorted[mid]! <= sClamped) lo = mid; else hi = mid;
+    }
+    const span = sSorted[hi]! - sSorted[lo]!;
+    const u = span > 1e-9 ? (sClamped - sSorted[lo]!) / span : 0;
+    scalars[i] = gPerBin[lo]! + u * (gPerBin[hi]! - gPerBin[lo]!);
+  }
+  return makeColorBuffer(scalars, GRADIENT_STOPS, [-G, G]);
 }
 
 /* ── Types ────────────────────────────────────────────── */
@@ -1199,10 +1268,12 @@ function Scene({
     const n = meshTriGrip.length;
     return {
       grip: avail ? makeColorBuffer(meshTriGrip, GRIP_STOPS, [0.5, 1.1]) : greyBuffer(n),
-      speed: greyBuffer(n),
-      gradient: greyBuffer(n),
+      speed: greyBuffer(n),  // EXEC-7 backend (mesh_tri_speed) fills this.
+      gradient: meshTriSn && meshTriSn.length === n
+        ? buildGradientBuffer(meshTriSn, bins)
+        : greyBuffer(n),
     };
-  }, [meshTriGrip]);
+  }, [meshTriGrip, meshTriSn, bins]);
 
   // Mode swap: set the colour attribute from the active mode's buffer
   // WITHOUT rebuilding geometry. Guarded by vertex-count match so it
