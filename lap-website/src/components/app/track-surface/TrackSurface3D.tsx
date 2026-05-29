@@ -1552,10 +1552,11 @@ function Scene({
 
   return (
     <>
-      {/* Track surface mesh — single continuous membrane.
-       *  Per-vertex grip vertexColors interpolate smoothly across each
-       *  triangle (Gouraud); MeshBasicMaterial is unlit so there are
-       *  no facet steps from per-face normals either. */}
+      {/* Track surface mesh — single continuous membrane. Per-vertex
+       *  vertexColors interpolate smoothly across each triangle (Gouraud);
+       *  MeshLambertMaterial (EXEC-3) lights the elevation relief, and
+       *  computeVertexNormals() averages normals so adjacent triangles shade
+       *  as one surface rather than faceted plates. */}
       <mesh frustumCulled={false}>
         <primitive object={surfaceGeo} attach="geometry" />
         <primitive object={surfaceMat} attach="material" />

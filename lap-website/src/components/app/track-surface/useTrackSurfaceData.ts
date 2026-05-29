@@ -158,11 +158,8 @@ export interface TrackSurfaceResponse {
   mesh_M?: number | null;
   mesh_K?: number | null;
   mesh_spine_source?: 'medial_axis' | 'cross_section_hand_traced' | string | null;
-  /** Full M×K per-vertex grid (xy in session frame + (s,n) coordinates).
-   *  Preferred over the spine+hw_L/hw_R derivation when present — the
-   *  FE just reads the nodes directly. */
-  mesh_grid_xy?: [number, number][][] | null;
-  mesh_grid_sn?: [number, number][][] | null;
+  // EXEC-10: mesh_grid_xy / mesh_grid_sn removed — never consumed (the FE
+  // renders mesh_tri_*; the M×K fallback derives its grid from mesh_spine/L/R).
   /** Periodic-loop contract: ``mesh_s_periodic=true`` + ``mesh_lap_length_m=L``
    *  means s=L identifies s=0. The renderer's wrap ring (between station
    *  M-1 and station 0) is what makes the tube watertight. */

@@ -358,18 +358,12 @@ def build_edge_payload(
                     )
                 M_grid_effective = M_spine
 
-            # Per-vertex (s, n) for grip-field colour lookup on the FE.
-            # n stays LOGICAL (linear lerp from +hw_L to -hw_R across k);
-            # the rendered physical xy is the smoothed grid. This keeps
-            # the optimiser + grip cache stable (key by logical n) while
-            # the rendered tube bends around apexes.
+            # s_grid (per spine station) for the mesh_spine_s emission below.
+            # EXEC-10: the full M×K mesh_grid_sn was dropped — the FE renders
+            # the Delaunay path (mesh_tri_*) and never reads the full grid, so
+            # it was dead payload. mesh_spine_s / hw_L / hw_R still feed the
+            # FE's M×K fallback (buildMxKMesh) when the Delaunay path is absent.
             s_grid = np.asarray(frenet.s_grid, dtype=float)
-            ks = np.linspace(0.0, 1.0, K_LATERAL)
-            mesh_grid_sn = np.zeros((M_grid_effective, K_LATERAL, 2), dtype=float)
-            for k_idx in range(K_LATERAL):
-                t = float(ks[k_idx])
-                mesh_grid_sn[:, k_idx, 0] = s_grid
-                mesh_grid_sn[:, k_idx, 1] = hw_L - t * (hw_L + hw_R)
 
             payload["mesh_spine_xy"] = [
                 [float(x), float(y)] for x, y in midline_xy.tolist()
@@ -386,12 +380,9 @@ def build_edge_payload(
             payload["mesh_M"] = int(M_grid_effective)
             payload["mesh_K"] = K_LATERAL
             payload["mesh_spine_source"] = mid_diag.get("midline_source", "unknown")
-            payload["mesh_grid_xy"] = [
-                [[float(x), float(y)] for x, y in row] for row in mesh_grid_xy.tolist()
-            ]
-            payload["mesh_grid_sn"] = [
-                [[float(s), float(n)] for s, n in row] for row in mesh_grid_sn.tolist()
-            ]
+            # EXEC-10: mesh_grid_xy / mesh_grid_sn no longer emitted — dead
+            # payload (FE renders mesh_tri_*; the M×K fallback derives its grid
+            # FE-side from mesh_spine/L/R). Trims ~2·M·K floats per response.
             # Periodic-loop contract: mesh_spine_s is cyclic. The renderer
             # AND any downstream consumer (lap-time optimiser, line-delta
             # binner) must treat s = mesh_lap_length_m as identical to
