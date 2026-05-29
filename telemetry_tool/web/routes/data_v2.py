@@ -5274,7 +5274,13 @@ def get_track_surface(session_id: str) -> tuple[dict, int]:
     if isinstance(surface, dict):
         try:
             from track_surface.api_edge_payload import build_edge_payload
-            edge_payload = build_edge_payload(conn, session_id, track_id, surface=surface)
+            # EXEC-7: optional ?lap=N selects which lap's max speed is binned
+            # onto the mesh (mesh_tri_speed). Absent → best lap, resolved
+            # inside build_edge_payload. Geometry/grip are lap-independent.
+            lap_q = request.args.get("lap", type=int)
+            edge_payload = build_edge_payload(
+                conn, session_id, track_id, surface=surface, lap_number=lap_q,
+            )
         except Exception as exc:
             logger.warning(
                 "edge_payload build failed (%s) — FE will fall back to spine ribbon",

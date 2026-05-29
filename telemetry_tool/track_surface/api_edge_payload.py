@@ -110,11 +110,101 @@ def _project_lonlat_to_xy(
     return np.column_stack([x, y])
 
 
+# ── EXEC-7: per-vertex SPEED channel (lap-specific) ──────────────────
+# Bin the selected lap's MAX speed into the SAME (s, n) grid scheme as
+# grip_2d (searchsorted-1 clipped), but with finer bins and NaN — not
+# grip's 1.0 — for empty cells, then attach one value per mesh vertex.
+_SPEED_S_BIN_M = 2.0
+_SPEED_N_BIN_M = 0.5
+
+
+def _resolve_best_lap(conn: Any, session_id: str) -> Optional[int]:
+    """Best lap number for the session (is_best flag), else the first lap."""
+    try:
+        from web.repos.lap_repo import get_laps_for_session
+        laps = get_laps_for_session(conn, session_id) or []
+    except Exception as exc:
+        logger.warning("resolve_best_lap: get_laps_for_session failed: %s", exc)
+        return None
+    for lap in laps:
+        if isinstance(lap, dict) and lap.get("is_best"):
+            return int(lap["lap_number"])
+    if laps and isinstance(laps[0], dict) and "lap_number" in laps[0]:
+        return int(laps[0]["lap_number"])
+    return None
+
+
+def _per_vertex_speed(
+    frenet: Any,
+    verts_session: np.ndarray,
+    gps_x: np.ndarray,
+    gps_y: np.ndarray,
+    gps_speed: np.ndarray,
+) -> Optional[tuple[list, float]]:
+    """Bin max GPS speed into a (M_s × K_n) grid (grip_2d scheme) and read one
+    value per mesh vertex — its own cell, else the max non-NaN within ±1 cell,
+    else NaN. GPS points AND mesh vertices are projected through the SAME
+    ``frenet`` so they share the (s, n) frame (sidesteps any gt-internal vs
+    session-frame arclength drift). Returns (speed_per_vertex_with_None,
+    max_mps), or None when the lap has too little usable GPS.
+    """
+    total = float(getattr(frenet, "total_length_m", 0.0) or 0.0)
+    if total <= 0:
+        return None
+    s_g, n_g = frenet.xy_to_sn(gps_x, gps_y)
+    s_v, n_v = frenet.xy_to_sn(verts_session[:, 0], verts_session[:, 1])
+    s_g = np.asarray(s_g, dtype=float)
+    n_g = np.asarray(n_g, dtype=float)
+    sp = np.asarray(gps_speed, dtype=float)
+    ok = np.isfinite(s_g) & np.isfinite(n_g) & np.isfinite(sp)
+    if int(ok.sum()) < 5:
+        return None
+    s_g, n_g, sp = s_g[ok], n_g[ok], sp[ok]
+    n_v = np.asarray(n_v, dtype=float)
+    n_v_fin = n_v[np.isfinite(n_v)]
+    n_extent = float(max(
+        float(np.abs(n_g).max()),
+        float(np.abs(n_v_fin).max()) if n_v_fin.size else 0.0,
+    ))
+    n_range = n_extent + _SPEED_N_BIN_M
+    s_bins = np.arange(0.0, total, _SPEED_S_BIN_M)
+    n_bins = np.arange(-n_range, n_range + _SPEED_N_BIN_M, _SPEED_N_BIN_M)
+    M, K = len(s_bins), len(n_bins)
+    if M < 1 or K < 1:
+        return None
+    grid = np.full((M, K), np.nan)
+    si = np.clip(np.searchsorted(s_bins, s_g) - 1, 0, M - 1)
+    ni = np.clip(np.searchsorted(n_bins, n_g) - 1, 0, K - 1)
+    for a, b, v in zip(si.tolist(), ni.tolist(), sp.tolist()):
+        cur = grid[a, b]
+        if np.isnan(cur) or v > cur:
+            grid[a, b] = v  # MAX speed per cell
+    vsi = np.clip(np.searchsorted(s_bins, np.asarray(s_v, dtype=float)) - 1, 0, M - 1)
+    vni = np.clip(np.searchsorted(n_bins, n_v) - 1, 0, K - 1)
+    out: list = []
+    for a, b in zip(vsi.tolist(), vni.tolist()):
+        val = grid[a, b]
+        if np.isnan(val):
+            best = np.nan
+            for da in (-1, 0, 1):
+                for db in (-1, 0, 1):
+                    aa, bb = a + da, b + db
+                    if 0 <= aa < M and 0 <= bb < K:
+                        cell = grid[aa, bb]
+                        if not np.isnan(cell) and (np.isnan(best) or cell > best):
+                            best = cell
+            val = best
+        out.append(None if np.isnan(val) else float(val))
+    max_mps = float(np.nanmax(sp)) if np.isfinite(sp).any() else 0.0
+    return out, max_mps
+
+
 def build_edge_payload(
     conn: Any,
     session_id: str,
     track_id: str,
     surface: Optional[dict] = None,
+    lap_number: Optional[int] = None,
 ) -> Optional[dict]:
     """Build the literal-edge payload for the surface API response.
 
@@ -375,6 +465,43 @@ def build_edge_payload(
             # Grip-source distribution for the API consumer's at-a-glance check.
             from collections import Counter
             payload["mesh_tri_grip_source_counts"] = dict(Counter(source_per_v))
+
+            # ── EXEC-7: per-vertex SPEED for the selected lap ─────────
+            # Lap-specific channel; the geometry + grip above are lap-
+            # independent (frame = best-lap projection: verts_session +
+            # frenet). Only the speed VALUES vary by lap. Any failure here
+            # leaves SPEED grey on the FE — never breaks the surface payload.
+            try:
+                speed_lap = (
+                    lap_number if lap_number is not None
+                    else _resolve_best_lap(conn, session_id)
+                )
+                if speed_lap is not None:
+                    from web.repos import gps_repo
+                    gps = gps_repo.get_gps_trace(conn, session_id, int(speed_lap))
+                    if gps:
+                        lats = gps.get("latitudes") or []
+                        lons = gps.get("longitudes") or []
+                        spd = gps.get("speeds") or []
+                        if lats and lons and spd and len(lats) == len(lons) == len(spd):
+                            gxy = _project_lonlat_to_xy(
+                                list(zip(lons, lats)), lat_ref_rad, lon_ref_rad,
+                            )
+                            res = _per_vertex_speed(
+                                frenet, verts_session,
+                                gxy[:, 0], gxy[:, 1],
+                                np.asarray(spd, dtype=float),
+                            )
+                            if res is not None:
+                                speed_list, max_mps = res
+                                payload["mesh_tri_speed"] = speed_list
+                                payload["mesh_tri_speed_lap"] = int(speed_lap)
+                                payload["mesh_tri_speed_max_mps"] = max_mps
+            except Exception as exc:
+                logger.warning(
+                    "edge_payload: SPEED channel failed (%s) — FE shows grey speed",
+                    exc,
+                )
     except Exception as exc:
         logger.warning(
             "edge_payload: Delaunay triangulation assembly failed (%s) — "

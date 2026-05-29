@@ -188,6 +188,12 @@ export interface TrackSurfaceResponse {
   mesh_tri_triangle_count?: number | null;
   mesh_tri_min_signed_area_m2?: number | null;
   mesh_tri_sha256?: string | null;
+  /** EXEC-7: per-vertex max speed (m/s) for the selected lap; null where the
+   *  lap never drove that tile. Lap-specific (the rest of mesh_tri_* is not).
+   *  mesh_tri_speed_lap echoes which lap produced it; *_max_mps is the lap max. */
+  mesh_tri_speed?: (number | null)[] | null;
+  mesh_tri_speed_lap?: number | null;
+  mesh_tri_speed_max_mps?: number | null;
 }
 
 export interface OptimalLinePoint {

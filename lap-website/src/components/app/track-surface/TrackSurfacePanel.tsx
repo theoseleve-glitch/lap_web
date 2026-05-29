@@ -194,6 +194,9 @@ export default function TrackSurfacePanel({ sessionId, laps = [], className }: T
       const pct = (gradientG * 100).toFixed(1);
       return { ...base, lowLabel: `−${pct}%`, highLabel: `+${pct}%` };
     }
+    if (mode === 'speed' && surface?.mesh_tri_speed_max_mps != null) {
+      return { ...base, highLabel: `${Math.round(surface.mesh_tri_speed_max_mps * 3.6)} km/h` };
+    }
     return base;
   })();
 

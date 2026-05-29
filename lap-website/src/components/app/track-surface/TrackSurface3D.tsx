@@ -98,6 +98,15 @@ const GRADIENT_STOPS = [
   { t: 1.0, color: 0xFF2A2A },  // uphill (red)
 ] as const;
 
+/* EXEC-7: SPEED ramp — blue (slow) → green → yellow → red (fast), over the
+ * lap's [min,max] finite-speed domain. null/undefined cells → grey. */
+const SPEED_STOPS = [
+  { t: 0.0, color: 0x3B82F6 },
+  { t: 0.4, color: 0x22C55E },
+  { t: 0.7, color: 0xFFD400 },
+  { t: 1.0, color: 0xFF2A2A },
+] as const;
+
 /** Build an (N×3) RGB vertex buffer from scalar values via a multi-stop
  *  ramp over a fixed domain. null/NaN → grey. */
 function makeColorBuffer(
@@ -149,6 +158,18 @@ export function isGripAvailable(grip: readonly number[] | null | undefined): boo
   let mn = Infinity; let mx = -Infinity;
   for (const g of grip) { if (g < mn) mn = g; if (g > mx) mx = g; }
   return (mx - mn > 0.02) && !(mx <= 0.02) && !(mn >= 0.98);
+}
+
+/** [min,max] over finite values (EXEC-7 SPEED domain). Safe fallback for
+ *  empty / single-value inputs so makeColorBuffer's domain span is never 0. */
+function finiteDomain(vals: ArrayLike<number | null | undefined>): [number, number] {
+  let mn = Infinity; let mx = -Infinity;
+  for (let i = 0; i < vals.length; i++) {
+    const v = vals[i];
+    if (v != null && Number.isFinite(v)) { if (v < mn) mn = v; if (v > mx) mx = v; }
+  }
+  if (!Number.isFinite(mn) || !Number.isFinite(mx) || mn === mx) return [0, 1];
+  return [mn, mx];
 }
 
 /** Mean of bin.elevation_m (finite values only). Used to mean-subtract
@@ -1235,6 +1256,7 @@ interface SceneProps {
   meshTriIndices: [number, number, number][] | null;
   meshTriSn: [number, number][] | null;
   meshTriGrip: number[] | null;
+  meshTriSpeed: (number | null)[] | null;
   // Stable, lap-INDEPENDENT geometry identity for the camera fit. Switching
   // laps refetches the surface (new object refs → surfaceGeo rebuilds), but
   // fitKey stays constant, so the isometric framing does NOT reset on a lap
@@ -1247,7 +1269,7 @@ function Scene({
   spatialFactor, showOptimalLine, showActualLine,
   leftEdgeXyLocal, rightEdgeXyLocal, leftEdgeSn, rightEdgeSn, midlineLengthM,
   meshSpineXy, meshLXy, meshRXy, meshSpineS, meshHwL, meshHwR, meshM, meshK,
-  meshTriXy, meshTriIndices, meshTriSn, meshTriGrip, fitKey,
+  meshTriXy, meshTriIndices, meshTriSn, meshTriGrip, meshTriSpeed, fitKey,
 }: SceneProps) {
   const { camera, gl, size } = useThree();
   const controlsRef = useRef<OrbitControls | null>(null);
@@ -1338,12 +1360,14 @@ function Scene({
     const n = meshTriGrip.length;
     return {
       grip: avail ? makeColorBuffer(meshTriGrip, GRIP_STOPS, [0.5, 1.1]) : greyBuffer(n),
-      speed: greyBuffer(n),  // EXEC-7 backend (mesh_tri_speed) fills this.
+      speed: meshTriSpeed && meshTriSpeed.length === n
+        ? makeColorBuffer(meshTriSpeed, SPEED_STOPS, finiteDomain(meshTriSpeed))
+        : greyBuffer(n),
       gradient: meshTriSn && meshTriSn.length === n
         ? buildGradientBuffer(meshTriSn, bins)
         : greyBuffer(n),
     };
-  }, [meshTriGrip, meshTriSn, bins]);
+  }, [meshTriGrip, meshTriSpeed, meshTriSn, bins]);
 
   // Mode swap: set the colour attribute from the active mode's buffer
   // WITHOUT rebuilding geometry. Guarded by vertex-count match so it
@@ -1761,6 +1785,7 @@ export function TrackSurface3D({
           meshTriIndices={surface.mesh_tri_indices ?? null}
           meshTriSn={surface.mesh_tri_sn ?? null}
           meshTriGrip={surface.mesh_tri_grip ?? null}
+          meshTriSpeed={surface.mesh_tri_speed ?? null}
           fitKey={surface.mesh_tri_sha256 ?? surface.bins.length}
           showOptimalLine={showOptimalLine}
           showActualLine={showActualLine}
