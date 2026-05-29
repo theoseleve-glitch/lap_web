@@ -129,6 +129,13 @@ export default function TrackSurfacePanel({ sessionId, laps = [], className }: T
   const gripAvailable = isGripAvailable(surface?.mesh_tri_grip ?? null);
   const gripDecided = !isLoading && !!surface;
 
+  // EXEC-9: provisional (no ground-truth) surface — bins + GPS but no Delaunay
+  // mesh. Renders the GPS-centreline ribbon; SPEED + GRIP are unavailable
+  // (GRIP already greys out via gripAvailable; GRADIENT works off bin
+  // elevation). Drives the "Provisional" badge + the SPEED disable below.
+  const isProvisional =
+    !!surface && Array.isArray(surface.bins) && surface.bins.length >= 2 && !surface.mesh_tri_xy;
+
   // Day-13 Phase 7.5: conditions UI (ConditionRow + Spatial Grip mode +
   // SpatialDiagnosticsPanel) is gated behind ?debug=spatial until bug-4
   // (09a2 Distance(m) cascade) is fixed in Day-14.
@@ -198,11 +205,18 @@ export default function TrackSurfacePanel({ sessionId, laps = [], className }: T
           Track Surface
         </h3>
 
-        {qualityTier && (
-          <span className="font-telemetry text-xs text-steel bg-steel/10 border border-steel/30 rounded px-2 py-0.5">
-            {qualityTier}
-          </span>
-        )}
+        <div className="flex items-center gap-2">
+          {isProvisional && (
+            <span className="font-telemetry text-[10px] uppercase tracking-wide text-marshal-yellow bg-marshal-yellow/10 border border-marshal-yellow/30 rounded px-2 py-0.5">
+              Provisional — no ground-truth trace
+            </span>
+          )}
+          {qualityTier && (
+            <span className="font-telemetry text-xs text-steel bg-steel/10 border border-steel/30 rounded px-2 py-0.5">
+              {qualityTier}
+            </span>
+          )}
+        </div>
       </div>
 
       {/* 3D canvas with the control bar floating over it (the bar does not
@@ -227,13 +241,18 @@ export default function TrackSurfacePanel({ sessionId, laps = [], className }: T
             {visibleModes.map(({ key, label }) => {
               const spatialBtn = key === 'spatial-grip';
               const gripBtn = key === 'grip';
+              const speedBtn = key === 'speed';
               const disabled =
-                (spatialBtn && spatialDisabled) || (gripBtn && gripDecided && !gripAvailable);
+                (spatialBtn && spatialDisabled)
+                || (gripBtn && gripDecided && !gripAvailable)
+                || (speedBtn && isProvisional);
               const titleAttr = spatialBtn && spatialDisabled
                 ? 'Spatial μ requires Day-12+ analysis (session uploaded before this feature, or weather lookup unavailable).'
                 : gripBtn && disabled
                   ? 'Grip data is flat / unavailable for this session — showing gradient instead.'
-                  : undefined;
+                  : speedBtn && disabled
+                    ? 'Speed needs a ground-truth track mesh — unavailable for this provisional surface.'
+                    : undefined;
               return (
                 <button
                   key={key}

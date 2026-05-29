@@ -19,6 +19,11 @@ import {
 
 const COLORS = {
   grip: { high: 0x22C55E, low: 0xFF2A2A },
+  // speed/gradient entries exist so the fallback-ribbon builders (no-gt /
+  // provisional path) stay total over HeatmapMode — the gt Delaunay path is
+  // buffer-driven and never reads these. 2-stop low→high; gradient flat ≈ mid.
+  speed: { high: 0xFF2A2A, low: 0x3B82F6 },
+  gradient: { high: 0xFF2A2A, low: 0x3B82F6 },
   elevation: { high: 0xF0EDE5, low: 0x3B82F6 },
   'line-delta': { high: 0x22C55E, low: 0xFF2A2A },
   'spatial-grip': { high: 0x22C55E, low: 0xFF2A2A },
@@ -335,6 +340,24 @@ function binHeatValues(
     for (const b of bins) { minMu = Math.min(minMu, b.mu_lat_p95); maxMu = Math.max(maxMu, b.mu_lat_p95); }
     const range = maxMu - minMu || 1;
     return bins.map((b) => (b.mu_lat_p95 - minMu) / range);
+  }
+
+  if (mode === 'gradient') {
+    // Fallback-ribbon GRADIENT colouring (the gt Delaunay path uses the
+    // 3-stop buffer instead). Reuse gradientProfile, sample each bin's slope,
+    // map [-G,+G] → [0,1] (0.5 = flat). Both edge vertices share the value.
+    const { sSorted, gPerBin, G } = gradientProfile(bins);
+    const nB = sSorted.length;
+    if (nB < 2) return bins.map(() => 0.5);
+    const sampleAtS = (s: number): number => {
+      const sC = Math.max(sSorted[0]!, Math.min(sSorted[nB - 1]!, s));
+      let lo = 0; let hi = nB - 1;
+      while (hi - lo > 1) { const mid = (lo + hi) >> 1; if (sSorted[mid]! <= sC) lo = mid; else hi = mid; }
+      const span = sSorted[hi]! - sSorted[lo]!;
+      const u = span > 1e-9 ? (sC - sSorted[lo]!) / span : 0;
+      return gPerBin[lo]! + u * (gPerBin[hi]! - gPerBin[lo]!);
+    };
+    return bins.map((b) => Math.max(0, Math.min(1, 0.5 + sampleAtS(b.distance_m) / (2 * G))));
   }
 
   if (mode === 'elevation') {
@@ -1679,6 +1702,25 @@ export function TrackSurface3D({
       <div className={`flex items-center justify-center bg-concrete rounded-lg ${className ?? ''}`}>
         <p className="font-telemetry text-safety-red text-sm">
           {error ? 'Failed to load track surface data' : 'Insufficient surface data'}
+        </p>
+      </div>
+    );
+  }
+
+  // EXEC-9: a surface with bins but no way to place it in space — no gt mesh
+  // (tri / M×K / literal-edge) AND no GPS centreline — would otherwise collapse
+  // to the degenerate straight-X ribbon. Show the clean empty state instead.
+  const hasMeshTri = Array.isArray(surface.mesh_tri_xy) && surface.mesh_tri_xy.length >= 3;
+  const hasMxK = Array.isArray(surface.mesh_spine_xy) && surface.mesh_spine_xy.length >= 2;
+  const hasLiteralEdge =
+    Array.isArray(surface.left_edge_xy_local) && surface.left_edge_xy_local.length >= 2
+    && Array.isArray(surface.right_edge_xy_local) && surface.right_edge_xy_local.length >= 2;
+  const hasGpsCentreline = Array.isArray(gpsXY) && gpsXY.length >= 2;
+  if (!hasMeshTri && !hasMxK && !hasLiteralEdge && !hasGpsCentreline) {
+    return (
+      <div className={`flex items-center justify-center bg-concrete rounded-lg ${className ?? ''}`}>
+        <p className="font-telemetry text-steel text-sm">
+          No spatial trace for this session — surface can’t be placed
         </p>
       </div>
     );
