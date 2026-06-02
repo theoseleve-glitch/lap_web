@@ -398,3 +398,63 @@ def test_mesh_source_maps_boundary_source_to_literal(boundary, expected):
     )
 
     assert _mesh_source_from_boundary(boundary) == expected
+
+
+# ── Producer: per-tile confidence field ──────────────────────────────
+#
+# confidence_field_2d surfaces the elevation surface's per-cell coverage
+# confidence (clip(count/20, 0, 1)) so downstream weighting can discount
+# off-line tiles whose drainage fell back to the longitudinal grade.
+
+
+def test_2d_confidence_field_reflects_elevation_coverage():
+    """confidence_field_2d mirrors ElevationSurface.confidence: ~1.0 on the
+    driven line, ~0.0 on unsampled off-line bins."""
+    from datetime import datetime, timezone
+
+    from telemetry_tool.conditions.spatial_producer import _compute_2d_fields
+
+    M, K = 20, 17
+    es = _make_es(np.zeros((M, K)))
+    c = K // 2
+    conf = np.zeros((M, K))
+    conf[:, c - 1:c + 2] = 1.0
+    es.confidence = conf
+    es.count_grid = (conf > 0).astype(float) * 40.0
+    fields = _compute_2d_fields(
+        track_surface=SimpleNamespace(elevation_surface=es, frenet=_make_frenet(M)),
+        weather_condition=SimpleNamespace(label="dry"),
+        session_inputs=SimpleNamespace(
+            started_at_utc=datetime(2026, 6, 21, 12, 0, tzinfo=timezone.utc)
+        ),
+        lat=48.55,
+        lon=0.27,
+        wind_dir_deg=0.0,
+        wind_speed_kmh=5.0,
+        wind_1d=np.ones(M),
+    )
+    Ms, Kn = fields["tile_grid_shape"]
+    cf = np.asarray(fields["confidence_field_2d"]).reshape(Ms, Kn)
+    np.testing.assert_allclose(cf[:, c], 1.0, atol=1e-9)
+    np.testing.assert_allclose(cf[:, 0], 0.0, atol=1e-9)
+
+
+def test_2d_confidence_field_none_without_elevation_surface():
+    """No elevation surface → the whole 2D block (incl. confidence) is None."""
+    from datetime import datetime, timezone
+
+    from telemetry_tool.conditions.spatial_producer import _compute_2d_fields
+
+    fields = _compute_2d_fields(
+        track_surface=SimpleNamespace(elevation_surface=None, frenet=_make_frenet(5)),
+        weather_condition=SimpleNamespace(label="dry"),
+        session_inputs=SimpleNamespace(
+            started_at_utc=datetime(2026, 6, 21, 12, 0, tzinfo=timezone.utc)
+        ),
+        lat=48.55,
+        lon=0.27,
+        wind_dir_deg=0.0,
+        wind_speed_kmh=5.0,
+        wind_1d=np.ones(5),
+    )
+    assert fields["confidence_field_2d"] is None

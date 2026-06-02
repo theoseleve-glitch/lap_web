@@ -67,6 +67,7 @@ class SpatialMuModifier:
     sun_field_2d: Optional[list[float]] = None
     wind_field_2d: Optional[list[float]] = None
     factor_field_2d: Optional[list[float]] = None
+    confidence_field_2d: Optional[list[float]] = None
     tile_arclength_samples: Optional[list[float]] = None
     tile_lateral_offsets: Optional[list[float]] = None
     tile_grid_shape: Optional[tuple[int, int]] = None  # (M_s, M_n)

@@ -202,6 +202,7 @@ def _compute_2d_fields(
         "sun_field_2d": None,
         "wind_field_2d": None,
         "factor_field_2d": None,
+        "confidence_field_2d": None,
         "tile_arclength_samples": None,
         "tile_lateral_offsets": None,
         "tile_grid_shape": None,
@@ -258,11 +259,23 @@ def _compute_2d_fields(
         drainage_2d, sun_2d, wind_2d, weather_condition.label,
     )
 
+    # Per-tile confidence: the elevation surface's coverage confidence
+    # (clip(count/20, 0, 1)) — high on the driven line, low on off-line
+    # bins whose drainage fell back to the longitudinal grade. Lets the
+    # downstream grip lookup weight modelled vs measured vs prior.
+    es_conf = getattr(es, "confidence", None)
+    confidence_field_2d = (
+        np.asarray(es_conf, dtype=np.float64).ravel().tolist()
+        if es_conf is not None
+        else None
+    )
+
     return {
         "drainage_field_2d": drainage_2d.ravel().tolist(),
         "sun_field_2d": sun_2d.ravel().tolist(),
         "wind_field_2d": wind_2d.ravel().tolist(),
         "factor_field_2d": factor_2d.ravel().tolist(),
+        "confidence_field_2d": confidence_field_2d,
         "tile_arclength_samples": geom.s_bins.tolist(),
         "tile_lateral_offsets": geom.n_bins.tolist(),
         "tile_grid_shape": (int(M), int(K)),
