@@ -181,6 +181,14 @@ export interface TrackSurfaceResponse {
    *  meteo layer is actually populating values for this session. */
   mesh_tri_grip_source?: string[] | null;
   mesh_tri_grip_source_counts?: Record<string, number> | null;
+  /** Per-tile MEASURED grip (mu = |a_lat|/g), aggregated across ALL of the
+   *  session's laps; null where the kart never drove the tile. The honest,
+   *  sparse-where-driven companion to the dense 1D `mesh_tri_grip` profile —
+   *  GRIP prefers this and falls back to `mesh_tri_grip` when it's absent
+   *  (no accel_lat stored / too few samples). Lap-independent. */
+  mesh_tri_grip_measured?: (number | null)[] | null;
+  mesh_tri_grip_measured_count?: number | null;
+  mesh_tri_grip_measured_laps?: number | null;
   mesh_tri_vertex_count?: number | null;
   mesh_tri_triangle_count?: number | null;
   mesh_tri_min_signed_area_m2?: number | null;

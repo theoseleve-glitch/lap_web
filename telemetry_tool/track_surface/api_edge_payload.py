@@ -117,6 +117,15 @@ def _project_lonlat_to_xy(
 _SPEED_S_BIN_M = 2.0
 _SPEED_N_BIN_M = 0.5
 
+# Grip (mu = |a_lat| / g) dynamics-inversion constants — values match
+# grip_2d.build_grip_surface so request-time per-tile grip agrees with the
+# offline producer (gravity + min-speed gate + plausible-mu band).
+_G = 9.80665
+_MIN_SPEED_MPS = 3.0
+_GRIP_MIN_SAMPLES = 5   # mirror _per_vertex_speed's <5 usable-sample guard
+_GRIP_MU_MIN = 0.1
+_GRIP_MU_MAX = 3.0
+
 
 def _resolve_best_lap(conn: Any, session_id: str) -> Optional[int]:
     """Best lap number for the session (is_best flag), else the first lap."""
@@ -197,6 +206,100 @@ def _per_vertex_speed(
         out.append(None if np.isnan(val) else float(val))
     max_mps = float(np.nanmax(sp)) if np.isfinite(sp).any() else 0.0
     return out, max_mps
+
+
+def _per_vertex_grip_measured(
+    frenet: Any,
+    verts_session: np.ndarray,
+    gps_x: np.ndarray,
+    gps_y: np.ndarray,
+    accel_lat_mps2: np.ndarray,
+    gps_speed: np.ndarray,
+) -> Optional[tuple[list, int]]:
+    """Per-vertex MEASURED grip (mu = |a_lat| / g), null where undriven.
+
+    Mirrors ``_per_vertex_speed``: bins a per-sample quantity into the SAME
+    (s, n) grid scheme (searchsorted-1 clipped) and reads one value per mesh
+    vertex — its own cell, else the mean of non-empty cells within ±1, else
+    ``None``. The binned quantity is the dynamics-inversion grip
+    ``mu = |a_lat| / g`` (same as ``grip_2d.build_grip_surface``), and the
+    per-cell reducer is the p95 of all pooled samples (the caller
+    concatenates every lap of the session), so a cell reads the peak
+    sustained grip the surface delivered — matching ``mu_lat_p95``, not mean
+    utilisation. Quality gates match
+    grip_2d: ``speed > _MIN_SPEED_MPS`` and ``_GRIP_MU_MIN < mu < _GRIP_MU_MAX``.
+
+    GPS samples AND mesh vertices are projected through the SAME ``frenet`` so
+    they share the (s, n) frame; ``n_range`` spans both extents so an
+    off-line vertex lands in its own (empty -> None) cell instead of clipping
+    onto a driven edge cell. Returns ``(grip_per_vertex_with_None, n_measured)``
+    or ``None`` when too few usable samples exist.
+    """
+    total = float(getattr(frenet, "total_length_m", 0.0) or 0.0)
+    if total <= 0:
+        return None
+    s_g, n_g = frenet.xy_to_sn(gps_x, gps_y)
+    s_v, n_v = frenet.xy_to_sn(verts_session[:, 0], verts_session[:, 1])
+    s_g = np.asarray(s_g, dtype=float)
+    n_g = np.asarray(n_g, dtype=float)
+    mu = np.abs(np.asarray(accel_lat_mps2, dtype=float)) / _G
+    spd = np.asarray(gps_speed, dtype=float)
+    ok = (
+        np.isfinite(s_g) & np.isfinite(n_g) & np.isfinite(mu)
+        & (spd > _MIN_SPEED_MPS) & (mu > _GRIP_MU_MIN) & (mu < _GRIP_MU_MAX)
+    )
+    if int(ok.sum()) < _GRIP_MIN_SAMPLES:
+        return None
+    s_g, n_g, mu = s_g[ok], n_g[ok], mu[ok]
+
+    n_v = np.asarray(n_v, dtype=float)
+    n_v_fin = n_v[np.isfinite(n_v)]
+    n_extent = float(max(
+        float(np.abs(n_g).max()),
+        float(np.abs(n_v_fin).max()) if n_v_fin.size else 0.0,
+    ))
+    n_range = n_extent + _SPEED_N_BIN_M
+    s_bins = np.arange(0.0, total, _SPEED_S_BIN_M)
+    n_bins = np.arange(-n_range, n_range + _SPEED_N_BIN_M, _SPEED_N_BIN_M)
+    M, K = len(s_bins), len(n_bins)
+    if M < 1 or K < 1:
+        return None
+
+    # Pool every sample into its (s, n) cell, then take the p95 per cell.
+    cells: dict = {}
+    si = np.clip(np.searchsorted(s_bins, s_g) - 1, 0, M - 1)
+    ni = np.clip(np.searchsorted(n_bins, n_g) - 1, 0, K - 1)
+    for a, b, v in zip(si.tolist(), ni.tolist(), mu.tolist()):
+        cells.setdefault((int(a), int(b)), []).append(v)
+    # p95 mu per cell — peak sustained lateral load (matches grip_2d.mu_lat_p95),
+    # not mean utilisation.
+    cell_p95 = {k: float(np.percentile(vs, 95)) for k, vs in cells.items()}
+
+    vsi = np.clip(np.searchsorted(s_bins, np.asarray(s_v, dtype=float)) - 1, 0, M - 1)
+    vni = np.clip(np.searchsorted(n_bins, n_v) - 1, 0, K - 1)
+    out: list = []
+    n_measured = 0
+    for a, b in zip(vsi.tolist(), vni.tolist()):
+        a = int(a)
+        b = int(b)
+        val = cell_p95.get((a, b))
+        if val is None:
+            # nearest measured within ±1 cell (mean of available neighbours)
+            acc = 0.0
+            cnt = 0
+            for da in (-1, 0, 1):
+                for db in (-1, 0, 1):
+                    nv = cell_p95.get((a + da, b + db))
+                    if nv is not None:
+                        acc += nv
+                        cnt += 1
+            val = acc / cnt if cnt else None
+        if val is None:
+            out.append(None)
+        else:
+            out.append(float(val))
+            n_measured += 1
+    return out, n_measured
 
 
 def build_edge_payload(
@@ -492,6 +595,57 @@ def build_edge_payload(
                 logger.warning(
                     "edge_payload: SPEED channel failed (%s) — FE shows grey speed",
                     exc,
+                )
+
+            # ── Per-tile MEASURED grip (lap-aggregate; null where undriven) ──
+            # mu = |a_lat|/g binned into the SAME (s, n) grid as SPEED, pooled
+            # across ALL of the session's laps, mean per cell, None where the
+            # kart never drove. The honest, sparse-where-driven companion to
+            # the dense 1D ``mesh_tri_grip`` profile above; the FE prefers this
+            # for GRIP and falls back to the 1D profile when it is absent (no
+            # accel_lat stored / too few usable samples). Lap-INDEPENDENT
+            # (aggregates every lap) so it ignores ?lap. Any failure leaves it
+            # absent — never breaks the payload.
+            try:
+                from web.repos import gps_repo as _gr
+                from web.repos.lap_repo import get_laps_for_session as _glfs
+                _laps = _glfs(conn, session_id) or []
+                _gx, _gy, _al, _sp = [], [], [], []
+                for _lap in _laps:
+                    _ln = _lap.get("lap_number") if isinstance(_lap, dict) else None
+                    if _ln is None:
+                        continue
+                    _t = _gr.get_gps_trace(conn, session_id, int(_ln))
+                    if not _t:
+                        continue
+                    _la = _t.get("latitudes") or []
+                    _lo = _t.get("longitudes") or []
+                    _ac = _t.get("accel_lat")
+                    _spd = _t.get("speeds") or []
+                    if _ac is None:
+                        continue  # no lateral-accel for this lap → can't invert grip
+                    if len(_la) == 0 or not (len(_la) == len(_lo) == len(_ac) == len(_spd)):
+                        continue
+                    _xy = _project_lonlat_to_xy(list(zip(_lo, _la)), lat_ref_rad, lon_ref_rad)
+                    _gx.append(_xy[:, 0])
+                    _gy.append(_xy[:, 1])
+                    _al.append(np.asarray(_ac, dtype=float))
+                    _sp.append(np.asarray(_spd, dtype=float))
+                if _gx:
+                    res_g = _per_vertex_grip_measured(
+                        frenet, verts_session,
+                        np.concatenate(_gx), np.concatenate(_gy),
+                        np.concatenate(_al), np.concatenate(_sp),
+                    )
+                    if res_g is not None:
+                        grip_m_list, n_measured = res_g
+                        payload["mesh_tri_grip_measured"] = grip_m_list
+                        payload["mesh_tri_grip_measured_count"] = int(n_measured)
+                        payload["mesh_tri_grip_measured_laps"] = int(len(_laps))
+            except Exception as exc:
+                logger.warning(
+                    "edge_payload: measured-grip channel failed (%s) — "
+                    "FE falls back to 1D grip profile", exc,
                 )
     except Exception as exc:
         logger.warning(

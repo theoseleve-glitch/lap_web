@@ -347,6 +347,11 @@ export default function TrackSurfacePanel({ sessionId, laps = [], className }: T
               Slope along the lap · elevation ×2 for visibility; gradient values are physical.
             </div>
           )}
+          {mode === 'grip' && !surface?.mesh_tri_grip_measured?.length && (
+            <div className="font-telemetry text-[10px] text-steel/70">
+              1D longitudinal profile — aggregate, not per-tile.
+            </div>
+          )}
           {mode === 'spatial-grip' && (
             <div className="flex items-center justify-between font-telemetry text-[10px] text-steel/70">
               <span>

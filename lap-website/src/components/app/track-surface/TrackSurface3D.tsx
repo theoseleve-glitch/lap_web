@@ -1257,6 +1257,7 @@ interface SceneProps {
   meshTriSn: [number, number][] | null;
   meshTriGrip: number[] | null;
   meshTriSpeed: (number | null)[] | null;
+  meshTriGripMeasured: (number | null)[] | null;
   // Stable, lap-INDEPENDENT geometry identity for the camera fit. Switching
   // laps refetches the surface (new object refs → surfaceGeo rebuilds), but
   // fitKey stays constant, so the isometric framing does NOT reset on a lap
@@ -1269,7 +1270,7 @@ function Scene({
   spatialFactor, showOptimalLine, showActualLine,
   leftEdgeXyLocal, rightEdgeXyLocal, leftEdgeSn, rightEdgeSn, midlineLengthM,
   meshSpineXy, meshLXy, meshRXy, meshSpineS, meshHwL, meshHwR, meshM, meshK,
-  meshTriXy, meshTriIndices, meshTriSn, meshTriGrip, meshTriSpeed, fitKey,
+  meshTriXy, meshTriIndices, meshTriSn, meshTriGrip, meshTriSpeed, meshTriGripMeasured, fitKey,
 }: SceneProps) {
   const { camera, gl, size } = useThree();
   const controlsRef = useRef<OrbitControls | null>(null);
@@ -1358,8 +1359,18 @@ function Scene({
     // and pick the default mode) so the two can never disagree.
     const avail = isGripAvailable(meshTriGrip);
     const n = meshTriGrip.length;
+    // GRIP prefers per-tile MEASURED grip (sparse; null → grey where the kart
+    // never drove) when the backend supplies it; falls back to the dense 1D
+    // mu_lat_p95 profile otherwise. makeColorBuffer maps null → grey, so the
+    // measured ribbon is honest about coverage exactly like SPEED.
+    const gripBuf =
+      meshTriGripMeasured && meshTriGripMeasured.length === n
+        ? makeColorBuffer(meshTriGripMeasured, GRIP_STOPS, [0.5, 1.1])
+        : avail
+          ? makeColorBuffer(meshTriGrip, GRIP_STOPS, [0.5, 1.1])
+          : greyBuffer(n);
     return {
-      grip: avail ? makeColorBuffer(meshTriGrip, GRIP_STOPS, [0.5, 1.1]) : greyBuffer(n),
+      grip: gripBuf,
       speed: meshTriSpeed && meshTriSpeed.length === n
         ? makeColorBuffer(meshTriSpeed, SPEED_STOPS, finiteDomain(meshTriSpeed))
         : greyBuffer(n),
@@ -1367,7 +1378,7 @@ function Scene({
         ? buildGradientBuffer(meshTriSn, bins)
         : greyBuffer(n),
     };
-  }, [meshTriGrip, meshTriSpeed, meshTriSn, bins]);
+  }, [meshTriGrip, meshTriGripMeasured, meshTriSpeed, meshTriSn, bins]);
 
   // Mode swap: set the colour attribute from the active mode's buffer
   // WITHOUT rebuilding geometry. Guarded by vertex-count match so it
@@ -1787,6 +1798,7 @@ export function TrackSurface3D({
           meshTriSn={surface.mesh_tri_sn ?? null}
           meshTriGrip={surface.mesh_tri_grip ?? null}
           meshTriSpeed={surface.mesh_tri_speed ?? null}
+          meshTriGripMeasured={surface.mesh_tri_grip_measured ?? null}
           fitKey={surface.mesh_tri_sha256 ?? surface.bins.length}
           showOptimalLine={showOptimalLine}
           showActualLine={showActualLine}
