@@ -265,3 +265,109 @@ def test_geometry_rejects_degenerate_grid():
         compute_tile_geometry(_make_es(np.zeros((1, 5))), _make_frenet(1))
     with pytest.raises(ValueError, match="too small"):
         compute_tile_geometry(_make_es(np.zeros((5, 1))), _make_frenet(5))
+
+
+# ── Coverage-gated drainage slope ────────────────────────────────────
+#
+# Real karting sessions only populate the driven racing line (~3 of
+# 13+ lateral bins), so the lateral gradient ∂z/∂n on off-line bins is
+# sparse-sampling noise, not real camber — and it dominates the full
+# ‖∇z‖ slope that drainage uses. `slope_pct_drainage` drops the lateral
+# term where cross-track coverage is absent (per `count_grid`) and
+# falls back to the well-sampled longitudinal grade, while preserving
+# the full slope where coverage genuinely supports the banking.
+
+
+def _make_es_with_counts(z, counts, *, s_bin_m=5.0, n_bin_m=1.0):
+    es = _make_es(z, s_bin_m=s_bin_m, n_bin_m=n_bin_m)
+    es.count_grid = np.asarray(counts, dtype=np.float64)
+    return es
+
+
+def test_drainage_slope_falls_back_to_longitudinal_where_lateral_coverage_thin():
+    """Pure lateral bank, but only the centre 3 bins were driven: off-line
+    bins have no cross-track data support, so the drainage slope drops the
+    (noise) lateral term and uses the ~0 longitudinal grade → pooling (1.30)."""
+    M, K = 20, 17
+    n_bin_m = 1.0
+    n_grid = np.tile(
+        (np.arange(K, dtype=np.float64) - (K - 1) / 2) * n_bin_m, (M, 1)
+    )
+    z = 0.05 * n_grid  # 5% lateral bank, zero longitudinal slope
+    c = K // 2
+    counts = np.zeros((M, K))
+    counts[:, c - 1:c + 2] = 40.0  # only the driven line (3 centre bins)
+    geom = compute_tile_geometry(
+        _make_es_with_counts(z, counts, n_bin_m=n_bin_m), _make_frenet(M)
+    )
+    d = drainage_factor(geom.slope_pct_drainage)
+    offline = np.r_[0:c - 1, c + 2:K]  # bins outside the driven strip
+    np.testing.assert_allclose(d[5:-5][:, offline], 1.30, atol=1e-9)
+
+
+def test_drainage_slope_keeps_lateral_where_coverage_full():
+    """Same banked mesh but with full cross-track coverage → lateral term
+    retained → genuine banking still drains (< 1.20), matching legacy."""
+    M, K = 20, 17
+    n_bin_m = 1.0
+    n_grid = np.tile(
+        (np.arange(K, dtype=np.float64) - (K - 1) / 2) * n_bin_m, (M, 1)
+    )
+    z = 0.05 * n_grid
+    counts = np.full((M, K), 40.0)
+    geom = compute_tile_geometry(
+        _make_es_with_counts(z, counts, n_bin_m=n_bin_m), _make_frenet(M)
+    )
+    d = drainage_factor(geom.slope_pct_drainage)
+    assert d[5:-5, 5:-5].mean() < 1.20
+
+
+def test_drainage_slope_defaults_to_full_when_no_count_grid():
+    """No count_grid (synthetic/legacy meshes) → assume full support →
+    slope_pct_drainage is identical to the full slope_pct (no regression)."""
+    M, K = 20, 17
+    n_grid = np.tile(
+        (np.arange(K, dtype=np.float64) - (K - 1) / 2), (M, 1)
+    )
+    z = 0.05 * n_grid
+    geom = compute_tile_geometry(_make_es(z), _make_frenet(M))  # no count_grid
+    np.testing.assert_allclose(
+        geom.slope_pct_drainage, geom.slope_pct, atol=1e-9
+    )
+
+
+def test_2d_drainage_field_uses_coverage_gated_slope():
+    """Producer wiring: _compute_2d_fields drives drainage_field_2d from the
+    coverage-gated slope, so a sparse-coverage banked mesh leaves off-line
+    tiles pooling (1.30) instead of noise-driven drainage."""
+    from datetime import datetime, timezone
+
+    from telemetry_tool.conditions.spatial_producer import _compute_2d_fields
+
+    M, K = 20, 17
+    n_bin_m = 1.0
+    n_grid = np.tile(
+        (np.arange(K, dtype=np.float64) - (K - 1) / 2) * n_bin_m, (M, 1)
+    )
+    z = 0.05 * n_grid
+    c = K // 2
+    counts = np.zeros((M, K))
+    counts[:, c - 1:c + 2] = 40.0
+    es = _make_es_with_counts(z, counts, n_bin_m=n_bin_m)
+    frenet = _make_frenet(M)
+    fields = _compute_2d_fields(
+        track_surface=SimpleNamespace(elevation_surface=es, frenet=frenet),
+        weather_condition=SimpleNamespace(label="wet"),
+        session_inputs=SimpleNamespace(
+            started_at_utc=datetime(2026, 6, 21, 12, 0, tzinfo=timezone.utc)
+        ),
+        lat=48.55,
+        lon=0.27,
+        wind_dir_deg=180.0,
+        wind_speed_kmh=10.0,
+        wind_1d=np.ones(M),
+    )
+    Ms, Kn = fields["tile_grid_shape"]
+    drain = np.asarray(fields["drainage_field_2d"]).reshape(Ms, Kn)
+    offline = np.r_[0:c - 1, c + 2:Kn]
+    np.testing.assert_allclose(drain[5:-5][:, offline], 1.30, atol=1e-9)

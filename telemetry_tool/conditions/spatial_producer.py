@@ -204,8 +204,11 @@ def _compute_2d_fields(
     M, K = geom.slope_pct.shape
 
     # Drainage 2D: re-apply the bucket function to the per-tile slope%.
-    # drainage_factor accepts any-shape arrays.
-    drainage_2d = drainage_factor(geom.slope_pct)  # (M, K)
+    # Uses the coverage-gated slope so the lateral ∂z/∂n term is dropped
+    # on bins without cross-track data support (a single racing line is
+    # ~3 of 13 lateral bins, so off-line ∂z/∂n is sparse-sampling noise,
+    # not real camber). drainage_factor accepts any-shape arrays.
+    drainage_2d = drainage_factor(geom.slope_pct_drainage)  # (M, K)
 
     # Sun 2D: sun_factor wants (N, 3) normals → flatten + reshape.
     sun_flat = sun_factor(

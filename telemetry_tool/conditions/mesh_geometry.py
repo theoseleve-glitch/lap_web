@@ -47,10 +47,11 @@ class TileGeometry:
     bin centre and ``n_bins[j_n]`` is the lateral offset bin centre.
     """
 
-    normals: np.ndarray         # (M, K, 3) unit ENU vectors
-    slope_pct: np.ndarray       # (M, K) full 2D gradient magnitude × 100
-    s_bins: np.ndarray          # (M,) — copied from elevation_surface
-    n_bins: np.ndarray          # (K,) — copied from elevation_surface
+    normals: np.ndarray              # (M, K, 3) unit ENU vectors
+    slope_pct: np.ndarray            # (M, K) full 2D gradient magnitude × 100
+    slope_pct_drainage: np.ndarray   # (M, K) coverage-gated slope for drainage
+    s_bins: np.ndarray               # (M,) — copied from elevation_surface
+    n_bins: np.ndarray               # (K,) — copied from elevation_surface
 
 
 def _smooth_2d_lateral(z: np.ndarray, sigma_n: int) -> np.ndarray:
@@ -143,9 +144,33 @@ def compute_tile_geometry(
     slope_raw = np.sqrt(dz_ds**2 + dz_dn**2) * 100.0
     slope_pct = np.minimum(slope_raw, gradient_clip_pct)
 
+    # Coverage-gated slope for the DRAINAGE factor. The lateral gradient
+    # ∂z/∂n is only trustworthy where the cross-track bins feeding the
+    # finite difference actually contain binned samples. On a single
+    # racing line most lateral bins are empty, so ∂z/∂n there is sparse-
+    # sampling noise — it dominates ‖∇z‖ yet bears no relation to real
+    # camber. Where lateral support is absent we drop the lateral term
+    # and fall back to the well-sampled longitudinal grade |∂z/∂s|.
+    # ``count_grid`` is absent on synthetic meshes → assume full support
+    # (legacy behaviour: drainage uses the full slope).
+    slope_long = np.minimum(np.abs(dz_ds) * 100.0, gradient_clip_pct)
+    count_grid = getattr(elevation_surface, "count_grid", None)
+    if count_grid is None:
+        slope_pct_drainage = slope_pct
+    else:
+        cov = np.asarray(count_grid) > 0
+        lat_support = np.zeros((M, K), dtype=bool)
+        # interior columns: central difference uses j-1 and j+1
+        lat_support[:, 1:-1] = cov[:, :-2] & cov[:, 2:]
+        # cross-track edges: one-sided difference uses the edge pair
+        lat_support[:, 0] = cov[:, 0] & cov[:, 1]
+        lat_support[:, -1] = cov[:, -1] & cov[:, -2]
+        slope_pct_drainage = np.where(lat_support, slope_pct, slope_long)
+
     return TileGeometry(
         normals=normals,
         slope_pct=slope_pct,
+        slope_pct_drainage=slope_pct_drainage,
         s_bins=s_bins,
         n_bins=n_bins,
     )
