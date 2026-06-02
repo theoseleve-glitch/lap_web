@@ -44,6 +44,26 @@ from .types import SessionInputs, SpatialMuModifier, WeatherCondition
 logger = logging.getLogger(__name__)
 
 
+# boundary_source (TrackSurface) → mesh_source (SpatialMuModifier Literal).
+# "gt_anchored_native" is gt-geojson boundaries resampled natively onto the
+# frenet grid — semantically the same hand-traced ground truth as the legacy
+# "hand_traced" gt-projection path. Unknown / None → conservative
+# "data_derived" (preserves the prior ``or "data_derived"`` fallback and keeps
+# the value inside the declared Literal, which the web schema validates).
+_BOUNDARY_TO_MESH_SOURCE: dict[str, str] = {
+    "gt_anchored_native": "hand_traced",
+    "hand_traced": "hand_traced",
+    "data_derived": "data_derived",
+    "multihead": "multihead",
+}
+
+
+def _mesh_source_from_boundary(boundary_source: Any) -> str:
+    """Map a TrackSurface ``boundary_source`` onto the ``mesh_source`` Literal
+    declared by :class:`SpatialMuModifier` (and the track-surface web schema)."""
+    return _BOUNDARY_TO_MESH_SOURCE.get(boundary_source, "data_derived")
+
+
 def compute_spatial_modifier(
     weather_condition: WeatherCondition,
     track_id: str,
@@ -150,8 +170,8 @@ def compute_spatial_modifier(
         sun_azimuth_deg=sun_az_deg,
         wind_direction_deg=wind_dir_deg,
         wind_speed_kmh=wind_speed_kmh,
-        mesh_source=(
-            getattr(track_surface, "boundary_source", None) or "data_derived"
+        mesh_source=_mesh_source_from_boundary(
+            getattr(track_surface, "boundary_source", None)
         ),
         spatial_version="spatial-v1.0",
         **fields_2d,

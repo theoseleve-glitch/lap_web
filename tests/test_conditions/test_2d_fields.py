@@ -371,3 +371,30 @@ def test_2d_drainage_field_uses_coverage_gated_slope():
     drain = np.asarray(fields["drainage_field_2d"]).reshape(Ms, Kn)
     offline = np.r_[0:c - 1, c + 2:Kn]
     np.testing.assert_allclose(drain[5:-5][:, offline], 1.30, atol=1e-9)
+
+
+# ── Producer: boundary_source → mesh_source mapping ──────────────────
+#
+# SpatialMuModifier.mesh_source is a fixed Literal, but TrackSurface
+# emits a wider boundary_source vocabulary ("gt_anchored_native",
+# "hand_traced", "data_derived", None). The producer must map onto the
+# Literal — "gt_anchored_native" is gt ground truth → "hand_traced".
+
+
+@pytest.mark.parametrize(
+    "boundary, expected",
+    [
+        ("gt_anchored_native", "hand_traced"),  # gt geojson, native resample
+        ("hand_traced", "hand_traced"),
+        ("data_derived", "data_derived"),
+        ("multihead", "multihead"),
+        (None, "data_derived"),                 # no boundaries → conservative
+        ("something_unforeseen", "data_derived"),  # unknown → conservative
+    ],
+)
+def test_mesh_source_maps_boundary_source_to_literal(boundary, expected):
+    from telemetry_tool.conditions.spatial_producer import (
+        _mesh_source_from_boundary,
+    )
+
+    assert _mesh_source_from_boundary(boundary) == expected
