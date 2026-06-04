@@ -117,10 +117,10 @@ export function JsonLd({ pathname, faqItems, article, softwareApp, howTo, review
       description: 'Motorsport telemetry analysis platform for kart and car racing. Upload CSV data and get coaching insights, corner analysis, and performance scoring.',
       offers: {
         '@type': 'AggregateOffer',
-        lowPrice: '0',
-        highPrice: '14',
+        lowPrice: '14.90',
+        highPrice: '19.90',
         priceCurrency: 'EUR',
-        offerCount: 3,
+        offerCount: 2,
       },
       aggregateRating: {
         '@type': 'AggregateRating',

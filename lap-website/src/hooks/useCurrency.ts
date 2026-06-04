@@ -14,8 +14,9 @@ function getCookie(name: string): string | undefined {
 }
 
 /**
- * Returns the active currency, its price set, and b2cPlans with
- * price fields overridden for the active currency.
+ * Returns the active currency, its price set, and the membership plan(s) with
+ * the standard + founding price localized for that currency. One membership,
+ * monthly only — no per-tier or annual branching.
  */
 export function useCurrency(): {
   currency: Currency;
@@ -33,35 +34,15 @@ export function useCurrency(): {
 
   const prices = currencyPrices[currency];
 
-  const localizedPlans = useMemo(() => {
-    return b2cPlans.map((plan) => {
-      if (plan.slug === 'demo') return plan;
-
-      if (plan.slug === 'racer') {
-        return {
-          ...plan,
-          priceMonthly: `${prices.racer_monthly} / mo`,
-          priceAnnual: `${prices.racer_annual} / yr`,
-          priceAnnualPerMonth: `${prices.racer_annual_per_month} / mo`,
-          annualTotal: prices.racer_annual_total,
-          savingsPercent: prices.racer_savings,
-        };
-      }
-
-      if (plan.slug === 'world-class') {
-        return {
-          ...plan,
-          priceMonthly: `${prices.worldClass_monthly} / mo`,
-          priceAnnual: `${prices.worldClass_annual} / yr`,
-          priceAnnualPerMonth: `${prices.worldClass_annual_per_month} / mo`,
-          annualTotal: prices.worldClass_annual_total,
-          savingsPercent: prices.worldClass_savings,
-        };
-      }
-
-      return plan;
-    });
-  }, [prices]);
+  const localizedPlans = useMemo(
+    () =>
+      b2cPlans.map((plan) => ({
+        ...plan,
+        priceMonthly: `${prices.standard_monthly} / mo`,
+        foundingPriceMonthly: `${prices.founding_monthly} / mo`,
+      })),
+    [prices],
+  );
 
   return { currency, prices, localizedPlans };
 }

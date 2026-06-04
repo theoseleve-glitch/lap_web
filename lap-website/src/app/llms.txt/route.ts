@@ -26,7 +26,7 @@ export function GET(): Response {
 - Category: Motorsport Telemetry Analysis / Driver Coaching SaaS
 - Language: English
 - Audience: Kart and car racing drivers, coaches, and teams
-- Pricing: Freemium \u2014 Demo (free), Racer (\u20ac9/mo), World-Class (\u20ac15/mo)
+- Pricing: One membership \u2014 \u20ac19.90/mo (\u20ac14.90/mo for the first 50 founding members), 30-day free trial, no free tier
 - Last Updated: ${lastUpdated}
 
 ## Key Pages

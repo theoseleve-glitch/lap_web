@@ -97,8 +97,8 @@ describe('Key conversion journeys', () => {
   });
 
   it('pricing CTA triggers direct checkout', () => {
-    render(<PricingTable plans={b2cPlans} billingPeriod="annual" />);
-    const cta = screen.getByRole('button', { name: 'Upgrade' });
+    render(<PricingTable plans={b2cPlans} />);
+    const cta = screen.getByRole('button', { name: b2cPlans[0].cta });
     expect(cta).toBeInTheDocument();
   });
 });

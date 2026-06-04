@@ -258,17 +258,21 @@ class TestTransitionEndToEnd:
 
 class TestPlanTierDerivation:
     def test_price_to_tier_mapping(self):
-        """STRIPE_PRICE_TO_TIER should map env-configured price IDs to tiers."""
+        """STRIPE_PRICE_TO_TIER maps the standard + founding price IDs to the membership tier.
+
+        June-8 model: ONE membership. Both the standard (€19.90) and Founding-50
+        (€14.90) prices grant the same full-access tier (internally 'world-class').
+        """
         import os
         with patch.dict(os.environ, {
-            "STRIPE_PRICE_RACER_MONTHLY": "price_racer_mo",
-            "STRIPE_PRICE_WORLDCLASS_ANNUAL": "price_wc_yr",
+            "STRIPE_PRICE_STANDARD_MONTHLY": "price_standard_mo",
+            "STRIPE_PRICE_FOUNDING_MONTHLY": "price_founding_mo",
         }):
             from web.routes.billing import STRIPE_PRICE_TO_TIER, _init_price_mapping
             STRIPE_PRICE_TO_TIER.clear()
             _init_price_mapping()
-            assert STRIPE_PRICE_TO_TIER.get("price_racer_mo") == "racer"
-            assert STRIPE_PRICE_TO_TIER.get("price_wc_yr") == "world-class"
+            assert STRIPE_PRICE_TO_TIER.get("price_standard_mo") == "world-class"
+            assert STRIPE_PRICE_TO_TIER.get("price_founding_mo") == "world-class"
 
     def test_resolve_tier_from_metadata(self):
         from web.routes.billing import _resolve_tier_from_checkout

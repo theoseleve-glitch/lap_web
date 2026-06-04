@@ -47,26 +47,19 @@ ${insights}
 
 ## Pricing
 
-### Demo (Free)
-- Upload and analyse up to 3 sessions
-- Full 14-stage pipeline with corner detection and scoring
-- Speed trace, GPS trace, and GG diagram charts
-- No credit card required
+One membership unlocks the entire product. There is no free tier; instead every
+membership starts with a 30-day free trial (full access, no card charged until it ends).
 
-### Racer (\u20ac9/mo or \u20ac69/yr)
-- Unlimited session uploads and analysis
-- Session-vs-session comparison
-- Corner coaching table with time-loss rankings
-- Priority pipeline processing
-- Email support
-
-### World-Class (\u20ac15/mo or \u20ac109/yr)
-- Everything in Racer
-- Team workspace and multi-driver management
-- Race strategy dashboard with stint analysis
-- Tyre degradation and pace fade detection
-- Export reports (PDF, CSV)
-- Dedicated support
+### LAP Coach Membership (\u20ac19.90/mo)
+- \u20ac14.90/mo for the first 50 members (Founding offer), then \u20ac19.90/mo
+- 30-day free trial, monthly billing, cancel anytime
+- Unlimited session uploads and analysis through the full pipeline
+- Session-vs-session comparison and progress tracking
+- Corner coaching, four-pillar scoring, and visualization workspace
+- Race strategy dashboard with stint analysis, pit planning, and live pace monitoring
+- Coaching plans and drills
+- PDF reports and API access
+- Logger auto-sync, up to 3 linked devices
 
 ## FAQ
 

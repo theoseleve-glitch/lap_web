@@ -1,20 +1,18 @@
 import { describe, it, expect } from 'vitest';
-import { b2cPlans, b2bCard, featureEligibilityMatrix, dataLifecycle } from '@/data/pricing';
+import { b2cPlans, featureEligibilityMatrix, dataLifecycle } from '@/data/pricing';
 import { faqItems } from '@/data/faq';
 import { pipelineStages } from '@/data/pipeline-stages';
 import * as copy from '@/data/copy';
 
 describe('Pricing data', () => {
-  it('has 3 B2C plans', () => {
-    expect(b2cPlans).toHaveLength(3);
-    expect(b2cPlans[0].name).toBe('DEMO');
-    expect(b2cPlans[1].highlighted).toBe(true);
-    expect(b2cPlans[0].ctaHref).toBe('/register?source=demo');
-  });
-
-  it('has a B2B card', () => {
-    expect(b2bCard.name).toBe('FOR TEAMS & CIRCUITS');
-    expect(b2bCard.features.length).toBeGreaterThanOrEqual(4);
+  it('has one membership (June-8 model)', () => {
+    expect(b2cPlans).toHaveLength(1);
+    expect(b2cPlans[0].name).toBe('LAP COACH');
+    expect(b2cPlans[0].highlighted).toBe(true);
+    expect(b2cPlans[0].priceMonthly).toContain('19.90');
+    expect(b2cPlans[0].foundingPriceMonthly).toContain('14.90');
+    expect(b2cPlans[0].foundingLimit).toBe(50);
+    expect(b2cPlans[0].trialDays).toBe(30);
   });
 
   it('has a feature eligibility matrix', () => {

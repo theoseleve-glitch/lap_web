@@ -1,13 +1,22 @@
 import { beforeEach, afterEach, describe, expect, it, vi } from 'vitest';
 import { POST } from '@/app/api/billing/checkout/route';
 
-vi.mock('@/lib/stripe-billing', () => ({
-  getStripePriceId: vi.fn(() => 'price_test_123'),
-  getStripeSecretKey: vi.fn(() => 'sk_test_123'),
-  isB2BPlan: vi.fn(() => false),
-}));
+/**
+ * The checkout route forwards {email} to the backend's /api/v1/billing/checkout
+ * (which owns the Founding-50 cap + price selection) and fails loud. It no
+ * longer calls Stripe directly or reflects the request Origin, so the previous
+ * origin-hardening assertions moved to the backend; these cover the new contract.
+ */
 
-describe('billing checkout origin hardening', () => {
+function makeRequest(body: unknown = {}) {
+  return new Request('http://localhost/api/billing/checkout', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify(body),
+  });
+}
+
+describe('billing checkout route (fail-loud, forwards to backend)', () => {
   const originalEnv = { ...process.env };
 
   beforeEach(() => {
@@ -19,65 +28,52 @@ describe('billing checkout origin hardening', () => {
     process.env = { ...originalEnv };
   });
 
-  it('ignores hostile Origin header and uses validated NEXT_PUBLIC_SITE_URL host', async () => {
-    process.env.NEXT_PUBLIC_SITE_URL = 'https://www.lap-coach.racing';
-
-    const fetchMock = vi.spyOn(global, 'fetch').mockResolvedValue(
-      new Response(JSON.stringify({ url: 'https://checkout.stripe.test/session' }), {
-        status: 200,
-        headers: { 'content-type': 'application/json' },
-      }),
-    );
-
-    const request = new Request('http://localhost/api/billing/checkout', {
-      method: 'POST',
-      headers: {
-        'content-type': 'application/json',
-        origin: 'https://evil.attacker.test',
-      },
-      body: JSON.stringify({ plan: 'RACER', billingCycle: 'monthly' }),
-    });
-
-    await POST(request);
-
-    const stripeCall = fetchMock.mock.calls[0];
-    expect(stripeCall?.[0]).toBe('https://api.stripe.com/v1/checkout/sessions');
-
-    const body = String((stripeCall?.[1] as RequestInit)?.body ?? '');
-    const params = new URLSearchParams(body);
-
-    expect(params.get('success_url')).toBe('https://www.lap-coach.racing/thank-you/book');
-    expect(params.get('cancel_url')).toBe('https://www.lap-coach.racing/pricing?checkout=cancelled');
-    expect(params.get('success_url')).not.toContain('evil.attacker.test');
-    expect(params.get('cancel_url')).not.toContain('evil.attacker.test');
+  it('returns 503 (ok:false) when the API URL is not configured', async () => {
+    delete process.env.NEXT_PUBLIC_API_URL;
+    const res = await POST(makeRequest({}));
+    expect(res.status).toBe(503);
+    expect((await res.json()).ok).toBe(false);
   });
 
-  it('falls back to default origin when configured site URL is not in allowlist', async () => {
-    process.env.NEXT_PUBLIC_SITE_URL = 'https://evil.attacker.test';
-
+  it('forwards {email} to the backend and returns the checkout URL on success', async () => {
+    process.env.NEXT_PUBLIC_API_URL = 'https://api.lap-coach.racing';
     const fetchMock = vi.spyOn(global, 'fetch').mockResolvedValue(
-      new Response(JSON.stringify({ url: 'https://checkout.stripe.test/session' }), {
-        status: 200,
-        headers: { 'content-type': 'application/json' },
-      }),
+      new Response(
+        JSON.stringify({ ok: true, data: { checkout_url: 'https://checkout.stripe.test/session', offer: 'founding' } }),
+        { status: 200, headers: { 'content-type': 'application/json' } },
+      ),
     );
 
-    const request = new Request('http://localhost/api/billing/checkout', {
-      method: 'POST',
-      headers: {
-        'content-type': 'application/json',
-        origin: 'https://evil.attacker.test',
-      },
-      body: JSON.stringify({ plan: 'RACER', billingCycle: 'monthly' }),
-    });
+    const res = await POST(makeRequest({ email: 'driver@example.com' }));
 
-    await POST(request);
+    const call = fetchMock.mock.calls[0];
+    expect(call?.[0]).toBe('https://api.lap-coach.racing/api/v1/billing/checkout');
+    const sentBody = JSON.parse(String((call?.[1] as RequestInit)?.body ?? '{}'));
+    expect(sentBody.email).toBe('driver@example.com');
 
-    const stripeCall = fetchMock.mock.calls[0];
-    const body = String((stripeCall?.[1] as RequestInit)?.body ?? '');
-    const params = new URLSearchParams(body);
+    const json = await res.json();
+    expect(json.ok).toBe(true);
+    expect(json.checkoutUrl).toBe('https://checkout.stripe.test/session');
+    expect(json.offer).toBe('founding');
+  });
 
-    expect(params.get('success_url')).toBe('https://lap.racing/thank-you/book');
-    expect(params.get('cancel_url')).toBe('https://lap.racing/pricing?checkout=cancelled');
+  it('fails loud (ok:false, propagates backend status) when there is no checkout URL', async () => {
+    process.env.NEXT_PUBLIC_API_URL = 'https://api.lap-coach.racing';
+    vi.spyOn(global, 'fetch').mockResolvedValue(
+      new Response(JSON.stringify({ ok: false }), { status: 409, headers: { 'content-type': 'application/json' } }),
+    );
+
+    const res = await POST(makeRequest({ email: 'driver@example.com' }));
+    expect(res.ok).toBe(false);
+    expect(res.status).toBe(409);
+    expect((await res.json()).ok).toBe(false);
+  });
+
+  it('returns 502 when the backend is unreachable', async () => {
+    process.env.NEXT_PUBLIC_API_URL = 'https://api.lap-coach.racing';
+    vi.spyOn(global, 'fetch').mockRejectedValue(new Error('network down'));
+    const res = await POST(makeRequest({ email: 'x@y.z' }));
+    expect(res.status).toBe(502);
+    expect((await res.json()).ok).toBe(false);
   });
 });

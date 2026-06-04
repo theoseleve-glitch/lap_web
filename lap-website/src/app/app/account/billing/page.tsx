@@ -29,10 +29,12 @@ interface Invoice {
 
 /* ── Helpers ──────────────────────────────────────────────── */
 
+// One membership (June-8): every active/trial tier displays as the single brand
+// name. The status badge (Trial / Active / …) conveys subscription state.
 const TIER_LABELS: Record<string, string> = {
-  demo: 'Demo (Free)',
-  racer: 'Racer',
-  'world-class': 'World-Class',
+  demo: 'LAP COACH',
+  racer: 'LAP COACH',
+  'world-class': 'LAP COACH',
   b2b: 'Enterprise',
 };
 
@@ -143,7 +145,7 @@ export default function BillingPage() {
           href="/app/account/billing/upgrade"
           className="bg-concrete rounded-lg border border-steel/20 p-4 text-center hover:border-acid-green/40 transition-colors"
         >
-          <span className="font-telemetry text-sm text-acid-green">Change Plan</span>
+          <span className="font-telemetry text-sm text-acid-green">Membership</span>
         </Link>
         <button
           type="button"
