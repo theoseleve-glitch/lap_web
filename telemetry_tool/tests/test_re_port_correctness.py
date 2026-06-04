@@ -277,7 +277,13 @@ class TestUploadEndpointIntegration:
             g.current_user_id = 42
             g.plan_tier = "racer"
 
-        csv_content = "Lap #,Time (s),Speed (m/s)\n1,0.0,10.5\n1,1.0,11.2\n"
+        # Preflight (web upload gate) rejects files with < 50 data rows
+        # (preflight._MIN_DATA_ROWS) — generate a minimal-but-valid lap so
+        # the request reaches the async dispatch path this test pins.
+        csv_rows = "".join(
+            f"1,{t / 10:.1f},{10.0 + (t % 20) * 0.1:.1f}\n" for t in range(60)
+        )
+        csv_content = "Lap #,Time (s),Speed (m/s)\n" + csv_rows
         data = {
             "file": (io.BytesIO(csv_content.encode()), "session.csv"),
             "session_type": "practice",
