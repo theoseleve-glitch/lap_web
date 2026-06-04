@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, lazy, Suspense } from 'react';
+import { lazy, Suspense } from 'react';
 
 const TrackMap = lazy(() => import('@/components/shared/charts').then(m => ({ default: m.TrackMap })));
 
@@ -85,10 +85,8 @@ const TENDENCY_STYLES = {
 };
 
 export function HandlingBalanceCard({
-  sessionId, bestLap, summary, focusCorners, bestLapMistakes, drivingTips, cornerPositions, recommendations,
+  sessionId, bestLap, summary, focusCorners, bestLapMistakes, drivingTips, cornerPositions,
 }: HandlingBalanceCardProps) {
-  const [showSetup, setShowSetup] = useState(false);
-
   if (!summary || summary.n_corners === 0) return null;
 
   const style = TENDENCY_STYLES[summary.tendency] || TENDENCY_STYLES.balanced;
@@ -200,30 +198,6 @@ export function HandlingBalanceCard({
               </span>
             ))}
           </div>
-        </div>
-      )}
-
-      {/* Setup advice — hidden by default, shown on click */}
-      {recommendations && recommendations.recommendations.length > 0 && (
-        <div className="border-t border-steel/15 pt-3 mt-3">
-          <button
-            type="button"
-            onClick={() => setShowSetup(!showSetup)}
-            className="text-[10px] font-telemetry text-steel/60 hover:text-steel transition-colors"
-          >
-            {showSetup ? 'Hide' : 'Show'} kart setup advice
-          </button>
-          {showSetup && (
-            <div className="mt-2 space-y-1.5">
-              <p className="text-[11px] font-body text-chalk/60">{recommendations.summary}</p>
-              {recommendations.recommendations.slice(0, 3).map((r, i) => (
-                <div key={i} className="flex items-start gap-2">
-                  <span className="text-[9px] font-telemetry text-gold shrink-0 mt-0.5">#{r.priority}</span>
-                  <span className="text-[11px] font-body text-chalk/70">{r.change}</span>
-                </div>
-              ))}
-            </div>
-          )}
         </div>
       )}
     </div>

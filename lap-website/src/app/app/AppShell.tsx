@@ -11,7 +11,7 @@
 
 import { type ReactNode, useState, useEffect } from 'react';
 import Link from 'next/link';
-import { usePathname } from 'next/navigation';
+import { usePathname, useRouter } from 'next/navigation';
 import { QueryProvider } from '@/providers/query-provider';
 import { AppFooter } from '@/components/ui/AppFooter';
 import { AuthGuard } from '@/components/auth/AuthGuard';
@@ -44,19 +44,6 @@ const navGroups: NavGroup[] = [
       { href: '/app/sessions', label: 'Sessions', icon: '◎' },
       { href: '/app/compare', label: 'Compare', icon: '⟺' },
       { href: '/app/visualize', label: 'Visualization', icon: '◆' },
-      { href: '/app/leaderboard', label: 'Leaderboard', icon: '★' },
-    ],
-  },
-  {
-    label: 'Strategy',
-    items: [
-      { href: '/app/race-strategy', label: 'Race Strategy', icon: '⚑' },
-    ],
-  },
-  {
-    label: 'Analysis',
-    items: [
-      { href: '/app/bundles', label: 'Session Analysis', icon: '◇' },
     ],
   },
   {
@@ -65,7 +52,6 @@ const navGroups: NavGroup[] = [
       { href: '/app/tracks', label: 'Tracks', icon: '◌' },
       { href: '/app/drivers', label: 'Drivers', icon: '◈' },
       { href: '/app/karts', label: 'Karts', icon: '⊞' },
-      { href: '/app/weekends', label: 'Weekends', icon: '▣' },
     ],
   },
 ];
@@ -85,6 +71,7 @@ const TOPBAR_STYLE: React.CSSProperties = {
 
 export function AppShell({ children }: { children: ReactNode }) {
   const pathname = usePathname();
+  const router = useRouter();
   const [collapsed, setCollapsed] = useState(false);
 
   useEffect(() => {
@@ -116,12 +103,21 @@ export function AppShell({ children }: { children: ReactNode }) {
       >
         {/* Logo + collapse toggle */}
         <div className="px-4 py-4 flex items-center justify-between gap-2" style={{ borderBottom: '1px solid rgba(255,255,255,0.04)' }}>
-          <Link href="/" className="flex items-center gap-2" title="LAP">
+          <button
+            type="button"
+            onClick={() => {
+              setCollapsed(false);
+              localStorage.setItem(SIDEBAR_KEY, '0');
+              router.push('/app/dashboard');
+            }}
+            className="flex items-center gap-2"
+            title="LAP"
+          >
             <LapMonogram size={collapsed ? 22 : 26} color="currentColor" className="text-chalk shrink-0" />
             {!collapsed && (
               <span className="font-monument text-lg text-chalk tracking-tight">LAP</span>
             )}
-          </Link>
+          </button>
           <button
             type="button"
             onClick={toggle}

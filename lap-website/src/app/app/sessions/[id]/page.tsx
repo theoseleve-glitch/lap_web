@@ -14,6 +14,7 @@ import { AnimatedCounter } from '@/components/ui/AnimatedCounter';
 import { exportCanvasAsPNG } from '@/lib/export-chart';
 import { ChartSyncToggle } from '@/components/app/ChartSyncToggle';
 import { trackEvent } from '@/hooks/useTrackEvent';
+import { useTrackSurfaceData } from '@/components/app/track-surface/useTrackSurfaceData';
 
 // Lazy-loaded tab content — only fetched when the user activates each tab/section
 const AnalyticsTab = lazy(() => import('@/components/app/analytics').then(m => ({ default: m.AnalyticsTab })));
@@ -875,6 +876,18 @@ function OverviewTab({
 }) {
   const bestLapData = laps.find((l) => l.is_best);
 
+  // Auto-detected track condition (#3b/#3c). Pulls the classifier's
+  // conditions blob off the same track-surface payload the panel below
+  // uses — react-query dedupes on the shared key (best lap), so this is
+  // not an extra fetch. Absent on pre-Day-11 sessions (and on sessions
+  // with no surface), in which case the Overview row falls back to the
+  // raw track_state enum.
+  const { surface: surfaceForConditions } = useTrackSurfaceData(sessionId, bestLap);
+  const detectedConditions = surfaceForConditions?.conditions ?? null;
+  const conditionsValue = detectedConditions
+    ? `${detectedConditions.label} · ${Math.round(detectedConditions.confidence * 100)}% conf`
+    : session.track_state;
+
   // Editable session info state
   const [editing, setEditing] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -1244,7 +1257,18 @@ function OverviewTab({
               )}
               <MetaRow label="Kart" value={session.kart_name || 'Not set'} />
               <MetaRow label="Type" value={session.session_type} />
-              <MetaRow label="Conditions" value={session.track_state} />
+              <MetaRow
+                label="Conditions"
+                value={conditionsValue}
+              />
+              {detectedConditions?.rationale && (
+                <div className="pt-1">
+                  <p className="text-steel/80 text-xs font-body leading-relaxed bg-asphalt/40 border-l-2 border-pit-orange/30 rounded-r px-2.5 py-1.5">
+                    <span className="text-steel uppercase tracking-wider text-[10px] font-body block mb-0.5">Condition note</span>
+                    {detectedConditions.rationale}
+                  </p>
+                </div>
+              )}
               <MetaRow label="Date" value={formatDate(session.session_date)} />
               <MetaRow
                 label="Laps"

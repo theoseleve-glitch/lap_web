@@ -375,6 +375,13 @@ export default function TrackSurfacePanel({ sessionId, laps = [], className }: T
         </div>
       )}
 
+      {/* Auto-detected condition readout (#3a). Always on whenever the
+          classifier populated surface.conditions — decoupled from the
+          ?debug=spatial gate so the detected label/confidence/source is
+          visible on every session, not just spatial-debug ones. The full
+          spatial-gated ConditionRow below stays as the deep readout. */}
+      <CompactConditionReadout conditions={surface?.conditions ?? null} />
+
       {/* Conditions (Day-11/12). Renders nothing on pre-Day-11 sessions
           per Day-13 Phase C lock — empty slot is the honest UI.
           Phase 7.5: gated behind ?debug=spatial until bug-4 resolved. */}
@@ -544,6 +551,40 @@ const SOURCE_LABEL: Record<WeatherConditionBlock['source'], string> = {
   user: 'User override',
   ml_fallback: 'ML fallback',
 };
+
+/** Compact, always-on auto-detected condition readout (#3a).
+ *  Label chip + confidence + source — rendered whenever the classifier
+ *  produced `conditions`, independent of the ?debug=spatial gate that
+ *  hides the richer ConditionRow / SpatialDiagnosticsPanel. Returns null
+ *  on pre-Day-11 sessions (no conditions blob) so the slot stays honest. */
+export function CompactConditionReadout({
+  conditions,
+}: {
+  conditions: WeatherConditionBlock | null;
+}) {
+  if (!conditions) return null;
+
+  const { label, confidence, source } = conditions;
+
+  return (
+    <div className="flex items-center gap-2 px-4 py-2 border-t border-steel/10">
+      <span className="font-telemetry text-[10px] uppercase tracking-wide text-steel">
+        Auto-detected
+      </span>
+      <span
+        className={`font-telemetry text-[10px] uppercase tracking-wide px-2 py-0.5 rounded border ${LABEL_CHIP_STYLES[label]}`}
+      >
+        {label}
+      </span>
+      <span className="font-telemetry text-[10px] text-steel tabular-nums">
+        {Math.round(confidence * 100)}% conf
+      </span>
+      <span className="ml-auto font-telemetry text-[10px] text-steel bg-steel/10 border border-steel/30 rounded px-2 py-0.5">
+        {SOURCE_LABEL[source]}
+      </span>
+    </div>
+  );
+}
 
 export function ConditionRow({
   conditions,

@@ -14,17 +14,54 @@ import XPProgressBar from '@/components/app/gamification/XPProgressBar';
 import { StreakTracker } from '@/components/app/gamification';
 import { ChallengeCard } from '@/components/app/gamification';
 
-/** Inline Sparkline — lightweight SVG replacement for deleted chart component */
-function Sparkline({ data, color = '#B6FF2E', height = 56 }: { data: number[]; color?: string; height?: number }) {
+/**
+ * EnrichedSparkline — static score trend with min/max markers, a last-value
+ * label, and per-point hover tooltips. No looping animation.
+ */
+function EnrichedSparkline({ data, color = '#B6FF2E', height = 56 }: { data: number[]; color?: string; height?: number }) {
   if (data.length < 2) return null;
   const min = Math.min(...data);
   const max = Math.max(...data);
   const range = max - min || 1;
   const w = 200;
-  const points = data.map((v, i) => `${(i / (data.length - 1)) * w},${height - ((v - min) / range) * (height - 4) - 2}`).join(' ');
+  const x = (i: number) => (i / (data.length - 1)) * w;
+  const y = (v: number) => height - ((v - min) / range) * (height - 8) - 4;
+  const points = data.map((v, i) => `${x(i)},${y(v)}`).join(' ');
+  const minIdx = data.indexOf(min);
+  const maxIdx = data.indexOf(max);
+  const last = data[data.length - 1];
+  const lastX = x(data.length - 1);
+  const lastY = y(last);
+  // anchor the last-value label so it never clips past the right edge
+  const labelAnchor = lastX > w * 0.8 ? 'end' : 'start';
+  const labelDx = labelAnchor === 'end' ? -4 : 4;
   return (
-    <svg viewBox={`0 0 ${w} ${height}`} className="w-full" style={{ height }} preserveAspectRatio="none">
-      <polyline fill="none" stroke={color} strokeWidth="2" points={points} />
+    <svg viewBox={`0 0 ${w} ${height}`} className="w-full overflow-visible" style={{ height }} preserveAspectRatio="none">
+      <polyline fill="none" stroke={color} strokeWidth="2" points={points} vectorEffect="non-scaling-stroke" />
+      {/* min marker (hollow) */}
+      <circle cx={x(minIdx)} cy={y(min)} r="2.5" fill="#0B0B0C" stroke="#8A8F98" strokeWidth="1.5" vectorEffect="non-scaling-stroke">
+        <title>{`Min ${min.toFixed(1)} (session ${minIdx + 1})`}</title>
+      </circle>
+      {/* max marker (filled, brand color) */}
+      <circle cx={x(maxIdx)} cy={y(max)} r="2.5" fill={color} vectorEffect="non-scaling-stroke">
+        <title>{`Max ${max.toFixed(1)} (session ${maxIdx + 1})`}</title>
+      </circle>
+      {/* last point + value label */}
+      <circle cx={lastX} cy={lastY} r="2.5" fill={color} stroke="#0B0B0C" strokeWidth="1" vectorEffect="non-scaling-stroke">
+        <title>{`Latest ${last.toFixed(1)}`}</title>
+      </circle>
+      <text
+        x={lastX}
+        y={lastY}
+        dx={labelDx}
+        dy="-4"
+        textAnchor={labelAnchor}
+        fill={color}
+        fontSize="9"
+        fontFamily="var(--font-telemetry, monospace)"
+      >
+        {last.toFixed(1)}
+      </text>
     </svg>
   );
 }
@@ -230,12 +267,11 @@ export default function DashboardPage() {
 
         {/* How It Works */}
         <h3 className="font-body text-chalk text-lg mb-4">How It Works</h3>
-        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-4 mb-8">
+        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4 mb-8">
           {[
             { step: '1', title: 'Upload CSV', desc: 'Export from RaceChrono, RaceBox, or any GPS logger and upload your file.' },
             { step: '2', title: 'Auto-Analysis', desc: 'Our 14-stage pipeline processes your data: GPS, laps, corners, scoring, coaching.' },
             { step: '3', title: 'Improve', desc: 'Review your score, follow coaching hints, and track progress across sessions.' },
-            { step: '4', title: 'Auto-Sync', desc: 'Install the Lap Coach Logger on your PC to capture iRacing & ACC sessions and sync them automatically.' },
           ].map((s) => (
             <div key={s.step} className="bg-concrete rounded-lg border border-steel/10 p-5">
               <div className="w-8 h-8 rounded-full bg-acid-green/20 text-acid-green font-monument text-sm flex items-center justify-center mb-3">
@@ -245,22 +281,6 @@ export default function DashboardPage() {
               <p className="text-steel text-sm font-body">{s.desc}</p>
             </div>
           ))}
-        </div>
-
-        {/* Logger Download */}
-        <div className="bg-concrete rounded-lg border border-steel/10 p-5 mb-8 flex flex-col sm:flex-row items-start sm:items-center gap-4">
-          <div className="flex-1">
-            <h3 className="font-monument text-base text-chalk mb-1">Lap Coach Logger</h3>
-            <p className="text-steel text-sm font-body">
-              Capture iRacing &amp; ACC telemetry automatically. Sessions sync to your dashboard — no manual CSV export needed.
-            </p>
-          </div>
-          <a
-            href="https://api.lap-coach.racing/downloads/LapCoachLogger-Setup-1.1.0.exe"
-            className="inline-flex items-center gap-2 px-5 py-2.5 bg-gold text-white font-telemetry text-xs uppercase tracking-wider rounded hover:bg-gold/80 transition-colors shrink-0"
-          >
-            ↓ Download for Windows
-          </a>
         </div>
 
         {/* Feature Cards */}
@@ -293,27 +313,12 @@ export default function DashboardPage() {
         <QuotaIndicator />
       </div>
 
-      {/* 7 Stat Cards — 2 rows */}
-      <div className="grid grid-cols-2 sm:grid-cols-4 md:grid-cols-7 gap-3 mb-4">
+      {/* 6 Stat Cards — 2 rows */}
+      <div className="grid grid-cols-2 sm:grid-cols-4 md:grid-cols-6 gap-3 mb-4">
         <StatCard label="Sessions" value={stats.total_sessions} />
         <StatCard label="Drivers" value={stats.total_drivers} />
         <StatCard label="Tracks" value={stats.total_tracks} />
         <StatCard label="Total Laps" value={stats.total_laps.toLocaleString()} />
-        {stats.pb_session_id ? (
-          <Link href={`/app/sessions/${stats.pb_session_id}`} className="block">
-            <StatCard
-              label="Personal Best"
-              value={formatTime(stats.pb_time)}
-              trend={stats.pb_time != null ? 'up' : 'neutral'}
-            />
-          </Link>
-        ) : (
-          <StatCard
-            label="Personal Best"
-            value={formatTime(stats.pb_time)}
-            trend={stats.pb_time != null ? 'up' : 'neutral'}
-          />
-        )}
         <StatCard
           label="Best Score"
           value={stats.best_score != null ? stats.best_score.toFixed(1) : '--'}
@@ -391,8 +396,8 @@ export default function DashboardPage() {
       {/* Activation checklist for new users */}
       {stats.total_sessions < 5 && <ActivationChecklist />}
 
-      {/* Sparklines */}
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
+      {/* Trends */}
+      <div className="grid grid-cols-1 gap-4 mb-6">
         <div className="bg-concrete rounded-lg border border-steel/20 p-4">
           <div className="flex items-center justify-between mb-2">
             <p className="text-steel font-telemetry text-xs uppercase tracking-wider">
@@ -400,24 +405,38 @@ export default function DashboardPage() {
             </p>
             <span className="text-steel/60 font-telemetry text-[10px]">Last 20 sessions</span>
           </div>
-          {stats.recent_scores.length > 1 ? (
-            <Sparkline data={stats.recent_scores} color="#B6FF2E" height={56} />
-          ) : (
-            <div className="h-14 flex items-center justify-center text-steel font-telemetry text-xs">
-              Not enough data
-            </div>
-          )}
-        </div>
-        <div className="bg-concrete rounded-lg border border-steel/20 p-4">
-          <div className="flex items-center justify-between mb-2">
-            <p className="text-steel font-telemetry text-xs uppercase tracking-wider">
-              Lap Time Trend
-            </p>
-            <span className="text-steel/60 font-telemetry text-[10px]">Last 20 sessions</span>
-          </div>
-          {stats.recent_times.length > 1 ? (
-            <Sparkline data={stats.recent_times} color="#FFD400" height={56} />
-          ) : (
+          {stats.recent_scores.length > 1 ? (() => {
+            const scores = stats.recent_scores;
+            const last = scores[scores.length - 1];
+            const prev = scores[scores.length - 2];
+            const delta = last - prev;
+            const lo = Math.min(...scores);
+            const hi = Math.max(...scores);
+            const deltaUp = delta > 0;
+            const deltaFlat = delta === 0;
+            const deltaColor = deltaFlat ? 'text-steel' : deltaUp ? 'text-acid-green' : 'text-safety-red';
+            const deltaArrow = deltaFlat ? '→' : deltaUp ? '▲' : '▼';
+            return (
+              <div>
+                <div className="flex items-end justify-between gap-3 mb-2">
+                  <div className="flex items-baseline gap-2">
+                    <span className="text-chalk font-telemetry text-xl leading-none">{last.toFixed(1)}</span>
+                    <span
+                      className={`font-telemetry text-xs ${deltaColor}`}
+                      title={`Change vs previous session (${prev.toFixed(1)})`}
+                    >
+                      {deltaArrow} {deltaFlat ? '±0.0' : `${deltaUp ? '+' : ''}${delta.toFixed(1)}`}
+                    </span>
+                  </div>
+                  <div className="flex items-center gap-3 font-telemetry text-[10px] text-steel/70">
+                    <span title="Lowest score in window">Min {lo.toFixed(1)}</span>
+                    <span title="Highest score in window">Max {hi.toFixed(1)}</span>
+                  </div>
+                </div>
+                <EnrichedSparkline data={scores} color="#B6FF2E" height={56} />
+              </div>
+            );
+          })() : (
             <div className="h-14 flex items-center justify-center text-steel font-telemetry text-xs">
               Not enough data
             </div>
@@ -444,28 +463,6 @@ export default function DashboardPage() {
           className="inline-flex items-center gap-2 px-4 py-2.5 border border-steel/20 text-steel font-telemetry text-sm rounded-lg hover:text-chalk hover:border-steel/40 transition-colors"
         >
           Compare Sessions
-        </Link>
-      </div>
-
-      {/* Logger Download */}
-      <div className="flex items-center gap-4 mb-6 px-4 py-3 bg-concrete border border-steel/10 rounded-lg">
-        <div className="flex-1 min-w-0">
-          <p className="text-chalk text-sm font-body truncate">
-            <span className="font-monument">Lap Coach Logger</span>
-            <span className="text-steel ml-2">— auto-capture iRacing &amp; ACC sessions</span>
-          </p>
-        </div>
-        <a
-          href="https://api.lap-coach.racing/downloads/LapCoachLogger-Setup-1.1.0.exe"
-          className="inline-flex items-center gap-1.5 px-4 py-2 border border-steel/30 text-chalk font-telemetry text-xs uppercase tracking-wider rounded hover:bg-concrete transition-colors shrink-0"
-        >
-          ↓ Download
-        </a>
-        <Link
-          href="/app/account/devices"
-          className="text-gold font-telemetry text-xs uppercase tracking-wider hover:text-gold/80 transition-colors shrink-0"
-        >
-          Pair Device
         </Link>
       </div>
 
