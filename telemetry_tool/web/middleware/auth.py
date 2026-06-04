@@ -49,6 +49,7 @@ def auth_middleware() -> Response | tuple | None:
         "/auth/forgot-password", "/auth/reset-password",
         "/auth/2fa/verify",
         "/api/v1/billing/webhook",  # Uses Stripe signature verification
+        "/api/v1/billing/checkout",  # Guest checkout (pre-signup); Stripe collects email + creates customer
         "/api/v1/devices/pair",        # Device pairing (no auth)
         "/api/v1/sessions/sync-upload",  # Uses DeviceToken auth
     }

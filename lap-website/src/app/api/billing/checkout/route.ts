@@ -1,122 +1,58 @@
 import { NextResponse } from 'next/server';
-import { getStripePriceId, getStripeSecretKey, isB2BPlan } from '@/lib/stripe-billing';
-import { getSiteUrl } from '@/lib/site-url';
 
-const SUCCESS_PATH = '/thank-you/book';
-const CANCEL_PATH = '/pricing';
-
+/**
+ * Start a subscription checkout for the single membership plan.
+ *
+ * The Founding-50 logic (race-safe ≤50 cap, €14.90 vs €19.90 price selection,
+ * 30-day trial) lives in the backend at POST /api/v1/billing/checkout — the
+ * Worker has no DB, so the cap MUST be enforced there. This route just forwards
+ * and surfaces the result.
+ *
+ * FAILS LOUD: unlike the previous version (which returned `{ok:true}` + HTTP 200
+ * pointing at `?checkout=error` even when nothing was charged), a missing config
+ * or a backend error now returns a real non-2xx with `ok:false`.
+ */
 interface CheckoutBody {
-  plan: string;
-  billingCycle: 'monthly' | 'annual';
-  currency?: string;
-  vatId?: string;
   email?: string;
 }
 
 export async function POST(request: Request) {
-  const body = (await request.json().catch(() => null)) as CheckoutBody | null;
-
-  if (!body?.plan || !body?.billingCycle) {
+  const apiUrl = process.env.NEXT_PUBLIC_API_URL;
+  if (!apiUrl) {
     return NextResponse.json(
-      { ok: false, message: 'plan and billingCycle are required' },
-      { status: 400 },
+      { ok: false, error: 'billing_not_configured', message: 'Checkout is temporarily unavailable.' },
+      { status: 503 },
     );
   }
 
-  if (isB2BPlan(body.plan)) {
-    return NextResponse.json({
-      ok: true,
-      checkoutUrl: `/contact?plan=${encodeURIComponent(body.plan)}`,
-      mode: 'contact_only',
+  const body = (await request.json().catch(() => ({}))) as CheckoutBody;
+
+  let backend: Response;
+  try {
+    backend = await fetch(`${apiUrl}/api/v1/billing/checkout`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ email: body?.email ?? null }),
     });
+  } catch {
+    return NextResponse.json(
+      { ok: false, error: 'checkout_unreachable', message: 'Could not reach the billing service.' },
+      { status: 502 },
+    );
   }
 
-  if (body.plan.toUpperCase() === 'DEMO') {
-    return NextResponse.json({
-      ok: true,
-      checkoutUrl: '/register?source=demo',
-      mode: 'demo_redirect',
-    });
+  const payload = (await backend.json().catch(() => null)) as
+    | { ok?: boolean; data?: { checkout_url?: string; offer?: string } }
+    | null;
+  const checkoutUrl = payload?.data?.checkout_url;
+
+  if (!backend.ok || !checkoutUrl) {
+    // Surface the failure — do NOT pretend success (no HTTP 200 on a broken checkout).
+    return NextResponse.json(
+      { ok: false, error: 'checkout_failed', message: 'Could not start checkout. Please try again.' },
+      { status: backend.ok ? 502 : backend.status },
+    );
   }
 
-  const stripeKey = getStripeSecretKey();
-  const stripePriceId = getStripePriceId(body.plan, body.billingCycle);
-  const siteOrigin = getSiteUrl();
-  const successUrl = new URL(SUCCESS_PATH, siteOrigin);
-  const cancelUrl = new URL(CANCEL_PATH, siteOrigin);
-  cancelUrl.searchParams.set('checkout', 'cancelled');
-
-  if (stripeKey && stripePriceId) {
-    const params = new URLSearchParams();
-    params.set('mode', 'subscription');
-    params.set('success_url', successUrl.toString());
-    params.set('cancel_url', cancelUrl.toString());
-    params.set('line_items[0][price]', stripePriceId);
-    params.set('line_items[0][quantity]', '1');
-    params.set('allow_promotion_codes', 'true');
-    params.set('tax_id_collection[enabled]', 'true');
-    params.set('metadata[plan]', body.plan);
-    params.set('metadata[plan_tier]', body.plan.toUpperCase() === 'WORLD-CLASS' ? 'world-class' : body.plan.toLowerCase());
-    params.set('metadata[billingCycle]', body.billingCycle);
-
-    if (body.email) {
-      params.set('customer_email', body.email);
-    }
-
-    if (body.currency) {
-      params.set('currency', body.currency.toLowerCase());
-    }
-
-    try {
-      const stripeResponse = await fetch('https://api.stripe.com/v1/checkout/sessions', {
-        method: 'POST',
-        headers: {
-          Authorization: `Bearer ${stripeKey}`,
-          'Content-Type': 'application/x-www-form-urlencoded',
-        },
-        body: params.toString(),
-      });
-
-      if (stripeResponse.ok) {
-        const data = (await stripeResponse.json()) as { url?: string };
-        if (data.url) {
-          return NextResponse.json({ ok: true, checkoutUrl: data.url, mode: 'stripe' });
-        }
-      }
-    } catch {
-      // Fallback below.
-    }
-  }
-
-  const providerEndpoint = process.env.BILLING_CHECKOUT_WEBHOOK_URL;
-  if (providerEndpoint) {
-    try {
-      const response = await fetch(providerEndpoint, {
-        method: 'POST',
-        headers: {
-          'content-type': 'application/json',
-          ...(process.env.BILLING_WEBHOOK_BEARER
-            ? { authorization: `Bearer ${process.env.BILLING_WEBHOOK_BEARER}` }
-            : {}),
-        },
-        body: JSON.stringify(body),
-      });
-
-      if (response.ok) {
-        const data = (await response.json().catch(() => null)) as { checkoutUrl?: string } | null;
-        if (data?.checkoutUrl) {
-          return NextResponse.json({ ok: true, checkoutUrl: data.checkoutUrl });
-        }
-      }
-    } catch {
-      // Fallback below.
-    }
-  }
-
-  // B2C fallback: Stripe not configured or failed — redirect to pricing with error
-  return NextResponse.json({
-    ok: true,
-    checkoutUrl: `/pricing?checkout=error&plan=${encodeURIComponent(body.plan)}`,
-    mode: 'fallback',
-  });
+  return NextResponse.json({ ok: true, checkoutUrl, offer: payload?.data?.offer ?? 'standard' });
 }
