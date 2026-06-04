@@ -57,11 +57,15 @@ STRIPE_PRICE_TO_TIER: dict[str, str] = {}
 
 def _init_price_mapping():
     """Build price→tier mapping from environment variables."""
+    # Founding-50 launch model: ONE membership. Both the standard (€19.90) and
+    # founding (€14.90) prices grant the SAME full-access entitlement (internally
+    # the 'world-class' tier — kept intact to avoid a risky entitlement-engine
+    # rewrite days from launch). These canonical env names are read IDENTICALLY by
+    # frontend (stripe-billing.ts), backend, and the Worker — the converged naming
+    # that kills the old PERFORMANCE/PRO_RACER vs RACER/WORLDCLASS split-brain.
     _env_map = {
-        "STRIPE_PRICE_RACER_MONTHLY": "racer",
-        "STRIPE_PRICE_RACER_ANNUAL": "racer",
-        "STRIPE_PRICE_WORLDCLASS_MONTHLY": "world-class",
-        "STRIPE_PRICE_WORLDCLASS_ANNUAL": "world-class",
+        "STRIPE_PRICE_STANDARD_MONTHLY": "world-class",
+        "STRIPE_PRICE_FOUNDING_MONTHLY": "world-class",
     }
     for env_key, tier in _env_map.items():
         price_id = os.environ.get(env_key)
@@ -243,9 +247,9 @@ def _resolve_tier_from_checkout(session: dict) -> str:
         except Exception:
             logger.warning("Could not fetch subscription %s to resolve tier", sub_id)
 
-    logger.warning("Could not resolve tier from checkout session %s — defaulting to racer",
+    logger.warning("Could not resolve tier from checkout session %s — defaulting to world-class",
                    session.get("id"))
-    return "racer"
+    return "world-class"
 
 
 @bp.route("/webhook", methods=["POST"])
@@ -436,6 +440,16 @@ def _handle_checkout_completed(session: dict):
     else:
         logger.warning("Checkout completed but user not found: %s", customer_email)
 
+    # Founding-50: confirm the reserved capacity slot now that payment is in.
+    slot_raw = (session.get("metadata") or {}).get("founding_slot_no")
+    if slot_raw:
+        try:
+            from web.founding import confirm_slot
+            confirm_slot(conn, int(slot_raw), subscription_id)
+            conn.commit()
+        except Exception:
+            logger.warning("Failed to confirm founding slot %s", slot_raw, exc_info=True)
+
 
 def _handle_subscription_created(subscription: dict):
     """Handle new subscription creation.
@@ -590,6 +604,16 @@ def _handle_subscription_deleted(subscription: dict):
         metadata={"customer": customer_id, "subscription": subscription.get("id")},
     )
     audit_log(conn, "billing_subscription_deleted", {"user_id": uid})
+
+    # Founding-50: free the capacity slot so it's offered to the next buyer.
+    try:
+        from web.founding import release_slot_by_subscription
+        freed = release_slot_by_subscription(conn, subscription.get("id"))
+        if freed is not None:
+            conn.commit()
+            logger.info("Released founding slot %s on subscription cancel", freed)
+    except Exception:
+        logger.warning("Failed to release founding slot on cancel", exc_info=True)
 
     # Send cancellation confirmation email
     email_row = conn.execute(

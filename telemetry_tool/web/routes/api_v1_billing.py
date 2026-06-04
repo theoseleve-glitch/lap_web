@@ -333,6 +333,81 @@ def get_usage():
 # POST /portal — generate Stripe Customer Portal URL
 # ---------------------------------------------------------------------------
 
+# ---------------------------------------------------------------------------
+# POST /checkout — start a subscription Checkout Session (Founding-50 aware)
+# ---------------------------------------------------------------------------
+
+TRIAL_DAYS = 30
+
+
+@bp.route("/checkout", methods=["POST"])
+@rate_limit(tier="write")
+def create_checkout():
+    """Create a Stripe Checkout Session for the single membership plan.
+
+    Founding-50: if a capacity slot is available it is reserved (race-safe, hard
+    ≤50 cap) and the buyer gets the €14.90 founding price; otherwise the €19.90
+    standard price. Both include a 30-day free trial.
+
+    FAILS LOUD: a missing secret/price or a Stripe error returns a real 4xx/5xx —
+    never a 200 'success' that quietly took no money (the old Worker behaviour).
+    """
+    standard_price = os.environ.get("STRIPE_PRICE_STANDARD_MONTHLY", "")
+    founding_price = os.environ.get("STRIPE_PRICE_FOUNDING_MONTHLY", "")
+
+    stripe = _get_stripe()
+    if stripe is None:
+        return api_error(ErrorCode.INTERNAL_ERROR, "Payments are not configured", status=503)
+    if not standard_price:
+        return api_error(ErrorCode.INTERNAL_ERROR, "Membership price not configured", status=503)
+
+    body = request.get_json(silent=True) or {}
+    email = body.get("email") or None
+
+    from web.founding import attach_session, release_slot, reserve_slot
+
+    conn = get_pg_connection()
+
+    # Reserve a founding slot (race-safe). Commit the hold immediately so we don't
+    # hold a row lock across the external Stripe call; the slot expires if unpaid.
+    slot_no = reserve_slot(conn, email) if founding_price else None
+    if slot_no is not None:
+        conn.commit()
+    price_id = founding_price if slot_no is not None else standard_price
+    offer = "founding" if slot_no is not None else "standard"
+
+    try:
+        session = stripe.checkout.Session.create(
+            mode="subscription",
+            line_items=[{"price": price_id, "quantity": 1}],
+            success_url=f"{FRONTEND_URL}/thank-you/book",
+            cancel_url=f"{FRONTEND_URL}/pricing?checkout=cancelled",
+            customer_email=email,
+            allow_promotion_codes=True,
+            subscription_data={"trial_period_days": TRIAL_DAYS},
+            metadata={
+                "plan_tier": "world-class",
+                "offer": offer,
+                "founding_slot_no": str(slot_no) if slot_no is not None else "",
+            },
+        )
+    except Exception:
+        logger.exception("Stripe checkout session creation failed (offer=%s)", offer)
+        if slot_no is not None:
+            try:
+                release_slot(conn, slot_no)
+                conn.commit()
+            except Exception:
+                logger.warning("Failed to release founding slot %s after checkout error", slot_no)
+        return api_error(ErrorCode.INTERNAL_ERROR, "Could not start checkout", status=502)
+
+    if slot_no is not None:
+        attach_session(conn, slot_no, session.id)
+        conn.commit()
+
+    return api_response({"checkout_url": session.url, "offer": offer, "founding_slot_no": slot_no})
+
+
 @bp.route("/portal", methods=["POST"])
 @rate_limit(tier="write")
 def create_portal():
