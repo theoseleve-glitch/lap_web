@@ -20,6 +20,34 @@ import sys
 
 PRODUCTS = [
     {
+        # Founding-50 launch offer: ONE full-access membership.
+        # Standard €19.90/mo; the first 50 founders pay €14.90/mo (same product,
+        # same entitlement, discounted price). The server-side cap picks which
+        # price at checkout. Canonical env names below are read IDENTICALLY by
+        # frontend (stripe-billing.ts), backend (billing.py), and the Worker —
+        # this is the converged naming that kills the PERFORMANCE/PRO_RACER vs
+        # RACER/WORLDCLASS split-brain.
+        "name": "Lap Coach Membership",
+        "metadata_key": "lap_coach_membership",
+        "description": "Full access — €19.90/mo (€14.90/mo for the first 50 founding members)",
+        "prices": [
+            {
+                "nickname": "standard_monthly",
+                "unit_amount": 1990,     # €19.90 in cents
+                "currency": "eur",
+                "interval": "month",
+                "env_key": "STRIPE_PRICE_STANDARD_MONTHLY",
+            },
+            {
+                "nickname": "founding_monthly",
+                "unit_amount": 1490,     # €14.90 in cents
+                "currency": "eur",
+                "interval": "month",
+                "env_key": "STRIPE_PRICE_FOUNDING_MONTHLY",
+            },
+        ],
+    },
+    {
         "name": "Lap Coach Racer",
         "metadata_key": "lap_coach_racer",
         "description": "10 reports/month, coaching plans, visualization, race strategy",
