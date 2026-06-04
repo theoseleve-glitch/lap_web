@@ -633,6 +633,60 @@ def run_full_analysis(
 
     corner_performances = None
 
+    # Step 10f — conditions classifier (Day-11), HOISTED ahead of Phase 3.
+    # Scalar weather-based μ classifier per LAP_V1_CONDITIONS_ENGINE_SPEC.md.
+    # User metadata ``condition`` (dry/damp/wet/greasy) wins via source="user";
+    # otherwise weather is classified from Open-Meteo gridded data with
+    # safe-dry fallback on API failure. Hoisted (June-8 fast-follow) so the
+    # detected label reaches the grip/surface partition writers (steps
+    # 09j/10d-ii) and run_theoretical — they all read meta["track_state"]
+    # at call time. Keeps its historical "10f" step id; the Day-12 spatial
+    # modifier still attaches after the TrackSurface build (step 10f-ii).
+    _conditions_result = None
+    _conditions_inputs = None
+    try:
+        from conditions import SessionInputs, classify_conditions
+
+        _started_at_utc = None
+        if resampled_laps:
+            # Day-14: resampled_laps is a dict keyed by lap_number (1-indexed),
+            # not a list. resampled_laps[0] raised KeyError. Sister of the
+            # V2 fix at orchestrator.py:1209 (Day-13 commit a5af8efa) that
+            # never landed on lap_web for this second occurrence.
+            _first_lap = next(iter(resampled_laps.values()))
+            if "Time (s)" in _first_lap.columns and len(_first_lap) > 0:
+                from datetime import datetime as _dt, timezone as _tz
+                _started_at_utc = _dt.fromtimestamp(
+                    float(_first_lap["Time (s)"].iloc[0]), tz=_tz.utc
+                )
+        _user_condition = None
+        if isinstance(meta, dict):
+            _candidate = meta.get("condition")
+            if _candidate and _candidate in ("dry", "damp", "wet", "greasy"):
+                _user_condition = _candidate
+        if _started_at_utc is not None:
+            _conditions_inputs = SessionInputs(
+                started_at_utc=_started_at_utc, user_condition=_user_condition
+            )
+            _conditions_result, _c_err = _safe_step(
+                "10f_conditions", classify_conditions,
+                _conditions_inputs, track_id,
+            )
+            _record("10f_conditions", _conditions_result, _c_err)
+            if _conditions_result is not None:
+                summary["conditions"] = _conditions_result.to_dict()
+                # Feed the detected label to every downstream consumer of
+                # meta["track_state"]: the grip/surface partition keys, the
+                # theoretical condition, ML feature grouping, and the
+                # persisted sessions row (so the API partition reader stays
+                # write/read symmetric). The zero-confidence safe-dry
+                # fallback is excluded — an Open-Meteo outage must not
+                # relabel a genuinely wet session as dry.
+                if _conditions_result.dominant_factor != "safe_dry_fallback":
+                    meta["track_state"] = _conditions_result.label
+    except ImportError:
+        logger.debug("conditions module not available; skipping")
+
     # ══════════════════════════════════════════════════════════════
     # PHASE 3: Physics Pipeline (steps 09a-09i)
     # ══════════════════════════════════════════════════════════════
@@ -1230,59 +1284,29 @@ def run_full_analysis(
             except ImportError:
                 logger.debug("sensor_quality module not available; skipping")
 
-    # Step 10f — conditions classifier (Day-11) + spatial modifier (Day-12)
-    # Scalar weather-based μ classifier per LAP_V1_CONDITIONS_ENGINE_SPEC.md.
-    # User metadata ``condition`` (dry/damp/wet/greasy) wins via source="user";
-    # otherwise weather is classified from Open-Meteo gridded data with
-    # safe-dry fallback on API failure. After scalar classification, the
-    # Day-12 spatial producer attaches per-segment drainage/sun/wind factor
-    # arrays to spatial_modifier when a session TrackSurface is available.
-    try:
-        from conditions import SessionInputs, attach_spatial_modifier, classify_conditions
+    # Step 10f-ii — spatial modifier attach (Day-12). The scalar classifier
+    # ran ahead of Phase 3 (hoisted step 10f); here the cached result gains
+    # per-segment drainage/sun/wind factor arrays once the session
+    # TrackSurface exists, and summary["conditions"] is re-serialized so
+    # spatial_modifier/classifier_version are fresh.
+    if _conditions_result is not None and _conditions_inputs is not None:
+        try:
+            from conditions import attach_spatial_modifier
 
-        _started_at_utc = None
-        if resampled_laps:
-            # Day-14: resampled_laps is a dict keyed by lap_number (1-indexed),
-            # not a list. resampled_laps[0] raised KeyError. Sister of the
-            # V2 fix at orchestrator.py:1209 (Day-13 commit a5af8efa) that
-            # never landed on lap_web for this second occurrence.
-            _first_lap = next(iter(resampled_laps.values()))
-            if "Time (s)" in _first_lap.columns and len(_first_lap) > 0:
-                from datetime import datetime as _dt, timezone as _tz
-                _started_at_utc = _dt.fromtimestamp(
-                    float(_first_lap["Time (s)"].iloc[0]), tz=_tz.utc
+            _session_surface_for_spatial = None
+            if surface_result:
+                _session_surface_for_spatial = (
+                    surface_result.get("session_surface")
+                    or surface_result.get("track_surface")
                 )
-        _user_condition = None
-        if isinstance(meta, dict):
-            _candidate = meta.get("condition")
-            if _candidate and _candidate in ("dry", "damp", "wet", "greasy"):
-                _user_condition = _candidate
-        if _started_at_utc is not None:
-            _session_inputs = SessionInputs(
-                started_at_utc=_started_at_utc, user_condition=_user_condition
-            )
-            conditions, c_err = _safe_step(
-                "10f_conditions", classify_conditions,
-                _session_inputs, track_id,
-            )
-            _record("10f_conditions", conditions, c_err)
-            if conditions is not None:
-                # Day-12 spatial layer: attach per-segment factor arrays
-                # from the session's TrackSurface (when available).
-                _session_surface_for_spatial = None
-                if surface_result:
-                    _session_surface_for_spatial = (
-                        surface_result.get("session_surface")
-                        or surface_result.get("track_surface")
-                    )
-                if _session_surface_for_spatial is not None:
-                    conditions = attach_spatial_modifier(
-                        conditions, track_id, _session_inputs,
-                        _session_surface_for_spatial,
-                    )
-                summary["conditions"] = conditions.to_dict()
-    except ImportError:
-        logger.debug("conditions module not available; skipping")
+            if _session_surface_for_spatial is not None:
+                _conditions_result = attach_spatial_modifier(
+                    _conditions_result, track_id, _conditions_inputs,
+                    _session_surface_for_spatial,
+                )
+                summary["conditions"] = _conditions_result.to_dict()
+        except ImportError:
+            logger.debug("conditions module not available; skipping")
 
     # ══════════════════════════════════════════════════════════════
     # PHASE 5: Features, ML, Scoring, Reports, Persist (steps 11-15)
