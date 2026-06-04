@@ -48,8 +48,6 @@ CANONICAL_TIERS = {
         "visualization": True,
         "live_monitoring": True,
         "rate_multiplier": 2.0,
-        "price_monthly_eur": 899,
-        "price_annual_eur": 6900,
     },
     "world-class": {
         "display_name": "World-Class",
@@ -63,8 +61,6 @@ CANONICAL_TIERS = {
         "visualization": True,
         "live_monitoring": True,
         "rate_multiplier": 5.0,
-        "price_monthly_eur": 1399,
-        "price_annual_eur": 10900,
     },
     "b2b": {
         "display_name": "B2B",
@@ -79,6 +75,17 @@ CANONICAL_TIERS = {
         "live_monitoring": True,
         "rate_multiplier": 10.0,
     },
+}
+
+# Customer-facing pricing (June-8 model): ONE membership. demo/racer/world-class/
+# b2b above are INTERNAL entitlement tiers only — every paying member receives the
+# `world-class` entitlement; the price they pay (standard vs founding) does not
+# change what they get.
+MEMBERSHIP = {
+    "standard_monthly_eur": 1990,   # €19.90
+    "founding_monthly_eur": 1490,   # €14.90
+    "founding_limit": 50,
+    "trial_days": 30,
 }
 
 
@@ -97,7 +104,7 @@ def find_project_root() -> Path:
 # ---------------------------------------------------------------------------
 
 def check_pricing_ts(project_root: Path) -> list[str]:
-    """Parse pricing.ts and check against canonical values."""
+    """Verify pricing.ts describes the single membership (June-8 model)."""
     issues: list[str] = []
     pricing_path = project_root / "lap-website" / "src" / "data" / "pricing.ts"
 
@@ -107,39 +114,28 @@ def check_pricing_ts(project_root: Path) -> list[str]:
 
     content = pricing_path.read_text(encoding="utf-8")
 
-    # Check tier slugs exist
-    for tier in ["demo", "racer", "world-class"]:
-        if f"slug: '{tier}'" not in content:
-            issues.append(f"PRICING.TS: tier slug '{tier}' not found")
+    # One membership — no per-tier slugs.
+    if "MEMBERSHIP_SLUG" not in content or "'membership'" not in content:
+        issues.append("PRICING.TS: membership slug not found")
 
-    # Check prices (use numeric part to avoid encoding issues with €)
+    # Prices (numeric part to avoid € encoding issues).
     price_checks = {
-        "9 / mo": "racer monthly",
-        "72 / yr": "racer annual",
-        "14 / mo": "world-class monthly",
-        "108 / yr": "world-class annual",
+        "19.90": "standard monthly price",
+        "14.90": "founding monthly price",
     }
     for price_str, label in price_checks.items():
         if price_str not in content:
-            issues.append(f"PRICING.TS: {label} price '{price_str}' not found")
+            issues.append(f"PRICING.TS: {label} '{price_str}' not found")
 
-    # Check retention values
-    retention_checks = {
-        "1 month": "demo retention",
-        "3 months": "racer retention",
-        "12 months": "world-class retention",
-    }
-    for value, label in retention_checks.items():
-        if value not in content:
-            issues.append(f"PRICING.TS: {label} '{value}' not found")
+    # Founding-50 cap and 30-day trial.
+    if "foundingLimit: 50" not in content:
+        issues.append("PRICING.TS: foundingLimit 50 not found")
+    if "trialDays: 30" not in content:
+        issues.append("PRICING.TS: trialDays 30 not found")
 
-    # Check report limits
-    if "1 full report" not in content and "1 report" not in content:
-        issues.append("PRICING.TS: demo '1 report' limit not found")
-    if "10 / month" not in content and "10/mo" not in content:
-        issues.append("PRICING.TS: racer '10 reports' limit not found")
+    # No free tier — the membership unlocks everything.
     if "Unlimited" not in content:
-        issues.append("PRICING.TS: world-class 'Unlimited' reports not found")
+        issues.append("PRICING.TS: 'Unlimited' entitlement not found")
 
     return issues
 
@@ -245,17 +241,15 @@ def check_stripe_products() -> list[str]:
     products = stripe.Product.list(limit=100, active=True)
     product_names = {p.name for p in products.auto_paging_iter()}
 
-    expected_products = ["Lap Coach Racer", "Lap Coach World-Class"]
+    expected_products = ["Lap Coach Membership"]
     for name in expected_products:
         if name not in product_names:
             issues.append(f"STRIPE: product '{name}' not found")
 
-    # Check prices
+    # Check prices — one membership, two monthly prices (standard + founding).
     expected_prices = {
-        "racer_monthly": 899,
-        "racer_annual": 6900,
-        "worldclass_monthly": 1399,
-        "worldclass_annual": 10900,
+        "standard_monthly": 1990,
+        "founding_monthly": 1490,
     }
 
     prices = stripe.Price.list(limit=100, active=True)

@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
-"""Create/update Stripe products and prices for Lap Coach plans.
+"""Create/update Stripe products and prices for Lap Coach.
 
-Idempotent: uses metadata tags to find existing products/prices.
-Run with STRIPE_SECRET_KEY set in environment.
+June-8 model: ONE self-serve product (the membership). Idempotent — uses
+metadata tags to find existing products/prices. Run with STRIPE_SECRET_KEY set.
 
 Usage:
     STRIPE_SECRET_KEY=sk_test_xxx python scripts/setup_stripe_products.py
@@ -26,7 +26,8 @@ PRODUCTS = [
         # price at checkout. Canonical env names below are read IDENTICALLY by
         # frontend (stripe-billing.ts), backend (billing.py), and the Worker —
         # this is the converged naming that kills the PERFORMANCE/PRO_RACER vs
-        # RACER/WORLDCLASS split-brain.
+        # RACER/WORLDCLASS split-brain. Every paying member receives the
+        # internal `world-class` entitlement (see docs/entitlement-matrix.md).
         "name": "Lap Coach Membership",
         "metadata_key": "lap_coach_membership",
         "description": "Full access — €19.90/mo (€14.90/mo for the first 50 founding members)",
@@ -46,54 +47,6 @@ PRODUCTS = [
                 "env_key": "STRIPE_PRICE_FOUNDING_MONTHLY",
             },
         ],
-    },
-    {
-        "name": "Lap Coach Racer",
-        "metadata_key": "lap_coach_racer",
-        "description": "10 reports/month, coaching plans, visualization, race strategy",
-        "prices": [
-            {
-                "nickname": "racer_monthly",
-                "unit_amount": 899,      # €8.99 in cents
-                "currency": "eur",
-                "interval": "month",
-                "env_key": "STRIPE_PRICE_RACER_MONTHLY",
-            },
-            {
-                "nickname": "racer_annual",
-                "unit_amount": 6900,     # €69.00 in cents
-                "currency": "eur",
-                "interval": "year",
-                "env_key": "STRIPE_PRICE_RACER_ANNUAL",
-            },
-        ],
-    },
-    {
-        "name": "Lap Coach World-Class",
-        "metadata_key": "lap_coach_world_class",
-        "description": "Unlimited reports, API access, comparison, 12-month retention",
-        "prices": [
-            {
-                "nickname": "worldclass_monthly",
-                "unit_amount": 1399,     # €13.99 in cents
-                "currency": "eur",
-                "interval": "month",
-                "env_key": "STRIPE_PRICE_WORLDCLASS_MONTHLY",
-            },
-            {
-                "nickname": "worldclass_annual",
-                "unit_amount": 10900,    # €109.00 in cents
-                "currency": "eur",
-                "interval": "year",
-                "env_key": "STRIPE_PRICE_WORLDCLASS_ANNUAL",
-            },
-        ],
-    },
-    {
-        "name": "Lap Coach B2B",
-        "metadata_key": "lap_coach_b2b",
-        "description": "Custom pricing for teams and circuits",
-        "prices": [],  # B2B prices are created manually per customer
     },
 ]
 

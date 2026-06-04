@@ -4,14 +4,27 @@
 > Frontend (`pricing.ts`), backend (`plan_definitions` DB), and Stripe products MUST match this matrix.
 > Run `python scripts/verify_entitlement_consistency.py` to detect drift.
 
-## Plan Tiers
+## Customer Pricing (June-8)
 
-| Tier | Slug | Monthly | Annual | Annual/mo |
-|------|------|---------|--------|-----------|
-| Demo | `demo` | Free | Free | — |
-| Racer | `racer` | €8.99 | €69 | €5.75 |
-| World-Class | `world-class` | €13.99 | €109 | €9.08 |
-| B2B | `b2b` | Custom | Custom | Custom |
+ONE membership. No free tier; no per-tier choice.
+
+| Offer | Monthly | Notes |
+|-------|---------|-------|
+| **Founding-50** | €14.90/mo | First 50 paying members only, then closes |
+| **Standard** | €19.90/mo | Everyone after the first 50 |
+
+- **Free trial**: 30 days, full access, no card charged until it ends.
+- **Billing**: monthly only (no annual).
+- **Charge currency**: EUR (usd/gbp on the site are display-only).
+- Every paying member receives the internal `world-class` entitlement below — the
+  price paid (standard vs founding) does not change what they get.
+
+## Internal Entitlement Tiers
+
+`demo` / `racer` / `world-class` / `b2b` are INTERNAL entitlement tiers (the
+`plan_definitions` DB + `entitlements.py` engine), **not** purchasable plans. The
+single membership maps to `world-class`. They are kept for the engine and for
+grandfathered accounts; the matrices below describe them.
 
 ## Feature Entitlements
 
@@ -62,30 +75,25 @@
 ## Stripe Product Configuration
 
 ```
-Product: "Lap Coach Racer"
-  ├── Price: racer_monthly   (€8.99/mo, recurring, interval=month)
-  └── Price: racer_annual    (€69/yr, recurring, interval=year)
-
-Product: "Lap Coach World-Class"
-  ├── Price: worldclass_monthly  (€13.99/mo, recurring, interval=month)
-  └── Price: worldclass_annual   (€109/yr, recurring, interval=year)
-
-Product: "Lap Coach B2B"
-  └── Price: b2b_custom  (custom pricing, not self-serve)
+Product: "Lap Coach Membership"
+  ├── Price: standard_monthly  (€19.90/mo, recurring, interval=month)
+  └── Price: founding_monthly  (€14.90/mo, recurring, interval=month)
 ```
+
+Both prices belong to the same product and grant the same (`world-class`)
+entitlement. The server-side Founding-50 cap selects `founding_monthly` for the
+first 50 paying members and `standard_monthly` thereafter.
 
 ### Environment Variables (from Stripe Dashboard)
 
 ```
-STRIPE_PRICE_RACER_MONTHLY=price_xxx
-STRIPE_PRICE_RACER_ANNUAL=price_xxx
-STRIPE_PRICE_WORLDCLASS_MONTHLY=price_xxx
-STRIPE_PRICE_WORLDCLASS_ANNUAL=price_xxx
+STRIPE_PRICE_STANDARD_MONTHLY=price_xxx
+STRIPE_PRICE_FOUNDING_MONTHLY=price_xxx
 ```
 
 ## Stripe Customer Portal
 
-- **Plan switching**: upgrade/downgrade allowed
+- **Plan switching**: n/a — single membership (no upgrade/downgrade)
 - **Payment methods**: update allowed
 - **Cancellation**: `cancel_at_period_end = true` (NOT immediate)
 - **Invoice history**: visible
@@ -100,10 +108,10 @@ Override values are JSON: `{"value": 5}` for `reports_per_month`.
 
 ## Reconciliation
 
-Three sources must stay in sync:
+Four sources must stay in sync:
 1. **This document** — canonical specification
-2. **`pricing.ts`** — frontend display
-3. **`plan_definitions` DB** — backend enforcement
-4. **Stripe products** — payment processing
+2. **`pricing.ts`** — frontend display (the single membership)
+3. **`plan_definitions` DB** — backend entitlement enforcement (internal tiers)
+4. **Stripe products** — payment processing (the membership product + 2 prices)
 
 Run `python scripts/verify_entitlement_consistency.py` in CI to catch drift.

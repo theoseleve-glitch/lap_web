@@ -1,12 +1,16 @@
-"""Tests for PROMPT 5A — Entitlement Matrix + Stripe Product Reconciliation.
+"""Tests for Entitlement Matrix + Stripe Product Reconciliation.
+
+June-8 model: ONE customer-facing membership (€19.90/mo, €14.90 Founding-50,
+30-day trial). demo/racer/world-class/b2b remain INTERNAL entitlement tiers
+(engine + migration seed unchanged); the membership maps to `world-class`.
 
 Validates:
-- Entitlement matrix document exists with all tiers and features
-- Stripe setup script structure and idempotency logic
-- Reconciliation script structure and canonical values
+- Entitlement matrix document: membership pricing + internal-tier matrices
+- Stripe setup script: the single membership product + standard/founding prices
+- Reconciliation script structure and canonical (internal-tier) values
 - Stripe test flows script exists
-- pricing.ts consistency with canonical matrix
-- Migration seed data consistency
+- pricing.ts describes the single membership
+- Migration seed data consistency (internal tiers)
 """
 import re
 import sys
@@ -51,10 +55,8 @@ class TestEntitlementMatrixDoc:
 
     def test_pricing_values(self):
         doc = self._doc()
-        assert "8.99" in doc
-        assert "69" in doc
-        assert "13.99" in doc
-        assert "109" in doc
+        assert "19.90" in doc   # standard membership
+        assert "14.90" in doc   # founding-50 price
 
     def test_retention_values(self):
         doc = self._doc()
@@ -72,7 +74,8 @@ class TestEntitlementMatrixDoc:
     def test_stripe_section(self):
         doc = self._doc()
         assert "Stripe" in doc
-        assert "STRIPE_PRICE_RACER_MONTHLY" in doc
+        assert "STRIPE_PRICE_STANDARD_MONTHLY" in doc
+        assert "STRIPE_PRICE_FOUNDING_MONTHLY" in doc
 
     def test_portal_section(self):
         doc = self._doc()
@@ -105,25 +108,15 @@ class TestStripeSetupScript:
 
     def test_products_defined(self):
         script = self._script()
-        assert "Lap Coach Racer" in script
-        assert "Lap Coach World-Class" in script
-        assert "Lap Coach B2B" in script
+        assert "Lap Coach Membership" in script
 
-    def test_racer_monthly_price(self):
+    def test_standard_monthly_price(self):
         script = self._script()
-        assert "899" in script  # €8.99 in cents
+        assert "1990" in script  # €19.90 in cents
 
-    def test_racer_annual_price(self):
+    def test_founding_monthly_price(self):
         script = self._script()
-        assert "6900" in script  # €69.00 in cents
-
-    def test_worldclass_monthly_price(self):
-        script = self._script()
-        assert "1399" in script  # €13.99 in cents
-
-    def test_worldclass_annual_price(self):
-        script = self._script()
-        assert "10900" in script  # €109.00 in cents
+        assert "1490" in script  # €14.90 in cents
 
     def test_currency_eur(self):
         assert "eur" in self._script()
@@ -139,15 +132,8 @@ class TestStripeSetupScript:
 
     def test_env_key_output(self):
         script = self._script()
-        for key in ["STRIPE_PRICE_RACER_MONTHLY", "STRIPE_PRICE_RACER_ANNUAL",
-                     "STRIPE_PRICE_WORLDCLASS_MONTHLY", "STRIPE_PRICE_WORLDCLASS_ANNUAL"]:
+        for key in ["STRIPE_PRICE_STANDARD_MONTHLY", "STRIPE_PRICE_FOUNDING_MONTHLY"]:
             assert key in script
-
-    def test_b2b_no_self_serve_prices(self):
-        """B2B product has no self-serve prices."""
-        script = self._script()
-        # B2B prices list should be empty
-        assert '"prices": []' in script or "'prices': []" in script
 
 
 # ===========================================================================
@@ -249,7 +235,7 @@ class TestStripeTestFlows:
 # ===========================================================================
 
 class TestPricingTsConsistency:
-    """pricing.ts matches canonical entitlement matrix."""
+    """pricing.ts describes the single membership (June-8 model)."""
 
     def _pricing(self):
         return (_REPO_ROOT / "lap-website" / "src" / "data" / "pricing.ts").read_text()
@@ -257,64 +243,37 @@ class TestPricingTsConsistency:
     def test_pricing_ts_exists(self):
         assert (_REPO_ROOT / "lap-website" / "src" / "data" / "pricing.ts").exists()
 
-    def test_three_b2c_tiers(self):
+    def test_single_membership(self):
         pricing = self._pricing()
-        assert "slug: 'demo'" in pricing
-        assert "slug: 'racer'" in pricing
-        assert "slug: 'world-class'" in pricing
+        assert "MEMBERSHIP_SLUG" in pricing
+        assert "'membership'" in pricing
+        # No per-tier slugs remain.
+        assert "slug: 'demo'" not in pricing
+        assert "slug: 'racer'" not in pricing
+        assert "slug: 'world-class'" not in pricing
 
-    def test_demo_is_free(self):
+    def test_standard_price(self):
+        assert "19.90" in self._pricing()
+
+    def test_founding_price(self):
+        assert "14.90" in self._pricing()
+
+    def test_founding_limit_50(self):
+        assert "foundingLimit: 50" in self._pricing()
+
+    def test_trial_30_days(self):
+        assert "trialDays: 30" in self._pricing()
+
+    def test_no_free_tier(self):
+        """No 'Free' price label — the entry point is a 30-day trial."""
         pricing = self._pricing()
-        assert "Free" in pricing
+        assert "priceMonthly: 'Free'" not in pricing
 
-    def test_racer_monthly_price(self):
-        pricing = self._pricing()
-        assert "€9" in pricing or "9 / mo" in pricing
+    def test_no_b2b_card(self):
+        assert "b2bCard" not in self._pricing()
 
-    def test_racer_annual_price(self):
-        pricing = self._pricing()
-        assert "€72" in pricing or "72 / yr" in pricing
-
-    def test_worldclass_monthly_price(self):
-        pricing = self._pricing()
-        assert "€14" in pricing or "14 / mo" in pricing
-
-    def test_worldclass_annual_price(self):
-        pricing = self._pricing()
-        assert "€108" in pricing or "108 / yr" in pricing
-
-    def test_demo_1_report(self):
-        pricing = self._pricing()
-        assert "1 full report" in pricing or "1 report" in pricing
-
-    def test_racer_10_reports(self):
-        assert "10" in self._pricing()
-
-    def test_worldclass_unlimited(self):
+    def test_unlimited_entitlement(self):
         assert "Unlimited" in self._pricing()
-
-    def test_demo_retention_1_month(self):
-        assert "1 month" in self._pricing()
-
-    def test_racer_retention_3_months(self):
-        assert "3 months" in self._pricing()
-
-    def test_worldclass_retention_12_months(self):
-        assert "12 months" in self._pricing()
-
-    def test_comparison_gating(self):
-        """Comparison is gated — demo and racer show '—'."""
-        pricing = self._pricing()
-        # Racer has Comparison & Progress as '—'
-        assert "Comparison & Progress" in pricing
-
-    def test_api_access_worldclass_only(self):
-        """API Access only available for World-Class (in features)."""
-        pricing = self._pricing()
-        assert "API Access" in pricing or "API" in pricing
-
-    def test_b2b_card_exists(self):
-        assert "b2bCard" in self._pricing()
 
     def test_feature_eligibility_matrix(self):
         assert "featureEligibilityMatrix" in self._pricing()
