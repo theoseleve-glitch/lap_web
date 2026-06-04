@@ -267,6 +267,7 @@ def _map_track(row):
         "lap_count": d.get("lap_count"),
         "start_lat": d.get("start_lat"),
         "start_lon": d.get("start_lon"),
+        "wet_pace_s": d.get("wet_pace_s"),
         "created_at": d.get("created_at"),
         "updated_at": d.get("updated_at"),
     }
@@ -307,7 +308,7 @@ def patch_track(track_id):
     if not row:
         return api_error(ErrorCode.NOT_FOUND, "Track not found", status=404)
     body = request.get_json(silent=True) or {}
-    allowed = {"track_name", "has_joker", "joker_distance_delta_m", "joker_time_delta_s"}
+    allowed = {"track_name", "has_joker", "joker_distance_delta_m", "joker_time_delta_s", "wet_pace_s"}
     sets, vals = [], []
     for f in allowed:
         if f in body:

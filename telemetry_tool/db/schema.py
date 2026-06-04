@@ -38,6 +38,7 @@ CREATE TABLE IF NOT EXISTS tracks (
     joker_time_delta_s     REAL,
     dry_ref_session_id  TEXT REFERENCES sessions(session_id),
     wet_ref_session_id  TEXT REFERENCES sessions(session_id),
+    wet_pace_s    REAL,
     created_at    TEXT NOT NULL DEFAULT (datetime('now')),
     updated_at    TEXT NOT NULL DEFAULT (datetime('now'))
 );
