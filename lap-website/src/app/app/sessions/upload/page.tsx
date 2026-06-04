@@ -317,6 +317,89 @@ async function resumeWithCorners(
   await api.post(`/jobs/${jobId}/resume`, { corners });
 }
 
+/* ── New-entity helpers ────────────────────────────────── */
+
+/**
+ * Parse a lap time entered as either plain seconds (e.g. "78.42") or
+ * mm:ss.SSS (e.g. "1:18.42"). Returns seconds as a float, or null if blank/invalid.
+ */
+function parseLapTimeToSeconds(raw: string): number | null {
+  const trimmed = raw.trim();
+  if (!trimmed) return null;
+  if (trimmed.includes(':')) {
+    const parts = trimmed.split(':');
+    if (parts.length !== 2) return null;
+    const minutes = Number(parts[0]);
+    const seconds = Number(parts[1]);
+    if (!Number.isFinite(minutes) || !Number.isFinite(seconds)) return null;
+    return minutes * 60 + seconds;
+  }
+  const secs = Number(trimmed);
+  return Number.isFinite(secs) ? secs : null;
+}
+
+interface NewKartFields {
+  name: string;
+  manufacturer: string;
+  model: string;
+  engine: string;
+  power_hp: string;
+  weight_kg: string;
+  notes: string;
+}
+
+/**
+ * Create a kart via POST /karts (only non-empty fields). Returns the created
+ * kart's name to use as the upload's kart_name. Throws on failure.
+ */
+async function createKart(fields: NewKartFields): Promise<string> {
+  const name = fields.name.trim();
+  const payload: Record<string, unknown> = { name };
+  if (fields.manufacturer.trim()) payload.manufacturer = fields.manufacturer.trim();
+  if (fields.model.trim()) payload.model = fields.model.trim();
+  if (fields.engine.trim()) payload.engine = fields.engine.trim();
+  if (fields.power_hp.trim()) payload.power_hp = parseFloat(fields.power_hp);
+  if (fields.weight_kg.trim()) payload.weight_kg = parseFloat(fields.weight_kg);
+  if (fields.notes.trim()) payload.notes = fields.notes.trim();
+  await api.post<{ id: number }>('/karts', payload);
+  return name;
+}
+
+/**
+ * Best-effort track follow-ups after a session upload completes. Resolves the
+ * track_id by name (the upload upserts the track), then posts a track record
+ * and/or patches the wet pace. Never throws — failures are logged only.
+ */
+async function applyNewTrackFollowups(
+  trackName: string,
+  recordRaw: string,
+  wetPaceRaw: string,
+): Promise<void> {
+  const recordSecs = parseLapTimeToSeconds(recordRaw);
+  const wetPaceSecs = parseLapTimeToSeconds(wetPaceRaw);
+  if (recordSecs == null && wetPaceSecs == null) return;
+  try {
+    const tracks = await api.get<Array<{ id: number; name: string }>>('/tracks');
+    const target = Array.isArray(tracks)
+      ? tracks.find((t) => t.name?.trim().toLowerCase() === trackName.trim().toLowerCase())
+      : undefined;
+    if (!target) {
+      logger.warn('New-track follow-up skipped: track not found by name', trackName);
+      return;
+    }
+    if (recordSecs != null) {
+      await api.post(`/tracks/${target.id}/records`, { record_time_s: recordSecs, source: 'user' })
+        .catch((err) => logger.warn('Failed to save track record', err));
+    }
+    if (wetPaceSecs != null) {
+      await api.patch(`/tracks/${target.id}`, { wet_pace_s: wetPaceSecs })
+        .catch((err) => logger.warn('Failed to save wet pace', err));
+    }
+  } catch (err) {
+    logger.warn('New-track follow-up failed (non-fatal)', err);
+  }
+}
+
 /* ── Progress Bar ──────────────────────────────────────── */
 
 function PipelineProgress({
@@ -391,6 +474,22 @@ function UploadPage() {
   const [trackNames, setTrackNames] = useState<string[]>([]);
   const [driverNames, setDriverNames] = useState<string[]>([]);
 
+  // "+ New…" inline-create state (gated — existing selections behave exactly as before)
+  const [isNewTrack, setIsNewTrack] = useState(false);
+  const [isNewKart, setIsNewKart] = useState(false);
+  // New kart fields (mirror karts/new/page.tsx; Number omitted — backend ignores it)
+  const [newKartName, setNewKartName] = useState('');
+  const [newTrackName, setNewTrackName] = useState('');
+  const [newKartManufacturer, setNewKartManufacturer] = useState('');
+  const [newKartModel, setNewKartModel] = useState('');
+  const [newKartEngine, setNewKartEngine] = useState('');
+  const [newKartPowerHp, setNewKartPowerHp] = useState('');
+  const [newKartWeightKg, setNewKartWeightKg] = useState('');
+  const [newKartNotes, setNewKartNotes] = useState('');
+  // New track fields (lap times accepted as seconds or mm:ss.SSS)
+  const [newTrackRecord, setNewTrackRecord] = useState('');
+  const [newTrackWetPace, setNewTrackWetPace] = useState('');
+
   // Page state machine
   const [pageState, setPageState] = useState<PageState>(resumeJobId ? 'awaiting_corners' : 'idle');
   const [jobId, setJobId] = useState<string | null>(resumeJobId);
@@ -413,6 +512,14 @@ function UploadPage() {
   const batchQueueRef = useRef<File[]>([]);
   const connectSSERef = useRef<(jId: string) => void>(() => {});
   const trackNameRef = useRef('');
+  // Effective kart/track names resolved at submit time (after any "+ New…" create),
+  // shared with the batch-continuation path so every file uses the same values.
+  const effectiveKartNameRef = useRef('');
+  const effectiveTrackNameRef = useRef('');
+  // Refs so the SSE `completed` callback can run new-track follow-ups without stale closures
+  const isNewTrackRef = useRef(false);
+  const newTrackRecordRef = useRef('');
+  const newTrackWetPaceRef = useRef('');
   const cornerResumedRef = useRef(false);
 
   // Endurance flow state
@@ -446,8 +553,14 @@ function UploadPage() {
       .catch(() => {});
   }, []);
 
-  // Keep ref in sync for SSE callback access
-  useEffect(() => { trackNameRef.current = trackName; }, [trackName]);
+  // Keep ref in sync for SSE callback access. Effective track name = the new-track
+  // field when "+ New track…" is active, otherwise the selected existing track.
+  useEffect(() => {
+    trackNameRef.current = isNewTrack ? newTrackName : trackName;
+  }, [trackName, isNewTrack, newTrackName]);
+  useEffect(() => { isNewTrackRef.current = isNewTrack; }, [isNewTrack]);
+  useEffect(() => { newTrackRecordRef.current = newTrackRecord; }, [newTrackRecord]);
+  useEffect(() => { newTrackWetPaceRef.current = newTrackWetPace; }, [newTrackWetPace]);
 
   // Upload next file in batch queue (called after a file completes)
   const uploadNextInBatch = useCallback(async () => {
@@ -473,8 +586,8 @@ function UploadPage() {
         session_type: sessionType,
         lap_range: lapRange.trim() || undefined,
         exclude_laps: excludeLaps.trim() || undefined,
-        kart_name: kartName.trim() || undefined,
-        track_name: trackName.trim() || undefined,
+        kart_name: effectiveKartNameRef.current.trim() || undefined,
+        track_name: effectiveTrackNameRef.current.trim() || undefined,
         joker_enabled: jokerEnabled || undefined,
         joker_lap: jokerEnabled && jokerLap.trim() ? jokerLap.trim() : undefined,
         endurance_drivers: sessionType === 'endurance' ? enduranceDrivers : undefined,
@@ -605,6 +718,10 @@ function UploadPage() {
                 const tn = trackNameRef.current?.trim();
                 if (tn && sid) {
                   api.patch(`/sessions/${sid}`, { track_name: tn }).catch(() => {});
+                }
+                // New-track follow-ups (record / wet pace) — best-effort, non-fatal
+                if (isNewTrackRef.current && tn) {
+                  void applyNewTrackFollowups(tn, newTrackRecordRef.current, newTrackWetPaceRef.current);
                 }
                 // Record batch result
                 if (batchTotal > 1) {
@@ -761,6 +878,37 @@ function UploadPage() {
 
     if (!file) { setErrorMessage('Please select a CSV file to upload.'); return; }
 
+    // ── Resolve effective kart/track names (handles the "+ New…" sentinels) ──
+    // Existing-selection behavior is unchanged: effective name == the chosen name.
+    if (isNewTrack && !newTrackName.trim()) { setErrorMessage('New track name is required.'); return; }
+    if (isNewKart && !newKartName.trim()) { setErrorMessage('New kart name is required.'); return; }
+    const effectiveTrackName = (isNewTrack ? newTrackName : trackName).trim();
+    let effectiveKartName = (isNewKart ? newKartName : kartName).trim();
+
+    // Create the new kart BEFORE upload; abort the whole upload if it fails.
+    if (isNewKart) {
+      setErrorMessage('');
+      try {
+        effectiveKartName = await createKart({
+          name: newKartName,
+          manufacturer: newKartManufacturer,
+          model: newKartModel,
+          engine: newKartEngine,
+          power_hp: newKartPowerHp,
+          weight_kg: newKartWeightKg,
+          notes: newKartNotes,
+        });
+      } catch (err) {
+        setErrorMessage(err instanceof Error ? err.message : 'Failed to create kart.');
+        setPageState('error');
+        return;
+      }
+    }
+
+    // Share resolved names with the batch-continuation path.
+    effectiveKartNameRef.current = effectiveKartName;
+    effectiveTrackNameRef.current = effectiveTrackName;
+
     // ── Endurance flow: quick detect instead of full upload ──
     if (sessionType === 'endurance') {
       if (enduranceDrivers.length < 1) { setErrorMessage('Add at least one driver.'); return; }
@@ -771,8 +919,8 @@ function UploadPage() {
         formData.append('file', file);
         formData.append('pit_threshold_s', String(pitThreshold));
         formData.append('drivers', JSON.stringify(enduranceDrivers));
-        if (kartName.trim()) formData.append('kart_name', kartName.trim());
-        if (trackName.trim()) formData.append('track_name', trackName.trim());
+        if (effectiveKartName) formData.append('kart_name', effectiveKartName);
+        if (effectiveTrackName) formData.append('track_name', effectiveTrackName);
 
         const token = getAccessToken();
         const resp = await fetch(`${BACKEND_URL}/api/v1/endurance/detect`, {
@@ -818,8 +966,8 @@ function UploadPage() {
         session_type: sessionType,
         lap_range: lapRange.trim() || undefined,
         exclude_laps: excludeLaps.trim() || undefined,
-        kart_name: kartName.trim() || undefined,
-        track_name: trackName.trim() || undefined,
+        kart_name: effectiveKartName || undefined,
+        track_name: effectiveTrackName || undefined,
         joker_enabled: jokerEnabled || undefined,
         joker_lap: jokerEnabled && jokerLap.trim() ? jokerLap.trim() : undefined,
         endurance_drivers: sessionType === 'endurance' ? enduranceDrivers : undefined,
@@ -852,7 +1000,8 @@ function UploadPage() {
         setImportError(null);
       }
     }
-  }, [file, driverName, sessionType, lapRange, excludeLaps, kartName, trackName, jokerEnabled, jokerLap, connectSSE, enduranceDrivers, pitThreshold]);
+  }, [file, driverName, sessionType, lapRange, excludeLaps, kartName, trackName, jokerEnabled, jokerLap, connectSSE, enduranceDrivers, pitThreshold,
+      isNewTrack, isNewKart, newTrackName, newKartName, newKartManufacturer, newKartModel, newKartEngine, newKartPowerHp, newKartWeightKg, newKartNotes]);
 
   // Corner editor submit (custom geometry)
   const handleCornerSubmit = useCallback(async (
@@ -910,6 +1059,13 @@ function UploadPage() {
   const showEnduranceDetecting = pageState === 'endurance_detecting';
   const showEnduranceConfig = pageState === 'endurance_config';
   const showEnduranceProcessing = pageState === 'endurance_processing';
+
+  // Read-only auto-name preview: "<session type> · <date> · <track>".
+  // Date is the CSV-detected date server-side (unknown here) — use today as the preview date.
+  const previewSessionType = SESSION_TYPES.find((t) => t.value === sessionType)?.label ?? sessionType;
+  const previewTrack = (isNewTrack ? newTrackName : trackName).trim() || 'Track (auto-detected)';
+  const previewDate = new Date().toISOString().slice(0, 10);
+  const sessionNamePreview = `${previewSessionType} · ${previewDate} · ${previewTrack}`;
 
   return (
     <div>
@@ -1156,28 +1312,168 @@ function UploadPage() {
               <label htmlFor="track-name" className="block text-[11px] font-telemetry text-steel/80 mb-1.5 uppercase tracking-[0.12em]">
                 Track <span className="text-steel/60 text-xs normal-case">(optional — auto-detected from GPS)</span>
               </label>
-              <input id="track-name" type="text" list="dl-tracks" value={trackName} onChange={(e) => setTrackName(e.target.value)}
-                disabled={isFormDisabled} placeholder="Type or select track"
+              <select id="track-name" value={isNewTrack ? '__new__' : trackName}
+                onChange={(e) => {
+                  const v = e.target.value;
+                  if (v === '__new__') {
+                    setIsNewTrack(true);
+                  } else {
+                    setIsNewTrack(false);
+                    setTrackName(v);
+                  }
+                }}
+                disabled={isFormDisabled}
                 className="w-full border border-steel/12 rounded-lg px-3 py-2 text-chalk font-body text-sm
-                  placeholder:text-steel/50 focus:outline-none focus:border-gold/40
-                  disabled:opacity-50 disabled:cursor-not-allowed" />
-              <datalist id="dl-tracks">
-                {trackNames.map((t) => (<option key={t} value={t} />))}
-              </datalist>
+                  focus:outline-none focus:border-gold/40
+                  disabled:opacity-50 disabled:cursor-not-allowed">
+                <option value="">Select track</option>
+                {trackNames.map((t) => (<option key={t} value={t}>{t}</option>))}
+                <option value="__new__">+ New track…</option>
+              </select>
             </div>
             <div>
               <label htmlFor="kart-name" className="block text-[11px] font-telemetry text-steel/80 mb-1.5 uppercase tracking-[0.12em]">
-                Kart <span className="text-steel/60 text-xs normal-case">(optional — type to create new)</span>
+                Kart <span className="text-steel/60 text-xs normal-case">(optional)</span>
               </label>
-              <input id="kart-name" type="text" list="dl-karts" value={kartName} onChange={(e) => setKartName(e.target.value)}
-                disabled={isFormDisabled} placeholder="Type or select kart"
+              <select id="kart-name" value={isNewKart ? '__new__' : kartName}
+                onChange={(e) => {
+                  const v = e.target.value;
+                  if (v === '__new__') {
+                    setIsNewKart(true);
+                  } else {
+                    setIsNewKart(false);
+                    setKartName(v);
+                  }
+                }}
+                disabled={isFormDisabled}
                 className="w-full border border-steel/12 rounded-lg px-3 py-2 text-chalk font-body text-sm
-                  placeholder:text-steel/50 focus:outline-none focus:border-gold/40
-                  disabled:opacity-50 disabled:cursor-not-allowed" />
-              <datalist id="dl-karts">
-                {kartNames.map((k) => (<option key={k} value={k} />))}
-              </datalist>
+                  focus:outline-none focus:border-gold/40
+                  disabled:opacity-50 disabled:cursor-not-allowed">
+                <option value="">Select kart</option>
+                {kartNames.map((k) => (<option key={k} value={k}>{k}</option>))}
+                <option value="__new__">+ New kart…</option>
+              </select>
             </div>
+
+            {/* ── New Track inline form (revealed when "+ New track…" is selected) ── */}
+            {isNewTrack && (
+              <div className="sm:col-span-2 bg-asphalt/30 rounded-lg border border-gold/20 p-4 space-y-3">
+                <p className="text-sm font-telemetry text-gold uppercase tracking-wider">New Track</p>
+                <div>
+                  <label htmlFor="new-track-name" className="block text-[11px] font-telemetry text-steel/80 mb-1.5 uppercase tracking-[0.12em]">
+                    Track Name <span className="text-safety-red">*</span>
+                  </label>
+                  <input id="new-track-name" type="text" value={newTrackName} onChange={(e) => setNewTrackName(e.target.value)}
+                    disabled={isFormDisabled} placeholder="e.g. South Garda Karting"
+                    className="w-full border border-steel/12 rounded-lg px-3 py-2 text-chalk font-body text-sm
+                      placeholder:text-steel/50 focus:outline-none focus:border-gold/40
+                      disabled:opacity-50 disabled:cursor-not-allowed" />
+                </div>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <div>
+                    <label htmlFor="new-track-record" className="block text-[11px] font-telemetry text-steel/80 mb-1.5 uppercase tracking-[0.12em]">
+                      Track Record Lap Time <span className="text-steel/60 text-xs normal-case">(optional — seconds or mm:ss.SSS)</span>
+                    </label>
+                    <input id="new-track-record" type="text" value={newTrackRecord} onChange={(e) => setNewTrackRecord(e.target.value)}
+                      disabled={isFormDisabled} placeholder="e.g. 1:18.42 or 78.42"
+                      className="w-full border border-steel/12 rounded-lg px-3 py-2 text-chalk font-body text-sm
+                        placeholder:text-steel/50 focus:outline-none focus:border-gold/40
+                        disabled:opacity-50 disabled:cursor-not-allowed" />
+                  </div>
+                  <div>
+                    <label htmlFor="new-track-wet" className="block text-[11px] font-telemetry text-steel/80 mb-1.5 uppercase tracking-[0.12em]">
+                      Wet Pace Lap Time <span className="text-steel/60 text-xs normal-case">(optional — seconds or mm:ss.SSS)</span>
+                    </label>
+                    <input id="new-track-wet" type="text" value={newTrackWetPace} onChange={(e) => setNewTrackWetPace(e.target.value)}
+                      disabled={isFormDisabled} placeholder="e.g. 1:24.10 or 84.10"
+                      className="w-full border border-steel/12 rounded-lg px-3 py-2 text-chalk font-body text-sm
+                        placeholder:text-steel/50 focus:outline-none focus:border-gold/40
+                        disabled:opacity-50 disabled:cursor-not-allowed" />
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* ── New Kart inline form (revealed when "+ New kart…" is selected) ── */}
+            {isNewKart && (
+              <div className="sm:col-span-2 bg-asphalt/30 rounded-lg border border-gold/20 p-4 space-y-3">
+                <p className="text-sm font-telemetry text-gold uppercase tracking-wider">New Kart</p>
+                <div>
+                  <label htmlFor="new-kart-name" className="block text-[11px] font-telemetry text-steel/80 mb-1.5 uppercase tracking-[0.12em]">
+                    Name <span className="text-safety-red">*</span>
+                  </label>
+                  <input id="new-kart-name" type="text" value={newKartName} onChange={(e) => setNewKartName(e.target.value)}
+                    disabled={isFormDisabled} placeholder="e.g. My Kart / Team Kart #1"
+                    className="w-full border border-steel/12 rounded-lg px-3 py-2 text-chalk font-body text-sm
+                      placeholder:text-steel/50 focus:outline-none focus:border-gold/40
+                      disabled:opacity-50 disabled:cursor-not-allowed" />
+                </div>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <div>
+                    <label htmlFor="new-kart-manufacturer" className="block text-[11px] font-telemetry text-steel/80 mb-1.5 uppercase tracking-[0.12em]">
+                      Manufacturer
+                    </label>
+                    <input id="new-kart-manufacturer" type="text" value={newKartManufacturer} onChange={(e) => setNewKartManufacturer(e.target.value)}
+                      disabled={isFormDisabled} placeholder="e.g. Tony Kart / Sodikart"
+                      className="w-full border border-steel/12 rounded-lg px-3 py-2 text-chalk font-body text-sm
+                        placeholder:text-steel/50 focus:outline-none focus:border-gold/40
+                        disabled:opacity-50 disabled:cursor-not-allowed" />
+                  </div>
+                  <div>
+                    <label htmlFor="new-kart-model" className="block text-[11px] font-telemetry text-steel/80 mb-1.5 uppercase tracking-[0.12em]">
+                      Model
+                    </label>
+                    <input id="new-kart-model" type="text" value={newKartModel} onChange={(e) => setNewKartModel(e.target.value)}
+                      disabled={isFormDisabled} placeholder="e.g. Racer 401R"
+                      className="w-full border border-steel/12 rounded-lg px-3 py-2 text-chalk font-body text-sm
+                        placeholder:text-steel/50 focus:outline-none focus:border-gold/40
+                        disabled:opacity-50 disabled:cursor-not-allowed" />
+                  </div>
+                </div>
+                <div>
+                  <label htmlFor="new-kart-engine" className="block text-[11px] font-telemetry text-steel/80 mb-1.5 uppercase tracking-[0.12em]">
+                    Engine
+                  </label>
+                  <input id="new-kart-engine" type="text" value={newKartEngine} onChange={(e) => setNewKartEngine(e.target.value)}
+                    disabled={isFormDisabled} placeholder="e.g. IAME X30 125cc"
+                    className="w-full border border-steel/12 rounded-lg px-3 py-2 text-chalk font-body text-sm
+                      placeholder:text-steel/50 focus:outline-none focus:border-gold/40
+                      disabled:opacity-50 disabled:cursor-not-allowed" />
+                </div>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <div>
+                    <label htmlFor="new-kart-power" className="block text-[11px] font-telemetry text-steel/80 mb-1.5 uppercase tracking-[0.12em]">
+                      Power (hp)
+                    </label>
+                    <input id="new-kart-power" type="number" min="0" step="0.1" value={newKartPowerHp} onChange={(e) => setNewKartPowerHp(e.target.value)}
+                      disabled={isFormDisabled} placeholder="e.g. 34"
+                      className="w-full border border-steel/12 rounded-lg px-3 py-2 text-chalk font-body text-sm
+                        placeholder:text-steel/50 focus:outline-none focus:border-gold/40
+                        disabled:opacity-50 disabled:cursor-not-allowed" />
+                  </div>
+                  <div>
+                    <label htmlFor="new-kart-weight" className="block text-[11px] font-telemetry text-steel/80 mb-1.5 uppercase tracking-[0.12em]">
+                      Weight (kg)
+                    </label>
+                    <input id="new-kart-weight" type="number" min="0" step="0.1" value={newKartWeightKg} onChange={(e) => setNewKartWeightKg(e.target.value)}
+                      disabled={isFormDisabled} placeholder="e.g. 75"
+                      className="w-full border border-steel/12 rounded-lg px-3 py-2 text-chalk font-body text-sm
+                        placeholder:text-steel/50 focus:outline-none focus:border-gold/40
+                        disabled:opacity-50 disabled:cursor-not-allowed" />
+                  </div>
+                </div>
+                <div>
+                  <label htmlFor="new-kart-notes" className="block text-[11px] font-telemetry text-steel/80 mb-1.5 uppercase tracking-[0.12em]">
+                    Notes
+                  </label>
+                  <textarea id="new-kart-notes" rows={2} value={newKartNotes} onChange={(e) => setNewKartNotes(e.target.value)}
+                    disabled={isFormDisabled} placeholder="Optional notes about this kart..."
+                    className="w-full border border-steel/12 rounded-lg px-3 py-2 text-chalk font-body text-sm resize-none
+                      placeholder:text-steel/50 focus:outline-none focus:border-gold/40
+                      disabled:opacity-50 disabled:cursor-not-allowed" />
+                </div>
+              </div>
+            )}
             <div>
               <label htmlFor="lap-range" className="block text-[11px] font-telemetry text-steel/80 mb-1.5 uppercase tracking-[0.12em]">
                 Lap Range <span className="text-steel/60 text-xs normal-case">(optional)</span>
@@ -1272,6 +1568,12 @@ function UploadPage() {
               )}
             </div>
           ) : null}
+
+          {/* ── Session Name Preview (informational only) ── */}
+          <div className="mb-4 rounded-lg bg-concrete border border-steel/10 p-3">
+            <span className="block text-[10px] font-telemetry text-steel uppercase tracking-wider mb-1">Session name (auto)</span>
+            <span className="font-body text-chalk text-sm">{sessionNamePreview}</span>
+          </div>
 
           {/* ── Submit Button ──────────────────────────── */}
           <div className="flex items-center gap-4">
