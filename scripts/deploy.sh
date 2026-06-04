@@ -23,6 +23,11 @@ TELEMETRY_ROOT="$PROJECT_ROOT/telemetry_tool"
 LAP_ROOT="$PROJECT_ROOT/lap-website"
 REMOTE="root@46.225.227.24"
 REMOTE_PATH="/opt/lap-api"
+# Workdir INSIDE the api container where alembic.ini + the alembic/ scripts live.
+# The container WORKDIR is /app (no alembic.ini there), so alembic MUST run from
+# here or it fails with "No 'script_location' key found in configuration" — which
+# is why migrations never actually applied through this script before.
+CONTAINER_APP_DIR="/app/telemetry_tool"
 API_URL="https://api.lap-coach.racing"
 SITE_URL="https://lap-coach.racing"
 
@@ -88,8 +93,25 @@ if [ "$FRONTEND_ONLY" = false ]; then
     # ── Stage 3: Run migrations ─────────────────────────────────────
 
     log "Stage 3: Running migrations..."
-    ssh "$REMOTE" "cd $REMOTE_PATH && docker compose exec -T api alembic upgrade head" || true
-    log "  Migrations complete."
+    # Migrations MUST hard-fail the deploy. This was previously wrapped in
+    # `|| true`, which silently swallowed failures (e.g. "Multiple head revisions
+    # present") and let the deploy report success while applying NOTHING.
+    # set -euo pipefail (top of file) + `|| err` make a non-zero abort the deploy.
+    ssh "$REMOTE" "cd $REMOTE_PATH && docker compose exec -T -w $CONTAINER_APP_DIR api alembic upgrade head" \
+        || err "alembic upgrade head failed — aborting deploy"
+
+    # Post-migrate assertion: the migration graph must have exactly ONE head and
+    # the DB must be AT it. Catches silent no-ops, multi-head drift, and a DB left
+    # mid-chain.
+    log "  Verifying single migration head..."
+    HEAD_COUNT="$(ssh "$REMOTE" "cd $REMOTE_PATH && docker compose exec -T -w $CONTAINER_APP_DIR api alembic heads" 2>/dev/null \
+        | awk '/\(head\)/{n++} END{print n+0}')"
+    [ "$HEAD_COUNT" = "1" ] \
+        || err "Expected exactly 1 alembic head, found ${HEAD_COUNT} — aborting deploy"
+    ssh "$REMOTE" "cd $REMOTE_PATH && docker compose exec -T -w $CONTAINER_APP_DIR api alembic current" 2>/dev/null \
+        | grep -q '(head)' \
+        || err "DB is not at the migration head after upgrade — aborting deploy"
+    log "  Migrations complete (single head, DB at head)."
 
     # ── Stage 4: Health check ───────────────────────────────────────
 
