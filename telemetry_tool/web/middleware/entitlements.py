@@ -106,6 +106,15 @@ GRACE_POLICY: dict[str, dict[str, bool]] = {
     "canceled": {"ACCESS_VIEW": True,  "EXPORT": True,  "COMPUTE": False, "UPLOAD": False, "API_WRITE": False},
     "paused":   {"ACCESS_VIEW": True,  "EXPORT": False, "COMPUTE": False, "UPLOAD": False, "API_WRITE": False},
     "unpaid":   {"ACCESS_VIEW": True,  "EXPORT": False, "COMPUTE": False, "UPLOAD": False, "API_WRITE": False},
+    # Subscription fully ended (one-membership: no free tier to fall back to).
+    # View existing data only — no new analysis/upload/export/mutations.
+    # Without this row, 'expired' fell through to the active default = FULL
+    # access (a fail-OPEN gap) until the daily grace-job repointed plan_tier.
+    "expired":  {"ACCESS_VIEW": True,  "EXPORT": False, "COMPUTE": False, "UPLOAD": False, "API_WRITE": False},
+    # New / never-subscribed users (subscription_status='free'). The free
+    # *status* still exists; the free *tier* does not — they are view-only
+    # and must start the trial/subscribe to do anything.
+    "free":     {"ACCESS_VIEW": True,  "EXPORT": False, "COMPUTE": False, "UPLOAD": False, "API_WRITE": False},
 }
 
 # Route → action category mapping
@@ -158,8 +167,13 @@ def entitlement_middleware():
 
     # ── Billing state enforcement (grace period policy matrix) ───────
     # Only applies when the user has a non-demo plan_tier.
-    plan_tier = getattr(g, "plan_tier", "demo")
-    if plan_tier not in ("demo", "free", None):
+    # The locked floor (and legacy demo/free aliases) is already zero-access
+    # via its tier entitlements, so it skips the subscription-status gate —
+    # which keeps new/locked users able to reach checkout. The gate applies to
+    # real paid tiers (racer/world-class), where it now also covers 'expired'
+    # (previously fell through to full access — a fail-open gap).
+    plan_tier = getattr(g, "plan_tier", "locked")
+    if plan_tier not in ("locked", "demo", "free", None):
         from auth.entitlements import _get_conn as _ent_conn
         from auth.entitlements import get_user_subscription_status
         conn = _ent_conn()
@@ -400,7 +414,7 @@ def require_report_quota(fn):
     def _wrapped(*args, **kwargs):
         snapshot = entitlement_snapshot()
 
-        policy = get_plan_entitlements(snapshot.get("plan_tier", "demo"))
+        policy = get_plan_entitlements(snapshot.get("plan_tier", "locked"))
         limit = policy.get("analyses_per_month", 0)
         used = snapshot.get("analyses_used", 0)
         remaining = max(0, limit - used) if limit != -1 else 999

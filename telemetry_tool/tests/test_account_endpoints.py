@@ -85,16 +85,16 @@ class TestEntitlements:
                 assert data["ok"] is True
                 assert data["data"]["plan"] == "racer"
                 ent = data["data"]["entitlements"]
-                assert ent["reports_per_month"] == 10
+                assert ent["analyses_per_month"] == 10
                 assert ent["raw_retention_days"] == 90
                 assert ent["coaching_drills"] is True
 
-    def test_entitlements_free_plan(self):
-        """Free/demo plan returns limited features."""
+    def test_entitlements_locked_plan(self):
+        """Locked (no-subscription) plan returns the zero-access floor."""
         from web.routes.api_v1_account import get_entitlements
 
         conn = FakeConn({
-            "plan_tier": [{"plan_tier": "demo"}],
+            "plan_tier": [{"plan_tier": "locked"}],
         })
 
         app = _make_flask_app()
@@ -106,8 +106,9 @@ class TestEntitlements:
                 data = response.get_json()
 
                 assert status == 200
-                assert data["data"]["plan"] == "demo"
-                assert data["data"]["entitlements"]["reports_per_month"] == 1
+                assert data["data"]["plan"] == "locked"
+                # Locked floor: zero new analyses, no premium features.
+                assert data["data"]["entitlements"]["analyses_per_month"] == 0
                 assert data["data"]["entitlements"]["coaching_drills"] is False
 
 
@@ -136,9 +137,9 @@ class TestUsage:
 
                 assert status == 200
                 assert data["ok"] is True
-                # Should have metric keys
-                assert "reports" in data["data"]
-                assert "uploads" in data["data"]
+                # Should have metric keys (new usage-snapshot shape)
+                assert "analyses" in data["data"]
+                assert "upload_volume_mb" in data["data"]
 
     def test_usage_requires_workspace(self):
         """GET /usage returns 403 without workspace context."""
@@ -193,12 +194,12 @@ class TestRetention:
                 assert session["session_id"] == 42
                 assert "expires_at" in session
 
-    def test_retention_free_plan_30_days(self):
-        """Free plan shows 30-day retention."""
+    def test_retention_locked_plan_30_days(self):
+        """Locked (no-subscription) plan retains existing data for 30 days."""
         from web.routes.api_v1_account import get_retention
 
         conn = FakeConn({
-            "plan_tier": [{"plan_tier": "demo"}],
+            "plan_tier": [{"plan_tier": "locked"}],
         })
 
         app = _make_flask_app()

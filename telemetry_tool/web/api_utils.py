@@ -249,7 +249,7 @@ def billing_error(
                 "message": "...",
                 "upgrade_url": "/billing?upgrade=true",
                 "required_plan": "racer",
-                "current_plan": "free"
+                "current_plan": "locked"
             },
             "meta": {"request_id": "...", "version": "..."}
         }

@@ -936,7 +936,7 @@ def billing_status():
     user = dict(row) if not isinstance(row, dict) else row
 
     result = {
-        "plan_tier": user.get("plan_tier") or "demo",
+        "plan_tier": user.get("plan_tier") or "locked",
         "subscription_status": user.get("subscription_status") or "free",
         "stripe_customer_id": user.get("stripe_customer_id"),
         "billing_cycle": None,

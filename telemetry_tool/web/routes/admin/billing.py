@@ -149,7 +149,7 @@ def list_mismatches():
         "stripe_subscription_id "
         "FROM users "
         "WHERE subscription_status = 'active' "
-        "AND (plan_tier = 'demo' OR plan_tier IS NULL) "
+        "AND (plan_tier = 'locked' OR plan_tier IS NULL) "
         "AND deleted_at IS NULL"
     ).fetchall()
 

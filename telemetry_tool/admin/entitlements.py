@@ -127,11 +127,12 @@ def refresh_user_tier(conn, user_id: int, admin_user_id: int) -> dict:
         return {"error": "user_not_found"}
 
     user = dict(user) if not isinstance(user, dict) else user
-    old_tier = user.get("plan_tier", "demo")
+    old_tier = user.get("plan_tier", "locked")
 
     sub_id = user.get("stripe_subscription_id")
     if not sub_id:
-        new_tier = "demo"
+        # No active subscription → the zero-access locked floor (no free tier).
+        new_tier = "locked"
     else:
         # Would call Stripe API in production; for now just verify sub exists
         new_tier = old_tier  # No change if we can't verify
@@ -165,7 +166,7 @@ def detect_anomalies(conn) -> list[Anomaly]:
     1. Overspend: usage exceeds plan limit
     2. Stale overrides: expired but not cleaned up
     3. Missing plan: user has no plan_tier
-    4. Tier mismatch: active subscription but tier is demo
+    4. Tier mismatch: active subscription but tier is the locked floor
     """
     anomalies: list[Anomaly] = []
 
@@ -239,13 +240,14 @@ def detect_anomalies(conn) -> list[Anomaly]:
     except Exception:
         logger.debug("Missing plan detection failed", exc_info=True)
 
-    # 4. Tier mismatch — active subscription but demo tier
+    # 4. Tier mismatch — active subscription but the locked (no-access) floor.
+    # 'demo'/'free' are legacy aliases of 'locked'; catch un-migrated rows too.
     try:
         cur = conn.execute(
             "SELECT id, email, plan_tier, subscription_status "
             "FROM users "
             "WHERE subscription_status = 'active' "
-            "AND (plan_tier = 'demo' OR plan_tier IS NULL) "
+            "AND (plan_tier IN ('locked', 'demo', 'free') OR plan_tier IS NULL) "
             "AND deleted_at IS NULL"
         )
         for row in cur.fetchall():

@@ -81,8 +81,12 @@ class TestVerifyTaskEntitlements:
             assert _verify_task_entitlements(1, 1) is True
 
     @patch("tasks.pipeline_tasks._get_pg_connection")
-    def test_returns_true_for_free_tier(self, mock_get_pg):
-        """Free tier with reports_per_month=1 still returns True (non-zero)."""
+    def test_returns_false_for_free_tier(self, mock_get_pg):
+        """Free tier now aliases the zero-access 'locked' floor → blocked.
+
+        There is no 1-report free tier anymore; 'free' resolves to zero
+        report generation, so the worker guard must return False.
+        """
         from tasks.pipeline_tasks import _verify_task_entitlements
 
         mock_conn = MagicMock()
@@ -92,9 +96,9 @@ class TestVerifyTaskEntitlements:
             "auth.entitlements.get_user_plan_tier", return_value="free"
         ), patch(
             "auth.entitlements.get_plan_entitlements",
-            return_value={"reports_per_month": 1},
+            return_value={"reports_per_month": 0},
         ):
-            assert _verify_task_entitlements(1, 1) is True
+            assert _verify_task_entitlements(1, 1) is False
 
     @patch("tasks.pipeline_tasks._get_pg_connection")
     def test_returns_true_when_key_missing(self, mock_get_pg):

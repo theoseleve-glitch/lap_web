@@ -22,19 +22,24 @@ from auth.entitlements import (
 
 class TestPlanEntitlements:
 
-    def test_demo_is_alias_for_free(self):
-        assert PLAN_ENTITLEMENTS["demo"] is PLAN_ENTITLEMENTS["free"]
+    def test_demo_and_free_both_alias_locked(self):
+        # demo and free are now fail-closed aliases to the zero-access floor.
+        assert PLAN_ENTITLEMENTS["demo"] is PLAN_ENTITLEMENTS["locked"]
+        assert PLAN_ENTITLEMENTS["free"] is PLAN_ENTITLEMENTS["locked"]
 
     def test_known_plans_complete(self):
-        assert "free" in KNOWN_PLANS
-        assert "demo" in KNOWN_PLANS
+        assert "locked" in KNOWN_PLANS
+        assert "free" in KNOWN_PLANS  # fail-closed alias to locked
+        assert "demo" in KNOWN_PLANS  # fail-closed alias to locked
         assert "racer" in KNOWN_PLANS
         assert "world_class" in KNOWN_PLANS
 
-    def test_demo_limits(self):
+    def test_locked_floor_limits(self):
+        # The no-subscription floor: ZERO analyses, all features off.
+        # 'demo' is just an alias for 'locked' now (no 1-report free tier).
         ent = get_plan_entitlements("demo")
-        assert ent["reports_per_month"] == 1
-        assert ent["uploads_per_month"] == 1
+        assert ent["analyses_per_month"] == 0
+        assert ent["upload_volume_mb_per_month"] == 0
         assert ent["api_access"] is False
         assert ent["comparison_progress"] is False
         assert ent["coaching_drills"] is False
@@ -42,50 +47,52 @@ class TestPlanEntitlements:
 
     def test_racer_limits(self):
         ent = get_plan_entitlements("racer")
-        assert ent["reports_per_month"] == 10
-        assert ent["uploads_per_month"] == 10
+        assert ent["analyses_per_month"] == 10
         assert ent["api_access"] is False
-        assert ent["comparison_progress"] is False
+        assert ent["comparison_progress"] is True
         assert ent["coaching_drills"] is True
         assert ent["viz_workspace"] is True
 
     def test_world_class_limits(self):
         ent = get_plan_entitlements("world_class")
-        assert ent["reports_per_month"] == -1
-        assert ent["uploads_per_month"] == -1
+        assert ent["analyses_per_month"] == -1
         assert ent["api_access"] is True
         assert ent["comparison_progress"] is True
         assert ent["coaching_drills"] is True
         assert ent["viz_workspace"] is True
 
-    def test_unknown_plan_falls_back_to_free(self):
+    def test_unknown_plan_falls_back_to_locked(self):
+        # Unknown tiers fail CLOSED to 'locked' (== the 'free' alias).
         ent = get_plan_entitlements("nonexistent_tier")
+        assert ent == PLAN_ENTITLEMENTS["locked"]
         assert ent == PLAN_ENTITLEMENTS["free"]
 
 
 class TestUsageLimits:
 
-    def test_demo_report_under_limit(self):
-        allowed, info = check_usage_limit("demo", "reports", 0)
-        assert allowed is True
-        assert info["remaining"] == 1
+    def test_demo_analyses_blocked_at_zero(self):
+        # demo aliases locked: ZERO analyses — blocked even at count 0.
+        allowed, info = check_usage_limit("demo", "analyses", 0)
+        assert allowed is False
+        assert info["limit"] == 0
+        assert info["remaining"] == 0
 
-    def test_demo_report_at_limit(self):
-        allowed, info = check_usage_limit("demo", "reports", 1)
+    def test_demo_analyses_at_limit(self):
+        allowed, info = check_usage_limit("demo", "analyses", 1)
         assert allowed is False
         assert info["remaining"] == 0
 
-    def test_demo_report_over_limit(self):
-        allowed, info = check_usage_limit("demo", "reports", 5)
+    def test_demo_analyses_over_limit(self):
+        allowed, info = check_usage_limit("demo", "analyses", 5)
         assert allowed is False
 
-    def test_racer_report_under_limit(self):
-        allowed, info = check_usage_limit("racer", "reports", 5)
+    def test_racer_analyses_under_limit(self):
+        allowed, info = check_usage_limit("racer", "analyses", 5)
         assert allowed is True
         assert info["remaining"] == 5
 
     def test_world_class_unlimited(self):
-        allowed, info = check_usage_limit("world_class", "reports", 9999)
+        allowed, info = check_usage_limit("world_class", "analyses", 9999)
         assert allowed is True
         assert info["remaining"] == -1
 
@@ -102,7 +109,7 @@ class TestFeatureAccessMatrix:
         ("racer", "api_access", False),
         ("world_class", "api_access", True),
         ("demo", "comparison_progress", False),
-        ("racer", "comparison_progress", False),
+        ("racer", "comparison_progress", True),
         ("world_class", "comparison_progress", True),
         ("demo", "coaching_drills", False),
         ("racer", "coaching_drills", True),

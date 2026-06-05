@@ -118,7 +118,7 @@ def _get_workspace_retention(conn, workspace_id: int) -> int | None:
     if row is None:
         return _DEFAULT_RETENTION_DAYS  # Fallback to default retention
 
-    plan_tier = row.get("plan_tier") or "demo"
+    plan_tier = row.get("plan_tier") or "locked"
 
     cur.execute(
         "SELECT telemetry_retention_days FROM plan_definitions WHERE tier = %s",

@@ -85,7 +85,7 @@ def tenant_middleware() -> Response | tuple | None:
             "Failed to resolve plan_tier for user %s: %s: %s",
             user_id, type(exc).__name__, exc,
         )
-        g.plan_tier = "demo"
+        g.plan_tier = "locked"
 
     return None
 

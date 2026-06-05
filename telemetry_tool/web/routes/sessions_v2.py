@@ -60,15 +60,16 @@ _ALLOWED_EXTENSIONS = _STATIC_ALLOWED | _supported_extensions()
 # ── Tier limits ────────────────────────────────────────────────────────────
 
 _TIER_LIMITS = {
-    "free":        {"max_bytes": 150 * 1024 * 1024,  "max_sessions": 1},
-    "demo":        {"max_bytes": 150 * 1024 * 1024,  "max_sessions": 1},
+    # No active subscription → cannot upload (0 bytes). Legacy demo/free
+    # collapse to locked. (No free tier in the one-membership model.)
+    "locked":      {"max_bytes": 0,                  "max_sessions": 0},
     "racer":       {"max_bytes": 2500 * 1024 * 1024, "max_sessions": None},
     "world-class": {"max_bytes": -1,                  "max_sessions": None},
     "world_class": {"max_bytes": -1,                  "max_sessions": None},
     "b2b":         {"max_bytes": -1,                  "max_sessions": None},
 }
 _TIER_TIMEOUTS = {
-    "free": 120, "demo": 120,
+    "locked": 120,
     "racer": 600,
     "world-class": 1800, "world_class": 1800,
     "b2b": 3600,
@@ -82,7 +83,7 @@ def _get_conn() -> sqlite3.Connection:
 
 def _check_tier_limits(f: BinaryIO, conn: sqlite3.Connection, workspace_id: str, plan_tier: str) -> str | None:
     """Return error message if a tier limit is exceeded, else None."""
-    limits = _TIER_LIMITS.get(plan_tier, _TIER_LIMITS["free"])
+    limits = _TIER_LIMITS.get(plan_tier, _TIER_LIMITS["locked"])
     # File size check
     f.seek(0, 2)
     file_size = f.tell()
@@ -421,7 +422,7 @@ def upload_session() -> tuple[Response, int]:
             )
 
     # ── 2. Tier limit check ───────────────────────────────────────
-    plan_tier = getattr(g, "plan_tier", "demo")
+    plan_tier = getattr(g, "plan_tier", "locked")
     conn = _get_conn()
     limit_err = _check_tier_limits(f, conn, str(g.workspace_id), plan_tier)
     if limit_err:

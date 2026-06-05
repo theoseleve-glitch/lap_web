@@ -1304,7 +1304,7 @@ def data_summary():
     # Get retention info from entitlements
     ents = get_user_entitlements(conn, user_id, workspace_id)
     retention_days = ents.get("telemetry_retention_days", 90)
-    plan_tier = ents.get("plan_tier", "demo")
+    plan_tier = ents.get("plan_tier", "locked")
 
     # Find sessions expiring within 14 days (RLS auto-filters by workspace)
     expiring_sessions = []
@@ -1735,7 +1735,7 @@ def get_entitlements():
     if row is None:
         return api_error(ErrorCode.NOT_FOUND, "User not found", status=404)
 
-    plan = (dict(row) if not isinstance(row, dict) else row).get("plan_tier") or "demo"
+    plan = (dict(row) if not isinstance(row, dict) else row).get("plan_tier") or "locked"
     entitlements = get_plan_entitlements(plan)
 
     return api_response({
@@ -1779,9 +1779,9 @@ def get_usage():
         {"uid": user_id},
     ).fetchone()
 
-    plan = "demo"
+    plan = "locked"
     if row is not None:
-        plan = (dict(row) if not isinstance(row, dict) else row).get("plan_tier") or "demo"
+        plan = (dict(row) if not isinstance(row, dict) else row).get("plan_tier") or "locked"
 
     snapshot = get_usage_snapshot(conn, workspace_id, plan)
 
@@ -1874,9 +1874,9 @@ def get_retention():
         {"uid": user_id},
     ).fetchone()
 
-    plan = "demo"
+    plan = "locked"
     if row is not None:
-        plan = (dict(row) if not isinstance(row, dict) else row).get("plan_tier") or "demo"
+        plan = (dict(row) if not isinstance(row, dict) else row).get("plan_tier") or "locked"
 
     ent = get_plan_entitlements(plan)
     retention_days = ent.get("raw_retention_days", 30)

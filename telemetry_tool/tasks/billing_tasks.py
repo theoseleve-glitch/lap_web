@@ -122,12 +122,12 @@ def _reconcile_stripe_impl() -> dict[str, Any]:
 
 
 def _enforce_grace_periods_impl() -> dict[str, Any]:
-    """Check for expired grace periods and downgrade to demo tier.
+    """Check for expired grace periods and lock (no active subscription).
 
     Rules:
-        - canceled + grace_period_end passed → plan_tier = 'demo', status = 'free'
+        - canceled + grace_period_end passed → plan_tier = 'locked', status = 'free'
         - past_due > 7 days (grace_period_end passed) → send final warning
-        - past_due > 14 days → plan_tier = 'demo', status = 'free'
+        - past_due > 14 days → plan_tier = 'locked', status = 'free'
 
     Returns:
         Dict with ``{"checked": N, "downgraded": N, "warned": N}``
@@ -139,7 +139,7 @@ def _enforce_grace_periods_impl() -> dict[str, Any]:
     downgraded = 0
     warned = 0
 
-    # 1. Canceled users past grace period → downgrade to demo
+    # 1. Canceled users past grace period → lock (no active subscription)
     rows = conn.execute(
         "SELECT id, email, plan_tier FROM users "
         "WHERE subscription_status = 'canceled' "
@@ -157,7 +157,7 @@ def _enforce_grace_periods_impl() -> dict[str, Any]:
         if ok:
             # Also reset tier and clear Stripe subscription
             conn.execute(
-                "UPDATE users SET plan_tier = 'demo', "
+                "UPDATE users SET plan_tier = 'locked', "
                 "stripe_subscription_id = NULL "
                 "WHERE id = %(uid)s",
                 {"uid": user["id"]},
@@ -165,7 +165,7 @@ def _enforce_grace_periods_impl() -> dict[str, Any]:
             conn.commit()
             downgraded += 1
             logger.info(
-                "Grace period expired: user %s downgraded from %s to demo",
+                "Grace period expired: user %s locked (no active subscription), previous tier %s",
                 user["id"], user.get("plan_tier"),
             )
         if user.get("email"):
@@ -204,7 +204,7 @@ def _enforce_grace_periods_impl() -> dict[str, Any]:
         if days_past >= 7:
             # 14 days total past-due (7 grace + 7 more) → hard downgrade
             conn.execute(
-                "UPDATE users SET plan_tier = 'demo', subscription_status = 'free', "
+                "UPDATE users SET plan_tier = 'locked', subscription_status = 'free', "
                 "grace_period_end = NULL "
                 "WHERE id = %(uid)s",
                 {"uid": user["id"]},

@@ -90,7 +90,7 @@ class TestEntitlementCache:
     def test_redis_unavailable_falls_back_to_db(self, mock_db, mock_redis_fn):
         """When Redis is None, falls back to DB."""
         mock_redis_fn.return_value = None
-        db_data = {"plan_tier": "demo"}
+        db_data = {"plan_tier": "locked"}
         mock_db.return_value = db_data
 
         from web.entitlement_cache import cached_entitlements
@@ -206,7 +206,7 @@ class TestGracePeriodEnforcement:
 
     @patch("tasks.billing_tasks.get_pg_connection")
     def test_canceled_past_grace_downgrades(self, mock_db):
-        """Users with expired grace period get downgraded to demo."""
+        """Users with expired grace period get locked (no active subscription)."""
         conn = _mock_conn()
         mock_db.return_value = conn
 
@@ -239,7 +239,7 @@ class TestGracePeriodEnforcement:
             user_lookup,       # SELECT user in transition_subscription (fetchone)
             default_result,    # INSERT audit_log
             default_result,    # UPDATE grace_period_end
-            default_result,    # UPDATE users SET plan_tier='demo'
+            default_result,    # UPDATE users SET plan_tier='locked'
             past_due_result,   # SELECT past_due users (fetchall)
         ]
 

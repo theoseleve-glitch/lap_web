@@ -45,11 +45,11 @@ def app():
 
 
 class TestPlanRateMultipliers:
-    def test_demo_gets_base_limit(self, app):
-        """Demo users get 1× base limit (5 analyze/hr)."""
+    def test_locked_gets_base_limit(self, app):
+        """Locked (no-subscription) users get 1× base limit (5 analyze/hr)."""
         from web.rate_limit import _get_effective_limit
         with app.test_request_context():
-            g.plan_tier = "demo"
+            g.plan_tier = "locked"
             assert _get_effective_limit(5, "analyze") == 5
 
     def test_racer_gets_double(self, app):
@@ -80,8 +80,8 @@ class TestPlanRateMultipliers:
             g.plan_tier = "unknown_plan"
             assert _get_effective_limit(5, "analyze") == 5
 
-    def test_no_plan_tier_falls_back_to_demo(self, app):
-        """Missing g.plan_tier defaults to demo (1×)."""
+    def test_no_plan_tier_falls_back_to_locked(self, app):
+        """Missing g.plan_tier defaults to locked (1×)."""
         from web.rate_limit import _get_effective_limit
         with app.test_request_context():
             # g.plan_tier not set
@@ -118,7 +118,7 @@ class TestPlanRateMultiplierConstants:
         from web.rate_limit import PLAN_RATE_MULTIPLIERS
 
         # These must match the seed data in migration 019
-        assert PLAN_RATE_MULTIPLIERS["demo"] == 1.0
+        assert PLAN_RATE_MULTIPLIERS["locked"] == 1.0
         assert PLAN_RATE_MULTIPLIERS["racer"] == 2.0
         assert PLAN_RATE_MULTIPLIERS["world-class"] == 5.0
         assert PLAN_RATE_MULTIPLIERS["b2b"] == 10.0

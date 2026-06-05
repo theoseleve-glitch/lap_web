@@ -41,9 +41,14 @@ class TestFreeUserFeatureGating:
         assert ent.get("coaching_drills") is False
 
     def test_demo_1_report_per_month(self):
-        """Demo plan allows only 1 report per month."""
+        """No-subscription floor ('locked') grants ZERO analyses per month.
+
+        The free/demo tier is removed; 'free'/'demo' are fail-closed aliases to
+        the 'locked' floor (analyses_per_month=0). The pure-Python entitlements
+        dict uses the 'analyses_per_month' key (there is no 'reports_per_month').
+        """
         ent = get_plan_entitlements("free")
-        assert ent["reports_per_month"] == 1
+        assert ent["analyses_per_month"] == 0
 
     def test_demo_30_day_retention(self):
         """Demo plan has 30-day raw retention."""
@@ -167,9 +172,14 @@ class TestDowngradePreservesData:
         assert ent.get("comparison_progress") is False
 
     def test_downgrade_retains_basic_views(self):
-        """Demo still has basic track management."""
+        """After downgrade, the no-subscription floor is 'locked' (view-only).
+
+        The former demo tier had 'basic' track management; the new 'locked'
+        floor grants no track management ('none') — existing data stays
+        readable but no new work or features are available.
+        """
         ent = get_plan_entitlements("free")
-        assert ent.get("track_management") == "basic"
+        assert ent.get("track_management") == "none"
 
 
 # ===========================================================================

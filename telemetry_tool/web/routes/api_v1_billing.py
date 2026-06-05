@@ -119,7 +119,7 @@ def get_subscription():
     sub_id = user.get("stripe_subscription_id")
 
     result = {
-        "plan_tier": user.get("plan_tier") or "demo",
+        "plan_tier": user.get("plan_tier") or "locked",
         "subscription_status": user.get("subscription_status") or "free",
         "current_period_end": None,
         "cancel_at_period_end": False,
@@ -490,7 +490,7 @@ def validate_plan_switch():
 
     from auth.entitlements import PLAN_ENTITLEMENTS, get_plan_entitlements
 
-    if target_plan not in PLAN_ENTITLEMENTS and target_plan not in ("demo", "free"):
+    if target_plan not in PLAN_ENTITLEMENTS and target_plan not in ("locked",):
         return api_error(ErrorCode.VALIDATION_ERROR, f"Unknown plan: {target_plan}", status=400)
 
     conn = get_pg_connection()
@@ -500,7 +500,7 @@ def validate_plan_switch():
         "SELECT plan_tier FROM users WHERE id = %(uid)s",
         {"uid": user_id},
     ).fetchone()
-    current_plan = ((dict(row) if not isinstance(row, dict) else row).get("plan_tier") or "demo") if row else "demo"
+    current_plan = ((dict(row) if not isinstance(row, dict) else row).get("plan_tier") or "locked") if row else "locked"
 
     target_ent = get_plan_entitlements(target_plan)
     violations = []

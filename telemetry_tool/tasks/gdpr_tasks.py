@@ -477,17 +477,17 @@ def _iter_workspace_tiers(conn) -> list[dict[str, Any]]:
 
     rows = conn.execute(
         "SELECT w.id AS workspace_id, "
-        "COALESCE(w.billing_plan, owner.plan_tier, 'demo') AS tier "
+        "COALESCE(w.billing_plan, owner.plan_tier, 'locked') AS tier "
         "FROM workspaces w "
         "LEFT JOIN users owner ON owner.id = w.owner_user_id"
     ).fetchall()
     out = []
     for row in rows:
         data = dict(row)
-        tier = data.get("tier", "demo")
-        # Normalize unknown tiers to "free"
+        tier = data.get("tier", "locked")
+        # Normalize unknown tiers to the locked floor (no free tier).
         if tier not in KNOWN_PLANS:
-            tier = "free"
+            tier = "locked"
         out.append({"workspace_id": data["workspace_id"], "tier": tier})
     return out
 

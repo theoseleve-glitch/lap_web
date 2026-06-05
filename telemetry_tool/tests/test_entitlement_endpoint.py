@@ -42,7 +42,7 @@ def test_entitlement_endpoint_returns_plan_and_entitlements():
             assert body["data"]["entitlements"]["api_access"] is False
 
 
-def test_entitlement_endpoint_defaults_to_demo_for_null_tier():
+def test_entitlement_endpoint_defaults_to_locked_for_null_tier():
     app = _make_app()
     conn = MagicMock()
     conn.execute.return_value.fetchone.return_value = {"plan_tier": None}
@@ -52,5 +52,7 @@ def test_entitlement_endpoint_defaults_to_demo_for_null_tier():
             resp = client.get("/api/v1/account/entitlements")
             assert resp.status_code == 200
             body = resp.get_json()
-            assert body["data"]["plan"] == "demo"
-            assert body["data"]["entitlements"]["reports_per_month"] == 1
+            # No-subscription floor: null/missing tier resolves to 'locked'
+            # (no free tier in the one-membership model) with zero access.
+            assert body["data"]["plan"] == "locked"
+            assert body["data"]["entitlements"]["analyses_per_month"] == 0

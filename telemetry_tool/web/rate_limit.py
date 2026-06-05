@@ -65,8 +65,7 @@ RATE_TIERS: dict[str, dict[str, int]] = {
 # Plan-tier multipliers — applied to base limits above.
 # Matches rate_multiplier values in plan_definitions table.
 PLAN_RATE_MULTIPLIERS: dict[str, float] = {
-    "free": 1.0,
-    "demo": 1.0,
+    "locked": 1.0,
     "racer": 2.0,
     "world-class": 5.0,
     "world_class": 5.0,
@@ -137,7 +136,7 @@ def _get_effective_limit(base_max: int, tier_name: str) -> int:
     Reads ``g.plan_tier`` (set by tenant middleware).  Falls back to
     1.0x if the plan tier is unknown or unavailable.
     """
-    plan_tier = getattr(g, "plan_tier", None) or "demo"
+    plan_tier = getattr(g, "plan_tier", None) or "locked"
     multiplier = PLAN_RATE_MULTIPLIERS.get(plan_tier, 1.0)
     return math.ceil(base_max * multiplier)
 
@@ -214,7 +213,7 @@ def rate_limit(tier: str = "read"):
             reset_at = int(now + window_seconds)
 
             if count > max_requests:
-                plan_tier = getattr(g, "plan_tier", "demo")
+                plan_tier = getattr(g, "plan_tier", "locked")
                 logger.info(
                     "Rate limited: tier=%s plan=%s scope=%s count=%d limit=%d",
                     tier, plan_tier, scope_value, count, max_requests,

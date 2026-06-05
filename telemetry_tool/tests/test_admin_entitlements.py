@@ -125,7 +125,7 @@ class TestCreateOverride:
 
 
 class TestRefreshUserTier:
-    def test_no_subscription_sets_demo(self):
+    def test_no_subscription_sets_locked(self):
         conn = MagicMock()
         cur = MagicMock()
         cur.fetchone.return_value = {
@@ -137,7 +137,8 @@ class TestRefreshUserTier:
         result = refresh_user_tier(conn, user_id=1, admin_user_id=99)
 
         assert result["old_tier"] == "racer"
-        assert result["new_tier"] == "demo"
+        # No subscription → the zero-access locked floor (no free tier).
+        assert result["new_tier"] == "locked"
         assert result["changed"] is True
 
     def test_user_not_found(self):
@@ -228,7 +229,7 @@ class TestDetectAnomalies:
             "missing": [],
             "mismatch": [
                 {"id": 3, "email": "paid@test.com",
-                 "plan_tier": "demo", "subscription_status": "active"},
+                 "plan_tier": "locked", "subscription_status": "active"},
             ],
         })
 

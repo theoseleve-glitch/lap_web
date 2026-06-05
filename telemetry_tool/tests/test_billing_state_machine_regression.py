@@ -218,8 +218,8 @@ class TestTransitionEndToEnd:
         conn = MagicMock()
         conn.execute.return_value.fetchone.return_value = {
             "email": "user@test.com",
-            "subscription_status": "free",
-            "plan_tier": "demo",
+            "subscription_status": "free",  # billing state — unchanged in new model
+            "plan_tier": "locked",
         }
 
         with patch("billing.state_machine.logger"):
@@ -240,8 +240,8 @@ class TestTransitionEndToEnd:
         conn = MagicMock()
         conn.execute.return_value.fetchone.return_value = {
             "email": "user@test.com",
-            "subscription_status": "free",
-            "plan_tier": "demo",
+            "subscription_status": "free",  # billing state — unchanged in new model
+            "plan_tier": "locked",
         }
 
         with patch("billing.state_machine.logger"):
@@ -293,11 +293,11 @@ class TestSubscriptionStatusRegression:
         from billing.state_machine import transition_subscription
 
         conn = MagicMock()
-        # Simulate user currently on 'free'
+        # Simulate user currently on the locked floor (subscription_status 'free')
         conn.execute.return_value.fetchone.return_value = {
             "email": "driver@racing.com",
-            "subscription_status": "free",
-            "plan_tier": "demo",
+            "subscription_status": "free",  # billing state — unchanged in new model
+            "plan_tier": "locked",
         }
 
         with patch("billing.state_machine.logger"):
@@ -320,8 +320,8 @@ class TestSubscriptionStatusRegression:
         conn = MagicMock()
         conn.execute.return_value.fetchone.return_value = {
             "email": "driver@racing.com",
-            "subscription_status": "free",
-            "plan_tier": "demo",
+            "subscription_status": "free",  # billing state — unchanged in new model
+            "plan_tier": "locked",
         }
 
         with patch("billing.state_machine.logger"):

@@ -28,27 +28,32 @@ logger = logging.getLogger(__name__)
 # Used for lightweight limit checks without a DB connection.
 
 PLAN_ENTITLEMENTS: dict[str, dict] = {
-    "free": {
-        "analyses_per_month": 1,
-        "upload_volume_mb_per_month": 150,
-        "max_upload_size_mb": 150,
-        "max_session_data_mb": 150,
-        "raw_retention_days": 30,
+    # 'locked' — the no-active-subscription floor. ZERO usable entitlements:
+    # the account can still VIEW existing data (reads are not tier-gated) but
+    # cannot run new analyses or use any premium feature. This REPLACES the
+    # former free/demo tier — there is NO free tier in the one-membership
+    # model. New, expired, canceled-after-grace, and unknown users land here.
+    "locked": {
+        "analyses_per_month": 0,
+        "upload_volume_mb_per_month": 0,
+        "max_upload_size_mb": 0,
+        "max_session_data_mb": 0,
+        "raw_retention_days": 30,        # existing data retained; no new work
         "report_retention": "indefinite",
         "comparison_progress": False,
         "coaching_drills": False,
         "viz_workspace": False,
-        "badge_share_card": True,       # badge + shareable card for engagement
-        "gamification": False,          # full gamification (XP, streaks, drills)
-        "strategy_dashboard": "4h_basic",
-        "race_strategy_max_duration_s": 14400,  # 4 hours
-        "race_strategy_params": "basic",        # basic parameters only
-        "optimizer_modes": ["equal"],            # equal-time only
+        "badge_share_card": False,
+        "gamification": False,
+        "strategy_dashboard": False,
+        "race_strategy_max_duration_s": 0,
+        "race_strategy_params": "none",
+        "optimizer_modes": [],
         "live_pace": False,
         "pit_planning": False,
         "pdf_reports": False,
         "api_access": False,
-        "track_management": "basic",
+        "track_management": "none",
         "max_workspace_members": 1,
         "device_sync": False,
         "auto_analyze_on_sync": False,
@@ -108,18 +113,28 @@ PLAN_ENTITLEMENTS: dict[str, dict] = {
     },
 }
 
-# Aliases: "demo" → "free", "world-class" → "world_class"
-PLAN_ENTITLEMENTS["demo"] = PLAN_ENTITLEMENTS["free"]
+# Canonical membership alias (hyphenated name from Stripe price mapping).
 PLAN_ENTITLEMENTS["world-class"] = PLAN_ENTITLEMENTS["world_class"]
+# Backward-compat: the legacy free/demo tier no longer exists. Any stray
+# 'demo'/'free' plan_tier value (un-migrated DB rows, old callers) FAILS
+# CLOSED to the zero-access locked floor — never to free access.
+PLAN_ENTITLEMENTS["demo"] = PLAN_ENTITLEMENTS["locked"]
+PLAN_ENTITLEMENTS["free"] = PLAN_ENTITLEMENTS["locked"]
 
 KNOWN_PLANS = set(PLAN_ENTITLEMENTS.keys())
 
 
 def normalize_tier(tier: str | None) -> str:
-    """Normalize plan tier to a canonical form. Handles None, hyphens, underscores."""
+    """Normalize plan tier to canonical form. None/empty → the locked floor.
+
+    The legacy 'demo'/'free' tier is collapsed to 'locked' (no free tier).
+    """
     if not tier:
-        return "demo"
-    return tier.strip().lower()
+        return "locked"
+    t = tier.strip().lower()
+    if t in ("demo", "free"):
+        return "locked"
+    return t
 
 # Maps metric names to entitlement keys for usage limit checks
 METRIC_TO_ENTITLEMENT: dict[str, str] = {
@@ -129,8 +144,8 @@ METRIC_TO_ENTITLEMENT: dict[str, str] = {
 
 
 def get_plan_entitlements(plan: str) -> dict:
-    """Return the entitlement dict for *plan*, falling back to free."""
-    return PLAN_ENTITLEMENTS.get(normalize_tier(plan), PLAN_ENTITLEMENTS["free"])
+    """Return the entitlement dict for *plan*, failing CLOSED to locked."""
+    return PLAN_ENTITLEMENTS.get(normalize_tier(plan), PLAN_ENTITLEMENTS["locked"])
 
 
 def check_usage_limit(
@@ -215,16 +230,16 @@ def get_plan_definitions(conn, tier: str) -> dict | None:
 
 
 def get_user_plan_tier(conn, user_id: int) -> str:
-    """Fast lookup for user's plan tier. Returns 'demo' as fallback."""
+    """Fast lookup for user's plan tier. Fails CLOSED to 'locked'."""
     cur = conn.execute(
         "SELECT plan_tier FROM users WHERE id = %(uid)s",
         {"uid": user_id},
     )
     row = cur.fetchone()
     if row is None:
-        return "demo"
+        return "locked"
     data = dict(row) if not isinstance(row, dict) else row
-    return data.get("plan_tier") or "demo"
+    return data.get("plan_tier") or "locked"
 
 
 def get_user_subscription_status(conn, user_id: int) -> str:
@@ -322,8 +337,8 @@ def get_user_entitlements(conn, user_id: int, workspace_id: int | None = None) -
     plan = get_plan_definitions(conn, plan_tier)
 
     if plan is None:
-        # Fallback to demo if tier not found
-        plan = get_plan_definitions(conn, "demo") or {}
+        # Fail closed to the locked floor if the tier row isn't found.
+        plan = get_plan_definitions(conn, "locked") or {}
 
     # Merge DB plan with pure-Python defaults (for fields not in DB)
     py_defaults = get_plan_entitlements(plan_tier)
@@ -529,7 +544,7 @@ def check_quota(conn, user_id: int, workspace_id: int, meter_key: str, cost: int
     else:
         resets_at = date(today.year, today.month + 1, 1).isoformat()
 
-    current_tier = entitlements.get("plan_tier", "demo")
+    current_tier = entitlements.get("plan_tier", "locked")
 
     if remaining < cost:
         return False, {

@@ -11,8 +11,7 @@ from datetime import datetime, timezone
 logger = logging.getLogger(__name__)
 
 COMPUTE_BUDGETS: dict[str, dict] = {
-    "free": {"max_concurrent_jobs": 1, "max_job_duration_minutes": 10},
-    "demo": {"max_concurrent_jobs": 1, "max_job_duration_minutes": 10},
+    "locked": {"max_concurrent_jobs": 1, "max_job_duration_minutes": 10},
     "racer": {"max_concurrent_jobs": 2, "max_job_duration_minutes": 30},
     "world-class": {"max_concurrent_jobs": 5, "max_job_duration_minutes": 60},
     "world_class": {"max_concurrent_jobs": 5, "max_job_duration_minutes": 60},
@@ -21,8 +20,8 @@ COMPUTE_BUDGETS: dict[str, dict] = {
 
 
 def get_budget(plan_tier: str) -> dict:
-    """Get compute budget for a plan tier. Falls back to demo."""
-    return COMPUTE_BUDGETS.get(plan_tier, COMPUTE_BUDGETS["demo"])
+    """Get compute budget for a plan tier. Falls back to locked."""
+    return COMPUTE_BUDGETS.get(plan_tier, COMPUTE_BUDGETS["locked"])
 
 
 def check_compute_budget(
@@ -52,7 +51,7 @@ def check_compute_budget(
             {"uid": user_id},
         ).fetchone()
         plan_tier = (dict(row) if row and not isinstance(row, dict) else (row or {})).get(
-            "plan_tier", "demo"
+            "plan_tier", "locked"
         )
 
     budget = get_budget(plan_tier)

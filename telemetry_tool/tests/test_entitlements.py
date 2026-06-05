@@ -78,15 +78,17 @@ class TestGetUserPlanTier:
         conn = _mock_conn([[{"plan_tier": "racer"}]])
         assert get_user_plan_tier(conn, 1) == "racer"
 
-    def test_returns_demo_for_missing_user(self):
+    def test_returns_locked_for_missing_user(self):
         from auth.entitlements import get_user_plan_tier
         conn = _mock_conn([[]])  # no rows
-        assert get_user_plan_tier(conn, 999) == "demo"
+        # Missing user fails CLOSED to the zero-access 'locked' floor.
+        assert get_user_plan_tier(conn, 999) == "locked"
 
-    def test_returns_demo_for_null_tier(self):
+    def test_returns_locked_for_null_tier(self):
         from auth.entitlements import get_user_plan_tier
         conn = _mock_conn([[{"plan_tier": None}]])
-        assert get_user_plan_tier(conn, 1) == "demo"
+        # Null plan_tier fails CLOSED to the zero-access 'locked' floor.
+        assert get_user_plan_tier(conn, 1) == "locked"
 
 
 # ── Tests: get_plan_definitions ──────────────────────────────────────
@@ -677,10 +679,11 @@ class TestFeatureGatingMatrix:
 class TestPlanEntitlements:
     """Tests for the static PLAN_ENTITLEMENTS dict and helpers."""
 
-    def test_free_plan_has_one_analysis(self):
+    def test_free_alias_is_locked_zero_analyses(self):
         from auth.entitlements import get_plan_entitlements
+        # 'free' is now a fail-closed alias to 'locked' — ZERO analyses.
         ent = get_plan_entitlements("free")
-        assert ent["analyses_per_month"] == 1
+        assert ent["analyses_per_month"] == 0
 
     def test_racer_plan_has_ten_analyses(self):
         from auth.entitlements import get_plan_entitlements
@@ -692,10 +695,13 @@ class TestPlanEntitlements:
         ent = get_plan_entitlements("world_class")
         assert ent["analyses_per_month"] == -1
 
-    def test_unknown_plan_falls_back_to_free(self):
+    def test_unknown_plan_falls_back_to_locked(self):
         from auth.entitlements import get_plan_entitlements
+        # Unknown tiers fail CLOSED to 'locked' (== the 'free' alias).
         ent = get_plan_entitlements("nonexistent")
+        assert ent == get_plan_entitlements("locked")
         assert ent == get_plan_entitlements("free")
+        assert ent["analyses_per_month"] == 0
 
     def test_all_plans_have_required_keys(self):
         from auth.entitlements import KNOWN_PLANS, PLAN_ENTITLEMENTS
@@ -709,9 +715,12 @@ class TestPlanEntitlements:
             ent = PLAN_ENTITLEMENTS[plan]
             assert required.issubset(ent.keys()), f"{plan} missing keys: {required - ent.keys()}"
 
-    def test_demo_is_alias_for_free(self):
+    def test_demo_and_free_both_alias_locked(self):
         from auth.entitlements import get_plan_entitlements
+        # demo and free are now BOTH fail-closed aliases to 'locked' (zero).
         assert get_plan_entitlements("demo") == get_plan_entitlements("free")
+        assert get_plan_entitlements("demo") == get_plan_entitlements("locked")
+        assert get_plan_entitlements("demo")["analyses_per_month"] == 0
 
     def test_free_plan_boolean_features_disabled(self):
         from auth.entitlements import get_plan_entitlements
@@ -772,10 +781,12 @@ class TestCheckUsageLimit:
         assert ok is True
         assert info["remaining"] == -1  # unlimited sentinel
 
-    def test_free_plan_single_analysis(self):
+    def test_free_plan_zero_analyses(self):
         from auth.entitlements import check_usage_limit
-        ok, _ = check_usage_limit(plan="free", metric="analyses", current_count=0)
-        assert ok is True
+        # 'free' aliases 'locked' — ZERO analyses, blocked even at count 0.
+        ok, info = check_usage_limit(plan="free", metric="analyses", current_count=0)
+        assert ok is False
+        assert info["limit"] == 0
         ok, _ = check_usage_limit(plan="free", metric="analyses", current_count=1)
         assert ok is False
 
@@ -785,17 +796,20 @@ class TestCheckUsageLimit:
         assert ok is False
         assert info["limit"] == 0
 
-    def test_zero_count_under_limit(self):
+    def test_locked_floor_zero_remaining_at_zero_count(self):
         from auth.entitlements import check_usage_limit
+        # locked/free floor: limit 0 → no remaining, blocked at any count.
         ok, info = check_usage_limit(plan="free", metric="analyses", current_count=0)
-        assert ok is True
-        assert info["remaining"] == 1
+        assert ok is False
+        assert info["limit"] == 0
+        assert info["remaining"] == 0
 
     def test_demo_alias_works_in_limit_check(self):
         from auth.entitlements import check_usage_limit
+        # 'demo' aliases 'locked' — ZERO limit (no free report).
         ok, info = check_usage_limit(plan="demo", metric="analyses", current_count=0)
-        assert ok is True
-        assert info["limit"] == 1
+        assert ok is False
+        assert info["limit"] == 0
 
 
 class TestDeviceSyncEntitlements:

@@ -16,7 +16,7 @@ logger = logging.getLogger(__name__)
 def get_user_plan_tier(conn, user_id: int) -> str:
     """Return the plan tier for a user, cached in g.plan_tier.
 
-    Falls back to ``'demo'`` if user not found or plan_tier is NULL.
+    Falls back to ``'locked'`` if user not found or plan_tier is NULL.
     """
     from flask import g
 
@@ -28,7 +28,7 @@ def get_user_plan_tier(conn, user_id: int) -> str:
             {"uid": user_id},
         )
         row = cur.fetchone()
-        tier = (row.get("plan_tier") if row else None) or "demo"
+        tier = (row.get("plan_tier") if row else None) or "locked"
         g.plan_tier = tier
         return tier
 
@@ -58,7 +58,7 @@ def get_effective_entitlements(conn, user_id: int, workspace_id: int) -> dict:
         tier = get_user_plan_tier(conn, user_id)
         plan = get_plan_definition(conn, tier)
         if not plan:
-            plan = get_plan_definition(conn, "demo")
+            plan = get_plan_definition(conn, "locked")
 
         # Apply overrides (user-level or workspace-level, active only)
         now = datetime.now(timezone.utc).isoformat()

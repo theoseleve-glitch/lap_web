@@ -52,13 +52,17 @@ class FakeConn:
 # ---------------------------------------------------------------------------
 
 class TestBillingStatus:
-    def test_free_plan_status_no_subscription(self):
-        """Free plan user gets default billing snapshot with no Stripe details."""
+    def test_no_subscription_status(self):
+        """No-subscription user gets default billing snapshot with no Stripe details.
+
+        plan_tier is the zero-access 'locked' floor; subscription_status stays
+        'free' (a billing-state value that is unchanged in the new model).
+        """
         from web.routes.billing import billing_status
 
         conn = FakeConn({
             "plan_tier": [{
-                "plan_tier": "demo",
+                "plan_tier": "locked",
                 "subscription_status": "free",
                 "stripe_customer_id": None,
                 "stripe_subscription_id": None,
@@ -80,7 +84,8 @@ class TestBillingStatus:
 
                 assert status == 200
                 assert data["ok"] is True
-                assert data["data"]["plan_tier"] == "demo"
+                assert data["data"]["plan_tier"] == "locked"
+                # subscription_status 'free' is a billing state, NOT a tier — unchanged.
                 assert data["data"]["subscription_status"] == "free"
                 assert data["data"]["billing_cycle"] is None
                 assert data["data"]["current_period_end"] is None
