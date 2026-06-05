@@ -87,10 +87,20 @@ def _load_training_config() -> dict:
 
 
 def _get_pg_connection():
-    """Return a PG connection via the web.db_pg module."""
-    from web.db_pg import get_pg_connection
+    """Return a standalone maintenance PG connection (BYPASSRLS role).
 
-    return get_pg_connection()
+    Model training is inherently CROSS-TENANT: it reads sessions/drivers
+    across ALL workspaces. The app role (``telemetry_app``) is NOBYPASSRLS,
+    so reads over RLS-enabled tables (``sessions``, ``drivers``) fail closed
+    when no ``app.current_workspace_id`` GUC is set. We therefore use the
+    maint DSN (``telemetry_maint``, BYPASSRLS but NOSUPERUSER).
+
+    NOTE: this returns a STANDALONE connection (never cached on flask.g).
+    Every caller MUST close it via ``return_pg_connection`` in a finally.
+    """
+    from web.db_pg import get_maint_connection
+
+    return get_maint_connection()
 
 
 def _gather_training_groups(conn) -> list[dict]:
@@ -333,6 +343,7 @@ def _reprocess_sessions(
     """Tier 3: Re-run pipeline on each session with updated models."""
     from pipeline import run_full_analysis
     from tasks.pipeline_tasks import _store_theoretical_data
+    from web.db_pg import return_pg_connection
 
     results: dict[str, Any] = {"succeeded": 0, "failed": 0, "errors": []}
 
@@ -355,8 +366,44 @@ def _reprocess_sessions(
             )
 
             if result.get("theoretical_metrics"):
+                # _store_theoretical_data INSERTs into theoretical_data (RLS)
+                # WITHOUT an explicit workspace_id — it relies on the column's
+                # current_setting('app.current_workspace_id') DEFAULT. On the
+                # maint role (BYPASSRLS, no GUC) that DEFAULT evaluates to NULL
+                # and the INSERT fails the NOT NULL / FK. So resolve THIS
+                # session's workspace_id and SET the GUC on the maint conn
+                # before the per-session write. If it can't be resolved, log
+                # and skip the store (best-effort) — the analysis still ran.
                 conn = _get_pg_connection()
-                _store_theoretical_data(session_id, result, conn=conn)
+                try:
+                    ws_row = conn.execute(
+                        "SELECT workspace_id FROM sessions "
+                        "WHERE session_id = %(sid)s",
+                        {"sid": session_id},
+                    ).fetchone()
+                    ws_id = None
+                    if ws_row is not None:
+                        wr = dict(ws_row) if not isinstance(ws_row, dict) else ws_row
+                        ws_id = wr.get("workspace_id")
+
+                    if ws_id is not None:
+                        # Scope the per-session write to its workspace so the
+                        # theoretical_data DEFAULT resolves correctly.
+                        conn.execute(
+                            "SET app.current_workspace_id = %(ws)s",
+                            {"ws": str(ws_id)},
+                        )
+                        _store_theoretical_data(session_id, result, conn=conn)
+                    else:
+                        logger.warning(
+                            "Skipping theoretical_data write for %s: "
+                            "could not resolve workspace_id on maint conn",
+                            session_id,
+                        )
+                finally:
+                    # Standalone maint connection — close to avoid a leak per
+                    # reprocessed session in this recurring beat task.
+                    return_pg_connection(conn)
 
             results["succeeded"] += 1
             logger.info(
@@ -421,25 +468,35 @@ def weekly_retrain_and_reprocess() -> dict:
         "tiers": {},
     }
 
+    # Standalone maintenance connection (BYPASSRLS) for the cross-tenant
+    # training READS in Tiers 1 and 3. Closed in the finally below — it is
+    # NOT cached on flask.g, so leaving it open would leak a connection on
+    # every (bi-)weekly beat run.
+    from web.db_pg import return_pg_connection
     conn = _get_pg_connection()
+    groups: list[dict] = []
+    try:
+        # Tier 1: Track-specific envelopes
+        logger.info("=== Tier 1: Training track-specific envelopes ===")
+        groups = _gather_training_groups(conn)
+        tier1 = _train_track_envelopes(
+            groups, min_sessions=config["min_sessions_per_group"],
+        )
+        audit["tiers"]["envelopes"] = tier1
 
-    # Tier 1: Track-specific envelopes
-    logger.info("=== Tier 1: Training track-specific envelopes ===")
-    groups = _gather_training_groups(conn)
-    tier1 = _train_track_envelopes(
-        groups, min_sessions=config["min_sessions_per_group"],
-    )
-    audit["tiers"]["envelopes"] = tier1
+        # Tier 2: Global kart_envelope model bundle
+        logger.info("=== Tier 2: Training global kart_envelope model bundle ===")
+        tier2 = _train_global_model()
+        audit["tiers"]["global_model"] = tier2
 
-    # Tier 2: Global kart_envelope model bundle
-    logger.info("=== Tier 2: Training global kart_envelope model bundle ===")
-    tier2 = _train_global_model()
-    audit["tiers"]["global_model"] = tier2
-
-    # Tier 3: ML engine models (global, per-driver, anomaly)
-    logger.info("=== Tier 3: Training ML engine models ===")
-    tier3 = _train_ml_models(conn)
-    audit["tiers"]["ml_models"] = tier3
+        # Tier 3: ML engine models (global, per-driver, anomaly)
+        logger.info("=== Tier 3: Training ML engine models ===")
+        tier3 = _train_ml_models(conn)
+        audit["tiers"]["ml_models"] = tier3
+    finally:
+        # Done with the shared cross-tenant read connection. Tier 4 manages
+        # its own per-session maint connections internally.
+        return_pg_connection(conn)
 
     # Tier 4: Reprocess all sessions with improved models
     logger.info("=== Tier 4: Reprocessing all sessions ===")

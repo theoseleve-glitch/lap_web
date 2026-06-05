@@ -26,7 +26,10 @@ if config.config_file_name is not None:
     fileConfig(config.config_file_name, disable_existing_loggers=False)
 
 # Override sqlalchemy.url from environment variable when available.
-pg_url = os.environ.get("TELEMETRY_PG_URL")
+# Prefer the dedicated migration/owner DSN: migrations perform owner-only
+# DDL (CREATE TABLE / POLICY / FORCE RLS) that the runtime app role
+# (telemetry_app, RLS-scoped) deliberately cannot run.
+pg_url = os.environ.get("TELEMETRY_PG_MIGRATION_URL") or os.environ.get("TELEMETRY_PG_URL")
 if pg_url:
     config.set_main_option("sqlalchemy.url", pg_url)
 

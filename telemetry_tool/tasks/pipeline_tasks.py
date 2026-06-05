@@ -109,6 +109,27 @@ def _get_pg_connection():
     return get_pg_connection()
 
 
+def _set_task_workspace_context(ctx) -> None:
+    """Apply the workspace RLS context to the task's PG connection.
+
+    Pipeline tasks touch RLS tables (``ingestion_jobs``, ``sessions``, …)
+    from their FIRST statement — before ``_persist_session_data`` runs. Under
+    the non-superuser ``telemetry_app`` role those queries fail closed unless
+    ``app.current_workspace_id`` is set. Uses connection-scoped ``SET`` (not
+    ``SET LOCAL``) so the value survives the many independent COMMITs across
+    pipeline steps — identical to ``_persist_session_data`` (which keeps its
+    own SET for the standalone-conn / resume paths). Idempotent and cheap:
+    the connection is the g-cached one reused by every task helper.
+    """
+    if not getattr(ctx, "workspace_id", None):
+        return
+    conn = _get_pg_connection()
+    conn.execute(
+        "SET app.current_workspace_id = %(ws)s",
+        {"ws": str(ctx.workspace_id)},
+    )
+
+
 def _update_job_progress(
     job_id: str,
     status: str,
@@ -1101,6 +1122,9 @@ def pipeline_ingest(self, job_id: str) -> Optional[str]:
         )
         return None
 
+    # RLS: set the workspace GUC before the first ingestion_jobs write.
+    _set_task_workspace_context(ctx)
+
     _update_job_progress(job_id=job_id, status="running", stage_name="ingest", stage_index=0, stage_total=15)
 
     try:
@@ -1174,6 +1198,9 @@ def pipeline_analyze(self, job_id: Optional[str]) -> Optional[str]:
 
     if ctx is None:
         raise FatalError(f"PipelineContext not found for job {job_id}")
+
+    # RLS: re-establish the workspace GUC (this is a fresh task/connection).
+    _set_task_workspace_context(ctx)
 
     _update_job_progress(job_id=job_id, status="running", stage_name="analyze", stage_index=4, stage_total=15)
 
@@ -1268,6 +1295,9 @@ def pipeline_finalize(self, job_id: Optional[str]) -> Optional[str]:
 
     if ctx is None:
         raise FatalError(f"PipelineContext not found for job {job_id}")
+
+    # RLS: re-establish the workspace GUC (this is a fresh task/connection).
+    _set_task_workspace_context(ctx)
 
     # Re-acquire workspace lock on resume path (lock may have expired
     # during joker pause which can exceed the 30-minute TTL).

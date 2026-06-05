@@ -244,6 +244,12 @@ class TestReprocessSessions:
             with patch("pipeline.run_full_analysis", return_value=mock_result), \
                  patch("tasks.pipeline_tasks._store_theoretical_data") as mock_store, \
                  patch("tasks.training_tasks._get_pg_connection") as mock_conn:
+                # The reprocess now resolves the session's workspace_id (to set
+                # the RLS GUC before the per-session theoretical_data write) via
+                # the maint connection. Make that lookup return a workspace.
+                mock_conn.return_value.execute.return_value.fetchone.return_value = {
+                    "workspace_id": 1,
+                }
                 result = _reprocess_sessions(sessions, data_dir=str(tmp))
 
             mock_store.assert_called_once()

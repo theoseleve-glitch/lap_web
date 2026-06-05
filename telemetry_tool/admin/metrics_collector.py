@@ -188,9 +188,19 @@ except Exception:
 
 
 def _collect_and_store():
-    """Run a full collect-store-prune cycle."""
-    from web.db_pg import get_pg_connection
-    conn = get_pg_connection()
+    """Run a full collect-store-prune cycle.
+
+    Uses the maintenance connection (BYPASSRLS role ``telemetry_maint``).
+    The collectors run CROSS-TENANT aggregate queries over RLS-enabled tables
+    (``ingestion_jobs``, ``security_events``) to compute platform-wide system
+    metrics. The app role (``telemetry_app``) is NOBYPASSRLS and would fail
+    closed on those tables without a per-workspace GUC, so we deliberately
+    use the maint DSN here. The snapshot is written to the platform-wide
+    ``system_metrics_snapshots`` table (not per-workspace), which the maint
+    role can insert into without a GUC.
+    """
+    from web.db_pg import get_maint_connection, return_pg_connection
+    conn = get_maint_connection()
     try:
         redis_client = None
         try:
@@ -208,10 +218,9 @@ def _collect_and_store():
         prune_old_snapshots(conn)
         return snapshot
     finally:
-        try:
-            conn.close()
-        except Exception:
-            pass
+        # Standalone maint connection — must be closed to avoid leaking a
+        # connection on every beat tick.
+        return_pg_connection(conn)
 
 
 if _USE_CELERY and _celery_app is not None:

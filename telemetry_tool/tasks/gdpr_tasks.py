@@ -58,6 +58,25 @@ def get_pg_connection():
     return _get_pg()
 
 
+def get_maint_connection():
+    """Get a standalone BYPASSRLS maintenance connection (telemetry_maint).
+
+    Used by the cross-tenant beat tasks (purge / retention) that must touch
+    rows across ALL workspaces. The app role is RLS-scoped and fails closed
+    when the workspace GUC is unset, so those sweeps require the maint role.
+    Caller MUST close it via ``return_pg_connection``. Thin local wrapper
+    (mirrors ``get_pg_connection`` above) so tests can patch it.
+    """
+    from web.db_pg import get_maint_connection as _get_maint
+    return _get_maint()
+
+
+def return_pg_connection(conn) -> None:
+    """Close a standalone connection (rollback + close). Local wrapper."""
+    from web.db_pg import return_pg_connection as _return_pg
+    _return_pg(conn)
+
+
 # ---------------------------------------------------------------------------
 # GPS precision reduction (data minimization)
 # ---------------------------------------------------------------------------
@@ -152,6 +171,45 @@ def _write_zip(
 
 
 # ---------------------------------------------------------------------------
+# Export workspace resolution
+# ---------------------------------------------------------------------------
+
+def _resolve_export_workspace_id(export_id: str) -> int | None:
+    """Resolve the owning workspace_id for a data_exports row.
+
+    ``data_exports`` is RLS-enabled, so the working app connection cannot read
+    the row until its workspace GUC is set — a chicken-and-egg problem. Read it
+    once via the BYPASSRLS maintenance connection to break the cycle, then the
+    caller pins the GUC on the working connection. Returns ``None`` (and the
+    caller skips the GUC, letting the RLS write fail closed) if the maint role
+    is unavailable or the row carries no workspace_id.
+    """
+    from sqlalchemy import text
+
+    maint = None
+    try:
+        maint = get_maint_connection()
+        row = maint.execute(
+            text("SELECT workspace_id FROM data_exports WHERE id = :id"),
+            {"id": export_id},
+        ).fetchone()
+    except Exception as exc:
+        logger.warning(
+            "Could not resolve workspace for export_id=%s via maint role: %s",
+            export_id, exc,
+        )
+        return None
+    finally:
+        if maint is not None:
+            return_pg_connection(maint)
+
+    if not row:
+        return None
+    ws = row["workspace_id"] if isinstance(row, dict) else dict(row).get("workspace_id")
+    return int(ws) if ws is not None else None
+
+
+# ---------------------------------------------------------------------------
 # Task: export_user_data
 # ---------------------------------------------------------------------------
 
@@ -176,6 +234,22 @@ def _export_user_data_impl(user_id: int, export_id: str) -> dict[str, Any]:
     from sqlalchemy import text
 
     conn = get_pg_connection()
+
+    # RLS: this is a per-WORKSPACE export, not cross-tenant. The first write
+    # below (_update_export_status → UPDATE data_exports) and every read after
+    # it (sessions/laps/score_details/session_annotations) are RLS tables, so
+    # the working connection needs app.current_workspace_id set or it fails
+    # closed. The task args only carry user_id/export_id, and the owning
+    # workspace lives on the data_exports row (itself RLS) — so resolve it via
+    # a short-lived BYPASSRLS maintenance connection first, then pin the GUC on
+    # the working connection (connection-scoped, not SET LOCAL, so it survives
+    # the multiple commits _update_export_status performs).
+    workspace_id = _resolve_export_workspace_id(export_id)
+    if workspace_id is not None:
+        conn.execute(
+            "SET app.current_workspace_id = %(ws)s",
+            {"ws": str(workspace_id)},
+        )
 
     # 1. Mark as processing
     _update_export_status(conn, export_id, "processing")
@@ -283,7 +357,23 @@ def _purge_deleted_accounts_impl() -> dict[str, int]:
     """
     from sqlalchemy import text
 
-    conn = get_pg_connection()
+    # RLS: this beat task is cross-tenant BY DESIGN — it iterates ALL
+    # soft-deleted users and DELETEs from RLS-enabled tables (sessions, laps,
+    # gps_traces, score_details, corner_metrics, session_annotations, ...)
+    # across every workspace. The RLS-scoped app role fails closed without a
+    # per-workspace GUC, so use the BYPASSRLS maintenance role and always
+    # close it in the finally below.
+    conn = get_maint_connection()
+    try:
+        return _purge_deleted_accounts_with_conn(conn)
+    finally:
+        return_pg_connection(conn)
+
+
+def _purge_deleted_accounts_with_conn(conn) -> dict[str, int]:
+    """Run the account-purge sweep on an already-open (maint) connection."""
+    from sqlalchemy import text
+
     cutoff = datetime.now(timezone.utc) - timedelta(days=30)
 
     # 1. Find accounts past grace period
@@ -434,7 +524,25 @@ def _enforce_raw_data_retention_impl() -> dict[str, int]:
 
     from auth.entitlements import get_plan_entitlements
 
-    conn = get_pg_connection()
+    # RLS: this daily sweep iterates ALL workspaces and DELETEs from gps_traces
+    # (RLS) plus writes audit_log (RLS) per workspace. Use the BYPASSRLS
+    # maintenance role — consistent with tasks/retention_tasks.py — because the
+    # RLS-scoped app role can only see one workspace and fails closed with the
+    # GUC unset. The per-ws DELETE and the audit INSERT both pass workspace_id
+    # explicitly (see _write_retention_audit), so no GUC is needed on maint.
+    conn = get_maint_connection()
+    try:
+        return _enforce_raw_data_retention_with_conn(conn)
+    finally:
+        return_pg_connection(conn)
+
+
+def _enforce_raw_data_retention_with_conn(conn) -> dict[str, int]:
+    """Run the retention sweep on an already-open (maint) connection."""
+    from sqlalchemy import text
+
+    from auth.entitlements import get_plan_entitlements
+
     workspace_tiers = _iter_workspace_tiers(conn)
 
     total_deleted_rows = 0

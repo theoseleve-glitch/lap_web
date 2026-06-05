@@ -39,7 +39,15 @@ def client(app):
     return app.test_client()
 
 
-def _post_upload(client, csv_content="Lap #,Time (s)\n1,0.0\n",
+# Preflight rejects files with < 50 data rows (preflight._MIN_DATA_ROWS),
+# so the default upload payload must clear that gate to exercise the async
+# dispatch path these tests pin (both call sites expect acceptance).
+_VALID_CSV = "Lap #,Time (s),Speed (m/s)\n" + "".join(
+    f"1,{t / 10:.1f},{10.0 + (t % 20) * 0.1:.1f}\n" for t in range(60)
+)
+
+
+def _post_upload(client, csv_content=_VALID_CSV,
                  filename="session.csv", extra_fields=None):
     """Helper to POST to upload endpoint."""
     data = {

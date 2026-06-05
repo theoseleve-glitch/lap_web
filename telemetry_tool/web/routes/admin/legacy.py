@@ -146,13 +146,23 @@ def get_user_detail(user_id: int):
 
     user = dict(row) if not isinstance(row, dict) else row
 
-    # Recent audit log entries
-    audit_rows = conn.execute(
-        "SELECT action, new_value AS details, ip_address, created_at "
-        "FROM audit_log WHERE user_id = %(uid)s "
-        "ORDER BY created_at DESC LIMIT 20",
-        {"uid": user_id},
-    ).fetchall()
+    # Recent audit log entries.
+    # audit_log is RLS-scoped on app.current_workspace_id, which the request
+    # middleware sets to the ADMIN's own workspace. Reading the TARGET user's
+    # audit over the request-scoped app connection would be silently scoped to
+    # the admin's workspace and return nothing. Use the BYPASSRLS maint
+    # connection so the platform admin sees the target's audit across workspaces.
+    from web.db_pg import get_maint_connection, return_pg_connection
+    maint = get_maint_connection()
+    try:
+        audit_rows = maint.execute(
+            "SELECT action, new_value AS details, ip_address, created_at "
+            "FROM audit_log WHERE user_id = %(uid)s "
+            "ORDER BY created_at DESC LIMIT 20",
+            {"uid": user_id},
+        ).fetchall()
+    finally:
+        return_pg_connection(maint)
     user["recent_audit"] = [dict(r) if not isinstance(r, dict) else r for r in audit_rows]
 
     return api_response(user)
@@ -222,18 +232,47 @@ def create_override(user_id: int):
             status=422,
         )
 
-    conn.execute(
-        "INSERT INTO entitlement_overrides (user_id, override_key, override_value, reason, expires_at) "
-        "VALUES (%(uid)s, %(feature)s, %(value)s, %(reason)s, %(expires)s)",
-        {
-            "uid": user_id,
-            "feature": feature,
-            "value": str(value),
-            "reason": reason or None,
-            "expires": expires_at,
-        },
-    )
-    conn.commit()
+    # entitlement_overrides is RLS-scoped on app.current_workspace_id (WITH CHECK).
+    # The request middleware sets that GUC to the ADMIN's own workspace, so an
+    # INSERT for a TARGET user in a DIFFERENT workspace fails the WITH CHECK over
+    # the request-scoped app connection. Write via the BYPASSRLS maint connection
+    # instead. Because the maint role provides no GUC, the column DEFAULT
+    # (current_setting('app.current_workspace_id')) is unavailable, so we must
+    # resolve and pass the TARGET user's workspace_id explicitly.
+    from web.db_pg import get_maint_connection, return_pg_connection
+    maint = get_maint_connection()
+    try:
+        ws_row = maint.execute(
+            "SELECT default_workspace_id FROM users WHERE id = %(uid)s",
+            {"uid": user_id},
+        ).fetchone()
+        if not ws_row:
+            return api_error(ErrorCode.NOT_FOUND, "User not found", status=404)
+        ws = dict(ws_row) if not isinstance(ws_row, dict) else ws_row
+        target_workspace_id = ws.get("default_workspace_id")
+        if target_workspace_id is None:
+            return api_error(
+                ErrorCode.VALIDATION_ERROR,
+                "Target user has no default workspace",
+                status=422,
+            )
+
+        maint.execute(
+            "INSERT INTO entitlement_overrides "
+            "(user_id, workspace_id, override_key, override_value, reason, expires_at) "
+            "VALUES (%(uid)s, %(ws)s, %(feature)s, %(value)s, %(reason)s, %(expires)s)",
+            {
+                "uid": user_id,
+                "ws": target_workspace_id,
+                "feature": feature,
+                "value": str(value),
+                "reason": reason or None,
+                "expires": expires_at,
+            },
+        )
+        maint.commit()
+    finally:
+        return_pg_connection(maint)
 
     audit_log(conn, "admin_entitlement_override", {
         "target_user_id": user_id,
@@ -337,7 +376,6 @@ def list_audit_log():
         end_date: ISO date end
         limit, offset: pagination
     """
-    conn = _get_conn()
     action_filter = request.args.get("action", "").strip()
     user_filter = request.args.get("user_id", "").strip()
     start = request.args.get("start_date", "").strip()
@@ -367,12 +405,22 @@ def list_audit_log():
     where = " AND ".join(conditions)
     where_clause = f"WHERE {where}" if where else ""
 
-    rows = conn.execute(
-        f"SELECT id, user_id, action, new_value AS details, ip_address, request_id, created_at "
-        f"FROM audit_log {where_clause} "
-        f"ORDER BY created_at DESC LIMIT %(limit)s OFFSET %(offset)s",
-        params,
-    ).fetchall()
+    # audit_log is RLS-scoped on app.current_workspace_id, which the request
+    # middleware pins to the admin's own workspace. A platform-wide audit view
+    # must see ALL workspaces, so read via the BYPASSRLS maint connection rather
+    # than the request-scoped app connection (which would only return rows in the
+    # admin's own workspace).
+    from web.db_pg import get_maint_connection, return_pg_connection
+    maint = get_maint_connection()
+    try:
+        rows = maint.execute(
+            f"SELECT id, user_id, action, new_value AS details, ip_address, request_id, created_at "
+            f"FROM audit_log {where_clause} "
+            f"ORDER BY created_at DESC LIMIT %(limit)s OFFSET %(offset)s",
+            params,
+        ).fetchall()
+    finally:
+        return_pg_connection(maint)
 
     return api_response({
         "entries": [dict(r) if not isinstance(r, dict) else r for r in rows],

@@ -51,19 +51,18 @@ def _serialize_row(row):
 
 
 def _raw_conn():
-    """Return a raw psycopg2 connection (bypasses request-scoped RLS context).
+    """Return a raw psycopg2 connection on the maintenance DSN.
 
-    Admin infra queries need cross-workspace visibility, so they must
-    not use the per-request PgConnectionWrapper which has SET LOCAL ROLE
-    applied by the tenant middleware.
+    Admin infra queries need cross-workspace visibility, so they must not
+    use the per-request PgConnectionWrapper (RLS-scoped to one workspace by
+    the tenant middleware). The telemetry_maint role is BYPASSRLS but
+    non-superuser — the app role itself can no longer see across tenants.
     """
-    import os
     import psycopg2
     from psycopg2.extras import RealDictCursor
-    return psycopg2.connect(os.environ.get(
-        "TELEMETRY_PG_URL",
-        "postgresql://telemetry:telemetry@localhost:5432/telemetry",
-    ), cursor_factory=RealDictCursor)
+
+    from web.db_pg import _get_maint_url
+    return psycopg2.connect(_get_maint_url(), cursor_factory=RealDictCursor)
 
 
 def _collect_storage_metrics(conn) -> dict:

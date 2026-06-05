@@ -66,6 +66,14 @@ def require_device_token(fn):
         g.workspace_id = result["workspace_id"]
         g.device_id = result["device_id"]
 
+        # RLS: device-token routes are allowlisted past the JWT auth +
+        # tenant middleware, so nothing else sets the workspace context.
+        # Apply it here (SET LOCAL + SET LOCAL ROLE) so the view's RLS-table
+        # queries don't fail closed under the non-superuser app role. The
+        # wrapper re-applies it after each commit (g.workspace_id is set).
+        from auth.workspace import set_workspace_context
+        set_workspace_context(conn, result["workspace_id"])
+
         # Update last_seen_at
         try:
             conn.execute(

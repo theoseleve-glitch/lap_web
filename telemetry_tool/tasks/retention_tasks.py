@@ -63,15 +63,18 @@ _DERIVED_TABLES = [
 
 
 def _get_pg_conn():
-    """Get a raw psycopg2 connection (outside Flask request context)."""
+    """Raw psycopg2 connection on the maintenance DSN (telemetry_maint).
+
+    Retention enforcement deletes across ALL workspaces by design, so it
+    needs the BYPASSRLS (but non-superuser) maintenance role — the app role
+    is row-security-scoped and cannot see other tenants' rows.
+    """
     import psycopg2
     import psycopg2.extras
 
-    url = os.environ.get(
-        "TELEMETRY_PG_URL",
-        "postgresql://telemetry:telemetry@localhost:5432/telemetry",
-    )
-    conn = psycopg2.connect(url)
+    from web.db_pg import _get_maint_url
+
+    conn = psycopg2.connect(_get_maint_url())
     conn.autocommit = False
     conn.cursor_factory = psycopg2.extras.RealDictCursor
     return conn

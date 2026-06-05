@@ -243,11 +243,14 @@ def create_app(config: Config | None = None) -> Flask:
 
     # Database setup — route to PostgreSQL or SQLite based on config.
     if cfg.USE_PG:
-        from .db_pg import _get_pg_url, close_pg, init_pg
+        from .db_pg import _get_pg_url, assert_rls_enforcement, close_pg, init_pg
         app.teardown_appcontext(close_pg)
 
         with app.app_context():
             init_pg()
+            # P0 guard: refuse to serve multi-tenant traffic over a DSN
+            # whose role bypasses row-level security (superuser/BYPASSRLS).
+            assert_rls_enforcement(auth_required=cfg.AUTH_REQUIRED)
             # NOTE: track sync from tracks.json removed. Tracks are created
             # by the pipeline on upload (track_detection → upsert_track).
             # The old sync_tracks_from_json() ran on every worker boot and

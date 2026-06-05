@@ -73,6 +73,14 @@ def dispatch_batch(batch_job_id: int, workspace_id: int) -> None:
     """
     conn = _get_pg_connection()
 
+    # RLS: this task SELECTs sessions and INSERTs ingestion_jobs (both RLS
+    # tables) for the given workspace. Set the GUC connection-scoped (not
+    # SET LOCAL) so it survives the per-session commits below.
+    conn.execute(
+        "SET app.current_workspace_id = %(ws)s",
+        {"ws": str(workspace_id)},
+    )
+
     # 1. Look up batch_jobs row
     cursor = conn.execute(
         text("SELECT * FROM batch_jobs WHERE id = :id AND workspace_id = :ws"),

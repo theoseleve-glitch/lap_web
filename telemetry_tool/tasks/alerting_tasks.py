@@ -65,9 +65,14 @@ def _get_redis():
 
 
 def _get_pg():
-    """Get a PostgreSQL connection."""
-    from web.db_pg import get_pg_connection
-    return get_pg_connection()
+    """Standalone maintenance connection (BYPASSRLS).
+
+    These health checks aggregate ingestion_jobs across ALL workspaces, so
+    they need the cross-tenant maintenance role — the app role is RLS-scoped
+    and would fail closed with no workspace GUC. Caller MUST close it.
+    """
+    from web.db_pg import get_maint_connection
+    return get_maint_connection()
 
 
 # ---------------------------------------------------------------------------
@@ -111,6 +116,8 @@ def _check_error_rate(r) -> dict[str, Any]:
 
 def _check_queue_depth() -> dict[str, Any]:
     """Check if the job queue is deeper than the threshold."""
+    from web.db_pg import return_pg_connection
+    conn = None
     try:
         conn = _get_pg()
         row = conn.execute(
@@ -134,10 +141,15 @@ def _check_queue_depth() -> dict[str, Any]:
     except Exception:
         logger.warning("Queue depth check failed", exc_info=True)
         return {"status": "error", "message": "check failed"}
+    finally:
+        if conn is not None:
+            return_pg_connection(conn)
 
 
 def _check_stuck_jobs() -> dict[str, Any]:
     """Check for jobs that have been running longer than the threshold."""
+    from web.db_pg import return_pg_connection
+    conn = None
     try:
         conn = _get_pg()
         rows = conn.execute(
@@ -169,6 +181,9 @@ def _check_stuck_jobs() -> dict[str, Any]:
     except Exception:
         logger.warning("Stuck jobs check failed", exc_info=True)
         return {"status": "error", "message": "check failed"}
+    finally:
+        if conn is not None:
+            return_pg_connection(conn)
 
 
 def _check_webhook_failures(r) -> dict[str, Any]:

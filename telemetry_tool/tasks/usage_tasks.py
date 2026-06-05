@@ -14,17 +14,17 @@ logger = logging.getLogger(__name__)
 
 
 def _get_pg_conn():
-    """Get a raw psycopg2 connection (outside Flask request context)."""
-    import os
+    """Raw psycopg2 connection on the maintenance DSN (telemetry_maint).
 
+    Usage aggregation GROUPs across ALL workspaces by design, so it needs
+    the BYPASSRLS (but non-superuser) maintenance role.
+    """
     import psycopg2
     import psycopg2.extras
 
-    url = os.environ.get(
-        "TELEMETRY_PG_URL",
-        "postgresql://telemetry:telemetry@localhost:5432/telemetry",
-    )
-    conn = psycopg2.connect(url)
+    from web.db_pg import _get_maint_url
+
+    conn = psycopg2.connect(_get_maint_url())
     conn.autocommit = False
     # Use RealDictCursor for dict-like rows
     conn.cursor_factory = psycopg2.extras.RealDictCursor

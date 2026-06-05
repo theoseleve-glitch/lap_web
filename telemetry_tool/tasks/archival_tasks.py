@@ -51,9 +51,11 @@ def _partition_bounds(year: int, month: int):
 
 def _create_partitions_impl(table: str, months_ahead: int = PARTITION_LOOKAHEAD_MONTHS):
     """Create monthly partitions for the next N months if they don't exist."""
-    from web.db_pg import get_pg_connection, return_pg_connection
+    # Partition DDL needs table ownership — runs on the migration/owner DSN
+    # (the RLS-scoped app role deliberately cannot CREATE/DROP tables).
+    from web.db_pg import get_migration_connection, return_pg_connection
 
-    conn = get_pg_connection()
+    conn = get_migration_connection()
     try:
         today = date.today()
         created = []
@@ -93,9 +95,10 @@ def _archive_old_partitions_impl(
     archive_subdir: str,
 ):
     """Archive partitions older than retention_months to Parquet, then drop."""
-    from web.db_pg import get_pg_connection, return_pg_connection
+    # DROP TABLE on partitions needs ownership — migration/owner DSN.
+    from web.db_pg import get_migration_connection, return_pg_connection
 
-    conn = get_pg_connection()
+    conn = get_migration_connection()
     try:
         cutoff = date.today().replace(day=1)
         # Walk back retention_months

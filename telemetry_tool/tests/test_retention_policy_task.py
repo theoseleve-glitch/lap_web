@@ -46,7 +46,8 @@ def test_enforces_retention_and_deletes_old_files(tmp_path):
 
     conn.execute.side_effect = _execute
 
-    with patch("tasks.gdpr_tasks.get_pg_connection", return_value=conn), \
+    # Retention enforcement is cross-tenant → now runs on the maint role.
+    with patch("tasks.gdpr_tasks.get_maint_connection", return_value=conn), \
          patch.dict(os.environ, {"TELEMETRY_RAW_DIR": str(raw_dir)}):
         result = _enforce_raw_data_retention_impl()
 

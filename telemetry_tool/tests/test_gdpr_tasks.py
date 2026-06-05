@@ -162,7 +162,7 @@ class TestExportUserData:
 # ---------------------------------------------------------------------------
 
 class TestPurgeDeletedAccounts:
-    @patch("tasks.gdpr_tasks.get_pg_connection")
+    @patch("tasks.gdpr_tasks.get_maint_connection")
     def test_skips_users_within_30_day_window(self, mock_db):
         """Users deleted less than 30 days ago are NOT purged."""
         conn = _mock_conn()
@@ -174,7 +174,7 @@ class TestPurgeDeletedAccounts:
         executed_sql = [str(c) for c in conn.execute.call_args_list]
         assert not any("DELETE FROM users" in s for s in executed_sql)
 
-    @patch("tasks.gdpr_tasks.get_pg_connection")
+    @patch("tasks.gdpr_tasks.get_maint_connection")
     def test_deletes_users_past_30_days(self, mock_db):
         """Users deleted more than 30 days ago are hard-purged."""
         conn = _mock_conn()
@@ -189,7 +189,7 @@ class TestPurgeDeletedAccounts:
         assert conn.execute.call_count >= 2
         conn.commit.assert_called()
 
-    @patch("tasks.gdpr_tasks.get_pg_connection")
+    @patch("tasks.gdpr_tasks.get_maint_connection")
     def test_cascades_workspace_deletion(self, mock_db):
         """Purge cascades deletion to workspace-scoped data."""
         conn = _mock_conn()
@@ -204,7 +204,7 @@ class TestPurgeDeletedAccounts:
         executed_sql = " ".join(str(c) for c in conn.execute.call_args_list)
         assert "sessions" in executed_sql.lower() or conn.execute.call_count >= 3
 
-    @patch("tasks.gdpr_tasks.get_pg_connection")
+    @patch("tasks.gdpr_tasks.get_maint_connection")
     def test_handles_empty_result(self, mock_db):
         """Purge handles no deleted users gracefully."""
         conn = _mock_conn()
@@ -213,7 +213,7 @@ class TestPurgeDeletedAccounts:
 
         purge_deleted_accounts()
 
-    @patch("tasks.gdpr_tasks.get_pg_connection")
+    @patch("tasks.gdpr_tasks.get_maint_connection")
     @patch("tasks.gdpr_tasks.logger")
     def test_logs_purge_count(self, mock_logger, mock_db):
         """Purge logs the number of accounts purged."""

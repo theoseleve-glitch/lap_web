@@ -107,9 +107,13 @@ class TestSetWorkspaceContext:
 
         conn = MagicMock()
         set_workspace_context(conn, workspace_id=42)
-        conn.execute.assert_called_once()
-        sql_arg = str(conn.execute.call_args)
-        assert "app.current_workspace_id" in sql_arg
+        # Two statements: the workspace GUC AND the non-superuser role switch.
+        # The SET LOCAL ROLE telemetry_app is load-bearing for RLS enforcement
+        # (a superuser/owner bypasses RLS otherwise) — pin both.
+        assert conn.execute.call_count == 2
+        all_sql = " ".join(str(c) for c in conn.execute.call_args_list)
+        assert "app.current_workspace_id" in all_sql
+        assert "SET LOCAL ROLE telemetry_app" in all_sql
 
 
 class TestRegisterUserCreatesWorkspace:

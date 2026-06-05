@@ -53,7 +53,8 @@ def _get_pg_connection():
 
 
 # ---------------------------------------------------------------------------
-# Data queries (respect RLS via SET LOCAL)
+# Data queries (respect RLS via the connection-scoped app.current_workspace_id
+# GUC set in _generate_export_impl before any RLS table is touched)
 # ---------------------------------------------------------------------------
 
 _DATA_QUERIES: dict[str, str] = {
@@ -185,12 +186,15 @@ def _generate_export_impl(export_id: str) -> dict[str, Any]:
     """Generate an export file.
 
     Steps:
+        0. Resolve the export's owning workspace_id cross-tenant and set the
+           connection-scoped RLS GUC (the export row lives in the RLS
+           ``exports`` table, so it can't be read on the app connection
+           until the GUC is set -- chicken-and-egg).
         1. Fetch export record by ID
         2. Update status to 'generating'
-        3. Set RLS context (SET LOCAL)
-        4. Query data based on data_type
-        5. Generate file in requested format
-        6. Update DB: status='ready', file_path, file_size, completed_at
+        3. Query data based on data_type
+        4. Generate file in requested format
+        5. Update DB: status='ready', file_path, file_size, completed_at
         On error: status='failed', error message
 
     Args:
@@ -204,7 +208,41 @@ def _generate_export_impl(export_id: str) -> dict[str, Any]:
     os.makedirs(EXPORT_DIR, exist_ok=True)
     conn = _get_pg_connection()
 
-    # 1. Fetch export record
+    # 0. Resolve the owning workspace_id BEFORE touching any RLS table.
+    #    Under the P0 RLS cutover the app role is NOBYPASSRLS, so the very
+    #    first `SELECT * FROM exports` fails closed unless the connection GUC
+    #    `app.current_workspace_id` is already set.  The export row that
+    #    carries workspace_id is itself in the RLS `exports` table, so read
+    #    just that one column over a BYPASSRLS maintenance connection.
+    from web.db_pg import get_maint_connection, return_pg_connection
+
+    maint = get_maint_connection()
+    try:
+        ws_row = maint.execute(
+            text("SELECT workspace_id FROM exports WHERE id = :id"),
+            {"id": export_id},
+        ).fetchone()
+    finally:
+        return_pg_connection(maint)
+
+    if ws_row is None:
+        logger.error("Export record not found: %s", export_id)
+        return {"export_id": export_id, "error": "not_found"}
+
+    ws_row = dict(ws_row) if not isinstance(ws_row, dict) else ws_row
+    workspace_id = ws_row.get("workspace_id")
+
+    # Set the RLS context connection-scoped (NOT SET LOCAL): this task does
+    # several commits (status updates), and a SET LOCAL would be cleared at
+    # the first commit boundary -- a plain SET survives until the connection
+    # closes, keeping every subsequent RLS query scoped to this workspace.
+    if workspace_id is not None:
+        conn.execute(
+            text("SET app.current_workspace_id = :ws"),
+            {"ws": str(workspace_id)},
+        )
+
+    # 1. Fetch export record (now permitted by RLS for this workspace)
     row = conn.execute(
         text("SELECT * FROM exports WHERE id = :id"),
         {"id": export_id},
@@ -217,7 +255,6 @@ def _generate_export_impl(export_id: str) -> dict[str, Any]:
     export = dict(row) if not isinstance(row, dict) else row
     data_type = export.get("data_type")
     file_format = export.get("format")
-    workspace_id = export.get("workspace_id")
     user_id = export.get("user_id")
 
     if data_type not in _VALID_DATA_TYPES:
@@ -234,20 +271,13 @@ def _generate_export_impl(export_id: str) -> dict[str, Any]:
     _update_export_status(conn, export_id, "generating")
 
     try:
-        # 3. Set RLS context
-        if workspace_id is not None:
-            conn.execute(
-                text("SET LOCAL app.current_workspace_id = :ws"),
-                {"ws": str(workspace_id)},
-            )
-
-        # 4. Query data
+        # 3. Query data (RLS context already set connection-scoped in step 0)
         query = _DATA_QUERIES[data_type]
         cursor = conn.execute(text(query))
         rows = [dict(r) if not isinstance(r, dict) else r
                 for r in cursor.fetchall()]
 
-        # 5. Generate file
+        # 4. Generate file
         ext = _FORMAT_EXTENSIONS[file_format]
         filename = f"export_{export_id}_{data_type}{ext}"
         file_path = os.path.join(EXPORT_DIR, filename)
@@ -257,7 +287,7 @@ def _generate_export_impl(export_id: str) -> dict[str, Any]:
 
         file_size = os.path.getsize(file_path) if os.path.exists(file_path) else 0
 
-        # 6. Update DB with success
+        # 5. Update DB with success
         conn.execute(
             text(
                 "UPDATE exports SET "

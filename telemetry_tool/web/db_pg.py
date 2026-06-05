@@ -44,6 +44,24 @@ def _get_pg_url() -> str:
     return os.environ.get("TELEMETRY_PG_URL", _PG_URL_DEFAULT)
 
 
+def _get_migration_url() -> str:
+    """DSN for DDL: alembic migrations + partition rotation.
+
+    Runs as the table OWNER (``telemetry``). Falls back to the app DSN so
+    single-role dev/test environments keep working unchanged.
+    """
+    return os.environ.get("TELEMETRY_PG_MIGRATION_URL", _get_pg_url())
+
+
+def _get_maint_url() -> str:
+    """DSN for legitimately cross-tenant maintenance (``telemetry_maint``).
+
+    BYPASSRLS but NOSUPERUSER — retention enforcement, usage aggregation,
+    admin storage metrics. Falls back to the app DSN for dev/test.
+    """
+    return os.environ.get("TELEMETRY_PG_MAINT_URL", _get_pg_url())
+
+
 _MAX_CONNECT_RETRIES = 2
 _CONNECT_RETRY_DELAY = 0.5  # seconds
 
@@ -203,23 +221,40 @@ class PgConnectionWrapper:
         raw_cur = self._conn.cursor(cursor_factory=psycopg2.extensions.cursor)
         return _PgCursorWrapper(raw_cur)
 
-    def commit(self):
-        """Commit and re-apply RLS context if inside a Flask request.
+    def _reapply_rls_context(self, event: str) -> None:
+        """Re-apply the RLS workspace context after a transaction boundary.
 
-        SET LOCAL is scoped to the transaction; committing ends the
-        transaction and clears the RLS workspace context.  This guard
-        automatically re-applies it so subsequent queries remain scoped.
+        SET LOCAL (both the GUC and ROLE) is scoped to the transaction;
+        COMMIT/ROLLBACK ends it and clears the context. Re-apply BOTH via
+        set_workspace_context — re-applying only the GUC (the old behaviour)
+        silently reverted the role to the login role mid-request, which
+        bypassed RLS entirely when that login role was a superuser.
         """
-        self._conn.commit()
         try:
             from flask import g
             ws_id = getattr(g, "workspace_id", None)
             if ws_id is not None:
-                cur = self._conn.cursor()
-                cur.execute("SET LOCAL app.current_workspace_id = %s", (str(ws_id),))
-                logger.debug("Re-applied RLS context after commit (ws=%s)", ws_id)
+                from auth.workspace import set_workspace_context
+                set_workspace_context(self, ws_id)
+                logger.debug(
+                    "Re-applied RLS context after %s (ws=%s)", event, ws_id
+                )
         except (ImportError, RuntimeError):
             pass  # Outside Flask context — no RLS to re-apply
+
+    def commit(self):
+        """Commit and re-apply RLS context if inside a Flask request."""
+        self._conn.commit()
+        self._reapply_rls_context("commit")
+
+    def rollback(self):
+        """Rollback and re-apply RLS context if inside a Flask request.
+
+        Without this, the first rollback in a request dropped the SET LOCAL
+        context and every later query ran unscoped as the login role.
+        """
+        self._conn.rollback()
+        self._reapply_rls_context("rollback")
 
     # -- Forward everything else to the underlying connection -------------
 
@@ -258,6 +293,38 @@ def get_pg_connection():
 
     # Standalone mode -- caller must close the connection.
     conn = _new_connection()
+    return PgConnectionWrapper(conn)
+
+
+def get_migration_connection():
+    """Standalone wrapped connection on the migration/owner DSN.
+
+    For runtime DDL only (partition rotation in tasks/archival_tasks.py) —
+    the app role deliberately lacks CREATE/DROP rights. Caller must close
+    via ``return_pg_connection``. Never cached on ``flask.g``.
+    """
+    import psycopg2
+    import psycopg2.extras
+
+    conn = psycopg2.connect(_get_migration_url(), connect_timeout=5)
+    conn.cursor_factory = psycopg2.extras.RealDictCursor
+    return PgConnectionWrapper(conn)
+
+
+def get_maint_connection():
+    """Standalone wrapped connection on the maintenance DSN (telemetry_maint).
+
+    For legitimately cross-tenant background work that must see/modify rows
+    across ALL workspaces without a per-workspace GUC: retention enforcement,
+    GDPR account purge, usage aggregation, training, alerting, admin reads.
+    The role is BYPASSRLS but NOSUPERUSER. Caller must close via
+    ``return_pg_connection``. Never cached on ``flask.g``.
+    """
+    import psycopg2
+    import psycopg2.extras
+
+    conn = psycopg2.connect(_get_maint_url(), connect_timeout=5)
+    conn.cursor_factory = psycopg2.extras.RealDictCursor
     return PgConnectionWrapper(conn)
 
 
@@ -339,8 +406,11 @@ def init_pg() -> None:
         return
 
     cfg = Config(str(ini_path))
-    # Override the DB URL so we always use the runtime value.
-    cfg.set_main_option("sqlalchemy.url", _get_pg_url())
+    # Override the DB URL so we always use the runtime value. Migrations
+    # perform owner-only DDL (CREATE TABLE / POLICY / FORCE RLS), so prefer
+    # the dedicated migration DSN when configured — the app role
+    # (telemetry_app) is deliberately not allowed to run them.
+    cfg.set_main_option("sqlalchemy.url", _get_migration_url())
     # Resolve script_location relative to alembic.ini (handles Docker layout
     # where CWD != the directory containing alembic.ini).
     script_dir = ini_path.parent / cfg.get_main_option("script_location", "alembic")
@@ -352,6 +422,57 @@ def init_pg() -> None:
         # Don't crash the app — the DB is likely already at the latest
         # revision. Log the error so operators can fix the migration chain.
         logger.warning("Alembic upgrade failed (app continues): %s", exc)
+
+
+def assert_rls_enforcement(auth_required: bool) -> None:
+    """Fail loud at startup when the app DSN cannot enforce RLS.
+
+    Superusers and BYPASSRLS roles ignore row-level security policies, so a
+    multi-tenant deployment connecting as one has NO tenant isolation (the
+    P0 cross-tenant bypass found in the 2026-06-03 launch audit). In
+    multi-tenant mode (``AUTH_REQUIRED``) this refuses to start unless the
+    operator explicitly opts out via ``TELEMETRY_ALLOW_PRIVILEGED_DB=1``
+    (single-role dev / migration containers). Outside multi-tenant mode it
+    logs an error but lets the app run.
+    """
+    import psycopg2
+
+    try:
+        conn = psycopg2.connect(_get_pg_url(), connect_timeout=5)
+    except Exception as exc:
+        # Connectivity problems surface elsewhere (init_pg / first request);
+        # the guard only rules on privilege level.
+        logger.warning("RLS enforcement check skipped — cannot connect: %s", exc)
+        return
+    try:
+        with conn.cursor() as cur:
+            cur.execute(
+                "SELECT rolsuper, rolbypassrls FROM pg_roles "
+                "WHERE rolname = current_user"
+            )
+            row = cur.fetchone()
+    finally:
+        conn.close()
+
+    if row is None:
+        return
+    rolsuper, rolbypassrls = row[0], row[1]
+    if not (rolsuper or rolbypassrls):
+        logger.info("RLS enforcement check OK — app role is non-privileged")
+        return
+
+    problem = (
+        "TELEMETRY_PG_URL connects as a role with "
+        f"{'SUPERUSER' if rolsuper else ''}{' and ' if rolsuper and rolbypassrls else ''}"
+        f"{'BYPASSRLS' if rolbypassrls else ''} — row-level security is "
+        "BYPASSED and tenants can read each other's data. Point the app DSN "
+        "at the telemetry_app role (see docs/rls-cutover-runbook.md)."
+    )
+    if auth_required and os.environ.get("TELEMETRY_ALLOW_PRIVILEGED_DB") != "1":
+        raise RuntimeError(problem)
+    logger.error("%s (continuing: %s)", problem,
+                 "TELEMETRY_ALLOW_PRIVILEGED_DB=1" if auth_required
+                 else "AUTH_REQUIRED is off")
 
 
 def close_pool() -> None:
