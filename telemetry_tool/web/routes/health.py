@@ -95,18 +95,29 @@ def _get_db_stats() -> dict:
 
 @bp.route("/healthz")
 def healthz():
-    """Return service health with DB, Redis, and Celery checks.
+    """Load-balancer liveness probe with DB, Redis, and Celery checks.
 
-    Returns 200 when core services are healthy, 503 when degraded.
+    The response body reports every component (db/redis/celery) and an overall
+    ``status`` that is "degraded" whenever ANY component is unhealthy — so a
+    down Celery worker is now VISIBLE here (previously the worker result was
+    discarded and this always returned {"status":"ok"}).
+
+    HTTP 503 is returned ONLY for a HARD dependency failure — the database.
+    The API still serves reads/analysis views when the async worker is down
+    (uploads queue; Docker restarts dead workers), so a missing worker yields
+    status="degraded" with HTTP 200 rather than pulling the node out of LB
+    rotation. For a worker-specific hard signal (503 on no workers), point
+    monitoring at /healthz/celery.
     """
     checks: dict = {"status": "ok", "db": "unknown", "redis": "unknown", "celery": "unknown"}
+    db_down = False
 
     try:
         checks["db"] = _check_db()
     except Exception as exc:
         logger.warning("Health check DB failure: %s", exc)
         checks["db"] = "error"
-        checks["status"] = "degraded"
+        db_down = True
 
     try:
         checks["redis"] = _check_redis()
@@ -118,8 +129,11 @@ def healthz():
     except Exception:
         checks["celery"] = "unavailable"
 
-    status_code = 200 if checks["status"] == "ok" else 503
-    return jsonify({"status": checks["status"]}), status_code
+    _ok = ("ok", "not_configured")
+    if db_down or checks["redis"] not in _ok or checks["celery"] not in _ok:
+        checks["status"] = "degraded"
+    status_code = 503 if db_down else 200
+    return jsonify(checks), status_code
 
 
 @bp.route("/healthz/detail")
@@ -138,13 +152,14 @@ def healthz_detail():
             return api_error(ErrorCode.UNAUTHORIZED, "Authentication required", status=401)
 
     checks: dict = {"status": "ok", "db": "unknown", "redis": "unknown", "celery": "unknown"}
+    _hard_down = False
 
     try:
         checks["db"] = _check_db()
     except Exception as exc:
         logger.warning("Health check DB failure: %s", exc)
         checks["db"] = "error"
-        checks["status"] = "degraded"
+        _hard_down = True
 
     try:
         checks["redis"] = _check_redis()
@@ -182,11 +197,18 @@ def healthz_detail():
             "used_pct": round((usage.used / usage.total) * 100, 1),
         }
         if checks["disk"]["used_pct"] > 90:
-            checks["status"] = "degraded"
+            _hard_down = True
     except Exception:
         pass
 
-    status_code = 200 if checks["status"] == "ok" else 503
+    # status reflects ANY unhealthy component (visibility); HTTP 503 only for
+    # HARD dependencies (DB / disk). A down worker/redis → "degraded" + 200,
+    # consistent with /healthz (this endpoint is auth-gated ops detail, not
+    # the LB probe, but uses the same hard/soft model to avoid confusion).
+    _ok = ("ok", "not_configured")
+    if _hard_down or checks["redis"] not in _ok or checks["celery"] not in _ok:
+        checks["status"] = "degraded"
+    status_code = 503 if _hard_down else 200
     return jsonify(checks), status_code
 
 

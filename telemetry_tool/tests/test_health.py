@@ -13,7 +13,15 @@ _PROJECT_ROOT = Path(__file__).resolve().parent.parent
 if str(_PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(_PROJECT_ROOT))
 
+from collections import namedtuple
+
 from web.routes.health import bp
+
+# /healthz/detail probes real host disk via shutil.disk_usage; mock it so the
+# tests are deterministic regardless of the dev box's disk fullness (disk >90%
+# is a hard 503 condition).
+_DiskUsage = namedtuple("DiskUsage", "total used free")
+_HEALTHY_DISK = _DiskUsage(total=100, used=50, free=50)  # 50% used
 
 
 @pytest.fixture
@@ -45,7 +53,8 @@ class TestHealthz:
 
     def test_detail_returns_db_field(self, client):
         """Detailed /healthz/detail includes db, redis, celery fields."""
-        with patch("web.db.get_db_connection") as mock_db:
+        with patch("web.db.get_db_connection") as mock_db, \
+             patch("shutil.disk_usage", return_value=_HEALTHY_DISK):
             mock_conn = MagicMock()
             mock_db.return_value = mock_conn
             resp = client.get("/healthz/detail")
@@ -74,13 +83,43 @@ class TestHealthz:
         app.config["USE_PG"] = True
         client = app.test_client()
         with patch("web.db_pg.get_pg_connection") as mock_pg, \
-             patch("web.routes.health._get_db_stats", return_value={}):
+             patch("web.routes.health._get_db_stats", return_value={}), \
+             patch("shutil.disk_usage", return_value=_HEALTHY_DISK):
             mock_conn = MagicMock()
             mock_pg.return_value = mock_conn
             resp = client.get("/healthz/detail")
         assert resp.status_code == 200
         data = resp.get_json()
         assert data["db"] == "ok"
+
+    def test_healthz_reports_all_components(self, client):
+        """/healthz body now surfaces db/redis/celery (was {status} only)."""
+        with patch("web.db.get_db_connection") as mock_db:
+            mock_db.return_value = MagicMock()
+            resp = client.get("/healthz")
+        assert resp.status_code == 200
+        data = resp.get_json()
+        assert {"status", "db", "redis", "celery"} <= set(data)
+
+    def test_healthz_degraded_but_200_when_worker_down(self, client):
+        """Audit fix: a down Celery worker → status 'degraded' in the body,
+        but HTTP stays 200 (liveness preserved; the API serves reads). 503 is
+        reserved for hard DB failure."""
+        with patch("web.db.get_db_connection") as mock_db, \
+             patch("web.routes.health._check_celery", return_value="no_workers"):
+            mock_db.return_value = MagicMock()
+            resp = client.get("/healthz")
+        assert resp.status_code == 200
+        data = resp.get_json()
+        assert data["status"] == "degraded"
+        assert data["celery"] == "no_workers"
+
+    def test_healthz_503_only_on_db_failure(self, client):
+        """Hard dependency (DB) down → 503."""
+        with patch("web.db.get_db_connection", side_effect=Exception("DB down")):
+            resp = client.get("/healthz")
+        assert resp.status_code == 503
+        assert resp.get_json()["status"] == "degraded"
 
 
     def test_startup_diagnostics_endpoint(self, app):
