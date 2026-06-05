@@ -173,11 +173,11 @@ def _enforce_grace_periods_impl() -> dict[str, Any]:
                 from auth.email import FRONTEND_URL, _send
                 _send(
                     user["email"],
-                    "Your LAP plan has been downgraded",
+                    "Your LAP access has paused",
                     f'<div style="font-family: -apple-system, sans-serif; max-width: 480px; margin: 0 auto;">'
-                    f'<h2 style="color: #F3F0E8;">Your plan has been downgraded</h2>'
-                    f'<p style="color: #8A8F98;">Your subscription grace period has ended and your account has been moved to the free tier. '
-                    f'Your data is preserved but some features are now limited.</p>'
+                    f'<h2 style="color: #F3F0E8;">Your LAP access has paused</h2>'
+                    f'<p style="color: #8A8F98;">Your subscription grace period has ended, so access to LAP has paused. '
+                    f'Your data is kept safe — resubscribe anytime to restore full access and pick up where you left off.</p>'
                     f'<a href="{FRONTEND_URL}/pricing" '
                     f'style="display: inline-block; background: #B6FF2E; color: #0B0C0F; '
                     f'padding: 12px 24px; border-radius: 6px; text-decoration: none; '

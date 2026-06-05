@@ -161,8 +161,8 @@ def send_retention_warning(to: str, sessions: list[dict], days_remaining: int) -
   </table>
   {extra}
   <p style="color: #8A8F98; font-size: 13px;">
-    To keep your raw data longer,
-    <a href="{FRONTEND_URL}/pricing" style="color: #B6FF2E;">upgrade your plan</a>.
+    Export your data now to keep a permanent copy — raw telemetry is retained
+    for a limited window, then removed.
   </p>
   <a href="{FRONTEND_URL}/app/sessions"
      style="display: inline-block; background: #B6FF2E; color: #0B0C0F;
@@ -171,7 +171,7 @@ def send_retention_warning(to: str, sessions: list[dict], days_remaining: int) -
     Export Data Now
   </a>
 </div>"""
-    return _send(to, f"Data expiring in {days_remaining} days — export or upgrade", html)
+    return _send(to, f"Data expiring in {days_remaining} days — export now", html)
 
 
 def send_retention_deleted(to: str, sessions: list[dict]) -> bool:
@@ -203,9 +203,8 @@ def send_retention_deleted(to: str, sessions: list[dict]) -> bool:
   </ul>
   {extra}
   <p style="color: #8A8F98; font-size: 13px;">
-    Want longer retention?
-    <a href="{FRONTEND_URL}/pricing" style="color: #B6FF2E;">Upgrade your plan</a>
-    to keep raw data for up to 12 months.
+    Tip: export your data after each session to keep a permanent copy of the
+    raw telemetry.
   </p>
 </div>"""
     return _send(to, "Raw telemetry data deleted — reports still available", html)
@@ -436,8 +435,8 @@ def send_retention_warning_email(to: str, session_name: str, expiry_date: str) -
     your plan's retention policy.
   </p>
   <p style="color: #8A8F98;">
-    Your reports, scores, and lap data will be preserved. To keep your
-    raw data longer, export it now or upgrade your plan.
+    Your reports, scores, and lap data will be preserved. To keep a permanent
+    copy of the raw telemetry, export it now.
   </p>
   <a href="{FRONTEND_URL}/app/sessions"
      style="display: inline-block; background: #B6FF2E; color: #0B0C0F;
@@ -445,9 +444,5 @@ def send_retention_warning_email(to: str, session_name: str, expiry_date: str) -
             font-weight: 600; margin: 16px 0;">
     Export Data Now
   </a>
-  <p style="color: #8A8F98; font-size: 13px;">
-    Want longer retention?
-    <a href="{FRONTEND_URL}/pricing" style="color: #B6FF2E;">Upgrade your plan</a>.
-  </p>
 </div>"""
     return _send(to, f"Data retention notice: {_esc(session_name)}", html)

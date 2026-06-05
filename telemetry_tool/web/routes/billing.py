@@ -825,8 +825,8 @@ def _send_billing_email(email: str, event_type: str):
     View Plans
   </a>
   <p style="color: #8A8F98; font-size: 12px;">
-    After the trial, your account will revert to the free plan with limited
-    features and 30-day data retention.
+    After your 30-day trial ends, access pauses unless you subscribe — your
+    data stays saved, so you can pick up where you left off anytime.
   </p>
 </div>""",
         ),
@@ -847,8 +847,8 @@ def _send_billing_email(email: str, event_type: str):
     Update Payment Method
   </a>
   <p style="color: #8A8F98; font-size: 12px;">
-    Stripe will automatically retry the payment. If it continues to fail,
-    your plan will be downgraded.
+    Stripe will automatically retry the payment. If it keeps failing, your
+    subscription will be canceled and access will pause — your data stays saved.
   </p>
 </div>""",
         ),
@@ -858,17 +858,13 @@ def _send_billing_email(email: str, event_type: str):
 <div style="font-family: -apple-system, sans-serif; max-width: 480px; margin: 0 auto;">
   <h2 style="color: #F3F0E8;">Subscription canceled</h2>
   <p style="color: #8A8F98;">
-    Your LAP subscription has been canceled. You'll retain access to your
-    current plan features until the end of your billing period.
+    Your LAP subscription has been canceled. You'll keep full access until the
+    end of your current billing period.
   </p>
   <p style="color: #8A8F98;">
-    After that, your account will revert to the free plan:
+    After that, your LAP access will pause and your data is kept safe —
+    resubscribe anytime to restore full access and pick up where you left off.
   </p>
-  <ul style="color: #8A8F98; font-size: 14px;">
-    <li>1 report per month</li>
-    <li>30-day data retention</li>
-    <li>Basic features only</li>
-  </ul>
   <a href="{FRONTEND_URL}/pricing"
      style="display: inline-block; background: #B6FF2E; color: #0B0C0F;
             padding: 12px 24px; border-radius: 6px; text-decoration: none;

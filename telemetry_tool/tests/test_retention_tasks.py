@@ -197,7 +197,11 @@ class TestMarkSessionExpired:
 
 class TestRetentionEmails:
     def test_send_retention_warning(self):
-        """Warning email includes session list and upgrade CTA."""
+        """Warning email includes session list and an export CTA.
+
+        (One-membership: the old 'upgrade your plan' CTA was removed — there
+        is no higher tier to upgrade to; retention is a fixed policy. The
+        actionable CTA is now to export the data.)"""
         from auth.email import send_retention_warning
         sessions = [
             {"session_id": "s1", "file_name": "Session_2026-01-01.csv", "created_at": "2026-01-01"},
@@ -211,7 +215,8 @@ class TestRetentionEmails:
             _, subject, html = mock_send.call_args[0]
             assert "7 days" in subject
             assert "Session_2026-01-01.csv" in html
-            assert "upgrade your plan" in html.lower() or "upgrade" in html.lower()
+            assert "export" in html.lower()
+            assert "upgrade your plan" not in html.lower()
 
     def test_send_retention_deleted(self):
         """Deletion notification includes session list."""

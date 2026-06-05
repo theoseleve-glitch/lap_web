@@ -194,10 +194,10 @@ def _retention_warning(v: dict) -> tuple[str, str]:
         + f'<ul style="list-style: disc; padding-left: 20px; margin: 12px 0;">{rows}</ul>'
         + extra
         + _btn(f"{FRONTEND_URL}/app/sessions", "Export Data Now")
-        + _small(f'Want longer retention? <a href="{FRONTEND_URL}/pricing" '
-                 f'style="color: #B6FF2E;">Upgrade your plan</a>.')
+        + _small("Export your data now to keep a permanent copy — raw telemetry "
+                 "is retained for a limited window, then removed.")
     )
-    return f"Data expiring in {days} days — export or upgrade", _wrap(body)
+    return f"Data expiring in {days} days — export now", _wrap(body)
 
 
 def _retention_deleted(v: dict) -> tuple[str, str]:
@@ -211,8 +211,8 @@ def _retention_deleted(v: dict) -> tuple[str, str]:
         + _p("Raw data for the following sessions has been deleted per your retention policy. "
               "Reports, scores, and lap data are still available.")
         + f'<ul style="list-style: disc; padding-left: 20px; margin: 12px 0;">{rows}</ul>'
-        + _small(f'Want longer retention? <a href="{FRONTEND_URL}/pricing" '
-                 f'style="color: #B6FF2E;">Upgrade your plan</a>.')
+        + _small("Tip: export your data after each session to keep a permanent "
+                 "copy of the raw telemetry.")
     )
     return "Raw telemetry data deleted — reports still available", _wrap(body)
 
@@ -225,8 +225,8 @@ def _trial_ending(v: dict) -> tuple[str, str]:
         + _p(f"Your trial of {plan} is ending soon. To keep access to all features, "
               f"subscribe before your trial expires.")
         + _btn(f"{FRONTEND_URL}/pricing", "View Plans")
-        + _small("After your trial ends, your account will move to the free tier. "
-                 "Your data will be preserved.")
+        + _small("After your trial ends, access pauses unless you subscribe. "
+                 "Your data is preserved.")
     )
     return f"Your LAP trial ends in {days} days", _wrap(body)
 
@@ -251,7 +251,8 @@ def _subscription_canceled(v: dict) -> tuple[str, str]:
         _h2("Your subscription has been canceled")
         + _p(f"Your {plan} subscription has been canceled. You'll continue to have "
               f"access until your current billing period ends.")
-        + _p("After that, your account will move to the free tier. Your data will be preserved.")
+        + _p("After that, your LAP access pauses and your data is kept safe — "
+             "resubscribe anytime to restore full access.")
         + _btn(f"{FRONTEND_URL}/pricing", "Resubscribe")
     )
     return "Your LAP subscription has been canceled", _wrap(body)
@@ -311,8 +312,8 @@ def _quota_warning(v: dict) -> tuple[str, str]:
     body = (
         _h2(f"You're approaching your {feature} limit")
         + _p(f"You've used {used} of {limit} {feature} this month. "
-              f"Upgrade your plan for higher limits:")
-        + _btn(f"{FRONTEND_URL}/pricing", "Upgrade Plan")
+              f"Your limit resets at the start of next month.")
+        + _btn(f"{FRONTEND_URL}/app/account", "View Usage")
     )
     return f"Approaching your {feature} limit on LAP", _wrap(body)
 
