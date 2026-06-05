@@ -198,6 +198,21 @@ def upsert_session(
                 session_id, exc_info=True,
             )
 
+    # Generated session name: "<Type> · <date> · <track>" from the user's
+    # selected options + the CSV-detected date (no manual naming on upload).
+    # An explicit meta['display_name'] still wins; otherwise compose it (and
+    # only fall back to the CSV filename stem if we somehow have neither type
+    # nor date). The track segment is included when its name is known.
+    _name_type = str(meta.get("session_type", "practice") or "practice").replace("_", " ").title()
+    _name_track = str(meta.get("track_name") or "").strip()
+    _name_parts = [p for p in (_name_type, _session_date, _name_track) if p]
+    _composed_name = " · ".join(_name_parts) if _name_parts else None
+    _display_name = (
+        meta.get("display_name")
+        or _composed_name
+        or Path(str(summary.get("csv_path", ""))).stem
+    )
+
     conn.execute(Q.INSERT_SESSION, {
         "session_id":        session_id,
         "csv_filename":      Path(str(summary.get("csv_path", ""))).name,
@@ -216,7 +231,7 @@ def upsert_session(
         "html_report_path":  html_path,
         "simulation_method": theo_metrics.get("simulation_method"),
         "joker_lap_number":  _joker_lap,
-        "display_name":      meta.get("display_name") or Path(str(summary.get("csv_path", ""))).stem,
+        "display_name":      _display_name,
         "source_filename":   meta.get("source_filename") or Path(str(summary.get("csv_path", ""))).name,
         "source_path":       str(summary.get("csv_path", "")),
         "kart_id":           meta.get("kart_id"),

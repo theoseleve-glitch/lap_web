@@ -5,6 +5,7 @@ import { useRouter, useSearchParams } from 'next/navigation';
 import { useQuery } from '@tanstack/react-query';
 import Link from 'next/link';
 import { PageIntro } from '@/components/ui/PageIntro';
+import { Modal } from '@/components/ui/Modal';
 import { QuotaIndicator } from '@/components/app/plan';
 import { BACKEND_URL, ApiError, api } from '@/lib/api-client';
 import { getAccessToken, getUserProfile } from '@/lib/auth-store';
@@ -521,6 +522,12 @@ function UploadPage() {
   const newTrackRecordRef = useRef('');
   const newTrackWetPaceRef = useRef('');
   const cornerResumedRef = useRef(false);
+  // New track/kart details are collected in a modal AFTER clicking Upload &
+  // Analyze (the form shows only the two dropdowns). The ref gates the submit
+  // and avoids the async-setState race when re-submitting post-confirm.
+  const formRef = useRef<HTMLFormElement>(null);
+  const newEntityConfirmedRef = useRef(false);
+  const [showNewEntityModal, setShowNewEntityModal] = useState(false);
 
   // Endurance flow state
   const [enduranceJobId, setEnduranceJobId] = useState<string | null>(null);
@@ -873,10 +880,29 @@ function UploadPage() {
   }, []);
 
   // Submit handler
+  // Confirm the new-entity modal: validate the required name(s), then
+  // re-submit the form (the ref makes the submit gate pass on this pass).
+  const confirmNewEntity = useCallback(() => {
+    if (isNewTrack && !newTrackName.trim()) { setErrorMessage('New track name is required.'); return; }
+    if (isNewKart && !newKartName.trim()) { setErrorMessage('New kart name is required.'); return; }
+    setErrorMessage('');
+    newEntityConfirmedRef.current = true;
+    setShowNewEntityModal(false);
+    formRef.current?.requestSubmit();
+  }, [isNewTrack, isNewKart, newTrackName, newKartName]);
+
   const handleSubmit = useCallback(async (e: React.FormEvent) => {
     e.preventDefault();
 
     if (!file) { setErrorMessage('Please select a CSV file to upload.'); return; }
+
+    // New kart/track details are collected AFTER this click: open the details
+    // modal and stop. confirmNewEntity() re-submits via formRef once the user
+    // fills it in (the ref short-circuits this gate on the second pass).
+    if ((isNewTrack || isNewKart) && !newEntityConfirmedRef.current) {
+      setShowNewEntityModal(true);
+      return;
+    }
 
     // ── Resolve effective kart/track names (handles the "+ New…" sentinels) ──
     // Existing-selection behavior is unchanged: effective name == the chosen name.
@@ -1087,7 +1113,7 @@ function UploadPage() {
 
       {/* ── Upload Form (shown in idle/error states) ── */}
       {showForm && (
-        <form onSubmit={handleSubmit} className="max-w-2xl">
+        <form ref={formRef} onSubmit={handleSubmit} className="max-w-2xl">
           {/* ── File Drop Zone ─────────────────────────── */}
           <div className="mb-6">
             <label className="block text-sm font-telemetry text-steel mb-2 uppercase tracking-wider">
@@ -1315,6 +1341,7 @@ function UploadPage() {
               <select id="track-name" value={isNewTrack ? '__new__' : trackName}
                 onChange={(e) => {
                   const v = e.target.value;
+                  newEntityConfirmedRef.current = false;  // re-prompt on change
                   if (v === '__new__') {
                     setIsNewTrack(true);
                   } else {
@@ -1338,6 +1365,7 @@ function UploadPage() {
               <select id="kart-name" value={isNewKart ? '__new__' : kartName}
                 onChange={(e) => {
                   const v = e.target.value;
+                  newEntityConfirmedRef.current = false;  // re-prompt on change
                   if (v === '__new__') {
                     setIsNewKart(true);
                   } else {
@@ -1355,7 +1383,15 @@ function UploadPage() {
               </select>
             </div>
 
-            {/* ── New Track inline form (revealed when "+ New track…" is selected) ── */}
+            {/* New track/kart details — collected in a modal AFTER the user
+                clicks Upload & Analyze (the form itself shows only dropdowns). */}
+            <Modal
+              open={showNewEntityModal}
+              onClose={() => setShowNewEntityModal(false)}
+              title={isNewTrack && isNewKart ? 'New track & kart details' : isNewTrack ? 'New track details' : 'New kart details'}
+              size="lg"
+            >
+            <div className="space-y-4">
             {isNewTrack && (
               <div className="sm:col-span-2 bg-asphalt/30 rounded-lg border border-gold/20 p-4 space-y-3">
                 <p className="text-sm font-telemetry text-gold uppercase tracking-wider">New Track</p>
@@ -1474,6 +1510,21 @@ function UploadPage() {
                 </div>
               </div>
             )}
+              {errorMessage && showNewEntityModal && (
+                <p className="text-safety-red text-sm font-body">{errorMessage}</p>
+              )}
+              <div className="flex items-center justify-end gap-3 pt-3 border-t border-steel/10">
+                <button type="button" onClick={() => setShowNewEntityModal(false)}
+                  className="px-4 py-2 rounded-lg border border-steel/30 text-steel hover:text-chalk text-sm font-telemetry transition-colors">
+                  Cancel
+                </button>
+                <button type="button" onClick={confirmNewEntity}
+                  className="px-4 py-2 rounded-lg bg-gold text-asphalt text-sm font-telemetry hover:bg-gold/90 transition-colors">
+                  Confirm &amp; Analyze
+                </button>
+              </div>
+            </div>
+            </Modal>
             <div>
               <label htmlFor="lap-range" className="block text-[11px] font-telemetry text-steel/80 mb-1.5 uppercase tracking-[0.12em]">
                 Lap Range <span className="text-steel/60 text-xs normal-case">(optional)</span>

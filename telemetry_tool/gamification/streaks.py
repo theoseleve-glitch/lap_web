@@ -1,15 +1,22 @@
-"""Streak tracking — consecutive session weeks (ISO weeks with >=1 session)."""
+"""Streak tracking — consecutive session weeks (Mon-Sun, with >=1 session)."""
 from __future__ import annotations
 
 from datetime import date, timedelta
 from typing import Any
 
 from gamification import queries as Q
-from gamification.xp import XP_STREAK_PER_DAY
+# The XP award is per WEEK now (weekly streak). The shared constant in
+# gamification.xp keeps its historic name; alias it locally so this module
+# reads correctly and isn't mistaken for a daily award.
+from gamification.xp import XP_STREAK_PER_DAY as XP_STREAK_PER_WEEK
 
 
 def _week_monday(d: date) -> date:
-    """Monday of the ISO week containing d (week-bucket key)."""
+    """Monday of the calendar week containing d (the week-bucket key).
+
+    Monday-aligned bucketing is used instead of raw ``isocalendar()`` week
+    numbers because it compares cleanly across year boundaries.
+    """
     return d - timedelta(days=d.weekday())
 
 
@@ -38,7 +45,7 @@ def update_streak(
     if not current or not current.get("last_session_date"):
         streak = 1
         longest = 1
-        streak_xp = XP_STREAK_PER_DAY
+        streak_xp = XP_STREAK_PER_WEEK
     else:
         try:
             last = date.fromisoformat(str(current["last_session_date"])[:10])
@@ -59,11 +66,11 @@ def update_streak(
         elif week_delta == 1:
             streak = current["current_streak"] + 1
             longest = max(streak, current["longest_streak"])
-            streak_xp = XP_STREAK_PER_DAY
+            streak_xp = XP_STREAK_PER_WEEK
         else:
             streak = 1
             longest = current["longest_streak"]
-            streak_xp = XP_STREAK_PER_DAY
+            streak_xp = XP_STREAK_PER_WEEK
 
     # Update XP row with new streak and date
     Q.upsert_driver_xp(

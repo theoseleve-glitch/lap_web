@@ -6,7 +6,8 @@ const TrackMap = lazy(() => import('@/components/shared/charts').then(m => ({ de
 
 /**
  * Handling Balance card for the session overview tab.
- * Shows: tendency, track map with numbered corners, driving tips (default), setup advice (on request).
+ * Shows: tendency, track map with numbered corners, driving tips.
+ * (Kart setup advice was removed for the June-8 launch.)
  */
 
 interface HandlingBalanceSummary {
@@ -19,13 +20,6 @@ interface HandlingBalanceSummary {
   max_confidence: number;
   overall_direction: number;
   tendency: 'understeer' | 'oversteer' | 'balanced';
-}
-
-interface SetupRecommendation {
-  priority: number;
-  change: string;
-  reason: string;
-  affected_corners: number[];
 }
 
 interface FocusCorner {
@@ -71,11 +65,6 @@ interface HandlingBalanceCardProps {
   bestLapMistakes?: BestLapMistake[] | null;
   drivingTips?: DrivingTip[] | null;
   cornerPositions?: CornerPosition[] | null;
-  recommendations?: {
-    primary_issue: string;
-    summary: string;
-    recommendations: SetupRecommendation[];
-  } | null;
 }
 
 const TENDENCY_STYLES = {

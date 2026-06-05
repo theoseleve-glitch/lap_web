@@ -1327,7 +1327,6 @@ function OverviewTab({
               bestLapMistakes={handlingBalance.best_lap_mistakes}
               drivingTips={handlingBalance.driving_tips}
               cornerPositions={handlingBalance.corner_positions}
-              recommendations={handlingBalance.setup_recommendations}
             />
           )}
           <SessionDebrief

@@ -79,6 +79,11 @@ def test_csv_filename_stored_as_name_only(test_db):
         (session_id,)
     ).fetchone()
     assert row["csv_filename"] == "OK_R3.csv", f"Expected just filename, got {row['csv_filename']}"
-    assert row["display_name"] == "OK_R3"
+    # display_name is now a GENERATED name "<Type> · <date> · <track>" (no
+    # manual naming on upload), not the CSV filename stem. Here there's no
+    # track in meta, so it's "<Type> · <date>". Must still be path-clean.
+    dn = row["display_name"]
+    assert dn.startswith("Practice · "), f"Expected generated name, got {dn!r}"
+    assert "/" not in dn and "\\" not in dn and not dn.lower().endswith(".csv")
     assert row["source_filename"] == "OK_R3.csv"
     assert "/tmp/" in row["source_path"]
