@@ -227,7 +227,7 @@ OAUTH_REDIRECT_BASE=https://api.lap-coach.racing   # Backend (.env)
 **Environment variables produced:**
 ```bash
 RESEND_API_KEY=re_...                    # Backend (.env)
-EMAIL_FROM=noreply@lap-coach.racing      # Backend (.env)
+EMAIL_FROM=LAP <team@lap-coach.racing>   # Backend (.env) — team@, NOT noreply@
 ```
 
 **Cost:** Free up to 3,000 emails/month. $20/mo for 50,000/mo.
@@ -294,7 +294,16 @@ OAUTH_REDIRECT_BASE=https://api.lap-coach.racing
 
 # ── Email (Resend) ────────────────────────────
 RESEND_API_KEY=<from Resend dashboard>
-EMAIL_FROM=noreply@lap-coach.racing
+EMAIL_FROM=LAP <team@lap-coach.racing>
+
+# ── Observability (Sentry) ────────────────────
+# Init is wired + DSN-gated (web/app.py, celery_app.py). UNSET = launch
+# flies blind on errors. Set both; DSNs come from the Sentry project.
+SENTRY_DSN_API=<from Sentry project — Flask API>
+SENTRY_DSN_WORKER=<from Sentry project — Celery workers>
+SENTRY_ENVIRONMENT=production
+SENTRY_TRACES_RATE=0.1
+# Frontend DSN: NEXT_PUBLIC_SENTRY_DSN — set in lap-website at cf:build.
 
 # ── Stripe ────────────────────────────────────
 STRIPE_SECRET_KEY=<from Stripe dashboard>

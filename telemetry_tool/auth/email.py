@@ -12,7 +12,7 @@ import os
 logger = logging.getLogger(__name__)
 
 RESEND_API_KEY: str = os.environ.get("RESEND_API_KEY", "")
-EMAIL_FROM: str = os.environ.get("EMAIL_FROM", "LAP <noreply@lap-coach.racing>")
+EMAIL_FROM: str = os.environ.get("EMAIL_FROM", "LAP <team@lap-coach.racing>")
 FRONTEND_URL: str = os.environ.get("FRONTEND_URL", "https://www.lap-coach.racing")
 EMAIL_SUPPRESS: bool = os.environ.get("EMAIL_SUPPRESS", "0") == "1"
 

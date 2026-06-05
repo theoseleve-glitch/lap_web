@@ -2,7 +2,7 @@ import type { LeadPayload } from '@/lib/lead-types';
 
 const RESEND_API_KEY = process.env.RESEND_API_KEY ?? '';
 const CONTACT_EMAIL = 'contact@lap-coach.racing';
-const EMAIL_FROM = process.env.EMAIL_FROM ?? 'LAP <noreply@lap-coach.racing>';
+const EMAIL_FROM = process.env.EMAIL_FROM ?? 'LAP <team@lap-coach.racing>';
 
 interface DeliveryOutcome {
   destination: string;
