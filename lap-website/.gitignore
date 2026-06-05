@@ -40,3 +40,6 @@ next-env.d.ts
 
 # 3D assets (large GLBs — deployed via build, not tracked in git)
 /public/models/*.glb
+
+# run-lap-webapp skill driver screenshots
+_shots/
