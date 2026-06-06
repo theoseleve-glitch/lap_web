@@ -121,11 +121,12 @@ class TestVerifyTaskEntitlements:
 class TestPipelineIngestEntitlementGuard:
     """Integration: pipeline_ingest checks entitlements when ctx has user_id."""
 
+    @patch("tasks.pipeline_tasks._open_task_conn")
     @patch("tasks.pipeline_tasks._update_job_progress")
     @patch("tasks.pipeline_tasks._get_redis")
     @patch("tasks.pipeline_tasks._verify_task_entitlements", return_value=False)
     def test_blocks_when_entitlement_fails(
-        self, mock_verify, mock_redis, mock_progress
+        self, mock_verify, mock_redis, mock_progress, mock_open_conn
     ):
         """pipeline_ingest returns None and marks job failed when entitlement denied."""
         from tasks.pipeline_tasks import pipeline_ingest
@@ -139,6 +140,10 @@ class TestPipelineIngestEntitlementGuard:
 
         mock_redis_client = MagicMock()
         mock_redis.return_value = mock_redis_client
+        # The task opens its GUC-pinned connection before the entitlement check;
+        # mock it so no real DB connection is attempted.
+        mock_conn = MagicMock()
+        mock_open_conn.return_value = mock_conn
 
         with patch(
             "tasks.pipeline_tasks.PipelineContext.load", return_value=mock_ctx
@@ -148,13 +153,16 @@ class TestPipelineIngestEntitlementGuard:
         assert result is None
         mock_verify.assert_called_once_with(42, "ws-1")
         # Check that _update_job_progress was called with entitlement error
+        # (now on the task's threaded connection).
         mock_progress.assert_called_with(
             job_id="job-1",
             status="failed",
             error_message="Plan does not allow report generation",
             error_class="entitlement",
+            conn=mock_conn,
         )
 
+    @patch("tasks.pipeline_tasks._open_task_conn")
     @patch("tasks.pipeline_tasks.release_workspace_lock")
     @patch("tasks.pipeline_tasks.acquire_workspace_lock", return_value=True)
     @patch("tasks.pipeline_tasks._run_ingest_stages")
@@ -169,6 +177,7 @@ class TestPipelineIngestEntitlementGuard:
         mock_run,
         mock_lock,
         mock_release,
+        mock_open_conn,
     ):
         """pipeline_ingest continues when entitlement check passes."""
         from tasks.pipeline_tasks import pipeline_ingest
@@ -181,6 +190,7 @@ class TestPipelineIngestEntitlementGuard:
 
         mock_redis_client = MagicMock()
         mock_redis.return_value = mock_redis_client
+        mock_open_conn.return_value = MagicMock()
 
         with patch(
             "tasks.pipeline_tasks.PipelineContext.load", return_value=mock_ctx
@@ -191,6 +201,7 @@ class TestPipelineIngestEntitlementGuard:
         mock_verify.assert_called_once_with(42, "ws-1")
         mock_run.assert_called_once()
 
+    @patch("tasks.pipeline_tasks._open_task_conn")
     @patch("tasks.pipeline_tasks.release_workspace_lock")
     @patch("tasks.pipeline_tasks.acquire_workspace_lock", return_value=True)
     @patch("tasks.pipeline_tasks._run_ingest_stages")
@@ -205,6 +216,7 @@ class TestPipelineIngestEntitlementGuard:
         mock_run,
         mock_lock,
         mock_release,
+        mock_open_conn,
     ):
         """pipeline_ingest skips entitlement check when ctx has no user_id."""
         from tasks.pipeline_tasks import pipeline_ingest
