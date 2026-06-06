@@ -90,6 +90,11 @@ def make_celery(app=None) -> Celery:
                 "schedule": 86400,  # Daily
                 "options": {"queue": "default"},
             },
+            "reconcile-storage-usage": {
+                "task": "tasks.usage_tasks.reconcile_storage_usage",
+                "schedule": 86400,  # Daily — keep storage allocation matched to consumption
+                "options": {"queue": "default"},
+            },
             "reconcile-stripe": {
                 "task": "tasks.billing_tasks.reconcile_stripe",
                 "schedule": 3600,  # Hourly

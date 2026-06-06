@@ -1469,6 +1469,19 @@ def delete_session(session_id: str) -> tuple[dict, int]:
                       "This is a critical bug. RLS or FK constraint may have blocked the delete.",
                       session_id)
 
+    # Remove the session's raw/cache files from disk and refresh the
+    # workspace's storage usage. Previously a delete left the raw telemetry
+    # orphaned on disk forever and never decremented the user's storage.
+    try:
+        from web.storage_quota import delete_session_files, recompute_and_store
+        freed = delete_session_files(int(ws_id), session_id)
+        recompute_and_store(conn, int(ws_id))
+        conn.commit()
+        logger.info("DELETE session %s — freed %d bytes; storage usage refreshed",
+                    session_id, freed)
+    except Exception:
+        logger.warning("Storage cleanup after delete failed for %s", session_id, exc_info=True)
+
     # Invalidate cached chart responses for this session.
     from web.chart_cache import invalidate_session_cache
     invalidate_session_cache(session_id)

@@ -24,6 +24,14 @@ interface ExportRecord {
 interface DataSummary {
   sessions_count: number;
   total_storage_mb: number;
+  storage?: {
+    used_bytes: number;
+    allocation_bytes: number;
+    used_mb: number;
+    allocation_mb: number;
+    pct: number;
+    remaining_bytes: number;
+  } | null;
   oldest_session: string | null;
   retention_policy: {
     plan_tier: string;
@@ -86,8 +94,26 @@ export default function DataPrivacyPage() {
               <p className="text-steel text-xs font-body">Sessions</p>
             </div>
             <div>
-              <p className="font-telemetry text-2xl text-chalk">{summary.total_storage_mb} MB</p>
-              <p className="text-steel text-xs font-body">Storage used</p>
+              <p className="font-telemetry text-2xl text-chalk">
+                {summary.storage ? `${summary.storage.used_mb} MB` : `${summary.total_storage_mb} MB`}
+                {summary.storage && (
+                  <span className="text-sm text-steel"> / {(summary.storage.allocation_mb / 1024).toFixed(0)} GB</span>
+                )}
+              </p>
+              <p className="text-steel text-xs font-body">
+                Storage used{summary.storage ? ` · ${summary.storage.pct}%` : ''}
+              </p>
+              {summary.storage && (
+                <div className="h-1.5 mt-1.5 bg-steel/15 rounded-full overflow-hidden">
+                  <div
+                    className="h-full rounded-full transition-all"
+                    style={{
+                      width: `${Math.min(100, summary.storage.pct)}%`,
+                      background: summary.storage.pct >= 90 ? '#ef4444' : summary.storage.pct >= 80 ? '#f59e0b' : '#B6FF2E',
+                    }}
+                  />
+                </div>
+              )}
             </div>
             <div>
               <p className="font-telemetry text-2xl text-chalk">

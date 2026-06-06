@@ -1301,6 +1301,18 @@ def data_summary():
     except Exception:
         total_storage_mb = 0  # fallback if ingestion_jobs not available
 
+    # Per-workspace elastic storage quota (2 GiB base, +1 GiB at 80% — see
+    # web/storage_quota.py). Recompute from disk so the bar is always truthful,
+    # then read the persisted figures back for display.
+    storage = None
+    try:
+        from web.storage_quota import get_storage, recompute_and_store
+        recompute_and_store(conn, int(workspace_id))
+        conn.commit()
+        storage = get_storage(conn, int(workspace_id))
+    except Exception:
+        logger.warning("storage quota read failed", exc_info=True)
+
     # Get retention info from entitlements
     ents = get_user_entitlements(conn, user_id, workspace_id)
     retention_days = ents.get("telemetry_retention_days", 90)
@@ -1371,7 +1383,8 @@ def data_summary():
 
     return api_response({
         "sessions_count": sessions_count,
-        "total_storage_mb": total_storage_mb,
+        "total_storage_mb": (storage["used_mb"] if storage else total_storage_mb),
+        "storage": storage,  # {used_bytes, allocation_bytes, used_mb, allocation_mb, pct, remaining_bytes}
         "oldest_session": oldest.date().isoformat() if oldest and hasattr(oldest, "date") else (oldest if oldest else None),
         "retention_policy": {
             "plan_tier": plan_tier,

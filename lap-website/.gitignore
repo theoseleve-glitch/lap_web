@@ -43,3 +43,7 @@ next-env.d.ts
 
 # run-lap-webapp skill driver screenshots
 _shots/
+
+# Cloudflare wrangler build/deploy artifacts
+.wrangler/
+.open-next/

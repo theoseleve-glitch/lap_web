@@ -86,6 +86,44 @@ try:
         finally:
             conn.close()
 
+    @celery.task(queue="default", bind=True, max_retries=2)
+    def reconcile_storage_usage(self):
+        """Recompute each workspace's on-disk storage and grow its elastic
+        allocation (2 GiB base, +1 GiB at 80%). Keeps the per-user storage
+        figure 'regularly updated to match consumption' even if an upload/
+        delete missed its inline refresh. Runs daily via Celery Beat.
+        """
+        from web.storage_quota import (
+            BASE_ALLOCATION_BYTES, _grow_allocation, workspace_disk_bytes,
+        )
+        conn = _get_pg_conn()  # maint DSN; workspaces is not RLS-scoped
+        try:
+            cur = conn.cursor()
+            cur.execute("SELECT id, storage_allocation_bytes FROM workspaces")
+            rows = cur.fetchall()
+            n = 0
+            for row in rows:
+                ws_id = row["id"] if isinstance(row, dict) else row[0]
+                alloc = int((row.get("storage_allocation_bytes") if isinstance(row, dict) else row[1])
+                            or BASE_ALLOCATION_BYTES)
+                used = workspace_disk_bytes(ws_id)
+                new_alloc = _grow_allocation(used, alloc)
+                cur.execute(
+                    "UPDATE workspaces SET storage_used_bytes = %s, "
+                    "storage_allocation_bytes = %s WHERE id = %s",
+                    (used, new_alloc, ws_id),
+                )
+                n += 1
+            conn.commit()
+            logger.info("Storage reconcile: updated %d workspaces", n)
+            return {"reconciled": n}
+        except Exception as exc:
+            conn.rollback()
+            logger.error("Storage reconcile failed: %s", exc, exc_info=True)
+            raise self.retry(exc=exc, countdown=120)
+        finally:
+            conn.close()
+
     @celery.task(queue="default", bind=True, max_retries=1)
     def cleanup_old_usage_events(self):
         """Delete usage_events older than 90 days.
