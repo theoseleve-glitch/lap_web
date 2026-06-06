@@ -137,11 +137,18 @@ def _open_task_conn(ctx):
     """
     conn = _get_pg_connection()
     if getattr(ctx, "workspace_id", None):
-        conn.execute(
-            "SET app.current_workspace_id = %(ws)s",
-            {"ws": str(ctx.workspace_id)},
-        )
-        conn.commit()
+        try:
+            conn.execute(
+                "SET app.current_workspace_id = %(ws)s",
+                {"ws": str(ctx.workspace_id)},
+            )
+            conn.commit()
+        except Exception:
+            # This runs BEFORE the task's try/finally, so close the freshly
+            # opened connection ourselves rather than leaking it on a
+            # connection-setup hiccup.
+            _return_pg_connection(conn)
+            raise
     return conn
 
 
@@ -810,6 +817,9 @@ def _run_finalize_stages(ctx: PipelineContext, job_id: Optional[str] = None, con
     _update_job_progress(
         job_id=job_id or ctx.job_id, status="running",
         stage_name="finalize_complete", stage_index=15, stage_total=16,
+        conn=conn,  # MUST reuse the task's GUC-pinned conn (worker has no
+                    # app context → a fresh conn here is GUC-less and fails
+                    # the RLS UPDATE under the telemetry_app cutover)
     )
 
     # Mark all finalize stages as completed
@@ -1363,6 +1373,13 @@ def pipeline_finalize(self, job_id: Optional[str]) -> Optional[str]:
             )
             conn.commit()
         except Exception:
+            # Reset the shared task connection: an un-rolled-back failure leaves
+            # it in InFailedSqlTransaction and every later conn.execute (staging
+            # cleanup, batch counter) would then fail too.
+            try:
+                conn.rollback()
+            except Exception:
+                pass
             logger.warning("Failed to update processing_version for session %s", ctx.session_id, exc_info=True)
 
         _update_job_progress(
@@ -1392,6 +1409,10 @@ def pipeline_finalize(self, job_id: Optional[str]) -> Optional[str]:
                         record_usage(conn, _owner["owner_user_id"], ws_id, "report_generated")
                         conn.commit()
         except Exception:
+            try:
+                conn.rollback()
+            except Exception:
+                pass
             logger.warning("Failed to record report usage for job %s", job_id, exc_info=True)
 
         # Reconcile this workspace's storage now that the new session's files
@@ -1404,6 +1425,10 @@ def pipeline_finalize(self, job_id: Optional[str]) -> Optional[str]:
                 recompute_and_store(conn, _ws_for_storage)
                 conn.commit()
         except Exception:
+            try:
+                conn.rollback()
+            except Exception:
+                pass
             logger.warning("Storage reconcile after job %s failed", job_id, exc_info=True)
 
         # Remove the transient upload-staging dir now the pipeline has ingested
@@ -1426,6 +1451,10 @@ def pipeline_finalize(self, job_id: Optional[str]) -> Optional[str]:
                 if _stage_dir.name.startswith(("job_", "telemetry_upload_")):
                     _shutil_stage.rmtree(_stage_dir, ignore_errors=True)
         except Exception:
+            try:
+                conn.rollback()
+            except Exception:
+                pass
             logger.warning("Upload-staging cleanup after job %s failed", job_id, exc_info=True)
 
         ctx.cleanup()
