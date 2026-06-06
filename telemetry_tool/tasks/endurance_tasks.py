@@ -442,6 +442,12 @@ def _process_single_stint(
                 "track_state": condition,
             },
             enable_report=False,
+            # Pin the workspace so the orchestrator's RLS connections work under
+            # the telemetry_app cutover and per-stint gamification is attributed
+            # to the real workspace (was defaulting to workspace 1).
+            # _persist_stint_session does no gamification, so the orchestrator
+            # remains the source here (skip_gamification stays False).
+            workspace_id=int(workspace_id) if str(workspace_id).isdigit() else None,
         )
 
         score = summary.get("score_result") or {}

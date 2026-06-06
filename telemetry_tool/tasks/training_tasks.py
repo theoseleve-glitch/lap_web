@@ -363,6 +363,10 @@ def _reprocess_sessions(
                 csv_path=str(csv_path),
                 session_meta={"session_id": session_id},
                 enable_report=False,
+                # Reprocessing an already-gamified session must NOT re-award XP
+                # (award_session_xp is additive) — that would inflate XP on
+                # every biweekly retrain.
+                skip_gamification=True,
             )
 
             if result.get("theoretical_metrics"):
