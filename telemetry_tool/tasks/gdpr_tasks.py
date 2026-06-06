@@ -456,6 +456,12 @@ def _purge_deleted_accounts_with_conn(conn) -> dict[str, int]:
             ).fetchall()
             workspace_ids = [r["id"] for r in ws_rows]
 
+            # Capture session ids BEFORE deleting the session rows — the
+            # durable on-disk data is the session-keyed sidecar dir
+            # (<sidecar_root>/<session_id>/), which can't be resolved once the
+            # rows are gone. Used by purge_workspace_files below.
+            ws_session_ids: dict[int, list[str]] = {}
+
             for ws_id in workspace_ids:
                 session_rows = conn.execute(
                     text("SELECT session_id FROM sessions WHERE workspace_id = :ws"),
@@ -465,6 +471,7 @@ def _purge_deleted_accounts_with_conn(conn) -> dict[str, int]:
                     sid = sess.get("session_id") if isinstance(sess, dict) else getattr(sess, "session_id", None)
                     if sid is None:
                         continue
+                    ws_session_ids.setdefault(ws_id, []).append(str(sid))
                     for table in [
                         "gps_traces", "laps", "score_details",
                         "corner_metrics", "session_annotations",
@@ -515,7 +522,9 @@ def _purge_deleted_accounts_with_conn(conn) -> dict[str, int]:
             freed = 0
             for ws_id in workspace_ids:
                 try:
-                    freed += purge_workspace_files(int(ws_id))
+                    freed += purge_workspace_files(
+                        int(ws_id), session_ids=ws_session_ids.get(ws_id, [])
+                    )
                 except Exception as fexc:  # noqa: BLE001 — never block the purge
                     logger.warning("File purge failed for ws=%s: %s", ws_id, fexc)
             try:

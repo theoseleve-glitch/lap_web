@@ -8,6 +8,7 @@ Endpoints:
 from __future__ import annotations
 
 import logging
+import os
 from pathlib import Path
 
 import pandas as pd
@@ -32,7 +33,19 @@ def _get_sidecar_root() -> Path:
     if _SIDECAR_ROOT is not None:
         return _SIDECAR_ROOT
 
-    # Check Flask config
+    # 1. SIDECAR_ROOT env var — the production layout (Docker volume
+    #    /data/sidecars), and the ONLY resolution that works in the Celery
+    #    worker that WRITES sidecars: the worker has no Flask app context, so
+    #    current_app below raises and the relative default would land at the
+    #    unmounted /app/data/sidecars. Must match track_surface.store and
+    #    web.storage_quota so the writer, reader and quota all agree.
+    env_root = os.environ.get("SIDECAR_ROOT")
+    if env_root:
+        _SIDECAR_ROOT = Path(env_root)
+        _SIDECAR_ROOT.mkdir(parents=True, exist_ok=True)
+        return _SIDECAR_ROOT
+
+    # 2. Flask config (web process, if explicitly configured)
     try:
         configured = current_app.config.get("RAW_SIDECAR_DIR")
         if configured:
@@ -42,7 +55,7 @@ def _get_sidecar_root() -> Path:
     except RuntimeError:
         pass
 
-    # Default: data/sidecars/ relative to this file's location
+    # 3. Default: data/sidecars/ relative to this file's location
     _SIDECAR_ROOT = Path(__file__).resolve().parent.parent.parent.parent / "data" / "sidecars"
     _SIDECAR_ROOT.mkdir(parents=True, exist_ok=True)
     return _SIDECAR_ROOT

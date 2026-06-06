@@ -40,6 +40,42 @@ def _workspace_base_dirs() -> list[Path]:
     return out
 
 
+def _sidecar_root() -> Path:
+    """Resolve the raw-telemetry sidecar root, matching the WRITERS.
+
+    Durable per-session telemetry lives at ``<sidecar_root>/<session_id>/``
+    (raw_sidecar.parquet, track models, …), NOT under a workspace-keyed dir.
+    Resolution mirrors ``track_surface.store._default_sidecar_root`` and the
+    (now env-aware) ``theoretical._get_sidecar_root``: the ``SIDECAR_ROOT`` env
+    var in production (Docker volume ``/data/sidecars``), else ``<repo>/data/
+    sidecars``. Keeping all three in sync is what makes the measurement match
+    where files are actually written.
+    """
+    env_root = os.environ.get("SIDECAR_ROOT")
+    if env_root:
+        return Path(env_root)
+    # web/storage_quota.py -> web -> telemetry_tool -> repo root
+    return Path(__file__).resolve().parent.parent.parent / "data" / "sidecars"
+
+
+def _session_ids_for_workspace(conn, workspace_id: int) -> list[str]:
+    """Session ids owned by a workspace (for resolving session-keyed files)."""
+    try:
+        rows = conn.execute(
+            "SELECT session_id FROM sessions WHERE workspace_id = %(ws)s",
+            {"ws": workspace_id},
+        ).fetchall()
+    except Exception as exc:  # noqa: BLE001 — never let measurement break a caller
+        logger.warning("storage_quota: could not list sessions for ws=%s: %s", workspace_id, exc)
+        return []
+    out = []
+    for r in rows:
+        sid = r["session_id"] if isinstance(r, dict) else r[0]
+        if sid is not None:
+            out.append(str(sid))
+    return out
+
+
 def _dir_bytes(path: Path) -> int:
     """Recursive sum of file sizes under *path* (0 if missing). Never raises."""
     total = 0
@@ -55,20 +91,42 @@ def _dir_bytes(path: Path) -> int:
     return total
 
 
-def workspace_disk_bytes(workspace_id: int) -> int:
-    """Actual bytes stored on disk for a workspace (raw + cache + results)."""
+def workspace_disk_bytes(workspace_id: int, conn=None) -> int:
+    """Actual bytes on disk attributable to a workspace.
+
+    Two layouts are summed:
+
+    * **Session-keyed sidecars** (the real durable footprint in this
+      deployment): ``<sidecar_root>/<session_id>/`` for each of the
+      workspace's sessions. Requires ``conn`` to resolve the session ids — the
+      previous workspace-keyed scan measured ~0 because nothing writes
+      ``<base>/<workspace_id>/`` in the SaaS flow.
+    * **Legacy workspace-keyed dirs** (``<base>/<workspace_id>/`` under
+      TELEMETRY_RAW/CACHE/RESULTS): kept for back-compat with single-host /
+      desktop layouts that do write there. Harmless (0) when unused.
+    """
     ws = str(workspace_id)
-    return sum(_dir_bytes(base / ws) for base in _workspace_base_dirs())
+    total = sum(_dir_bytes(base / ws) for base in _workspace_base_dirs())
+    if conn is not None:
+        root = _sidecar_root()
+        for sid in _session_ids_for_workspace(conn, workspace_id):
+            total += _dir_bytes(root / sid)
+    return total
 
 
 def delete_session_files(workspace_id: int, session_id: str) -> int:
-    """Unlink a session's files across the workspace dirs; return bytes freed.
+    """Delete a session's on-disk files; return bytes freed.
 
-    Replaces the count-only ``retention_tasks._delete_session_files`` for paths
-    that also need the byte total (so storage can be reconciled afterwards).
+    Removes BOTH the session-keyed sidecar dir (``<sidecar_root>/<session_id>/``
+    — the real durable copy) and any legacy workspace-keyed files matching the
+    session id. Replaces the count-only ``retention_tasks._delete_session_files``
+    for paths that also need the byte total (so storage can be reconciled).
     """
+    import shutil
+
     freed = 0
     ws = str(workspace_id)
+    # Legacy workspace-keyed files.
     for base in _workspace_base_dirs():
         ws_dir = base / ws
         if not ws_dir.is_dir():
@@ -81,20 +139,47 @@ def delete_session_files(workspace_id: int, session_id: str) -> int:
                     freed += sz
             except OSError as exc:
                 logger.warning("storage_quota: failed to delete %s: %s", p, exc)
+    # Session-keyed sidecar dir (the canonical durable copy).
+    sidecar_dir = _sidecar_root() / str(session_id)
+    if sidecar_dir.is_dir():
+        freed += _dir_bytes(sidecar_dir)
+        try:
+            shutil.rmtree(sidecar_dir, ignore_errors=True)
+        except OSError as exc:
+            logger.warning("storage_quota: failed to remove sidecar %s: %s", sidecar_dir, exc)
     return freed
 
 
-def purge_workspace_files(workspace_id: int) -> int:
+def purge_workspace_files(workspace_id: int, session_ids: list[str] | None = None) -> int:
     """Recursively delete ALL on-disk data for a workspace; return bytes freed.
 
     Used by the GDPR account-purge sweep: once the workspace's DB rows are
-    gone, its ``<base>/<workspace_id>/`` subtree under every data dir
-    (raw + cache + results) must be erased too, or the files outlive the
-    account. Never raises — best-effort, logs what it can't remove.
+    gone, its files must be erased too or they outlive the account. Erases:
+
+    * the session-keyed sidecar dirs ``<sidecar_root>/<session_id>/`` for the
+      workspace's sessions (the real durable copy) — the caller MUST pass
+      ``session_ids`` captured BEFORE the session rows are deleted, since they
+      can't be looked up afterwards;
+    * the legacy workspace-keyed ``<base>/<workspace_id>/`` subtrees.
+
+    Never raises — best-effort, logs what it can't remove.
     """
     import shutil
 
     freed = 0
+    # Session-keyed sidecar dirs (canonical durable copy).
+    root = _sidecar_root()
+    for sid in (session_ids or []):
+        sidecar_dir = root / str(sid)
+        if not sidecar_dir.is_dir():
+            continue
+        freed += _dir_bytes(sidecar_dir)
+        try:
+            shutil.rmtree(sidecar_dir, ignore_errors=True)
+        except OSError as exc:
+            logger.warning("storage_quota: failed to purge sidecar %s: %s", sidecar_dir, exc)
+
+    # Legacy workspace-keyed subtrees.
     ws = str(workspace_id)
     for base in _workspace_base_dirs():
         ws_dir = base / ws
@@ -130,7 +215,7 @@ def recompute_and_store(conn, workspace_id: int) -> dict:
     Returns {used_bytes, allocation_bytes}. Safe to call on every upload/
     delete and from the reconcile task — it never shrinks the allocation.
     """
-    used = workspace_disk_bytes(workspace_id)
+    used = workspace_disk_bytes(workspace_id, conn=conn)
     row = conn.execute(
         "SELECT storage_allocation_bytes FROM workspaces WHERE id = %(ws)s",
         {"ws": workspace_id},
