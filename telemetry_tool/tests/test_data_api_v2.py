@@ -699,15 +699,20 @@ class TestCorners:
 
 class TestDeleteSession:
 
-    def test_delete_session_success(self, client):
-        """DELETE removes session and returns 200."""
+    def test_delete_session_soft_deletes(self, client):
+        """DELETE performs a SOFT delete (sets deleted_at) — never a hard cascade.
+
+        EU/GDPR Art.17: deletion enters a recoverable grace window and is purged
+        by the retention job, rather than irreversibly cascading rows + files.
+        """
         mock_conn = MagicMock()
         with patch("web.routes.data_v2.get_db_connection") as mock_db, \
              patch("web.routes.data_v2.models") as mock_models, \
-             patch("web.routes.data_v2.delete_entity_cascade") as mock_cascade:
+             patch("web.routes.data_v2.delete_entity_cascade") as mock_cascade, \
+             patch("web.routes.data_v2.audit_log"):
             mock_db.return_value = mock_conn
             mock_models.get_session_by_id.return_value = _sample_session()
-            mock_cascade.return_value = {"deleted": True, "impact": {}}
+            mock_models.soft_delete_session.return_value = True
 
             resp = client.delete("/api/v1/sessions/s1")
 
@@ -715,8 +720,29 @@ class TestDeleteSession:
         body = resp.get_json()
         assert body["ok"] is True
         assert body["data"]["deleted"] is True
-        mock_cascade.assert_called_once_with(mock_conn, "session", "s1")
+        mock_models.soft_delete_session.assert_called_once_with(mock_conn, "s1")
+        mock_cascade.assert_not_called()
         mock_conn.commit.assert_called_once()
+
+    def test_delete_session_no_false_success_when_not_removed(self, client):
+        """If the soft delete affects 0 rows, the API must NOT report success.
+
+        Root-cause guard for the ghost-session bug: the route previously could
+        return ok:true even when the row survived.
+        """
+        mock_conn = MagicMock()
+        with patch("web.routes.data_v2.get_db_connection") as mock_db, \
+             patch("web.routes.data_v2.models") as mock_models, \
+             patch("web.routes.data_v2.audit_log"):
+            mock_db.return_value = mock_conn
+            mock_models.get_session_by_id.return_value = _sample_session()
+            mock_models.soft_delete_session.return_value = False  # nothing updated
+
+            resp = client.delete("/api/v1/sessions/s1")
+
+        body = resp.get_json()
+        assert resp.status_code >= 400
+        assert body["ok"] is False
 
     def test_delete_session_not_found(self, client):
         """DELETE returns 404 when session does not exist."""

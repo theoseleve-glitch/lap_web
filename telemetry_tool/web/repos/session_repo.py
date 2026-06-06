@@ -496,8 +496,28 @@ def purge_deleted_sessions(conn: sqlite3.Connection, retention_days: int = 30) -
         return 0
 
     purged = 0
+    affected_workspaces: set[int] = set()
     for row in rows:
         sid = row["session_id"] if isinstance(row, dict) else row[0]
+
+        # Free the session's on-disk files now that the grace window has
+        # elapsed. The delete route deliberately left them in place so the
+        # session stayed restorable; this is where erasure actually completes
+        # (GDPR Art. 17). Best-effort + workspace-id lookup guarded so a schema
+        # without workspace_id (desktop SQLite) simply skips file cleanup.
+        try:
+            ws_row = conn.execute(
+                "SELECT workspace_id FROM sessions WHERE session_id = :sid",
+                {"sid": sid},
+            ).fetchone()
+            ws = (ws_row["workspace_id"] if isinstance(ws_row, dict) else ws_row[0]) if ws_row else None
+            if ws is not None:
+                from web.storage_quota import delete_session_files
+                delete_session_files(int(ws), sid)
+                affected_workspaces.add(int(ws))
+        except Exception:
+            logger.warning("purge: on-disk cleanup failed for session %s", sid, exc_info=True)
+
         # Delete related data first (same tables as hard delete)
         for table in (
             "laps", "scores", "score_details", "features",
@@ -520,6 +540,15 @@ def purge_deleted_sessions(conn: sqlite3.Connection, retention_days: int = 30) -
             {"sid": sid},
         )
         purged += 1
+
+    # Reconcile each affected workspace's stored usage with what is left on
+    # disk after the purge (best-effort — never block the purge on accounting).
+    for ws in affected_workspaces:
+        try:
+            from web.storage_quota import recompute_and_store
+            recompute_and_store(conn, ws)
+        except Exception:
+            logger.warning("purge: storage recompute failed for workspace %s", ws, exc_info=True)
 
     return purged
 

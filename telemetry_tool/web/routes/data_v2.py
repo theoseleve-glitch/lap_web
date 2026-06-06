@@ -1414,55 +1414,47 @@ def get_corners_per_lap(session_id: str) -> tuple[dict, int]:
 @bp.route("/sessions/<session_id>", methods=["DELETE"])
 @_safe_api
 def delete_session(session_id: str) -> tuple[dict, int]:
-    """Hard-delete a session and all related data.
+    """Soft-delete a session (GDPR Art. 17 recoverable grace window).
 
-    Requires at least 'member' role in the workspace (viewers cannot delete).
+    Sets ``deleted_at`` so the session disappears from every list/detail query
+    immediately while remaining restorable; the retention job
+    (``purge_deleted_sessions``, 30 days) performs the irreversible cascade
+    erasure AND frees the on-disk files then. Files are deliberately NOT removed
+    here — deleting them now would make /restore recover a row pointing at
+    missing telemetry. Requires at least 'member' role (viewers cannot delete).
     """
     workspace_role = getattr(g, "workspace_role", None)
     if workspace_role == "viewer":
         return api_error(ErrorCode.FORBIDDEN, "Insufficient permissions to delete sessions", status=403)
 
     conn = get_db_connection()
-    ws_id = getattr(g, "workspace_id", None)
-
     session = models.get_session_by_id(conn, session_id)
     if session is None:
         return api_error(ErrorCode.NOT_FOUND, "Session not found", status=404)
 
-    result = delete_entity_cascade(conn, "session", session_id)
-    audit_log(conn, "session.delete", {"session_id": session_id, "impact": result["impact"]})
+    deleted = models.soft_delete_session(conn, session_id)
+    if not deleted:
+        # Visible to the SELECT but the soft-delete UPDATE changed nothing
+        # (concurrent delete, or a write the tenant context could not reach).
+        # NEVER report success when the row was not actually removed — that
+        # false-success is what let "deleted" sessions reappear on reload.
+        conn.rollback()
+        logger.error("DELETE session %s — soft-delete affected 0 rows; not confirming deletion", session_id)
+        return api_error(ErrorCode.INTERNAL_ERROR, "Session could not be deleted", status=500)
+
+    # audit_log isolates its own failure in a SAVEPOINT, so it can no longer
+    # poison this transaction and turn the commit() below into a silent rollback.
+    audit_log(conn, "session.delete", {"session_id": session_id})
     conn.commit()
 
-    # Integrity assertion: the row must be gone after commit. If it survives,
-    # an RLS policy or FK constraint silently blocked the delete — a real bug
-    # worth an error, unlike the per-delete diagnostics this replaced.
-    post_count = conn.execute(
-        "SELECT COUNT(*) AS cnt FROM sessions WHERE session_id = :sid",
-        {"sid": session_id},
-    ).fetchone()
-    post_n = post_count["cnt"] if isinstance(post_count, dict) else post_count[0]
-    if post_n > 0:
-        logger.error(
-            "DELETE session %s — row still present after commit; RLS or a FK "
-            "constraint blocked the delete", session_id,
-        )
-
-    # Remove the session's raw/cache files from disk and refresh the
-    # workspace's storage usage. Previously a delete left the raw telemetry
-    # orphaned on disk forever and never decremented the user's storage.
+    # Best-effort post-delete cleanup — must never affect the delete result.
+    # On-disk files are intentionally retained for the grace window and freed
+    # by purge_deleted_sessions; here we only drop the now-stale chart cache.
     try:
-        from web.storage_quota import delete_session_files, recompute_and_store
-        freed = delete_session_files(int(ws_id), session_id)
-        recompute_and_store(conn, int(ws_id))
-        conn.commit()
-        logger.info("DELETE session %s — freed %d bytes; storage usage refreshed",
-                    session_id, freed)
+        from web.chart_cache import invalidate_session_cache
+        invalidate_session_cache(session_id)
     except Exception:
-        logger.warning("Storage cleanup after delete failed for %s", session_id, exc_info=True)
-
-    # Invalidate cached chart responses for this session.
-    from web.chart_cache import invalidate_session_cache
-    invalidate_session_cache(session_id)
+        logger.warning("Chart-cache invalidation failed after delete", exc_info=True)
 
     try:
         from web.rollups import refresh_rollups
@@ -1470,8 +1462,12 @@ def delete_session(session_id: str) -> tuple[dict, int]:
     except Exception:
         logger.warning("Rollup refresh failed after delete", exc_info=True)
 
-    logger.info("DELETE session %s — completed, impact=%s", session_id, result["impact"])
-    return api_response(result)
+    return api_response({
+        "deleted": True,
+        "soft_deleted": True,
+        "session_id": session_id,
+        "retention_days": 30,
+    })
 
 
 @bp.route("/sessions/<session_id>/delete-impact", methods=["GET"])

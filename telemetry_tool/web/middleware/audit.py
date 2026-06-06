@@ -31,7 +31,17 @@ def audit_log(conn, action: str, details: dict | None = None):
         ip = ""
         request_id = ""
 
+    # The audit write is best-effort and MUST NOT be able to abort the caller's
+    # transaction. Without the SAVEPOINT, a DB-level failure here (e.g. an
+    # audit_log schema drift such as a missing ``new_value``/``request_id``
+    # column) poisons the connection — and the caller's subsequent commit() is
+    # silently downgraded to ROLLBACK by Postgres, undoing the real mutation
+    # (this was a root cause of deleted sessions reappearing). Isolate it the
+    # same way ``_safe_delete`` does so an audit failure can never take the
+    # caller's work down with it.
+    sp = "sp_audit_log"
     try:
+        conn.execute(f"SAVEPOINT {sp}")
         conn.execute(
             "INSERT INTO audit_log "
             "(workspace_id, user_id, action, new_value, ip_address, request_id) "
@@ -45,5 +55,11 @@ def audit_log(conn, action: str, details: dict | None = None):
                 "rid": request_id[:255] or None,
             },
         )
+        conn.execute(f"RELEASE SAVEPOINT {sp}")
     except Exception:
+        try:
+            conn.execute(f"ROLLBACK TO SAVEPOINT {sp}")
+            conn.execute(f"RELEASE SAVEPOINT {sp}")
+        except Exception:
+            pass
         logger.debug("audit_log skipped (table may not exist): %s", action)

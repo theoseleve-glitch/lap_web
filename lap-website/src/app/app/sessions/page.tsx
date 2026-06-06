@@ -629,10 +629,12 @@ export default function SessionsPage() {
       return { previous };
     },
     onSuccess: () => {
-      // The optimistic removal in onMutate already updated the UI.
-      // Just invalidate dashboard counts + filter options.
-      // Do NOT touch the session list cache — the optimistic state IS the
-      // correct state (the DELETE committed on the server).
+      // Reconcile against the server: invalidate the session list so the
+      // refetch reflects the real post-delete state. The optimistic removal in
+      // onMutate is only a UX head-start — it must NOT be treated as ground
+      // truth, or a server-side delete failure would leave a ghost row that
+      // silently reappears on the next full fetch (reload / filter change).
+      queryClient.invalidateQueries({ queryKey: ['sessions', 'list'] });
       queryClient.invalidateQueries({ queryKey: ['sessions', 'filter-options'] });
       queryClient.invalidateQueries({ queryKey: ['dashboard'] });
     },
