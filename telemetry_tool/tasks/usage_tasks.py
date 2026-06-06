@@ -92,47 +92,55 @@ try:
         allocation (2 GiB base, +1 GiB at 80%). Keeps the per-user storage
         figure 'regularly updated to match consumption' even if an upload/
         delete missed its inline refresh. Runs daily via Celery Beat.
+
+        Commits PER WORKSPACE inside the loop, each isolated in its own
+        try/except: one workspace failing (transient DB error, etc.) is logged
+        and skipped — it must NOT roll back the whole fleet's progress nor force
+        a full re-walk of every workspace's disk on retry. recompute_and_store
+        threads the connection through so usage reflects the session-keyed
+        sidecar footprint (not the empty legacy dirs).
         """
-        from web.storage_quota import (
-            BASE_ALLOCATION_BYTES, _grow_allocation, workspace_disk_bytes,
-        )
-        conn = _get_pg_conn()  # maint DSN; workspaces is not RLS-scoped
+        from web.db_pg import PgConnectionWrapper
+        from web.storage_quota import recompute_and_store
+
+        raw = _get_pg_conn()  # maint DSN (BYPASSRLS): workspaces not RLS-scoped,
+        conn = PgConnectionWrapper(raw)  # and we must read sessions across all tenants
+        updated = skipped = 0
         try:
-            cur = conn.cursor()
-            cur.execute("SELECT id, storage_allocation_bytes FROM workspaces")
-            rows = cur.fetchall()
-            n = 0
-            for row in rows:
-                ws_id = row["id"] if isinstance(row, dict) else row[0]
-                alloc = int((row.get("storage_allocation_bytes") if isinstance(row, dict) else row[1])
-                            or BASE_ALLOCATION_BYTES)
-                used = workspace_disk_bytes(ws_id)
-                new_alloc = _grow_allocation(used, alloc)
-                cur.execute(
-                    "UPDATE workspaces SET storage_used_bytes = %s, "
-                    "storage_allocation_bytes = %s WHERE id = %s",
-                    (used, new_alloc, ws_id),
-                )
-                n += 1
-            conn.commit()
-            logger.info("Storage reconcile: updated %d workspaces", n)
-            return {"reconciled": n}
-        except Exception as exc:
-            conn.rollback()
-            logger.error("Storage reconcile failed: %s", exc, exc_info=True)
-            raise self.retry(exc=exc, countdown=120)
+            cur = raw.cursor()
+            cur.execute("SELECT id FROM workspaces")
+            ws_ids = [r["id"] if isinstance(r, dict) else r[0] for r in cur.fetchall()]
+            cur.close()
+            for ws_id in ws_ids:
+                try:
+                    recompute_and_store(conn, ws_id)
+                    raw.commit()
+                    updated += 1
+                except Exception as exc:  # noqa: BLE001 — skip one, keep the fleet
+                    try:
+                        raw.rollback()
+                    except Exception:
+                        pass
+                    skipped += 1
+                    logger.warning("Storage reconcile skipped ws=%s: %s", ws_id, exc)
+            logger.info("Storage reconcile: updated %d, skipped %d", updated, skipped)
+            return {"reconciled": updated, "skipped": skipped}
         finally:
-            conn.close()
+            raw.close()
 
     @celery.task(queue="default", bind=True, max_retries=1)
     def cleanup_old_usage_events(self):
-        """Delete usage_events older than 90 days.
+        """Delete usage_events older than 90 days (manual/admin tool — NOT
+        on the beat schedule).
 
-        Monthly aggregates in ``usage_monthly`` are preserved — they
-        provide the historical data. Raw events are only needed for
-        debugging and are safe to purge.
+        Monthly aggregates in ``usage_monthly`` are preserved — they provide
+        the historical data. Raw events are only needed for debugging.
 
-        Runs weekly via Celery Beat.
+        Deliberately NOT scheduled: the ``archive_old_usage_events`` beat task
+        (tasks.archival_tasks, monthly) already owns the usage_events
+        lifecycle and ARCHIVES partitions to Parquet before dropping them at
+        12 months. A 90-day DELETE here would destroy raw events the archival
+        would otherwise preserve, so this stays an explicit, on-demand purge.
         """
         conn = _get_pg_conn()
         try:
