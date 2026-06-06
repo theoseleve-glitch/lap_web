@@ -151,10 +151,15 @@ def _write_zip(
     scores: list[dict[str, Any]],
     annotations: list[dict[str, Any]],
     teams: list[dict[str, Any]],
+    telemetry: dict[str, list[dict[str, Any]]] | None = None,
 ):
     """Write a GDPR export ZIP file containing JSON files per resource.
 
     All GPS fields are already precision-reduced before this is called.
+    ``telemetry`` is an optional map of ``{table_name: rows}`` for the bulk
+    per-session data (gps_traces, weather, corner metrics, theoretical lines)
+    that Art. 15/20 portability requires — omitting these made the export
+    materially incomplete.
     """
     def _default(obj):
         if isinstance(obj, datetime):
@@ -168,21 +173,26 @@ def _write_zip(
         zf.writestr("scores.json", json.dumps(scores, indent=2, default=_default))
         zf.writestr("annotations.json", json.dumps(annotations, indent=2, default=_default))
         zf.writestr("teams.json", json.dumps(teams, indent=2, default=_default))
+        for _name, _rows in (telemetry or {}).items():
+            zf.writestr(f"{_name}.json", json.dumps(_rows, indent=2, default=_default))
 
 
 # ---------------------------------------------------------------------------
 # Export workspace resolution
 # ---------------------------------------------------------------------------
 
-def _resolve_export_workspace_id(export_id: str) -> int | None:
-    """Resolve the owning workspace_id for a data_exports row.
+def _resolve_export_workspace_id(user_id: int) -> int | None:
+    """Resolve the workspace to scope a user's GDPR export under RLS.
 
-    ``data_exports`` is RLS-enabled, so the working app connection cannot read
-    the row until its workspace GUC is set — a chicken-and-egg problem. Read it
-    once via the BYPASSRLS maintenance connection to break the cycle, then the
-    caller pins the GUC on the working connection. Returns ``None`` (and the
-    caller skips the GUC, letting the RLS write fail closed) if the maint role
-    is unavailable or the row carries no workspace_id.
+    The export covers the user's personal workspace. Under the telemetry_app
+    role the working connection cannot read RLS tables (sessions/laps/...) until
+    ``app.current_workspace_id`` is set, but the task args only carry user_id —
+    and ``data_exports`` has **no workspace_id column** to read it from (reading
+    it there was the bug that returned empty exports post-RLS-cutover). Resolve
+    the user's default workspace (falling back to their earliest membership) via
+    the BYPASSRLS maintenance connection, then the caller pins the GUC. Returns
+    ``None`` only if the user has no workspace, in which case the caller leaves
+    the GUC unset and the RLS reads fail closed (empty export) rather than leak.
     """
     from sqlalchemy import text
 
@@ -190,23 +200,29 @@ def _resolve_export_workspace_id(export_id: str) -> int | None:
     try:
         maint = get_maint_connection()
         row = maint.execute(
-            text("SELECT workspace_id FROM data_exports WHERE id = :id"),
-            {"id": export_id},
+            text("SELECT default_workspace_id FROM users WHERE id = :uid"),
+            {"uid": user_id},
         ).fetchone()
+        ws = dict(row).get("default_workspace_id") if row else None
+        if ws is None:
+            mrow = maint.execute(
+                text(
+                    "SELECT workspace_id FROM workspace_members "
+                    "WHERE user_id = :uid ORDER BY workspace_id LIMIT 1"
+                ),
+                {"uid": user_id},
+            ).fetchone()
+            ws = dict(mrow).get("workspace_id") if mrow else None
+        return int(ws) if ws is not None else None
     except Exception as exc:
         logger.warning(
-            "Could not resolve workspace for export_id=%s via maint role: %s",
-            export_id, exc,
+            "Could not resolve export workspace for user_id=%s via maint role: %s",
+            user_id, exc,
         )
         return None
     finally:
         if maint is not None:
             return_pg_connection(maint)
-
-    if not row:
-        return None
-    ws = row["workspace_id"] if isinstance(row, dict) else dict(row).get("workspace_id")
-    return int(ws) if ws is not None else None
 
 
 # ---------------------------------------------------------------------------
@@ -239,12 +255,11 @@ def _export_user_data_impl(user_id: int, export_id: str) -> dict[str, Any]:
     # below (_update_export_status → UPDATE data_exports) and every read after
     # it (sessions/laps/score_details/session_annotations) are RLS tables, so
     # the working connection needs app.current_workspace_id set or it fails
-    # closed. The task args only carry user_id/export_id, and the owning
-    # workspace lives on the data_exports row (itself RLS) — so resolve it via
-    # a short-lived BYPASSRLS maintenance connection first, then pin the GUC on
-    # the working connection (connection-scoped, not SET LOCAL, so it survives
-    # the multiple commits _update_export_status performs).
-    workspace_id = _resolve_export_workspace_id(export_id)
+    # closed. data_exports has no workspace_id column, so resolve the user's
+    # workspace via a short-lived BYPASSRLS maintenance connection, then pin the
+    # GUC here (connection-scoped, not SET LOCAL, so it survives the multiple
+    # commits _update_export_status performs).
+    workspace_id = _resolve_export_workspace_id(user_id)
     if workspace_id is not None:
         conn.execute(
             "SET app.current_workspace_id = %(ws)s",
@@ -311,6 +326,28 @@ def _export_user_data_impl(user_id: int, export_id: str) -> dict[str, Any]:
         ).fetchall()
         teams = [dict(r) for r in team_rows]
 
+        # Bulk per-session telemetry — the user's actual lap data (GPS traces,
+        # weather, corner metrics, theoretical lines). Required for a complete
+        # Art. 15/20 export; previously omitted. Missing/absent tables are
+        # skipped gracefully so a schema gap can't fail the whole export.
+        telemetry: dict[str, list[dict[str, Any]]] = {
+            "gps_traces": [],
+            "session_weather": [],
+            "corner_metrics": [],
+            "theoretical_data": [],
+        }
+        for sess in sessions:
+            sid = sess["session_id"]
+            for _table in telemetry:
+                try:
+                    _rows = conn.execute(
+                        text(f"SELECT * FROM {_table} WHERE session_id = :sid"),
+                        {"sid": sid},
+                    ).fetchall()
+                    telemetry[_table].extend(_reduce_gps_precision(dict(r)) for r in _rows)
+                except Exception:
+                    logger.debug("export: telemetry table %s unavailable for %s", _table, sid)
+
         # 3. Reduce GPS precision on sessions
         sessions = [_reduce_gps_precision(s) for s in sessions]
 
@@ -320,7 +357,7 @@ def _export_user_data_impl(user_id: int, export_id: str) -> dict[str, Any]:
         zip_filename = f"export_{user_id}_{export_id}.zip"
         zip_path = os.path.join(export_dir, zip_filename)
 
-        _write_zip(zip_path, profile, sessions, laps, scores, annotations, teams)
+        _write_zip(zip_path, profile, sessions, laps, scores, annotations, teams, telemetry=telemetry)
 
         # 5. Update status to completed
         expires_at = datetime.now(timezone.utc) + timedelta(days=7)

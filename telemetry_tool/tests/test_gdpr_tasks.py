@@ -158,6 +158,44 @@ class TestExportUserData:
 
 
 # ---------------------------------------------------------------------------
+# _resolve_export_workspace_id (P0-B empty-export regression)
+# ---------------------------------------------------------------------------
+
+class TestResolveExportWorkspace:
+    @patch("tasks.gdpr_tasks.return_pg_connection")
+    @patch("tasks.gdpr_tasks.get_maint_connection")
+    def test_resolves_from_user_default_workspace(self, mock_maint, _mock_return):
+        """Export workspace must resolve from the USER (default_workspace_id),
+        not from data_exports.workspace_id — which does not exist and made RLS
+        reads fail closed → empty export ZIP."""
+        from tasks.gdpr_tasks import _resolve_export_workspace_id
+        conn = MagicMock()
+        conn.execute.return_value.fetchone.return_value = {"default_workspace_id": 7}
+        mock_maint.return_value = conn
+
+        assert _resolve_export_workspace_id(42) == 7
+
+        # Inspect the actual SQL text (TextClause), not the Call repr.
+        sql = " ".join(str(c.args[0]) for c in conn.execute.call_args_list if c.args)
+        assert "data_exports" not in sql, "must not read the nonexistent data_exports.workspace_id"
+        assert "default_workspace_id" in sql
+
+    @patch("tasks.gdpr_tasks.return_pg_connection")
+    @patch("tasks.gdpr_tasks.get_maint_connection")
+    def test_falls_back_to_membership(self, mock_maint, _mock_return):
+        """If default_workspace_id is NULL, fall back to earliest membership."""
+        from tasks.gdpr_tasks import _resolve_export_workspace_id
+        conn = MagicMock()
+        conn.execute.return_value.fetchone.side_effect = [
+            {"default_workspace_id": None},  # users lookup
+            {"workspace_id": 3},             # workspace_members fallback
+        ]
+        mock_maint.return_value = conn
+
+        assert _resolve_export_workspace_id(42) == 3
+
+
+# ---------------------------------------------------------------------------
 # purge_deleted_accounts
 # ---------------------------------------------------------------------------
 

@@ -218,6 +218,29 @@ def make_celery(app=None) -> Celery:
 # Standalone entry point: celery -A telemetry_tool.celery_app worker
 celery = make_celery()
 
+# ── Fail-closed RLS preflight for workers ──────────────────────────
+# Mirrors the web tier's app.py boot guard: refuse to start a worker whose DB
+# role bypasses row-level security in multi-tenant mode, so pipeline/export/
+# GDPR tasks can never silently run cross-tenant on a privileged DSN. Without
+# this, only the web app was guarded — a misconfigured worker DSN would defeat
+# the whole 064 RLS cutover for background work.
+from celery.signals import worker_process_init as _worker_process_init
+
+
+@_worker_process_init.connect
+def _assert_worker_rls_enforcement(**_kwargs):
+    auth_required = os.environ.get("AUTH_REQUIRED", "0") == "1"
+    try:
+        from web.db_pg import assert_rls_enforcement
+        assert_rls_enforcement(auth_required=auth_required)
+    except RuntimeError:
+        # Privileged DSN in multi-tenant mode — abort worker boot (fail closed).
+        raise
+    except Exception as exc:
+        import logging
+        logging.getLogger(__name__).warning("Worker RLS preflight skipped: %s", exc)
+
+
 # Register dead-letter-queue signal handler (captures tasks that exhaust retries)
 try:
     import tasks.dead_letter  # noqa: F401 — registers @task_failure.connect
