@@ -264,11 +264,14 @@ _FINALIZE_STAGES = [
 ]
 
 
-def _build_session_meta(ctx: PipelineContext) -> dict:
+def _build_session_meta(ctx: PipelineContext, conn=None) -> dict:
     """Build the session_meta dict expected by ``run_full_analysis()``.
 
     Reads user-provided metadata from Redis ``pipeline:meta:{job_id}``
     (set by the upload endpoint) and merges with context defaults.
+
+    ``conn`` is the task's GUC-pinned connection; it is used for the driver
+    experience lookup so that query inherits the workspace RLS context.
     """
     import json as _json
 
@@ -305,27 +308,35 @@ def _build_session_meta(ctx: PipelineContext) -> dict:
     # Ensure session_id is always from context
     meta["session_id"] = ctx.session_id
 
-    # Fetch driver experience (total_laps) for adaptive scoring
+    # Fetch driver experience (total_laps) for adaptive scoring. MUST use the
+    # task's GUC-pinned connection: the worker has no Flask app context, so a
+    # fresh get_pg_connection() here would be GUC-less (raising on the RLS
+    # drivers/driver_profiles tables under the telemetry_app cutover, swallowed
+    # → silent scoring degradation) AND would leak (never closed).
     meta.setdefault("driver_total_laps", 0)
-    try:
-        from web.db_pg import get_pg_connection
-        _conn = get_pg_connection()
-        _drv_row = _conn.execute(
-            "SELECT driver_id FROM drivers WHERE driver_name = %(driver_name)s",
-            {"driver_name": meta.get("driver_name", "Unknown")},
-        ).fetchone()
-        if _drv_row:
-            _drv_id = _drv_row[0] if not isinstance(_drv_row, dict) else _drv_row.get("driver_id")
-            _prof_row = _conn.execute(
-                "SELECT total_laps FROM driver_profiles WHERE driver_id = %(driver_id)s",
-                {"driver_id": _drv_id},
+    if conn is not None:
+        try:
+            _drv_row = conn.execute(
+                "SELECT driver_id FROM drivers WHERE driver_name = %(driver_name)s",
+                {"driver_name": meta.get("driver_name", "Unknown")},
             ).fetchone()
-            if _prof_row:
-                meta["driver_total_laps"] = int(
-                    (_prof_row[0] if not isinstance(_prof_row, dict) else _prof_row.get("total_laps", 0)) or 0
-                )
-    except Exception:
-        pass  # Graceful fallback — new driver or no profile yet
+            if _drv_row:
+                _drv_id = _drv_row[0] if not isinstance(_drv_row, dict) else _drv_row.get("driver_id")
+                _prof_row = conn.execute(
+                    "SELECT total_laps FROM driver_profiles WHERE driver_id = %(driver_id)s",
+                    {"driver_id": _drv_id},
+                ).fetchone()
+                if _prof_row:
+                    meta["driver_total_laps"] = int(
+                        (_prof_row[0] if not isinstance(_prof_row, dict) else _prof_row.get("total_laps", 0)) or 0
+                    )
+        except Exception:
+            # Graceful fallback (new driver / no profile). Reset the shared conn
+            # so a failed read can't leave it in an aborted-transaction state.
+            try:
+                conn.rollback()
+            except Exception:
+                pass
 
     return meta
 
@@ -623,7 +634,7 @@ def _run_analyze_stages(ctx: PipelineContext, job_id: str | None = None, conn=No
 
     from pipeline import run_full_analysis
 
-    session_meta = _build_session_meta(ctx)
+    session_meta = _build_session_meta(ctx, conn=conn)
     _job_id = job_id or ctx.job_id
 
     result = run_full_analysis(
@@ -733,7 +744,7 @@ def _run_finalize_stages(ctx: PipelineContext, job_id: Optional[str] = None, con
     """
     from pipeline import run_full_analysis
 
-    session_meta = _build_session_meta(ctx)
+    session_meta = _build_session_meta(ctx, conn=conn)
 
     # Mark first finalize stage as running
     ctx.update_stage(_FINALIZE_STAGES[0], "running")
