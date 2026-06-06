@@ -29,6 +29,13 @@ WHERE slot_no = (
 RETURNING slot_no;
 """
 
+_EXISTING_HOLD_SQL = """
+SELECT slot_no FROM founding_slots
+WHERE holder_email = %(email)s AND status = 'held' AND expires_at > now()
+ORDER BY slot_no
+LIMIT 1;
+"""
+
 _ATTACH_SQL = """
 UPDATE founding_slots SET stripe_session_id=%(sid)s
 WHERE slot_no=%(slot)s AND status='held' RETURNING slot_no;
@@ -56,7 +63,17 @@ def _scalar(cur):
 
 def reserve_slot(conn, email: str | None) -> int | None:
     """Atomically claim the lowest available founding slot. Returns slot_no, or
-    None if sold out (caller then uses the standard price). Caller must commit."""
+    None if sold out (caller then uses the standard price). Caller must commit.
+
+    Idempotent per email: if this buyer already holds an unexpired slot (a
+    double-submitted checkout), return that SAME slot rather than consuming a
+    second one of the scarce 50. (Truly-concurrent dupes are additionally
+    guarded by the @idempotent Idempotency-Key lock on the checkout route.)
+    """
+    if email:
+        existing = _scalar(conn.execute(_EXISTING_HOLD_SQL, {"email": email}))
+        if existing is not None:
+            return existing
     return _scalar(conn.execute(_RESERVE_SQL, {"email": email, "hold": HOLD_MINUTES}))
 
 

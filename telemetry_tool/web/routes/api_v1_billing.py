@@ -16,6 +16,7 @@ from datetime import date, datetime, timezone
 from flask import Blueprint, g, request
 
 from web.api_utils import ErrorCode, api_error, api_response
+from web.idempotency import idempotent
 
 logger = logging.getLogger(__name__)
 
@@ -351,6 +352,7 @@ TRIAL_DAYS = 30
 
 @bp.route("/checkout", methods=["POST"])
 @rate_limit(tier="write")
+@idempotent
 def create_checkout():
     """Create a Stripe Checkout Session for the single membership plan.
 
