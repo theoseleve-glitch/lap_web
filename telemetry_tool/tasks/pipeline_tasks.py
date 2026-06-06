@@ -1365,6 +1365,42 @@ def pipeline_finalize(self, job_id: Optional[str]) -> Optional[str]:
         except Exception:
             logger.warning("Failed to record report usage for job %s", job_id, exc_info=True)
 
+        # Reconcile this workspace's storage now that the new session's files
+        # are on disk — keeps the allocation matched to consumption right after
+        # upload, not just on the next data-page view / daily reconcile.
+        try:
+            from web.storage_quota import recompute_and_store
+            _ws_for_storage = int(ctx.workspace_id) if ctx.workspace_id else None
+            if _ws_for_storage is not None:
+                _st_conn = _get_pg_connection()
+                recompute_and_store(_st_conn, _ws_for_storage)
+                _st_conn.commit()
+        except Exception:
+            logger.warning("Storage reconcile after job %s failed", job_id, exc_info=True)
+
+        # Remove the transient upload-staging dir now the pipeline has ingested
+        # and persisted the raw sidecar (_try_store_raw_sidecar). The staging
+        # file is NOT the canonical copy, so it would otherwise leak under
+        # UPLOAD_DIR forever. Success path only — a failed job may retry and
+        # still need its staging file; stale failed dirs are swept separately.
+        try:
+            import shutil as _shutil_stage
+            _stage_conn = _get_pg_connection()
+            _fp_row = _stage_conn.execute(
+                text("SELECT file_path FROM ingestion_jobs WHERE job_id = :jid"),
+                {"jid": job_id},
+            ).fetchone()
+            _fp = None
+            if _fp_row:
+                _fp = (dict(_fp_row) if not isinstance(_fp_row, dict) else _fp_row).get("file_path")
+            if _fp:
+                _stage_dir = Path(_fp).resolve().parent
+                # Guard: only remove dedicated per-job staging dirs.
+                if _stage_dir.name.startswith(("job_", "telemetry_upload_")):
+                    _shutil_stage.rmtree(_stage_dir, ignore_errors=True)
+        except Exception:
+            logger.warning("Upload-staging cleanup after job %s failed", job_id, exc_info=True)
+
         ctx.cleanup()
         release_workspace_lock(redis_client, ctx.workspace_id, job_id)
 

@@ -443,6 +443,32 @@ def upload_session() -> tuple[Response, int]:
     safe_name = Path(f.filename).name
     tmp_path = Path(tmp_dir) / safe_name
 
+    # ── 3a. Free-disk guard ───────────────────────────────────────
+    # Refuse the write if the server volume is nearly full rather than
+    # letting f.save() fill the disk and destabilise the host (and every
+    # other tenant). The pipeline transiently needs scratch space well
+    # beyond the raw size (decode + normalise), so require a 3x headroom
+    # with a 256 MiB floor. The check itself must never block an upload,
+    # so a stat failure falls through.
+    try:
+        import shutil as _shutil_guard
+        incoming = request.content_length or 0
+        free = _shutil_guard.disk_usage(tmp_dir).free
+        required = max(incoming * 3, 256 * 1024 * 1024)
+        if free < required:
+            _shutil_guard.rmtree(tmp_dir, ignore_errors=True)
+            logger.error(
+                "Upload refused — low disk: free=%d bytes, required=%d bytes",
+                free, required,
+            )
+            return api_error(
+                ErrorCode.SERVICE_UNAVAILABLE,
+                "Server storage is temporarily full. Please try again shortly.",
+                status=507,
+            )
+    except OSError:
+        pass  # disk_usage unsupported on this FS — don't block on the check
+
     try:
         f.save(str(tmp_path))
         logger.info("Saved upload to temp path: %s (%d bytes)",
