@@ -423,6 +423,7 @@ def _purge_deleted_accounts_with_conn(conn) -> dict[str, int]:
     """Run the account-purge sweep on an already-open (maint) connection."""
     from sqlalchemy import text
 
+    from web.repos.delete_cascade import delete_entity_cascade
     from web.storage_quota import purge_workspace_files
 
     cutoff = datetime.now(timezone.utc) - timedelta(days=30)
@@ -472,20 +473,19 @@ def _purge_deleted_accounts_with_conn(conn) -> dict[str, int]:
                     if sid is None:
                         continue
                     ws_session_ids.setdefault(ws_id, []).append(str(sid))
-                    for table in [
-                        "gps_traces", "laps", "score_details",
-                        "corner_metrics", "session_annotations",
-                        "session_tags", "theoretical_data",
-                        "reference_lines", "driving_style_features",
-                    ]:
-                        conn.execute(
-                            text(f"DELETE FROM {table} WHERE session_id = :sid"),
-                            {"sid": sid},
-                        )
-                conn.execute(
-                    text("DELETE FROM sessions WHERE workspace_id = :ws"),
-                    {"ws": ws_id},
-                )
+                    # Use the CANONICAL cascade (single source of truth) rather
+                    # than a hand-maintained child-table list. The old list
+                    # omitted 13 of the 22 session children — several
+                    # (e.g. user_corners, migration 059) are NOT NULL REFERENCES
+                    # sessions(session_id) with NO ON DELETE (RESTRICT), so a
+                    # `DELETE FROM sessions` FK-violated and rolled the whole
+                    # purge back: the account was never erased (GDPR Art. 17
+                    # breach + on-disk sidecars retained). delete_entity_cascade
+                    # deletes every child (skipping missing PG-only tables via
+                    # SAVEPOINT) then the session, and RAISES if the row
+                    # survives — surfacing any future RESTRICT drift instead of
+                    # silently stalling.
+                    delete_entity_cascade(conn, "session", sid)
                 conn.execute(
                     text("DELETE FROM workspace_members WHERE workspace_id = :ws"),
                     {"ws": ws_id},
