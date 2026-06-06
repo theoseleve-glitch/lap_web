@@ -76,11 +76,10 @@ export function ShareCardCanvas({ sessionData, racingBadges, licenseLevel = 'N',
     const card = cardRef.current;
     if (!card) return;
 
-    // Use html2canvas if available, otherwise fallback
     try {
-      // eslint-disable-next-line @typescript-eslint/no-require-imports
-      const mod = await (Function('return import("html2canvas")')() as Promise<{ default: (el: HTMLElement, opts: Record<string, unknown>) => Promise<HTMLCanvasElement> }>);
-      const html2canvas = mod.default;
+      // html2canvas is a browser-only lib; the dynamic import keeps it in a
+      // lazy client chunk (out of the SSR/worker bundle).
+      const { default: html2canvas } = await import('html2canvas');
       const canvas = await html2canvas(card, {
         backgroundColor: '#000000',
         scale: 2,
@@ -99,8 +98,9 @@ export function ShareCardCanvas({ sessionData, racingBadges, licenseLevel = 'N',
         document.body.removeChild(a);
         URL.revokeObjectURL(url);
       }, 'image/png');
-    } catch {
-      alert('Download requires html2canvas. Install with: npm install html2canvas');
+    } catch (err) {
+      console.error('Share card render failed:', err);
+      alert('Could not generate the image. Please try again.');
     }
   }, [driver]);
 

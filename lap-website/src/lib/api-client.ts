@@ -142,6 +142,51 @@ async function _apiFetchInner<T>(path: string, init?: RequestInit): Promise<T> {
   return parseEnvelopeOrThrow<T>(res);
 }
 
+/**
+ * Download a file from the API to disk.
+ *
+ * Auth is a Bearer token in the Authorization header (see buildHeaders),
+ * which a plain `<a href>` cannot attach — so an unauthenticated anchor
+ * download 403s. This fetches the bytes WITH the header (and the silent-
+ * refresh retry), then triggers a browser download from an object URL.
+ */
+export async function apiDownload(path: string, filename: string): Promise<void> {
+  const doFetch = () =>
+    fetch(`${API_BASE}${path}`, {
+      headers: buildHeaders(),
+      credentials: 'include',
+      cache: 'no-store',
+    });
+
+  let res = await doFetch();
+  if (res.status === 401 && typeof window !== 'undefined') {
+    const refreshed = await tryRefreshOnce();
+    if (refreshed) {
+      res = await doFetch();
+    } else {
+      const { clearAuthState } = await import('./auth');
+      clearAuthState();
+      broadcastLogout();
+      window.dispatchEvent(new CustomEvent(SESSION_EXPIRED_EVENT));
+      throw new ApiError('SESSION_EXPIRED', 'Your session has expired. Please log in again.', 401);
+    }
+  }
+  if (!res.ok) {
+    throw new ApiError('DOWNLOAD_FAILED', `Download failed (${res.status})`, res.status);
+  }
+
+  const blob = await res.blob();
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  // Revoke after the click has been dispatched.
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+
 /** Convenience wrappers */
 export const api = {
   get: <T>(path: string) => apiFetch<T>(path),

@@ -59,8 +59,9 @@ export function ShareableCard({
     const card = cardRef.current;
     if (!card) return;
     try {
-      const mod = await (Function('return import("html2canvas")')() as Promise<{ default: (el: HTMLElement, opts: Record<string, unknown>) => Promise<HTMLCanvasElement> }>);
-      const html2canvas = mod.default;
+      // html2canvas is a browser-only lib; the dynamic import keeps it in a
+      // lazy client chunk (out of the SSR/worker bundle).
+      const { default: html2canvas } = await import('html2canvas');
       const canvas = await html2canvas(card, {
         backgroundColor: '#000000',
         scale: 2,
@@ -77,8 +78,9 @@ export function ShareableCard({
         document.body.removeChild(a);
         URL.revokeObjectURL(url);
       }, 'image/png');
-    } catch {
-      alert('Download requires html2canvas. Install with: npm install html2canvas');
+    } catch (err) {
+      console.error('Share card render failed:', err);
+      alert('Could not generate the image. Please try again.');
     }
   }, [driverName]);
 

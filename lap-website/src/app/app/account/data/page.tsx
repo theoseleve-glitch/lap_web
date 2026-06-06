@@ -3,7 +3,7 @@
 import { useState } from 'react';
 import { useQuery, useMutation } from '@tanstack/react-query';
 import { PageIntro } from '@/components/ui/PageIntro';
-import { apiFetch } from '@/lib/api-client';
+import { apiFetch, apiDownload } from '@/lib/api-client';
 
 /* ── Types ────────────────────────────────────────────────── */
 
@@ -209,12 +209,18 @@ export default function DataPrivacyPage() {
                   </span>
                   <span className="text-steel font-body">{exp.created_at || '—'}</span>
                   {exp.status === 'completed' && (
-                    <a
-                      href={`/api/v1/account/export/${exp.id}/download`}
+                    <button
+                      type="button"
+                      onClick={() =>
+                        apiDownload(
+                          `/account/export/${exp.id}/download`,
+                          `data_export_${exp.id}.zip`,
+                        ).catch(() => alert('Download failed. Please try again.'))
+                      }
                       className="text-acid-green hover:underline font-telemetry"
                     >
                       Download
-                    </a>
+                    </button>
                   )}
                 </div>
               ))}
