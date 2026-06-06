@@ -13,6 +13,7 @@ from flask import Blueprint, g, request
 
 from web.api_utils import ErrorCode, api_error, api_response
 from web.middleware.audit import audit_log
+from .middleware import require_superadmin
 
 logger = logging.getLogger(__name__)
 
@@ -169,6 +170,7 @@ def get_user_detail(user_id: int):
 
 
 @bp.route("/users/<int:user_id>/suspend", methods=["POST"])
+@require_superadmin
 def suspend_user(user_id: int):
     """Suspend a user account. Requires reason in body."""
     conn = _get_conn()
@@ -195,6 +197,7 @@ def suspend_user(user_id: int):
 
 
 @bp.route("/users/<int:user_id>/unsuspend", methods=["POST"])
+@require_superadmin
 def unsuspend_user(user_id: int):
     """Unsuspend a user account."""
     conn = _get_conn()
@@ -215,6 +218,7 @@ def unsuspend_user(user_id: int):
 
 
 @bp.route("/users/<int:user_id>/override", methods=["POST"])
+@require_superadmin
 def create_override(user_id: int):
     """Create an entitlement override for a user (support credits, grandfathering)."""
     conn = _get_conn()
@@ -287,6 +291,7 @@ def create_override(user_id: int):
 
 
 @bp.route("/users/<int:user_id>/impersonate", methods=["POST"])
+@require_superadmin
 def impersonate_user(user_id: int):
     """Generate a short-lived (15 min) access token for the target user.
 
