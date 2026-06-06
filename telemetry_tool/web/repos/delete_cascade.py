@@ -33,6 +33,37 @@ class CascadeDeleteError(RuntimeError):
 # orphaned child deletes, causing data corruption. When adding new FK
 # tables (Alembic migrations), ALWAYS update the matching cascade config.
 CASCADE_CONFIG: dict[str, dict[str, Any]] = {
+    "workspace": {
+        # Full teardown of a workspace (GDPR account purge). Most workspace
+        # children are ON DELETE CASCADE and are removed by the parent DELETE,
+        # so they are NOT listed here. We must explicitly handle:
+        #   1. sessions — cascade each so session-tier RESTRICT children
+        #      (e.g. user_corners, which FK sessions, not workspaces) are
+        #      cleared before the parent DELETE would CASCADE the session away;
+        #   2. the workspace-tier children whose FK is RESTRICT / NO ACTION and
+        #      would otherwise FK-block DELETE FROM workspaces (authoritative
+        #      list from pg_constraint, schema head 066).
+        # delete_entity_cascade RAISES if the workspace row survives, so any
+        # future RESTRICT child added without being listed here surfaces loudly
+        # instead of silently stalling the purge.
+        "parent_table": "workspaces",
+        "parent_pk": "id",
+        "children": [
+            {"entity": "session", "fk": "workspace_id"},
+            {"table": "usage_events", "fk": "workspace_id"},
+            {"table": "usage_monthly", "fk": "workspace_id"},
+            {"table": "entitlement_overrides", "fk": "workspace_id"},
+            {"table": "audit_log", "fk": "workspace_id"},
+            {"table": "exports", "fk": "workspace_id"},
+            {"table": "driver_stats_rollup", "fk": "workspace_id"},
+            {"table": "track_stats_rollup", "fk": "workspace_id"},
+            {"table": "driver_xp", "fk": "workspace_id"},
+            {"table": "achievements", "fk": "workspace_id"},
+            {"table": "drill_executions", "fk": "workspace_id"},
+            {"table": "device_pairings", "fk": "workspace_id"},
+            {"table": "workspace_members", "fk": "workspace_id"},
+        ],
+    },
     "session": {
         "parent_table": "sessions",
         "parent_pk": "session_id",
@@ -262,6 +293,26 @@ def _process_children(
                 )
             if count > 0:
                 impact[f"{table} (unlinked)"] = count
+
+        elif isinstance(child, dict) and "table" in child and "fk" in child:
+            # Direct child table whose FK column name differs from the parent's
+            # PK (e.g. workspace children key on ``workspace_id``, not ``id``).
+            table = child["table"]
+            fk_col = child["fk"]
+            if dry_run:
+                count = _safe_count(
+                    conn,
+                    f"SELECT COUNT(*) AS c FROM {table} WHERE {fk_col} = :id",
+                    {"id": entity_id},
+                )
+            else:
+                count = _safe_delete(
+                    conn,
+                    f"DELETE FROM {table} WHERE {fk_col} = :id",
+                    {"id": entity_id},
+                )
+            if count > 0:
+                impact[table] = impact.get(table, 0) + count
 
     return impact
 

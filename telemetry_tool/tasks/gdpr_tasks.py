@@ -464,36 +464,30 @@ def _purge_deleted_accounts_with_conn(conn) -> dict[str, int]:
             ws_session_ids: dict[int, list[str]] = {}
 
             for ws_id in workspace_ids:
+                # Capture session ids for the on-disk sidecar purge BEFORE the
+                # cascade deletes the rows.
                 session_rows = conn.execute(
                     text("SELECT session_id FROM sessions WHERE workspace_id = :ws"),
                     {"ws": ws_id},
                 ).fetchall()
                 for sess in session_rows:
                     sid = sess.get("session_id") if isinstance(sess, dict) else getattr(sess, "session_id", None)
-                    if sid is None:
-                        continue
-                    ws_session_ids.setdefault(ws_id, []).append(str(sid))
-                    # Use the CANONICAL cascade (single source of truth) rather
-                    # than a hand-maintained child-table list. The old list
-                    # omitted 13 of the 22 session children — several
-                    # (e.g. user_corners, migration 059) are NOT NULL REFERENCES
-                    # sessions(session_id) with NO ON DELETE (RESTRICT), so a
-                    # `DELETE FROM sessions` FK-violated and rolled the whole
-                    # purge back: the account was never erased (GDPR Art. 17
-                    # breach + on-disk sidecars retained). delete_entity_cascade
-                    # deletes every child (skipping missing PG-only tables via
-                    # SAVEPOINT) then the session, and RAISES if the row
-                    # survives — surfacing any future RESTRICT drift instead of
-                    # silently stalling.
-                    delete_entity_cascade(conn, "session", sid)
-                conn.execute(
-                    text("DELETE FROM workspace_members WHERE workspace_id = :ws"),
-                    {"ws": ws_id},
-                )
-                conn.execute(
-                    text("DELETE FROM workspaces WHERE id = :ws"),
-                    {"ws": ws_id},
-                )
+                    if sid is not None:
+                        ws_session_ids.setdefault(ws_id, []).append(str(sid))
+                # CANONICAL full teardown (single source of truth) instead of a
+                # hand-maintained list. delete_entity_cascade("workspace") (a)
+                # cascades each session so session-tier RESTRICT children
+                # (e.g. user_corners → FK sessions) are cleared, then (b) deletes
+                # the workspace-tier RESTRICT children (usage_events/monthly,
+                # entitlement_overrides, audit_log, exports, *_stats_rollup,
+                # driver_xp, achievements, drill_executions, device_pairings,
+                # workspace_members), then (c) DELETEs the workspace (the DB
+                # CASCADEs the ~50 ON DELETE CASCADE children). It RAISES if the
+                # workspace row survives, so a future un-listed RESTRICT child
+                # surfaces loudly instead of silently rolling back the purge —
+                # the GDPR Art. 17 stall that the old hardcoded list caused at
+                # BOTH the session and workspace tiers.
+                delete_entity_cascade(conn, "workspace", ws_id)
 
             conn.execute(
                 text("DELETE FROM team_members WHERE user_id = :uid"),
