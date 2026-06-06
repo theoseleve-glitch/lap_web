@@ -84,6 +84,36 @@ def delete_session_files(workspace_id: int, session_id: str) -> int:
     return freed
 
 
+def purge_workspace_files(workspace_id: int) -> int:
+    """Recursively delete ALL on-disk data for a workspace; return bytes freed.
+
+    Used by the GDPR account-purge sweep: once the workspace's DB rows are
+    gone, its ``<base>/<workspace_id>/`` subtree under every data dir
+    (raw + cache + results) must be erased too, or the files outlive the
+    account. Never raises — best-effort, logs what it can't remove.
+    """
+    import shutil
+
+    freed = 0
+    ws = str(workspace_id)
+    for base in _workspace_base_dirs():
+        ws_dir = base / ws
+        if not ws_dir.is_dir():
+            continue
+        freed += _dir_bytes(ws_dir)
+        try:
+            shutil.rmtree(ws_dir, ignore_errors=False)
+        except OSError as exc:
+            logger.warning("storage_quota: failed to purge %s: %s", ws_dir, exc)
+            # Fall back to per-file unlink so we erase as much as possible.
+            for p in sorted(ws_dir.rglob("*"), reverse=True):
+                try:
+                    p.unlink() if p.is_file() else p.rmdir()
+                except OSError:
+                    pass
+    return freed
+
+
 def _grow_allocation(used: int, allocation: int) -> int:
     """Elastic rule: while used >= 80% of allocation, add 1 GiB. Monotonic."""
     if allocation < BASE_ALLOCATION_BYTES:

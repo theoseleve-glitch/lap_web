@@ -254,7 +254,7 @@ def delete_account():
     conn = get_pg_connection()
 
     user = conn.execute(
-        text("SELECT id, deleted_at FROM users WHERE id = :uid"),
+        text("SELECT id, deleted_at, password_hash FROM users WHERE id = :uid"),
         {"uid": user_id},
     ).fetchone()
 
@@ -265,6 +265,17 @@ def delete_account():
 
     if data.get("deleted_at") is not None:
         return api_error(ErrorCode.CONFLICT, "Account is already scheduled for deletion", status=409)
+
+    # Re-authenticate before this destructive action. The UI prompts for the
+    # password and sends it in the body; verify it (matching the 2FA-disable /
+    # backup-code pattern). OAuth-only accounts have no password_hash — they're
+    # already session-authenticated, so the prompt is skipped for them.
+    if data.get("password_hash"):
+        from auth.service import verify_password
+        body = request.get_json(silent=True) or {}
+        password = body.get("password") or ""
+        if not verify_password(password, data["password_hash"]):
+            return api_error(ErrorCode.FORBIDDEN, "Incorrect password", status=403)
 
     # Set deleted_at
     conn.execute(

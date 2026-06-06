@@ -343,6 +343,55 @@ def _export_user_data_impl(user_id: int, export_id: str) -> dict[str, Any]:
 # Task: purge_deleted_accounts
 # ---------------------------------------------------------------------------
 
+def _cancel_stripe_subscription(subscription_id, user_id) -> None:
+    """Best-effort cancel of a Stripe subscription for a purged account.
+
+    Swallows every error — billing cleanup must never block the legal data
+    purge. Mirrors the api_key wiring used in ``web/routes/billing.py``.
+    """
+    if not subscription_id:
+        return
+    secret = os.environ.get("STRIPE_SECRET_KEY", "")
+    if not secret:
+        logger.warning(
+            "Stripe not configured; leaving sub %s for purged user_id=%s",
+            subscription_id, user_id,
+        )
+        return
+    try:
+        import stripe
+        stripe.api_key = secret
+        stripe.Subscription.delete(subscription_id)
+        logger.info(
+            "Cancelled Stripe subscription %s for purged user_id=%s",
+            subscription_id, user_id,
+        )
+    except Exception as exc:  # noqa: BLE001 — never block the purge
+        logger.warning(
+            "Stripe cancel failed for user_id=%s sub=%s: %s",
+            user_id, subscription_id, exc,
+        )
+
+
+def _purge_user_export_files(user_id) -> int:
+    """Delete the user's export ZIPs from the export dir; return count removed.
+
+    Export filenames follow ``export_{user_id}_{export_id}.zip`` (see
+    ``export_user_data``), so a per-user glob erases them all.
+    """
+    export_dir = Path(os.environ.get("TELEMETRY_EXPORT_DIR", "/tmp/telemetry_exports"))
+    if not export_dir.is_dir():
+        return 0
+    removed = 0
+    for p in export_dir.glob(f"export_{user_id}_*.zip"):
+        try:
+            p.unlink()
+            removed += 1
+        except OSError as exc:
+            logger.warning("Could not delete export file %s: %s", p, exc)
+    return removed
+
+
 def _purge_deleted_accounts_impl() -> dict[str, int]:
     """Hard-delete user accounts where deleted_at is older than 30 days.
 
@@ -374,11 +423,16 @@ def _purge_deleted_accounts_with_conn(conn) -> dict[str, int]:
     """Run the account-purge sweep on an already-open (maint) connection."""
     from sqlalchemy import text
 
+    from web.storage_quota import purge_workspace_files
+
     cutoff = datetime.now(timezone.utc) - timedelta(days=30)
 
     # 1. Find accounts past grace period
     rows = conn.execute(
-        text("SELECT id, email FROM users WHERE deleted_at IS NOT NULL AND deleted_at < :cutoff"),
+        text(
+            "SELECT id, email, stripe_subscription_id FROM users "
+            "WHERE deleted_at IS NOT NULL AND deleted_at < :cutoff"
+        ),
         {"cutoff": cutoff},
     ).fetchall()
     users_to_purge = [dict(r) for r in rows]
@@ -391,6 +445,10 @@ def _purge_deleted_accounts_with_conn(conn) -> dict[str, int]:
     for user in users_to_purge:
         uid = user["id"]
         try:
+            # Stop billing on the account being erased. Best-effort and fully
+            # isolated: a Stripe outage must never block the legal data purge.
+            _cancel_stripe_subscription(user.get("stripe_subscription_id"), uid)
+
             # 2. Cascade delete workspace data
             ws_rows = conn.execute(
                 text("SELECT id FROM workspaces WHERE owner_user_id = :uid"),
@@ -450,8 +508,26 @@ def _purge_deleted_accounts_with_conn(conn) -> dict[str, int]:
             )
             conn.commit()
 
+            # 4. Erase on-disk data AFTER the DB rows are gone. The workspace
+            #    subtrees (raw + cache + results) and the user's export ZIPs
+            #    would otherwise outlive the account — a GDPR violation and a
+            #    storage leak. Best-effort: files-already-gone is fine.
+            freed = 0
+            for ws_id in workspace_ids:
+                try:
+                    freed += purge_workspace_files(int(ws_id))
+                except Exception as fexc:  # noqa: BLE001 — never block the purge
+                    logger.warning("File purge failed for ws=%s: %s", ws_id, fexc)
+            try:
+                _purge_user_export_files(uid)
+            except Exception as fexc:  # noqa: BLE001
+                logger.warning("Export-file purge failed for user_id=%s: %s", uid, fexc)
+
             purged += 1
-            logger.info("Purged account: user_id=%s, email=%s", uid, user.get("email"))
+            logger.info(
+                "Purged account: user_id=%s, email=%s, files_freed=%d bytes",
+                uid, user.get("email"), freed,
+            )
 
         except Exception as exc:
             logger.error("Failed to purge user_id=%s: %s", uid, exc)
