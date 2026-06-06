@@ -23,12 +23,16 @@ from pathlib import Path
 # ---------------------------------------------------------------------------
 
 CANONICAL_TIERS = {
-    "demo": {
-        "display_name": "Demo",
-        "reports_per_month": 1,
+    # The June-8 model has NO free tier. The no-subscription floor is 'locked':
+    # a zero-access state (view existing data only). Migration 065 renamed the
+    # former 'demo' plan_definitions row to 'locked' and zeroed its grants, so
+    # the canonical DB-state values below must match that, not the old demo row.
+    "locked": {
+        "display_name": "No active subscription",
+        "reports_per_month": 0,
         "telemetry_retention_days": 30,
-        "max_upload_size_mb": 500,
-        "max_concurrent_jobs": 1,
+        "max_upload_size_mb": 0,
+        "max_concurrent_jobs": 0,
         "api_access": False,
         "comparison": False,
         "coaching_plans": False,
@@ -77,7 +81,7 @@ CANONICAL_TIERS = {
     },
 }
 
-# Customer-facing pricing (June-8 model): ONE membership. demo/racer/world-class/
+# Customer-facing pricing (June-8 model): ONE membership. locked/racer/world-class/
 # b2b above are INTERNAL entitlement tiers only — every paying member receives the
 # `world-class` entitlement; the price they pay (standard vs founding) does not
 # change what they get.

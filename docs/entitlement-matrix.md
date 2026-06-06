@@ -21,23 +21,28 @@ ONE membership. No free tier; no per-tier choice.
 
 ## Internal Entitlement Tiers
 
-`demo` / `racer` / `world-class` / `b2b` are INTERNAL entitlement tiers (the
+`locked` / `racer` / `world-class` / `b2b` are INTERNAL entitlement tiers (the
 `plan_definitions` DB + `entitlements.py` engine), **not** purchasable plans. The
 single membership maps to `world-class`. They are kept for the engine and for
 grandfathered accounts; the matrices below describe them.
 
+`locked` is the no-subscription floor (migration 065 — replaces the former
+`demo` tier): zero new analyses/uploads/features, CSV export retained so users
+can still take their existing data. Never-subscribed and expired accounts land
+here.
+
 ## Feature Entitlements
 
-| Feature | Code Key | Demo | Racer | World-Class | B2B |
-|---------|----------|------|-------|-------------|-----|
-| Analysis Reports / month | `reports_per_month` | 1 | 10 | Unlimited (`NULL`) | Unlimited (`NULL`) |
-| 4-Pillar Scoring | `scoring` | Full | Full | Full | Full |
-| Corner Coaching | `corner_coaching` | Full | Full | Full | Full |
-| Session Intelligence | `session_intelligence` | Full | Full | Full | Full |
+| Feature | Code Key | Locked | Racer | World-Class | B2B |
+|---------|----------|--------|-------|-------------|-----|
+| Analysis Reports / month | `reports_per_month` | 0 | 10 | Unlimited (`NULL`) | Unlimited (`NULL`) |
+| 4-Pillar Scoring | `scoring` | No (view existing) | Full | Full | Full |
+| Corner Coaching | `corner_coaching` | No (view existing) | Full | Full | Full |
+| Session Intelligence | `session_intelligence` | No (view existing) | Full | Full | Full |
 | Comparison & Progress | `comparison` | No | No | Yes | Yes |
 | Coaching Plans | `coaching_plans` | No | Yes | Yes | Yes |
 | Visualization | `visualization` | No | Yes | Yes | Yes |
-| Race Strategy | `race_strategy` | `limited_3h` | `full` | `full` | `full` |
+| Race Strategy | `race_strategy` | `none` | `full` | `full` | `full` |
 | Live Monitoring | `live_monitoring` | No | Yes | Yes | Yes |
 | Pit Stop Planning | `pit_planning` | No | Yes | Yes | Yes |
 | Incident Queue | `incident_queue` | No | Yes | Yes | Yes |
@@ -48,26 +53,26 @@ grandfathered accounts; the matrices below describe them.
 
 ## Resource Limits
 
-| Resource | Code Key | Demo | Racer | World-Class | B2B |
-|----------|----------|------|-------|-------------|-----|
+| Resource | Code Key | Locked | Racer | World-Class | B2B |
+|----------|----------|--------|-------|-------------|-----|
 | Raw Telemetry Retention | `telemetry_retention_days` | 30 | 90 | 365 | Custom (`NULL`) |
-| Max Upload Size | `max_upload_size_mb` | 500 | 2000 | 5000 | 10000 |
-| Max Concurrent Jobs | `max_concurrent_jobs` | 1 | 2 | 5 | 10 |
+| Max Upload Size | `max_upload_size_mb` | 0 | 2000 | 5000 | 10000 |
+| Max Concurrent Jobs | `max_concurrent_jobs` | 0 | 2 | 5 | 10 |
 | Rate Limit Multiplier | `rate_multiplier` | 1.0 | 2.0 | 5.0 | 10.0 |
 
 ## Export Formats by Tier
 
 | Tier | Formats |
 |------|---------|
-| Demo | `["csv"]` |
+| Locked | `["csv"]` |
 | Racer | `["pdf","csv"]` |
 | World-Class | `["pdf","csv","api"]` |
 | B2B | `["pdf","csv","api","branded"]` |
 
 ## Data Lifecycle
 
-| Data Category | Demo | Racer | World-Class | B2B |
-|---------------|------|-------|-------------|-----|
+| Data Category | Locked | Racer | World-Class | B2B |
+|---------------|--------|-------|-------------|-----|
 | Raw Telemetry | 1 month → auto-deleted | 3 months → auto-deleted | 12 months → auto-deleted | Custom |
 | Processed Reports | Indefinite | Indefinite | Indefinite | 2 years |
 | Live Event Data | Temporary (flushed) | Temporary (flushed) | Temporary (flushed) | Temporary (flushed) |
