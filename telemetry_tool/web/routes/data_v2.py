@@ -1424,50 +1424,28 @@ def delete_session(session_id: str) -> tuple[dict, int]:
 
     conn = get_db_connection()
     ws_id = getattr(g, "workspace_id", None)
-    user_id = getattr(g, "current_user_id", None)
-    logger.error("DELETE-DIAG session %s — g.workspace=%s, g.role=%s, g.user=%s",
-                session_id, ws_id, getattr(g, "workspace_role", None), user_id)
-
-    # Check RLS context on the actual DB connection
-    try:
-        rls_row = conn.execute("SELECT current_setting('app.current_workspace_id', true) AS ws").fetchone()
-        rls_ws = rls_row["ws"] if isinstance(rls_row, dict) else rls_row[0]
-        rls_role = conn.execute("SELECT current_user AS u").fetchone()
-        rls_u = rls_role["u"] if isinstance(rls_role, dict) else rls_role[0]
-        logger.error("DELETE-DIAG session %s — DB RLS: workspace_id=%s, role=%s",
-                     session_id, rls_ws, rls_u)
-    except Exception as e:
-        logger.error("DELETE-DIAG session %s — RLS query FAILED: %s", session_id, e)
 
     session = models.get_session_by_id(conn, session_id)
     if session is None:
-        logger.warning("DELETE session %s — NOT FOUND (RLS may be filtering)", session_id)
         return api_error(ErrorCode.NOT_FOUND, "Session not found", status=404)
-
-    # Verify session exists BEFORE delete
-    pre_count = conn.execute(
-        "SELECT COUNT(*) AS cnt FROM sessions WHERE session_id = :sid",
-        {"sid": session_id},
-    ).fetchone()
-    pre_n = pre_count["cnt"] if isinstance(pre_count, dict) else pre_count[0]
-    logger.info("DELETE session %s — pre-delete count=%d", session_id, pre_n)
 
     result = delete_entity_cascade(conn, "session", session_id)
     audit_log(conn, "session.delete", {"session_id": session_id, "impact": result["impact"]})
     conn.commit()
 
-    # Verify session is GONE after commit
+    # Integrity assertion: the row must be gone after commit. If it survives,
+    # an RLS policy or FK constraint silently blocked the delete — a real bug
+    # worth an error, unlike the per-delete diagnostics this replaced.
     post_count = conn.execute(
         "SELECT COUNT(*) AS cnt FROM sessions WHERE session_id = :sid",
         {"sid": session_id},
     ).fetchone()
     post_n = post_count["cnt"] if isinstance(post_count, dict) else post_count[0]
-    logger.info("DELETE session %s — post-commit count=%d (should be 0)", session_id, post_n)
-
     if post_n > 0:
-        logger.error("DELETE session %s — SESSION STILL EXISTS AFTER COMMIT! "
-                      "This is a critical bug. RLS or FK constraint may have blocked the delete.",
-                      session_id)
+        logger.error(
+            "DELETE session %s — row still present after commit; RLS or a FK "
+            "constraint blocked the delete", session_id,
+        )
 
     # Remove the session's raw/cache files from disk and refresh the
     # workspace's storage usage. Previously a delete left the raw telemetry
