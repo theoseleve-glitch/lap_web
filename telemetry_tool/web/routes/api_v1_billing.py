@@ -245,8 +245,17 @@ def get_invoices():
             "has_more": invoices.has_more,
         })
     except Exception:
+        # A Stripe API failure must NOT masquerade as "no invoices" (an empty
+        # 200) — that hides the outage and the client can't retry. Return a
+        # real error envelope so the UI can show "billing history temporarily
+        # unavailable". (The empty-200 early-returns above are legitimate: no
+        # Stripe customer / Stripe not configured.)
         logger.warning("Failed to fetch invoices for customer %s", customer_id, exc_info=True)
-        return api_response({"invoices": []})
+        return api_error(
+            ErrorCode.SERVICE_UNAVAILABLE,
+            "Billing history is temporarily unavailable. Please try again shortly.",
+            status=503,
+        )
 
 
 # ---------------------------------------------------------------------------
