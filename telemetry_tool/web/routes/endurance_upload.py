@@ -23,7 +23,9 @@ def detect_stints():
         return _detect_stints_inner()
     except Exception as exc:
         logger.exception("endurance/detect failed: %s", exc)
-        return api_error(ErrorCode.INTERNAL_ERROR, f"Detection failed: {str(exc)[:200]}", status=500)
+        # Don't echo the raw exception to the client (internal-detail disclosure);
+        # the full traceback is in the server log above.
+        return api_error(ErrorCode.INTERNAL_ERROR, "Detection failed", status=500)
 
 
 def _detect_stints_inner():
@@ -110,7 +112,8 @@ def process_stints():
         return api_response({"job_id": job_id, "stints_queued": len(stint_configs)})
     except Exception as exc:
         logger.exception("endurance/process failed: %s", exc)
-        return api_error(ErrorCode.INTERNAL_ERROR, f"Processing failed: {str(exc)[:200]}", status=500)
+        # Don't echo the raw exception to the client; traceback is logged above.
+        return api_error(ErrorCode.INTERNAL_ERROR, "Processing failed", status=500)
 
 
 @bp.route("/status/<job_id>", methods=["GET"])

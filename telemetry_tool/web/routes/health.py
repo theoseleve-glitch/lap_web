@@ -89,8 +89,10 @@ def _get_db_stats() -> dict:
             "top_tables": top_tables,
         }
     except Exception as exc:
+        # Log the detail server-side; don't return the raw exception text in the
+        # JSON body (internal-detail disclosure, even on the auth-gated /detail).
         logger.warning("DB stats error: %s", exc)
-        return {"error": str(exc)}
+        return {"error": "db stats unavailable"}
 
 
 @bp.route("/healthz")
