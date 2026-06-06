@@ -477,9 +477,10 @@ def _purge_deleted_accounts_with_conn(conn) -> dict[str, int]:
 
     if not users_to_purge:
         logger.info("No accounts to purge (0 past 30-day window)")
-        return {"purged": 0}
+        return {"purged": 0, "failed": 0}
 
     purged = 0
+    failed = 0
     for user in users_to_purge:
         uid = user["id"]
         try:
@@ -570,15 +571,32 @@ def _purge_deleted_accounts_with_conn(conn) -> dict[str, int]:
             )
 
         except Exception as exc:
-            logger.error("Failed to purge user_id=%s: %s", uid, exc)
+            failed += 1
+            # A swallowed failure here leaves the account un-erased PAST the
+            # 30-day legal window. Surface it loudly (Sentry + ERROR) rather
+            # than only continuing, so it's caught before the window is breached.
+            logger.error(
+                "GDPR purge FAILED for user_id=%s — account NOT erased, 30-day "
+                "window at risk: %s", uid, exc, exc_info=True,
+            )
+            try:
+                import sentry_sdk
+                sentry_sdk.capture_exception(exc)
+            except Exception:
+                pass
             try:
                 conn.rollback()
             except Exception:
                 pass
             continue
 
-    logger.info("Account purge complete: %d accounts purged", purged)
-    return {"purged": purged}
+    if failed:
+        logger.error(
+            "GDPR purge sweep: %d account(s) FAILED to erase and remain past the "
+            "30-day window — manual intervention required", failed,
+        )
+    logger.info("Account purge complete: %d accounts purged, %d failed", purged, failed)
+    return {"purged": purged, "failed": failed}
 
 
 
@@ -755,6 +773,26 @@ def _cleanup_expired_exports_impl(export_dir: str | None = None) -> dict[str, in
     return {"deleted": deleted}
 
 
+def _purge_soft_deleted_sessions_impl(retention_days: int = 30) -> dict[str, int]:
+    """Hard-purge sessions soft-deleted past the retention window (cross-tenant).
+
+    Completes GDPR Art. 17 erasure for the session soft-delete path: the
+    ``DELETE /sessions/<id>`` route only sets ``deleted_at`` (a recoverable
+    grace window); this scheduled sweep is what actually erases the rows + the
+    on-disk sidecar files afterwards. Cross-tenant by design (iterates all
+    workspaces' soft-deleted sessions) → BYPASSRLS maintenance connection.
+    """
+    from web.repos.session_repo import purge_deleted_sessions
+
+    conn = get_maint_connection()
+    try:
+        purged = purge_deleted_sessions(conn, retention_days=retention_days)
+        logger.info("Soft-deleted session purge complete: %d sessions purged", purged)
+        return {"purged": purged}
+    finally:
+        return_pg_connection(conn)
+
+
 # ---------------------------------------------------------------------------
 # Register as Celery tasks (or plain functions when Celery unavailable)
 # ---------------------------------------------------------------------------
@@ -767,6 +805,10 @@ if _USE_CELERY and _celery_app is not None:
     @_celery_app.task(name="tasks.gdpr_tasks.purge_deleted_accounts")
     def purge_deleted_accounts() -> dict[str, int]:
         return _purge_deleted_accounts_impl()
+
+    @_celery_app.task(name="tasks.gdpr_tasks.purge_soft_deleted_sessions")
+    def purge_soft_deleted_sessions() -> dict[str, int]:
+        return _purge_soft_deleted_sessions_impl()
 
     @_celery_app.task(name="tasks.gdpr_tasks.enforce_raw_data_retention")
     def enforce_raw_data_retention() -> dict[str, int]:
@@ -781,6 +823,9 @@ else:
 
     def purge_deleted_accounts() -> dict[str, int]:  # type: ignore[misc]
         return _purge_deleted_accounts_impl()
+
+    def purge_soft_deleted_sessions() -> dict[str, int]:  # type: ignore[misc]
+        return _purge_soft_deleted_sessions_impl()
 
     def enforce_raw_data_retention() -> dict[str, int]:  # type: ignore[misc]
         return _enforce_raw_data_retention_impl()

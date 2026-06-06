@@ -85,6 +85,11 @@ def make_celery(app=None) -> Celery:
                 "schedule": 86400,  # Daily (24h in seconds)
                 "options": {"queue": "default"},
             },
+            "purge-soft-deleted-sessions": {
+                "task": "tasks.gdpr_tasks.purge_soft_deleted_sessions",
+                "schedule": 86400,  # Daily — completes Art.17 erasure for the
+                "options": {"queue": "default"},  # session soft-delete grace window
+            },
             "cleanup-expired-exports": {
                 "task": "tasks.gdpr_tasks.cleanup_expired_exports",
                 "schedule": 86400,  # Daily

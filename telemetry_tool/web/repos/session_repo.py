@@ -480,11 +480,20 @@ def restore_session(conn: sqlite3.Connection, session_id: str) -> bool:
 
 
 def purge_deleted_sessions(conn: sqlite3.Connection, retention_days: int = 30) -> int:
-    """Permanently delete sessions that were soft-deleted more than retention_days ago.
+    """Permanently delete sessions soft-deleted more than retention_days ago.
+
+    Uses the canonical ``delete_entity_cascade`` (single source of truth) so
+    session-tier RESTRICT children (e.g. ``user_corners`` → FK ``sessions``) are
+    cleared instead of FK-stalling the parent delete — the hand-maintained child
+    list this replaced had silently diverged from the schema. On-disk files
+    (deliberately retained during the grace window so the session stayed
+    restorable) are freed here, completing GDPR Art. 17 erasure. Per-session
+    best-effort: one failure is logged and skipped, never aborting the sweep.
 
     Returns the number of sessions purged.
     """
-    # Find sessions to purge
+    from web.repos.delete_cascade import delete_entity_cascade
+
     rows = conn.execute(
         "SELECT session_id FROM sessions "
         "WHERE deleted_at IS NOT NULL "
@@ -499,47 +508,41 @@ def purge_deleted_sessions(conn: sqlite3.Connection, retention_days: int = 30) -
     affected_workspaces: set[int] = set()
     for row in rows:
         sid = row["session_id"] if isinstance(row, dict) else row[0]
-
-        # Free the session's on-disk files now that the grace window has
-        # elapsed. The delete route deliberately left them in place so the
-        # session stayed restorable; this is where erasure actually completes
-        # (GDPR Art. 17). Best-effort + workspace-id lookup guarded so a schema
-        # without workspace_id (desktop SQLite) simply skips file cleanup.
         try:
-            ws_row = conn.execute(
-                "SELECT workspace_id FROM sessions WHERE session_id = :sid",
-                {"sid": sid},
-            ).fetchone()
-            ws = (ws_row["workspace_id"] if isinstance(ws_row, dict) else ws_row[0]) if ws_row else None
-            if ws is not None:
-                from web.storage_quota import delete_session_files
-                delete_session_files(int(ws), sid)
-                affected_workspaces.add(int(ws))
-        except Exception:
-            logger.warning("purge: on-disk cleanup failed for session %s", sid, exc_info=True)
-
-        # Delete related data first (same tables as hard delete)
-        for table in (
-            "laps", "scores", "score_details", "features",
-            "resampled_data", "corner_analysis", "gps_traces",
-            "gg_data", "speed_traces", "session_tags",
-            "session_annotations", "corner_metrics",
-            "consistency_metrics", "condition_markers",
-            "session_weather", "driving_style_features",
-            "data_health", "weekend_sessions",
-        ):
+            # Capture workspace_id BEFORE the row is gone (for the sidecar
+            # purge). Guarded so a workspace_id-less schema just skips files.
+            ws = None
             try:
-                conn.execute(
-                    f"DELETE FROM {table} WHERE session_id = :sid",
+                ws_row = conn.execute(
+                    "SELECT workspace_id FROM sessions WHERE session_id = :sid",
                     {"sid": sid},
-                )
+                ).fetchone()
+                ws = (ws_row["workspace_id"] if isinstance(ws_row, dict) else ws_row[0]) if ws_row else None
             except Exception:
-                pass  # Table may not exist in older schemas
-        conn.execute(
-            "DELETE FROM sessions WHERE session_id = :sid",
-            {"sid": sid},
-        )
-        purged += 1
+                ws = None
+
+            # Canonical teardown — RAISES if the session row survives, so an
+            # un-listed RESTRICT child surfaces loudly instead of silently
+            # leaving the session un-erased past its retention window.
+            delete_entity_cascade(conn, "session", sid)
+            conn.commit()
+            purged += 1
+
+            # Erase on-disk files AFTER the DB rows are gone (best-effort).
+            if ws is not None:
+                try:
+                    from web.storage_quota import delete_session_files
+                    delete_session_files(int(ws), sid)
+                    affected_workspaces.add(int(ws))
+                except Exception:
+                    logger.warning("purge: on-disk cleanup failed for session %s", sid, exc_info=True)
+        except Exception as exc:
+            logger.warning("purge: failed to purge session %s: %s", sid, exc, exc_info=True)
+            try:
+                conn.rollback()
+            except Exception:
+                pass
+            continue
 
     # Reconcile each affected workspace's stored usage with what is left on
     # disk after the purge (best-effort — never block the purge on accounting).
