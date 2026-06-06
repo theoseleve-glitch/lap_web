@@ -109,25 +109,40 @@ def _get_pg_connection():
     return get_pg_connection()
 
 
-def _set_task_workspace_context(ctx) -> None:
-    """Apply the workspace RLS context to the task's PG connection.
-
-    Pipeline tasks touch RLS tables (``ingestion_jobs``, ``sessions``, …)
-    from their FIRST statement — before ``_persist_session_data`` runs. Under
-    the non-superuser ``telemetry_app`` role those queries fail closed unless
-    ``app.current_workspace_id`` is set. Uses connection-scoped ``SET`` (not
-    ``SET LOCAL``) so the value survives the many independent COMMITs across
-    pipeline steps — identical to ``_persist_session_data`` (which keeps its
-    own SET for the standalone-conn / resume paths). Idempotent and cheap:
-    the connection is the g-cached one reused by every task helper.
-    """
-    if not getattr(ctx, "workspace_id", None):
+def _return_pg_connection(conn) -> None:
+    """Close a standalone task connection (no-ops on None / double-close)."""
+    if conn is None:
         return
+    from web.db_pg import return_pg_connection
+    return_pg_connection(conn)
+
+
+def _open_task_conn(ctx):
+    """Open ONE PG connection for a pipeline task and pin the workspace RLS GUC.
+
+    Pipeline tasks touch RLS tables (``ingestion_jobs``, ``sessions``,
+    ``workspaces`` …) from their FIRST statement — before
+    ``_persist_session_data`` runs. The Celery worker runs with NO Flask app
+    context (``celery = make_celery()`` with app=None, so no ``ContextTask``),
+    which means ``web.db_pg.get_pg_connection()`` returns a BRAND-NEW
+    connection on every call — a ``SET`` on one connection does NOT carry to
+    the next. So each task must open a SINGLE connection, ``SET`` the GUC on it
+    (connection-scoped, NOT ``SET LOCAL``, so it survives the many independent
+    COMMITs across stages), and thread THAT connection through every helper via
+    ``conn=``. Under the non-privileged ``telemetry_app`` role a GUC-less
+    statement on an RLS-forced table raises ``unrecognized configuration
+    parameter`` and fails the task. Caller MUST close the returned connection
+    via :func:`_return_pg_connection` in a ``finally``. Mirrors the
+    self-contained connection handling in ``_persist_session_data``.
+    """
     conn = _get_pg_connection()
-    conn.execute(
-        "SET app.current_workspace_id = %(ws)s",
-        {"ws": str(ctx.workspace_id)},
-    )
+    if getattr(ctx, "workspace_id", None):
+        conn.execute(
+            "SET app.current_workspace_id = %(ws)s",
+            {"ws": str(ctx.workspace_id)},
+        )
+        conn.commit()
+    return conn
 
 
 def _update_job_progress(
@@ -1108,26 +1123,28 @@ def pipeline_ingest(self, job_id: str) -> Optional[str]:
     if ctx is None:
         raise FatalError(f"PipelineContext not found for job {job_id}")
 
-    # Verify user's plan still allows report generation
-    if (
-        hasattr(ctx, "user_id")
-        and ctx.user_id
-        and not _verify_task_entitlements(ctx.user_id, ctx.workspace_id)
-    ):
-        _update_job_progress(
-            job_id=job_id,
-            status="failed",
-            error_message="Plan does not allow report generation",
-            error_class="entitlement",
-        )
-        return None
-
-    # RLS: set the workspace GUC before the first ingestion_jobs write.
-    _set_task_workspace_context(ctx)
-
-    _update_job_progress(job_id=job_id, status="running", stage_name="ingest", stage_index=0, stage_total=15)
-
+    # RLS: open the single GUC-pinned connection BEFORE any ingestion_jobs
+    # write (including the entitlement-fail write below) and thread it through
+    # every helper; close it in the finally.
+    conn = _open_task_conn(ctx)
     try:
+        # Verify user's plan still allows report generation
+        if (
+            hasattr(ctx, "user_id")
+            and ctx.user_id
+            and not _verify_task_entitlements(ctx.user_id, ctx.workspace_id)
+        ):
+            _update_job_progress(
+                job_id=job_id,
+                status="failed",
+                error_message="Plan does not allow report generation",
+                error_class="entitlement",
+                conn=conn,
+            )
+            return None
+
+        _update_job_progress(job_id=job_id, status="running", stage_name="ingest", stage_index=0, stage_total=15, conn=conn)
+
         # Acquire workspace lock (inside try so failures update job status)
         if not acquire_workspace_lock(redis_client, ctx.workspace_id, job_id):
             raise TransientError(f"Workspace {ctx.workspace_id} is locked by another job")
@@ -1137,6 +1154,7 @@ def pipeline_ingest(self, job_id: str) -> Optional[str]:
         _update_job_progress(
             job_id=job_id, status="running",
             stage_name="ingest_complete", stage_index=4, stage_total=15,
+            conn=conn,
         )
         return job_id
     except TransientError:
@@ -1148,6 +1166,7 @@ def pipeline_ingest(self, job_id: str) -> Optional[str]:
                 stage_name="ingest", stage_index=0, stage_total=15,
                 error_message="Pipeline busy — please retry in a few minutes",
                 error_class="transient",
+                conn=conn,
             )
         ctx.save()
         raise
@@ -1160,6 +1179,7 @@ def pipeline_ingest(self, job_id: str) -> Optional[str]:
             stage_name=ctx.current_stage, stage_index=None, stage_total=15,
             error_message=str(exc), error_class="fatal",
             import_error_json=_make_import_error_json(exc),
+            conn=conn,
         )
         release_workspace_lock(redis_client, ctx.workspace_id, job_id)
         raise
@@ -1170,11 +1190,14 @@ def pipeline_ingest(self, job_id: str) -> Optional[str]:
             stage_name=ctx.current_stage, stage_index=None, stage_total=15,
             error_message=str(exc), error_class=err_class,
             import_error_json=_make_import_error_json(exc),
+            conn=conn,
         )
         release_workspace_lock(redis_client, ctx.workspace_id, job_id)
         if err_class == "transient":
             raise TransientError(str(exc)) from exc
         raise FatalError(str(exc)) from exc
+    finally:
+        _return_pg_connection(conn)
 
 
 @celery.task(
@@ -1199,14 +1222,13 @@ def pipeline_analyze(self, job_id: Optional[str]) -> Optional[str]:
     if ctx is None:
         raise FatalError(f"PipelineContext not found for job {job_id}")
 
-    # RLS: re-establish the workspace GUC (this is a fresh task/connection).
-    _set_task_workspace_context(ctx)
-
-    _update_job_progress(job_id=job_id, status="running", stage_name="analyze", stage_index=4, stage_total=15)
-
+    # RLS: open the single GUC-pinned connection for this task and thread it
+    # through every helper; close it in the finally.
+    conn = _open_task_conn(ctx)
     try:
-        analyze_conn = _get_pg_connection()
-        phase1_result = _run_analyze_stages(ctx, job_id=job_id, conn=analyze_conn)
+        _update_job_progress(job_id=job_id, status="running", stage_name="analyze", stage_index=4, stage_total=15, conn=conn)
+
+        phase1_result = _run_analyze_stages(ctx, job_id=job_id, conn=conn)
         ctx.save()
 
         corners = phase1_result.get("corners") or []
@@ -1223,6 +1245,7 @@ def pipeline_analyze(self, job_id: Optional[str]) -> Optional[str]:
                 job_id=job_id, status="awaiting_corner_selection",
                 stage_name="corner_detect", stage_index=7, stage_total=15,
                 pause_reason="corner_selection",
+                conn=conn,
             )
             # Release workspace lock while waiting for user interaction.
             # pipeline_finalize will re-acquire it on the resume path.
@@ -1234,6 +1257,7 @@ def pipeline_analyze(self, job_id: Optional[str]) -> Optional[str]:
         _update_job_progress(
             job_id=job_id, status="running",
             stage_name="analyze_complete", stage_index=8, stage_total=15,
+            conn=conn,
         )
         return job_id
     except InteractionRequired as exc:
@@ -1244,6 +1268,7 @@ def pipeline_analyze(self, job_id: Optional[str]) -> Optional[str]:
             job_id=job_id, status=status,
             stage_name="corner_detect", stage_index=7, stage_total=15,
             pause_reason=exc.reason,
+            conn=conn,
         )
         # Release workspace lock while waiting for user interaction.
         release_workspace_lock(redis_client, ctx.workspace_id, job_id)
@@ -1254,6 +1279,7 @@ def pipeline_analyze(self, job_id: Optional[str]) -> Optional[str]:
             stage_name=ctx.current_stage, stage_index=None, stage_total=15,
             error_message=str(exc), error_class="fatal",
             import_error_json=_make_import_error_json(exc),
+            conn=conn,
         )
         release_workspace_lock(redis_client, ctx.workspace_id, job_id)
         raise
@@ -1264,11 +1290,14 @@ def pipeline_analyze(self, job_id: Optional[str]) -> Optional[str]:
             stage_name=ctx.current_stage, stage_index=None, stage_total=15,
             error_message=str(exc), error_class=err_class,
             import_error_json=_make_import_error_json(exc),
+            conn=conn,
         )
         release_workspace_lock(redis_client, ctx.workspace_id, job_id)
         if err_class == "transient":
             raise TransientError(str(exc)) from exc
         raise FatalError(str(exc)) from exc
+    finally:
+        _return_pg_connection(conn)
 
 
 @celery.task(
@@ -1296,19 +1325,20 @@ def pipeline_finalize(self, job_id: Optional[str]) -> Optional[str]:
     if ctx is None:
         raise FatalError(f"PipelineContext not found for job {job_id}")
 
-    # RLS: re-establish the workspace GUC (this is a fresh task/connection).
-    _set_task_workspace_context(ctx)
+    # RLS: open the single GUC-pinned connection for this task; thread it
+    # through every helper and close it in the finally.
+    conn = _open_task_conn(ctx)
 
     # Re-acquire workspace lock on resume path (lock may have expired
     # during joker pause which can exceed the 30-minute TTL).
     if not acquire_workspace_lock(redis_client, ctx.workspace_id, job_id):
+        _return_pg_connection(conn)
         raise TransientError(f"Workspace {ctx.workspace_id} is locked by another job (resume path)")
 
-    _update_job_progress(job_id=job_id, status="running", stage_name="finalize", stage_index=8, stage_total=16)
-
     try:
-        _finalize_conn = _get_pg_connection()
-        _run_finalize_stages(ctx, job_id=job_id, conn=_finalize_conn)
+        _update_job_progress(job_id=job_id, status="running", stage_name="finalize", stage_index=8, stage_total=16, conn=conn)
+
+        _run_finalize_stages(ctx, job_id=job_id, conn=conn)
         ctx.save()
 
         # Update sessions.processing_version + pipeline version hash + model version
@@ -1316,7 +1346,6 @@ def pipeline_finalize(self, job_id: Optional[str]) -> Optional[str]:
             from pipeline_status import get_model_version
             from pipeline_version import full_version_string
 
-            conn = _get_pg_connection()
             conn.execute(
                 text(
                     "UPDATE sessions SET "
@@ -1339,6 +1368,7 @@ def pipeline_finalize(self, job_id: Optional[str]) -> Optional[str]:
         _update_job_progress(
             job_id=job_id, status="completed",
             stage_name="finalize_complete", stage_index=15, stage_total=15,
+            conn=conn,
         )
 
         # Record report usage for quota tracking
@@ -1346,22 +1376,21 @@ def pipeline_finalize(self, job_id: Optional[str]) -> Optional[str]:
             from auth.entitlements import record_usage
             ws_id = int(ctx.workspace_id) if ctx.workspace_id else None
             if ws_id is not None:
-                _usage_conn = _get_pg_connection()
                 # Look up user_id from the ingestion_jobs record
-                _job_row = _usage_conn.execute(
+                _job_row = conn.execute(
                     text("SELECT workspace_id FROM ingestion_jobs WHERE job_id = :jid"),
                     {"jid": job_id},
                 ).fetchone()
                 if _job_row:
                     # Get workspace owner as user_id for usage tracking
-                    _owner_row = _usage_conn.execute(
+                    _owner_row = conn.execute(
                         text("SELECT owner_user_id FROM workspaces WHERE id = :wsid"),
                         {"wsid": ws_id},
                     ).fetchone()
                     if _owner_row:
                         _owner = dict(_owner_row) if not isinstance(_owner_row, dict) else _owner_row
-                        record_usage(_usage_conn, _owner["owner_user_id"], ws_id, "report_generated")
-                        _usage_conn.commit()
+                        record_usage(conn, _owner["owner_user_id"], ws_id, "report_generated")
+                        conn.commit()
         except Exception:
             logger.warning("Failed to record report usage for job %s", job_id, exc_info=True)
 
@@ -1372,9 +1401,8 @@ def pipeline_finalize(self, job_id: Optional[str]) -> Optional[str]:
             from web.storage_quota import recompute_and_store
             _ws_for_storage = int(ctx.workspace_id) if ctx.workspace_id else None
             if _ws_for_storage is not None:
-                _st_conn = _get_pg_connection()
-                recompute_and_store(_st_conn, _ws_for_storage)
-                _st_conn.commit()
+                recompute_and_store(conn, _ws_for_storage)
+                conn.commit()
         except Exception:
             logger.warning("Storage reconcile after job %s failed", job_id, exc_info=True)
 
@@ -1385,8 +1413,7 @@ def pipeline_finalize(self, job_id: Optional[str]) -> Optional[str]:
         # still need its staging file; stale failed dirs are swept separately.
         try:
             import shutil as _shutil_stage
-            _stage_conn = _get_pg_connection()
-            _fp_row = _stage_conn.execute(
+            _fp_row = conn.execute(
                 text("SELECT file_path FROM ingestion_jobs WHERE job_id = :jid"),
                 {"jid": job_id},
             ).fetchone()
@@ -1410,7 +1437,7 @@ def pipeline_finalize(self, job_id: Optional[str]) -> Optional[str]:
             logger.warning("Worker memory exceeds threshold after job %s", job_id)
 
         # Increment batch completed counter if part of a batch
-        _increment_batch_counter(job_id, "completed_sessions")
+        _increment_batch_counter(job_id, "completed_sessions", conn=conn)
 
         return job_id
     except FatalError as exc:
@@ -1419,8 +1446,9 @@ def pipeline_finalize(self, job_id: Optional[str]) -> Optional[str]:
             stage_name=ctx.current_stage, stage_index=None, stage_total=15,
             error_message=str(exc), error_class="fatal",
             import_error_json=_make_import_error_json(exc),
+            conn=conn,
         )
-        _increment_batch_counter(job_id, "failed_sessions")
+        _increment_batch_counter(job_id, "failed_sessions", conn=conn)
         release_workspace_lock(redis_client, ctx.workspace_id, job_id)
         raise
     except Exception as exc:
@@ -1430,12 +1458,15 @@ def pipeline_finalize(self, job_id: Optional[str]) -> Optional[str]:
             stage_name=ctx.current_stage, stage_index=None, stage_total=15,
             error_message=str(exc), error_class=err_class,
             import_error_json=_make_import_error_json(exc),
+            conn=conn,
         )
-        _increment_batch_counter(job_id, "failed_sessions")
+        _increment_batch_counter(job_id, "failed_sessions", conn=conn)
         release_workspace_lock(redis_client, ctx.workspace_id, job_id)
         if err_class == "transient":
             raise TransientError(str(exc)) from exc
         raise FatalError(str(exc)) from exc
+    finally:
+        _return_pg_connection(conn)
 
 
 # ---------------------------------------------------------------------------
