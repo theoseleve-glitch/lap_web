@@ -644,6 +644,7 @@ def _run_analyze_stages(ctx: PipelineContext, job_id: str | None = None, conn=No
         progress_callback=_make_progress_callback(_job_id, conn),
         stop_after_corners=True,
         workspace_id=ctx.workspace_id,
+        skip_gamification=True,  # _persist_session_data owns SaaS gamification
     )
 
     resampled_laps = result.get("resampled_laps") or {}
@@ -796,6 +797,7 @@ def _run_finalize_stages(ctx: PipelineContext, job_id: Optional[str] = None, con
             preloaded_resampled_laps=resampled_laps,
             preloaded_corners=corners,
             workspace_id=ctx.workspace_id,
+            skip_gamification=True,  # _persist_session_data owns SaaS gamification
         )
     else:
         # Fallback: full re-run (intermediate state expired or missing)
@@ -815,6 +817,7 @@ def _run_finalize_stages(ctx: PipelineContext, job_id: Optional[str] = None, con
             progress_callback=_make_progress_callback(_job_id, conn),
             preloaded_corners=_fallback_corners,
             workspace_id=ctx.workspace_id,
+            skip_gamification=True,  # _persist_session_data owns SaaS gamification
         )
 
     # ── Persist all session data to the database ──────────────────
@@ -1001,18 +1004,6 @@ def _persist_session_data(ctx: PipelineContext, result: dict) -> None:
             logger.warning("Failed to insert reference line for session %s", session_id, exc_info=True)
             conn.rollback()
 
-        # 10. Insert curated analysis JSON blob
-        try:
-            analysis_blob = _build_analysis_blob(result)
-            if analysis_blob:
-                insert_analysis_json(conn, session_id, analysis_blob)
-                conn.commit()
-                logger.info("Inserted analysis JSON (%d keys) for session %s",
-                            len(analysis_blob), session_id)
-        except Exception:
-            logger.warning("Failed to insert analysis JSON for session %s", session_id, exc_info=True)
-            conn.rollback()
-
         # 11. Persist channel metadata from adapter registry
         try:
             import json as _json
@@ -1112,6 +1103,23 @@ def _persist_session_data(ctx: PipelineContext, result: dict) -> None:
                 conn.rollback()
             except Exception:
                 pass
+
+        # 13. Insert the curated analysis JSON blob LAST — it must run AFTER
+        #     step 12 so it captures result["gamification"]. The per-session
+        #     gamification panel is read from sessions.analysis_json
+        #     (data_v2 session-detail), and since the SaaS pipeline now sets
+        #     skip_gamification=True the orchestrator no longer pre-populates
+        #     result["gamification"]; only step 12 above does.
+        try:
+            analysis_blob = _build_analysis_blob(result)
+            if analysis_blob:
+                insert_analysis_json(conn, session_id, analysis_blob)
+                conn.commit()
+                logger.info("Inserted analysis JSON (%d keys) for session %s",
+                            len(analysis_blob), session_id)
+        except Exception:
+            logger.warning("Failed to insert analysis JSON for session %s", session_id, exc_info=True)
+            conn.rollback()
 
     except Exception:
         logger.exception("Failed to persist session data for job %s", ctx.job_id)

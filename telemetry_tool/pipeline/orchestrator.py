@@ -141,6 +141,7 @@ def run_full_analysis(
     vehicle_overrides: Optional[dict[str, Any]] = None,
     deterministic: bool = False,
     workspace_id: Optional[int] = None,
+    skip_gamification: bool = False,
 ) -> dict[str, Any]:
     """
     Orchestrate the full telemetry analysis pipeline.
@@ -161,6 +162,31 @@ def run_full_analysis(
     """
     csv_path = Path(csv_path)
 
+    def _open_ws_conn():
+        """Open a web.db connection with the workspace RLS GUC pinned.
+
+        run_full_analysis runs in the Celery worker (no Flask app context), so
+        get_db_connection() returns a fresh, GUC-less connection every call.
+        Several steps below read/write RLS-forced tables (drivers,
+        driver_profiles, track_surfaces, gamification) — under the
+        non-superuser telemetry_app role those raise `unrecognized
+        configuration parameter` unless the GUC is set. We set it from the
+        workspace_id parameter (None → single-host/dev, no SET → unchanged).
+        """
+        from web.db import get_db_connection
+        _c = get_db_connection()
+        if workspace_id is not None:
+            try:
+                _c.execute(
+                    "SET app.current_workspace_id = :ws", {"ws": str(workspace_id)}
+                )
+            except Exception:
+                logger.warning(
+                    "orchestrator: could not pin workspace GUC on connection",
+                    exc_info=True,
+                )
+        return _c
+
     # ── Normalise session metadata ────────────────────────────────
     meta = dict(session_meta)
     meta.setdefault("session_type", "practice")
@@ -170,8 +196,7 @@ def run_full_analysis(
     meta.setdefault("driver_total_laps", 0)
     try:
         from db.queries import SELECT_DRIVER_BY_NAME
-        from web.db import get_db_connection as _get_exp_conn
-        _exp_conn = _get_exp_conn()
+        _exp_conn = _open_ws_conn()
         _drv_row = _exp_conn.execute(
             SELECT_DRIVER_BY_NAME, {"driver_name": meta["driver_name"]}
         ).fetchone()
@@ -936,8 +961,7 @@ def run_full_analysis(
     if os.environ.get("USE_PG", "0") == "1" and _grip_map is not None:
         try:
             from track_surface import upsert_session_grip
-            from web.db import get_db_connection as _get_ts_conn
-            _ts_conn = _get_ts_conn()
+            _ts_conn = _open_ws_conn()
             _ts_track_id = summary.get("track_id", "unknown_track")
             _ts_vehicle_class = meta.get("vehicle_class", "car")
             _ts_condition = meta.get("track_state", "dry")
@@ -1142,8 +1166,7 @@ def run_full_analysis(
     # Step 10g — V2 corner coaching (user-defined corners + MRP + handling)
     _v2_conn = None
     try:
-        from web.db import get_db_connection as _get_v2_conn
-        _v2_conn = _get_v2_conn()
+        _v2_conn = _open_ws_conn()
     except Exception:
         pass
 
@@ -1241,8 +1264,7 @@ def run_full_analysis(
         if _session_surface is not None:
             try:
                 from track_surface.store import upsert_global_surface
-                from web.db import get_db_connection as _get_surf_conn
-                _surf_conn = _get_surf_conn()
+                _surf_conn = _open_ws_conn()
                 # Day-14: pass vehicle_class + condition so the upsert
                 # matches the 4-column unique constraint (was 2-column,
                 # which raised InvalidColumnReference on every INSERT).
@@ -1471,8 +1493,14 @@ def run_full_analysis(
         )
 
     # ── Step 13h: Gamification — XP, streaks, achievements ─────
+    # skip_gamification is set by the SaaS pipeline, where
+    # _persist_session_data already awards XP/streaks/achievements on its
+    # GUC-pinned connection with the correct workspace (and sets
+    # result["gamification"]). Running it here too would DOUBLE-award (XP is
+    # additive, not idempotent). Non-SaaS callers (batch/desktop/endurance)
+    # leave it enabled so they still get gamification.
     import os as _gam_os
-    if _gam_os.environ.get("GAMIFICATION", "1") != "0":
+    if not skip_gamification and _gam_os.environ.get("GAMIFICATION", "1") != "0":
         try:
             from gamification.xp import award_session_xp
             from gamification.streaks import update_streak
@@ -1480,7 +1508,12 @@ def run_full_analysis(
             from gamification.queries import count_driver_sessions, get_driver_best_lap
             from scoring import evaluate_badges as _eval_badges
 
-            _gam_wid = getattr(g, "workspace_id", 1) if "g" in dir() else 1
+            # Attribute to the real workspace (the function param), NOT a
+            # hardcoded 1. flask.g is absent in the worker, so the old
+            # `getattr(g, "workspace_id", 1)` always yielded 1 → every tenant's
+            # gamification landed in workspace 1 (cross-tenant data bug). None
+            # (single-host/dev) keeps the historical default of 1.
+            _gam_wid = workspace_id if workspace_id is not None else 1
             _gam_driver = _drv_id if "_drv_id" in dir() else None
             _gam_sid = meta.get("session_id")
             _gam_date = meta.get("date", "")
