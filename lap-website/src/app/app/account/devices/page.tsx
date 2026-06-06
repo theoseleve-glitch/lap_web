@@ -32,21 +32,19 @@ export default function DevicesPage() {
   const { data: devices = [], isLoading } = useQuery<Device[]>({
     queryKey: ['devices'],
     queryFn: async () => {
-      const res = await apiFetch('/api/v1/devices');
-      if (!res.ok) throw new Error(res.error || 'Failed to load devices');
-      return res.data;
+      // apiFetch prepends /api/v1 and returns the unwrapped data (throws on
+      // error) — pass the path WITHOUT /api/v1 and don't read res.ok/.data.
+      return apiFetch<Device[]>('/devices');
     },
     enabled: canSync,
   });
 
   const confirmMutation = useMutation({
     mutationFn: async (pairingCode: string) => {
-      const res = await apiFetch('/api/v1/devices/confirm', {
+      return apiFetch('/devices/confirm', {
         method: 'POST',
         body: JSON.stringify({ code: pairingCode }),
       });
-      if (!res.ok) throw new Error(res.error || 'Failed to link device');
-      return res.data;
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['devices'] });
@@ -61,9 +59,7 @@ export default function DevicesPage() {
 
   const revokeMutation = useMutation({
     mutationFn: async (deviceId: number) => {
-      const res = await apiFetch(`/api/v1/devices/${deviceId}`, { method: 'DELETE' });
-      if (!res.ok) throw new Error(res.error || 'Failed to unlink device');
-      return res.data;
+      return apiFetch(`/devices/${deviceId}`, { method: 'DELETE' });
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['devices'] });

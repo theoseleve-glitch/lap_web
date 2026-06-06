@@ -15,54 +15,62 @@ import { StreakTracker } from '@/components/app/gamification';
 import { ChallengeCard } from '@/components/app/gamification';
 
 /**
- * EnrichedSparkline — static score trend with min/max markers, a last-value
- * label, and per-point hover tooltips. No looping animation.
+ * ScoreTrendChart — a per-session bar readout (telemetry/stint style).
+ *
+ * Replaces the old stretched-SVG sparkline (which distorted under
+ * preserveAspectRatio="none"). CSS bars stay crisp at any width: each session
+ * is a bar whose height tracks its score within the window, brightness ramps
+ * with the score, the latest session glows, and a dashed line marks the
+ * average. Pure CSS — no distortion, no chart dependency.
  */
-function EnrichedSparkline({ data, color = '#B6FF2E', height = 56 }: { data: number[]; color?: string; height?: number }) {
+function ScoreTrendChart({ data, height = 72 }: { data: number[]; height?: number }) {
   if (data.length < 2) return null;
-  const min = Math.min(...data);
-  const max = Math.max(...data);
-  const range = max - min || 1;
-  const w = 200;
-  const x = (i: number) => (i / (data.length - 1)) * w;
-  const y = (v: number) => height - ((v - min) / range) * (height - 8) - 4;
-  const points = data.map((v, i) => `${x(i)},${y(v)}`).join(' ');
-  const minIdx = data.indexOf(min);
-  const maxIdx = data.indexOf(max);
-  const last = data[data.length - 1];
-  const lastX = x(data.length - 1);
-  const lastY = y(last);
-  // anchor the last-value label so it never clips past the right edge
-  const labelAnchor = lastX > w * 0.8 ? 'end' : 'start';
-  const labelDx = labelAnchor === 'end' ? -4 : 4;
+  const lo = Math.min(...data);
+  const hi = Math.max(...data);
+  const range = hi - lo || 1;
+  const avg = data.reduce((a, b) => a + b, 0) / data.length;
+  const FLOOR = 0.16; // keep even the lowest bar visible
+  const fill = (v: number) => FLOOR + (1 - FLOOR) * ((v - lo) / range);
+  const avgPct = fill(avg) * 100;
+  const lastIdx = data.length - 1;
   return (
-    <svg viewBox={`0 0 ${w} ${height}`} className="w-full overflow-visible" style={{ height }} preserveAspectRatio="none">
-      <polyline fill="none" stroke={color} strokeWidth="2" points={points} vectorEffect="non-scaling-stroke" />
-      {/* min marker (hollow) */}
-      <circle cx={x(minIdx)} cy={y(min)} r="2.5" fill="#0B0B0C" stroke="#8A8F98" strokeWidth="1.5" vectorEffect="non-scaling-stroke">
-        <title>{`Min ${min.toFixed(1)} (session ${minIdx + 1})`}</title>
-      </circle>
-      {/* max marker (filled, brand color) */}
-      <circle cx={x(maxIdx)} cy={y(max)} r="2.5" fill={color} vectorEffect="non-scaling-stroke">
-        <title>{`Max ${max.toFixed(1)} (session ${maxIdx + 1})`}</title>
-      </circle>
-      {/* last point + value label */}
-      <circle cx={lastX} cy={lastY} r="2.5" fill={color} stroke="#0B0B0C" strokeWidth="1" vectorEffect="non-scaling-stroke">
-        <title>{`Latest ${last.toFixed(1)}`}</title>
-      </circle>
-      <text
-        x={lastX}
-        y={lastY}
-        dx={labelDx}
-        dy="-4"
-        textAnchor={labelAnchor}
-        fill={color}
-        fontSize="9"
-        fontFamily="var(--font-telemetry, monospace)"
+    <div className="relative w-full" style={{ height }} aria-label="Score per session">
+      {/* average reference line */}
+      <div
+        className="pointer-events-none absolute left-0 right-0 border-t border-dashed border-steel/25 z-10"
+        style={{ bottom: `${avgPct}%` }}
       >
-        {last.toFixed(1)}
-      </text>
-    </svg>
+        <span className="absolute -top-3.5 right-0 text-[9px] font-telemetry text-steel/45">
+          avg {avg.toFixed(1)}
+        </span>
+      </div>
+      {/* bars */}
+      <div className="absolute inset-0 flex items-end gap-[3px]">
+        {data.map((v, i) => {
+          const t = (v - lo) / range; // 0..1 within window
+          const isLast = i === lastIdx;
+          const op = (0.4 + 0.6 * t).toFixed(2);
+          return (
+            <div key={i} className="group relative flex flex-1 items-end" style={{ height: '100%' }}>
+              <div
+                className="w-full rounded-t-[2px] transition-[height] duration-300"
+                style={{
+                  height: `${(fill(v) * 100).toFixed(1)}%`,
+                  background: isLast
+                    ? 'linear-gradient(to top, rgba(182,255,46,0.85), #B6FF2E)'
+                    : `linear-gradient(to top, rgba(182,255,46,${(+op * 0.45).toFixed(2)}), rgba(182,255,46,${op}))`,
+                  boxShadow: isLast ? '0 0 10px rgba(182,255,46,0.55)' : 'none',
+                }}
+              />
+              {/* hover tooltip */}
+              <span className="pointer-events-none absolute -top-5 left-1/2 z-20 -translate-x-1/2 whitespace-nowrap rounded border border-steel/20 bg-asphalt px-1.5 py-0.5 text-[9px] font-telemetry text-chalk opacity-0 transition-opacity group-hover:opacity-100">
+                #{i + 1} · {v.toFixed(1)}
+              </span>
+            </div>
+          );
+        })}
+      </div>
+    </div>
   );
 }
 
@@ -433,7 +441,7 @@ export default function DashboardPage() {
                     <span title="Highest score in window">Max {hi.toFixed(1)}</span>
                   </div>
                 </div>
-                <EnrichedSparkline data={scores} color="#B6FF2E" height={56} />
+                <ScoreTrendChart data={scores} height={72} />
               </div>
             );
           })() : (

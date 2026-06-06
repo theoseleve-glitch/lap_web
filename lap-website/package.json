@@ -55,6 +55,7 @@
     "@react-three/postprocessing": "^2.19.1",
     "@sentry/browser": "^10.43.0",
     "@tanstack/react-query": "^5.90.21",
+    "esbuild": "^0.28.0",
     "gsap": "^3.14.2",
     "howler": "^2.2.4",
     "leaflet": "^1.9.4",
