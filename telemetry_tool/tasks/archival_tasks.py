@@ -18,10 +18,17 @@ AUDIT_LOG_RETENTION_MONTHS = 24
 # How far ahead to create partitions
 PARTITION_LOOKAHEAD_MONTHS = 3
 
-# Archive storage path
+# Archive storage path. Archival DROPs partitions after exporting them, so it
+# must only run when ARCHIVE_PATH points at a DURABLE, persistent location
+# (a mounted Docker volume). If it's left at the default, the export would land
+# on the container's ephemeral overlay and be lost on restart — so we require
+# the operator to opt in by setting ARCHIVE_PATH explicitly (see
+# ARCHIVE_PATH_CONFIGURED). The default exists only so create_future_partitions
+# / non-dropping callers have a path.
 ARCHIVE_BASE_PATH = os.environ.get(
     "ARCHIVE_PATH", "/opt/lap-api/archives"
 )
+ARCHIVE_PATH_CONFIGURED = "ARCHIVE_PATH" in os.environ
 
 
 def _month_range(start_date: date, months_ahead: int):
@@ -98,6 +105,20 @@ def _archive_old_partitions_impl(
     # DROP TABLE on partitions needs ownership — migration/owner DSN.
     from web.db_pg import get_migration_connection, return_pg_connection
 
+    # Never drop a partition unless we have a DURABLE place to archive it first.
+    # Without an explicit ARCHIVE_PATH the export would go to an ephemeral
+    # container path and vanish on restart, so we'd be dropping data with no
+    # recoverable copy. Skip cleanly (partitions stay; no data loss) and tell
+    # the operator how to enable it.
+    if not ARCHIVE_PATH_CONFIGURED:
+        logger.warning(
+            "Partition archival for %s SKIPPED: ARCHIVE_PATH is not set. Point it "
+            "at a persistent, mounted volume to enable archive-then-drop; until "
+            "then partitions are retained (no data loss, but they accumulate).",
+            table,
+        )
+        return []
+
     conn = get_migration_connection()
     try:
         cutoff = date.today().replace(day=1)
@@ -132,27 +153,38 @@ def _archive_old_partitions_impl(
             if part_date >= cutoff:
                 continue
 
-            # Export to Parquet
-            archive_dir = os.path.join(ARCHIVE_BASE_PATH, archive_subdir)
-            os.makedirs(archive_dir, exist_ok=True)
-            archive_path = os.path.join(
-                archive_dir, f"{part_year}-{part_month:02d}.parquet"
-            )
-
+            # Each partition is isolated: a failure to export one must NOT abort
+            # the sweep or drop the partition. We DROP only after confirming the
+            # Parquet was durably written (exists + non-empty), then commit that
+            # partition so a later failure can't roll back an already-archived
+            # drop.
             try:
+                archive_dir = os.path.join(ARCHIVE_BASE_PATH, archive_subdir)
+                os.makedirs(archive_dir, exist_ok=True)
+                archive_path = os.path.join(
+                    archive_dir, f"{part_year}-{part_month:02d}.parquet"
+                )
+
                 import pandas as pd
                 df = pd.read_sql(f'SELECT * FROM "{part_name}"', conn.raw_connection)
                 df.to_parquet(archive_path, index=False)
+
+                # Durability guard: NEVER drop unless the archive is really there.
+                if not (os.path.exists(archive_path) and os.path.getsize(archive_path) > 0):
+                    raise RuntimeError(f"archive not durably written: {archive_path}")
                 logger.info("Archived %s → %s (%d rows)", part_name, archive_path, len(df))
-            except ImportError:
-                logger.warning("pandas not available — skipping Parquet export for %s", part_name)
+
+                conn.execute(f'DROP TABLE IF EXISTS "{part_name}"')
+                conn.raw_connection.commit()
+                archived.append(part_name)
+            except Exception as exc:  # noqa: BLE001 — skip this partition, keep the rest
+                conn.raw_connection.rollback()
+                logger.warning(
+                    "Skipped archival of partition %s (kept, not dropped): %s",
+                    part_name, exc,
+                )
                 continue
 
-            # Drop the partition
-            conn.execute(f'DROP TABLE IF EXISTS "{part_name}"')
-            archived.append(part_name)
-
-        conn.raw_connection.commit()
         return archived
     except Exception:
         conn.raw_connection.rollback()

@@ -84,7 +84,11 @@ def on_task_failure(sender=None, task_id=None, exception=None, args=None,
         task_name = sender.name if sender else "unknown"
         max_retries = getattr(sender, "max_retries", None) if sender else None
         retries = getattr(sender.request, "retries", 0) if sender else 0
-        queue_name = getattr(sender.request, "delivery_info", {}).get("routing_key")
+        # Context.delivery_info defaults to None (not absent), so the getattr
+        # default never fires — coalesce to {} so a None can't raise here and
+        # silently drop the dead-letter row (this is the safety net itself).
+        _delivery = (getattr(sender.request, "delivery_info", None) if sender else None) or {}
+        queue_name = _delivery.get("routing_key")
 
         from sqlalchemy import text as sa_text
 
