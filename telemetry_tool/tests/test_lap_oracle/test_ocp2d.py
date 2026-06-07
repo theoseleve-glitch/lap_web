@@ -227,6 +227,20 @@ def test_solver_is_deterministic():
     np.testing.assert_array_equal(a.speed_mps, b.speed_mps)
     assert a.optimal_lap_time_s == b.optimal_lap_time_s
 
+    # Multi-start must be deterministic too: the fixed start order and the
+    # strict-< selection rule make the winning candidate reproducible, so a
+    # multi-start solve on the step-discontinuous puddle field is also
+    # bit-identical across calls.
+    puddle = _field_with_puddle_block(track.total_length_m)
+    c = solve_minimum_time_2d(track, vp, puddle, n_points=100, max_time_s=60.0,
+                              n_lat_starts=(0.0, 2.0, -2.0))
+    d = solve_minimum_time_2d(track, vp, puddle, n_points=100, max_time_s=60.0,
+                              n_lat_starts=(0.0, 2.0, -2.0))
+
+    np.testing.assert_array_equal(c.lateral_offset_m, d.lateral_offset_m)
+    np.testing.assert_array_equal(c.speed_mps, d.speed_mps)
+    assert c.optimal_lap_time_s == d.optimal_lap_time_s
+
 
 def _field_with_puddle_block(total_length_m: float) -> MuField:
     """Uniform wet grip 0.85 with a puddle block (mu=0.2) spanning the
@@ -252,7 +266,16 @@ def test_wet_line_routes_around_puddle():
     puddle_field = _field_with_puddle_block(track.total_length_m)
     control_field = _uniform_field(track.total_length_m, mu=0.85)
 
-    sol = solve_minimum_time_2d(track, vp, puddle_field, n_points=100, max_time_s=60.0)
+    # Multi-start the PUDDLE solve only. The step-clamped puddle block
+    # (mu=0.2 for n<=0 over s in [90,130]) creates a low-grip local basin
+    # that traps a single cold start (N_lat=0) ON the puddle side — IPOPT
+    # reports "optimal" at ~28.4s with the line at mu=0.2 and cannot cross
+    # the step. Seeding lateral starts (0, +2, -2) lands a solve in the dry
+    # (n>0) basin; the best optimal candidate wins. This mirrors how the
+    # production wet-field bridge will call the solver. The control solve
+    # stays single-start (uniform field has no step basin to escape).
+    sol = solve_minimum_time_2d(track, vp, puddle_field, n_points=100, max_time_s=60.0,
+                                n_lat_starts=(0.0, 2.0, -2.0))
     control = solve_minimum_time_2d(track, vp, control_field, n_points=100, max_time_s=60.0)
     assert sol.solver_status == "optimal"
 
@@ -273,3 +296,22 @@ def test_wet_line_routes_around_puddle():
     # In the puddle s-window the line must sit on the dry (n>0) side
     window = (sol.distance_m >= 95.0) & (sol.distance_m <= 125.0)
     assert np.all(sol.lateral_offset_m[window] > 0.0)
+
+
+@needs_casadi
+def test_smooth_interpolant_matches_grid_at_knots():
+    """The bspline solver field must reproduce the grid values AT the knots
+    (between knots it smooths — that's the point)."""
+    import casadi as ca
+    from telemetry_tool.lap_oracle.solver.ocp_2d import _make_mu_interpolant_smooth
+
+    rng = np.random.default_rng(11)
+    s_bins = np.arange(0.0, 200.0, 5.0)
+    n_bins = np.arange(-8.0, 9.0, 1.0)
+    mu = 0.7 + 0.5 * rng.random((len(s_bins), len(n_bins)))
+    field = MuField(s_bins=s_bins, n_bins=n_bins, mu_grid=mu)
+    lut = _make_mu_interpolant_smooth(field)
+    for i_s in (1, 10, 20, 38):
+        for i_n in (1, 8, 15):
+            got = float(lut(ca.vertcat(s_bins[i_s], n_bins[i_n])))
+            assert got == pytest.approx(mu[i_s, i_n], abs=1e-6), (i_s, i_n)

@@ -80,52 +80,57 @@ def _make_mu_interpolant(field: MuField):
     )
 
 
-def solve_minimum_time_2d(
-    track: TrackModel,
-    vehicle: VehicleParams,
-    mu_field: MuField,
-    weather: WeatherConditions | None = None,
-    n_points: int = 400,
-    max_time_s: float = 120.0,
-    warm_start: OCPSolution | None = None,
-) -> OCPSolution:
-    """Minimum-time OCP with a 2D friction field mu(s, n) inside the NLP.
+def _make_mu_interpolant_smooth(field: MuField):
+    """C2-smooth cubic-bspline lookup mu(s, n) for use INSIDE the NLP.
 
-    Identical formulation to ocp._solve_casadi except the friction-ellipse
-    limits use mu_field evaluated at (s_i, N_lat[i]) — grip depends on the
-    line the optimizer chooses, so it can route around lateral low-grip
-    cells instead of only slowing for them.
-
-    The per-point grip multiplier from TrackModel.grip_map is IGNORED here;
-    mu_field is the single source of surface grip.  Vehicle tyre D and
-    weather.grip_multiplier still scale globally as in ocp.py.
-
-    Domain guards (CasADi linear interpolants EXTRAPOLATE outside the grid;
-    see test_interpolant_extrapolates_outside_grid_documented): s coords are
-    clamped into [s_bins[0], s_bins[-1]] and the N_lat bounds are
-    intersected with [n_bins[0], n_bins[-1]].  Grip is floored at EPS_GRIP
-    inside the NLP for conditioning; callers should still pass floored fields
-    (build_wet_mu_field clips to [0.2, 1.0]).
+    IPOPT assumes twice-differentiable constraints; the 'linear' interpolant
+    is C0 (derivative kinks at every knot), which stalls the line search on
+    step-like fields (spurious "suboptimal") and lets iterates slide through
+    gradient gaps into local basins.  The bspline passes through the same
+    grid values at the knots but is smooth between them.  Small overshoot/
+    undershoot ringing near steps is guarded by EPS_GRIP in the solver.
+    Same Fortran-order data layout as _make_mu_interpolant.
     """
-    if not HAS_CASADI:
-        raise ImportError("solve_minimum_time_2d requires casadi")
-    if weather is None:
-        weather = WeatherConditions()
+    return ca.interpolant(
+        "mu_sn_smooth",
+        "bspline",
+        [field.s_bins.tolist(), field.n_bins.tolist()],
+        field.mu_grid.flatten(order="F").tolist(),
+    )
 
-    t0 = time.perf_counter()
 
-    ds_target = track.total_length_m / n_points
-    tk = resample_track(track, ds_target=ds_target)
-    N = tk.n_points
-    ds = tk.ds.astype(np.float64)
-    kappa = np.abs(tk.curvature).astype(np.float64)
-    s_coords = np.concatenate(([0.0], np.cumsum(ds)))          # (N,)
-    s_coords = np.clip(s_coords, float(mu_field.s_bins[0]), float(mu_field.s_bins[-1]))
+def _candidate_lap_time(v_sol: np.ndarray, ds: np.ndarray) -> float:
+    """Lap time for a candidate solve — IDENTICAL formula to _build_solution.
 
-    kv = np.zeros(N, dtype=np.float64)
-    if tk.vert_curvature is not None and len(tk.vert_curvature) == N:
-        kv = np.asarray(tk.vert_curvature, dtype=np.float64)
+    Used to rank multi-start candidates without paying for the full
+    _build_solution package on every start.
+    """
+    v_avg = np.maximum((v_sol[:-1] + v_sol[1:]) / 2.0, 1.0)
+    return float(np.sum(ds / v_avg))
 
+
+def _solve_once(
+    *,
+    N: int,
+    ds: np.ndarray,
+    kappa: np.ndarray,
+    kv: np.ndarray,
+    s_coords: np.ndarray,
+    mu_lut,
+    n_bounds: list[tuple[float, float]],
+    v_guess: np.ndarray,
+    n_guess: np.ndarray,
+    ax_guess: np.ndarray,
+    vehicle: VehicleParams,
+    weather: WeatherConditions,
+    max_time_s: float,
+) -> tuple[str, np.ndarray, np.ndarray, np.ndarray]:
+    """Build a FRESH ca.Opti() and run one IPOPT solve from the given guess.
+
+    Returns ``(status, v_sol, n_lat_sol, ax_sol)``.  No CasADi state is
+    reused between calls — each start is fully independent so the multi-start
+    loop cannot leak warm-state across seeds.
+    """
     m = vehicle.mass_kg
     cda = vehicle.cda
     cla = vehicle.cla
@@ -133,20 +138,6 @@ def solve_minimum_time_2d(
     a_brake_max = vehicle.max_brake_decel
     mu_lat_base = vehicle.tyre_lat.D * weather.grip_multiplier
     mu_long_base = vehicle.tyre_long.D * weather.grip_multiplier
-
-    mu_lut = _make_mu_interpolant(mu_field)
-
-    v_guess = corner_speed(kappa, vehicle) * weather.grip_multiplier
-    v_guess = np.clip(v_guess, 10.0, 100.0)
-    n_guess = np.zeros(N)
-    ax_guess = np.zeros(N - 1)
-    if warm_start is not None and len(warm_start.speed_mps) > 1:
-        ws_d = np.asarray(warm_start.distance_m, dtype=np.float64)
-        v_guess = np.interp(s_coords, ws_d, warm_start.speed_mps)
-        n_guess = np.interp(s_coords, ws_d, warm_start.lateral_offset_m)
-        ax_guess = np.diff(v_guess ** 2) / (2.0 * np.maximum(ds, 1e-6))
-        ax_guess = np.clip(ax_guess, -50.0, 50.0)
-        v_guess = np.clip(v_guess, 5.0, 120.0)
 
     opti = ca.Opti()
     V = opti.variable(N)
@@ -188,11 +179,8 @@ def solve_minimum_time_2d(
         opti.subject_to(Ax[i] >= -(a_brake_max * g_eff_i / G + drag + rr))
 
     opti.subject_to(opti.bounded(5.0, V, 120.0))
-    n_lo_field = float(mu_field.n_bins[0])
-    n_hi_field = float(mu_field.n_bins[-1])
     for i in range(N):
-        lo = max(-float(tk.width_right[i]) * 0.9, n_lo_field)
-        hi = min(float(tk.width_left[i]) * 0.9, n_hi_field)
+        lo, hi = n_bounds[i]
         opti.subject_to(opti.bounded(lo, N_lat[i], hi))
     opti.subject_to(V[0] == V[N - 1])
     opti.subject_to(N_lat[0] == N_lat[N - 1])
@@ -212,11 +200,167 @@ def solve_minimum_time_2d(
         n_lat_sol = np.array(sol.value(N_lat)).flatten()
         ax_sol = np.array(sol.value(Ax)).flatten()
     except RuntimeError:
-        logger.warning("ocp_2d: IPOPT did not converge — extracting debug values")
-        status = "suboptimal"
+        # IPOPT raised — but read its return_status: "Solved_To_Acceptable_Level"
+        # is a real (looser-tolerance) convergence tier, not divergence garbage.
+        # Map that to "acceptable"; everything else stays "suboptimal".
+        ret = opti.return_status()
+        if ret == "Solved_To_Acceptable_Level":
+            status = "acceptable"
+        else:
+            status = "suboptimal"
+        logger.warning(
+            "ocp_2d: IPOPT did not reach optimal (return_status=%s, mapped=%s)"
+            " — extracting debug values", ret, status,
+        )
         v_sol = np.clip(np.array(opti.debug.value(V)).flatten(), 5.0, 120.0)
         n_lat_sol = np.array(opti.debug.value(N_lat)).flatten()
         ax_sol = np.array(opti.debug.value(Ax)).flatten()
+
+    return status, v_sol, n_lat_sol, ax_sol
+
+
+def solve_minimum_time_2d(
+    track: TrackModel,
+    vehicle: VehicleParams,
+    mu_field: MuField,
+    weather: WeatherConditions | None = None,
+    n_points: int = 400,
+    max_time_s: float = 120.0,
+    warm_start: OCPSolution | None = None,
+    n_lat_starts: tuple[float, ...] = (0.0,),
+) -> OCPSolution:
+    """Minimum-time OCP with a 2D friction field mu(s, n) inside the NLP.
+
+    Identical formulation to ocp._solve_casadi except the friction-ellipse
+    limits use mu_field evaluated at (s_i, N_lat[i]) — grip depends on the
+    line the optimizer chooses, so it can route around lateral low-grip
+    cells instead of only slowing for them.
+
+    The per-point grip multiplier from TrackModel.grip_map is IGNORED here;
+    mu_field is the single source of surface grip.  Vehicle tyre D and
+    weather.grip_multiplier still scale globally as in ocp.py.
+
+    Domain guards (CasADi linear interpolants EXTRAPOLATE outside the grid;
+    see test_interpolant_extrapolates_outside_grid_documented): s coords are
+    clamped into [s_bins[0], s_bins[-1]] and the N_lat bounds are
+    intersected with [n_bins[0], n_bins[-1]].  Grip is floored at EPS_GRIP
+    inside the NLP for conditioning; callers should still pass floored fields
+    (build_wet_mu_field clips to [0.2, 1.0]).
+
+    Deterministic multi-start (``n_lat_starts``)
+    --------------------------------------------
+    WHY: real wet fields contain step-clamped puddle blocks (mu drops
+    discontinuously across a lateral edge).  IPOPT is a local solver — its
+    "optimal" status certifies only LOCAL optimality.  Cold-started at
+    N_lat=0, the solve descends into whichever grip basin contains the
+    origin; if that is the puddle side it converges there and reports
+    "optimal" even though a dry line off to one side is globally faster, and
+    it cannot cross the grip step to find it.
+
+    ``n_lat_starts`` is the deterministic escape: for each offset ``o`` (in
+    FIXED tuple order, so the result is reproducible) we run one fully
+    independent solve whose N_lat initial guess is the base guess (zeros, or
+    the warm-start interp) shifted by ``o`` and clipped to the per-point
+    bounds.  This seeds solves on either side of a step so at least one lands
+    in the dry basin.
+
+    SELECTION (status-tiered): among candidates with status == "optimal" we
+    keep the one with the lowest lap time (formula matches _build_solution);
+    ties break to the EARLIEST offset in the tuple.  If NO candidate is
+    optimal, we fall back to the lowest-lap candidate among the "acceptable"
+    tier (IPOPT's "Solved_To_Acceptable_Level" — a real looser-tolerance
+    convergence, not divergence garbage).  If neither tier has a candidate we
+    return the FIRST candidate, preserving its "suboptimal" status.
+    _build_solution is built ONLY for the winner.
+
+    The default ``(0.0,)`` runs exactly one cold start — byte-for-byte the
+    previous single-solve behavior and timing.
+    """
+    if not HAS_CASADI:
+        raise ImportError("solve_minimum_time_2d requires casadi")
+    if weather is None:
+        weather = WeatherConditions()
+
+    t0 = time.perf_counter()
+
+    ds_target = track.total_length_m / n_points
+    tk = resample_track(track, ds_target=ds_target)
+    N = tk.n_points
+    ds = tk.ds.astype(np.float64)
+    kappa = np.abs(tk.curvature).astype(np.float64)
+    s_coords = np.concatenate(([0.0], np.cumsum(ds)))          # (N,)
+    s_coords = np.clip(s_coords, float(mu_field.s_bins[0]), float(mu_field.s_bins[-1]))
+
+    kv = np.zeros(N, dtype=np.float64)
+    if tk.vert_curvature is not None and len(tk.vert_curvature) == N:
+        kv = np.asarray(tk.vert_curvature, dtype=np.float64)
+
+    # The NLP reads grip through the C2 cubic-bspline interpolant: IPOPT
+    # assumes twice-differentiable constraints, and the C0 'linear' field's
+    # derivative kinks both stall certification (spurious "suboptimal") and
+    # let iterates slide back across grip steps into local basins.  The linear
+    # interpolant remains the layout-locked data-sampling contract elsewhere.
+    # Built ONCE here and reused across every multi-start solve.
+    mu_lut = _make_mu_interpolant_smooth(mu_field)
+
+    v_guess = corner_speed(kappa, vehicle) * weather.grip_multiplier
+    v_guess = np.clip(v_guess, 10.0, 100.0)
+    base_n_guess = np.zeros(N)
+    ax_guess = np.zeros(N - 1)
+    if warm_start is not None and len(warm_start.speed_mps) > 1:
+        ws_d = np.asarray(warm_start.distance_m, dtype=np.float64)
+        v_guess = np.interp(s_coords, ws_d, warm_start.speed_mps)
+        base_n_guess = np.interp(s_coords, ws_d, warm_start.lateral_offset_m)
+        ax_guess = np.diff(v_guess ** 2) / (2.0 * np.maximum(ds, 1e-6))
+        ax_guess = np.clip(ax_guess, -50.0, 50.0)
+        v_guess = np.clip(v_guess, 5.0, 120.0)
+
+    # Per-point N_lat bounds: track width ∩ field n-domain (same as constraints).
+    n_lo_field = float(mu_field.n_bins[0])
+    n_hi_field = float(mu_field.n_bins[-1])
+    n_bounds: list[tuple[float, float]] = []
+    lo_arr = np.empty(N)
+    hi_arr = np.empty(N)
+    for i in range(N):
+        lo = max(-float(tk.width_right[i]) * 0.9, n_lo_field)
+        hi = min(float(tk.width_left[i]) * 0.9, n_hi_field)
+        n_bounds.append((lo, hi))
+        lo_arr[i] = lo
+        hi_arr[i] = hi
+
+    # Deterministic multi-start: one independent solve per offset, in order.
+    # Tiered selection: best "optimal" lap, else best "acceptable" lap, else
+    # the FIRST candidate (preserving its "suboptimal" status).
+    best_opt: tuple[str, np.ndarray, np.ndarray, np.ndarray] | None = None
+    best_opt_lap = float("inf")
+    best_acc: tuple[str, np.ndarray, np.ndarray, np.ndarray] | None = None
+    best_acc_lap = float("inf")
+    first: tuple[str, np.ndarray, np.ndarray, np.ndarray] | None = None
+    for o in n_lat_starts:
+        n_guess = np.clip(base_n_guess + o, lo_arr, hi_arr)
+        cand = _solve_once(
+            N=N, ds=ds, kappa=kappa, kv=kv, s_coords=s_coords, mu_lut=mu_lut,
+            n_bounds=n_bounds, v_guess=v_guess, n_guess=n_guess, ax_guess=ax_guess,
+            vehicle=vehicle, weather=weather, max_time_s=max_time_s,
+        )
+        if first is None:
+            first = cand
+        if cand[0] == "optimal":
+            lap = _candidate_lap_time(cand[1], ds)
+            if lap < best_opt_lap:   # strict < ⇒ ties keep the earlier start
+                best_opt_lap = lap
+                best_opt = cand
+        elif cand[0] == "acceptable":
+            lap = _candidate_lap_time(cand[1], ds)
+            if lap < best_acc_lap:   # strict < ⇒ ties keep the earlier start
+                best_acc_lap = lap
+                best_acc = cand
+
+    winner = best_opt if best_opt is not None else (
+        best_acc if best_acc is not None else first
+    )
+    assert winner is not None  # n_lat_starts is non-empty
+    status, v_sol, n_lat_sol, ax_sol = winner
 
     elapsed = time.perf_counter() - t0
     return _build_solution(
