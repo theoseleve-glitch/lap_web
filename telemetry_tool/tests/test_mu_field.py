@@ -269,3 +269,79 @@ def test_puddles_to_n_windows_picks_wider_side():
     # n_lo = -2.5 + 2.523 + 0.5 ≈ 0.523
     assert n_hi == float("inf")
     assert n_lo == pytest.approx(-2.5 + np.sqrt(4 * 5.0 / np.pi) + 0.5, abs=0.05)
+
+
+def test_puddles_to_n_windows_conflicting_overlap_drops_shallower():
+    """Two overlapping puddles excluding OPPOSITE sides must not emit
+    conflicting windows (which would make the NLP corridor empty and kill
+    the wet solve) — the shallower puddle's window is dropped.
+
+    Geometry (verified pre-fix): with wl=wr=8.0m and area_cells=3,
+    r = max(sqrt(3*5.0/pi), 1.0) ≈ 2.185, margin=0.5.
+      deep   (n=-1.0, depth=0.9): avail_above=8-((-1+2.185+0.5))=6.315,
+        avail_below=(-1-2.185-0.5)+8=4.315 -> keep-left, n_lo≈1.685
+      shallow (n=+1.0, depth=0.4): avail_above=8-((1+2.185+0.5))=4.315,
+        avail_below=(1-2.185-0.5)+8=6.315 -> keep-right, n_hi≈-1.685
+    Combined at a point in the s-overlap: lo=1.685 > hi=-1.685 -> ValueError.
+    Post-fix: only the deep puddle's keep-left window survives.
+    """
+    from track_surface.solver_bridge import puddles_to_n_windows
+
+    surface = _synthetic_surface_with_grip()
+    wl = np.full(surface.frenet.n_points, 8.0)
+    wr = np.full(surface.frenet.n_points, 8.0)
+    # deep puddle at n=-1.0: keep-left (corridor above the puddle, n_lo > 0)
+    deep = PuddleZone(s_center=100.0, n_center=-1.0, depth_score=0.9, area_cells=3)
+    # shallow puddle at n=+1.0 same s: keep-right (corridor below, n_hi < 0)
+    # -> conflicts with deep's keep-left over the shared s-window
+    shallow = PuddleZone(s_center=100.0, n_center=1.0, depth_score=0.4, area_cells=3)
+
+    windows = puddles_to_n_windows([shallow, deep], surface.grip_2d, wl, wr,
+                                   surface.frenet.s_grid)
+    assert len(windows) == 1, (
+        f"expected 1 window (deep survives, shallow dropped), got {len(windows)}: {windows}"
+    )
+    s0, s1, n_lo, n_hi = windows[0]
+    # The surviving window must be the deep puddle's keep-left corridor.
+    assert n_hi == float("inf"), "surviving window must be keep-left (n_hi=inf)"
+    assert n_lo > 0.0, f"keep-left n_lo must be positive (deep n=-1.0 + r + margin), got {n_lo}"
+
+
+def test_bridge_passes_qss_warm_start(monkeypatch):
+    """The bridge must hand solve_minimum_time_2d a real QSS warm start —
+    silently dropping it would not fail any behavioral test (IPOPT converges
+    anyway on simple fields), so pin the contract explicitly.
+
+    Import-style note: solve_optimal_line_2d does a function-level
+    ``from lap_oracle.solver.ocp_2d import solve_minimum_time_2d`` — the name
+    is resolved at CALL TIME and bound to a local variable, so patching the
+    module attribute on the ``lap_oracle.solver.ocp_2d`` object (which is the
+    module the bridge actually imports from) is the correct intercept point.
+    ``telemetry_tool.lap_oracle.solver.ocp_2d`` is a DIFFERENT module object
+    under the sys.path configuration used here, so we pre-import the bridge
+    module to ensure its ``lap_oracle`` path is loaded, then patch that.
+    """
+    pytest.importorskip("casadi")
+    import track_surface.solver_bridge as sb
+
+    # Force the bridge module to be imported so its sys.path entry for
+    # lap_oracle is registered, then grab the module object the bridge uses.
+    import lap_oracle.solver.ocp_2d as ocp2d_mod
+
+    captured = {}
+    orig = ocp2d_mod.solve_minimum_time_2d
+
+    def spy(*args, **kwargs):
+        captured["warm_start"] = kwargs.get("warm_start")
+        return orig(*args, **kwargs)
+
+    monkeypatch.setattr(ocp2d_mod, "solve_minimum_time_2d", spy)
+
+    surface = _synthetic_surface_with_grip()
+    sb.solve_optimal_line_2d(surface, condition="dry", n_points=60, max_time_s=30.0)
+
+    assert captured, "spy was never called — monkeypatch did not intercept the import"
+    assert captured["warm_start"] is not None, (
+        "warm_start was None — bridge dropped the QSS warm start"
+    )
+    assert captured["warm_start"].solver_status == "qss_fallback"

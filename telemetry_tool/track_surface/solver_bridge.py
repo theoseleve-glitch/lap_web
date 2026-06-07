@@ -13,6 +13,7 @@ import logging
 
 import numpy as np
 
+from track_surface.drainage import puddle_footprint_radius
 from track_surface.model import TrackSurface
 
 logger = logging.getLogger(__name__)
@@ -258,7 +259,7 @@ def puddles_to_n_windows(
     the side of the puddle with MORE remaining track width:
       keep-left  -> (s0, s1, n_c + r + margin, +inf)
       keep-right -> (s0, s1, -inf, n_c - r - margin)
-    Radius matches build_wet_mu_field's footprint:
+    Radius matches build_wet_mu_field's footprint via puddle_footprint_radius:
       r = max(sqrt(area_cells * cell_area / pi), n_step).
     Returns a list of (s_start, s_end, n_lo, n_hi) tuples (inf bounds mean
     'unconstrained on that side' — use float('inf')/-float('inf')).
@@ -269,6 +270,22 @@ def puddles_to_n_windows(
     positive distance to the n<0 edge).  The wider side wins.  If BOTH sides
     leave less than ``_MIN_CORRIDOR_M`` of dry corridor, the window is skipped
     entirely and a warning logged — a puddle crossing beats an infeasible NLP.
+
+    Conflict resolution (C1): puddles are processed deepest-first (by
+    depth_score DESC; ties broken by (s_center, n_center) for determinism).
+    Before appending, the candidate window is checked against all already-
+    accepted windows for s-overlap with an OPPOSITE side (keep-left vs
+    keep-right).  An OPPOSITE-side pair conflicts when the new keep-left n_lo
+    exceeds an accepted keep-right n_hi (or vice versa) over the overlapping
+    s-range — i.e. the intersection would be empty.  On conflict the SHALLOWER
+    puddle's window (the one being evaluated, since we go deepest-first) is
+    dropped with a warning; the deeper puddle's corridor survives.  This is
+    the same degradation philosophy as the both-sides-narrow skip: a one-sided
+    corridor from the deeper hazard beats an infeasible NLP.
+
+    Note: s-windows do NOT wrap across start/finish; a puddle straddling s=0
+    is handled one-sided (consistent with build_wet_mu_field); revisit if real
+    data shows start/finish puddles.
     """
     if not puddles:
         return []
@@ -277,12 +294,8 @@ def puddles_to_n_windows(
     width_left = np.asarray(width_left, dtype=np.float64)
     width_right = np.asarray(width_right, dtype=np.float64)
 
-    # Footprint geometry — identical contract to build_wet_mu_field.
     s_bins = np.asarray(grip_2d.s_bins, dtype=np.float64)
     n_bins = np.asarray(grip_2d.n_bins, dtype=np.float64)
-    s_step = float(np.median(np.diff(s_bins))) if len(s_bins) > 1 else 5.0
-    n_step = float(np.median(np.diff(n_bins))) if len(n_bins) > 1 else 1.0
-    cell_area = s_step * n_step
 
     def _mean_over_window(arr: np.ndarray, s0: float, s1: float) -> float:
         """Mean of a per-s_grid array over [s0, s1] (interpolated)."""
@@ -292,9 +305,15 @@ def puddles_to_n_windows(
         # Window narrower than the s_grid spacing — interpolate at the centre.
         return float(np.interp((s0 + s1) / 2.0, s_grid, arr))
 
+    # Deepest-first: deterministic tie-break by (s_center, n_center).
+    sorted_puddles = sorted(
+        puddles,
+        key=lambda p: (-p.depth_score, p.s_center, p.n_center),
+    )
+
     windows: list[tuple[float, float, float, float]] = []
-    for p in puddles:
-        r = max(np.sqrt(p.area_cells * cell_area / np.pi), n_step)
+    for p in sorted_puddles:
+        r = puddle_footprint_radius(p, s_bins, n_bins)
         s0 = p.s_center - r - margin_m
         s1 = p.s_center + r + margin_m
 
@@ -317,10 +336,45 @@ def puddles_to_n_windows(
             )
             continue
 
-        if avail_above >= avail_below:
-            windows.append((s0, s1, keep_left_lo, float("inf")))   # keep-left
-        else:
-            windows.append((s0, s1, -float("inf"), keep_right_hi))  # keep-right
+        is_keep_left = avail_above >= avail_below
+        new_lo = keep_left_lo if is_keep_left else -float("inf")
+        new_hi = float("inf") if is_keep_left else keep_right_hi
+
+        # Conflict check (C1): scan accepted windows for s-overlap + opposite side.
+        conflict = False
+        for a_s0, a_s1, a_lo, a_hi in windows:
+            # s-overlap?
+            if a_s0 >= s1 or s0 >= a_s1:
+                continue
+            # Opposite sides? (one keep-left: n_hi==inf, other keep-right: n_lo==-inf)
+            a_is_keep_left = (a_hi == float("inf"))
+            if a_is_keep_left == is_keep_left:
+                continue
+            # Intersection over the s-overlap would be empty when:
+            #   new keep-left n_lo > accepted keep-right n_hi, or
+            #   accepted keep-left n_lo > new keep-right n_hi.
+            if is_keep_left:
+                # new = keep-left, accepted = keep-right
+                if new_lo > a_hi:
+                    conflict = True
+                    break
+            else:
+                # new = keep-right, accepted = keep-left
+                if a_lo > new_hi:
+                    conflict = True
+                    break
+
+        if conflict:
+            logger.warning(
+                "puddles_to_n_windows: puddle at s=%.1f n=%.2f (depth=%.3f) "
+                "conflicts with a deeper accepted window (opposite corridors, "
+                "empty intersection) — dropping shallower puddle's window "
+                "(a puddle crossing beats an infeasible NLP)",
+                p.s_center, p.n_center, p.depth_score,
+            )
+            continue
+
+        windows.append((s0, s1, new_lo, new_hi))
 
     return windows
 
@@ -342,6 +396,10 @@ def solve_optimal_line_2d(
     exclusions (puddles_to_n_windows), with multi-start (0, +2, -2).
 
     Warm-starts from the casadi-free QSS solve.
+
+    Note: ``damp``/``heavy_wet`` from the store vocabulary must be bucketed
+    to ``wet`` by the caller — this bridge uses a binary wet model
+    (dry vs. wet), intentionally.
 
     Raises ValueError if surface.grip_2d is None (needs >= 10 laps),
     ImportError if casadi/lap_oracle unavailable.
@@ -367,6 +425,10 @@ def solve_optimal_line_2d(
         ) from exc
 
     if vehicle_params is None:
+        logger.warning(
+            "solve_optimal_line_2d: no vehicle_params given — defaulting to a "
+            "1300 kg GT car; pass real params for non-GT vehicles (e.g. karts)"
+        )
         from lap_oracle.config import VehicleParams
         vehicle_params = VehicleParams()
 

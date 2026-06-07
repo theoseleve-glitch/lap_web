@@ -36,6 +36,18 @@ class PuddleZone:
         }
 
 
+def puddle_footprint_radius(puddle: PuddleZone, s_bins, n_bins) -> float:
+    """Footprint radius of a puddle on the (s, n) grid.
+
+    r = max(sqrt(area_cells * cell_area / pi), n_step) — shared by the soft
+    field penalty (build_wet_mu_field) and the hard corridor exclusion
+    (puddles_to_n_windows) so the two can never drift apart.
+    """
+    s_step = float(np.median(np.diff(s_bins))) if len(s_bins) > 1 else 5.0
+    n_step = float(np.median(np.diff(n_bins))) if len(n_bins) > 1 else 1.0
+    return max(float(np.sqrt(puddle.area_cells * s_step * n_step / np.pi)), n_step)
+
+
 def _follow_gradient(
     dz_ds: np.ndarray,
     dz_dn: np.ndarray,

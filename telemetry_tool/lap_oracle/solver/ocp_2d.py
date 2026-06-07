@@ -299,6 +299,13 @@ def solve_minimum_time_2d(
     point, a ``ValueError`` is raised with the offending ``s`` — an impossible
     corridor is a caller bug (e.g. overlapping exclusions), not a solve
     failure.  The default ``()`` applies no exclusions.
+
+    Empirical conditioning note: corridor bounds that sit ON a steep grip
+    transition ill-condition the friction ellipse (observed:
+    Maximum_Iterations_Exceeded even at 8000 iters with the bound at the mu
+    step; <2s solve with the bound 1 bin clear).
+    ``puddles_to_n_windows`` bounds always sit at radius+margin, clear of the
+    flooded cells.
     """
     if not HAS_CASADI:
         raise ImportError("solve_minimum_time_2d requires casadi")

@@ -20,7 +20,7 @@ from typing import Final
 
 import numpy as np
 
-from track_surface.drainage import PuddleZone
+from track_surface.drainage import PuddleZone, puddle_footprint_radius
 from track_surface.grip_2d import GripSurface
 from track_surface.wet_model import invert_grip_for_wet
 from telemetry_tool.lap_oracle.solver.ocp_2d import MuField
@@ -97,6 +97,10 @@ def build_wet_mu_field(
        prior sits at the floor.
     4. Clamp puddle zones to PUDDLE_MU within the puddle's footprint
        radius r = sqrt(area_cells * cell_area / pi).
+
+    Note: s-windows/footprints do NOT wrap across start/finish; a puddle
+    straddling s=0 is handled one-sided (consistent with
+    puddles_to_n_windows); revisit if real data shows start/finish puddles.
     """
     wet_grid = invert_grip_for_wet(grip_2d)
     wet_grid = shrink_mu_grid(wet_grid, grip_2d.count_grid, grip_2d.confidence)
@@ -105,12 +109,9 @@ def build_wet_mu_field(
     wet_grid = np.clip(wet_grid, _WET_MU_FLOOR, _WET_MU_CEIL)
 
     if puddles:
-        s_step = float(np.median(np.diff(grip_2d.s_bins))) if len(grip_2d.s_bins) > 1 else 5.0
-        n_step = float(np.median(np.diff(grip_2d.n_bins))) if len(grip_2d.n_bins) > 1 else 1.0
-        cell_area = s_step * n_step
         ss, nn = np.meshgrid(grip_2d.s_bins, grip_2d.n_bins, indexing="ij")
         for p in puddles:
-            radius_m = max(np.sqrt(p.area_cells * cell_area / np.pi), n_step)
+            radius_m = puddle_footprint_radius(p, grip_2d.s_bins, grip_2d.n_bins)
             inside = (ss - p.s_center) ** 2 + (nn - p.n_center) ** 2 <= radius_m ** 2
             wet_grid = np.where(inside, np.minimum(wet_grid, PUDDLE_MU), wet_grid)
 
