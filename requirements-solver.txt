@@ -1,0 +1,4 @@
+# Optimal-line solver extras — installed in the CELERY WORKER image only
+# (Lane 2 wires this into the Dockerfile). The web container never imports
+# casadi; ocp.py degrades to the QSS fallback when absent.
+casadi>=3.6
