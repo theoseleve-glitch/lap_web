@@ -18,7 +18,10 @@ Idempotent + guarded (skips a table that lacks workspace_id). Chains off 068.
 from alembic import op
 
 revision = "069_complete_rls_policies"
-down_revision = "068_fk_child_read_rls"
+# Chains AFTER 069_corner_mastery (added concurrently, also off 068) to keep a
+# single linear head — both off 068 would be a multi-head graph that breaks
+# `alembic upgrade head`.
+down_revision = "069_corner_mastery"
 branch_labels = None
 depends_on = None
 
