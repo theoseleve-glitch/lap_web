@@ -1084,12 +1084,55 @@ def _persist_session_data(ctx: PipelineContext, result: dict) -> None:
             )
             conn.commit()
 
+            # ── Corner mastery stars (Phase 1) ───────────────────────
+            star_events: list = []
+            try:
+                from gamification.mastery import (
+                    compute_corner_scores, update_corner_mastery,
+                )
+                from gamification.queries import upsert_driver_xp
+                from gamification.xp import compute_level
+
+                _track_id = (result.get("track_id")
+                             or meta.get("track_id") or "unknown_track")
+                _condition = meta.get("track_state", "dry")
+                _corner_scores = compute_corner_scores(conn, session_id)
+                if _corner_scores:
+                    star_events = update_corner_mastery(
+                        conn, driver_id, ctx.workspace_id, _track_id,
+                        _condition, _corner_scores, session_id,
+                    )
+                    star_xp = sum(e["xp"] for e in star_events)
+                    if star_xp:
+                        upsert_driver_xp(
+                            conn, driver_id, ctx.workspace_id,
+                            xp_delta=star_xp,
+                            level=compute_level(xp_result["new_total"] + star_xp),
+                            streak=streak_result.get("current_streak", 0),
+                            longest=streak_result.get("longest_streak", 0),
+                            last_date=None,
+                        )
+                        xp_result["xp_gained"] += star_xp
+                        xp_result["new_total"] += star_xp
+                        xp_result["new_level"] = compute_level(xp_result["new_total"])
+                        xp_result["leveled_up"] = (
+                            xp_result["new_level"] > xp_result["old_level"])
+                    conn.commit()
+            except Exception:
+                logger.warning("Corner mastery update failed (non-fatal) for %s",
+                               session_id, exc_info=True)
+                try:
+                    conn.rollback()
+                except Exception:
+                    pass
+
             result["gamification"] = {
                 "xp_gained": xp_result.get("xp_gained", 0),
                 "old_level": xp_result.get("old_level", 0),
                 "new_level": xp_result.get("new_level", 0),
                 "leveled_up": xp_result.get("leveled_up", False),
                 "current_streak": streak_result.get("current_streak", 0),
+                "stars": star_events,
                 "new_achievements": [
                     {"key": a["key"], "label": a["label"], "description": a["description"], "icon": a["icon"]}
                     for a in new_achievements
