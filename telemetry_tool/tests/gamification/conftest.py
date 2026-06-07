@@ -58,7 +58,8 @@ def mem_conn():
             csv_filename TEXT,
             session_date TEXT,
             best_lap_time_s REAL,
-            total_score REAL
+            total_score REAL,
+            gamification_applied INTEGER NOT NULL DEFAULT 0
         )
     """)
     conn.execute("""

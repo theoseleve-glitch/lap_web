@@ -1045,6 +1045,18 @@ def _persist_session_data(ctx: PipelineContext, result: dict) -> None:
             score_result = result.get("score_result") or {}
             badges = score_result.get("badges", [])
 
+            # ── Idempotency gate (Option B) ─────────────────────────────────
+            # Read the per-session flag BEFORE any award.  Base XP and the
+            # comeback multiplier are first-process-only; mastery, quests,
+            # achievements, and streak run unconditionally (they are already
+            # state-based/idempotent).
+            _flag_row = conn.execute(
+                "SELECT gamification_applied FROM sessions WHERE session_id = :sid",
+                {"sid": session_id},
+            ).fetchone()
+            already_scored = bool(_flag_row["gamification_applied"]) if _flag_row else False
+            # ────────────────────────────────────────────────────────────────
+
             session_date = meta.get("session_date") or meta.get("date", "")
             streak_result = update_streak(conn, driver_id, ctx.workspace_id, session_date)
             conn.commit()
@@ -1059,14 +1071,54 @@ def _persist_session_data(ctx: PipelineContext, result: dict) -> None:
             # so the first upload sees count == 1.
             session_count = count_driver_sessions(conn, driver_id, ctx.workspace_id)
 
-            xp_result = award_session_xp(
-                conn, driver_id, ctx.workspace_id, session_id,
-                badges=badges,
-                previous_best_lap=prev_best,
-                current_best_lap=current_best,
-                is_first_session=(session_count == 1),
-            )
-            conn.commit()
+            if not already_scored:
+                xp_result = award_session_xp(
+                    conn, driver_id, ctx.workspace_id, session_id,
+                    badges=badges,
+                    previous_best_lap=prev_best,
+                    current_best_lap=current_best,
+                    is_first_session=(session_count == 1),
+                )
+                conn.commit()
+                # Stamp the flag atomically with the base-XP commit so a crash
+                # after awarding cannot leave gamification_applied = false.
+                try:
+                    conn.execute(
+                        "UPDATE sessions SET gamification_applied = true "
+                        "WHERE session_id = :sid",
+                        {"sid": session_id},
+                    )
+                    conn.commit()
+                except Exception:
+                    logger.warning(
+                        "Failed to set gamification_applied flag for %s", session_id,
+                        exc_info=True,
+                    )
+                    try:
+                        conn.rollback()
+                    except Exception:
+                        pass
+            else:
+                # Reprocess path: base XP already awarded — synthesise a zero-
+                # delta xp_result so downstream in-memory code stays consistent.
+                from gamification.queries import get_driver_xp
+                from gamification.xp import compute_level
+                _cur = get_driver_xp(conn, driver_id, ctx.workspace_id)
+                _total = _cur["total_xp"] if _cur else 0
+                _lvl = compute_level(_total)
+                xp_result = {
+                    "xp_gained": 0,
+                    "xp_breakdown": {},
+                    "old_total": _total,
+                    "new_total": _total,
+                    "old_level": _lvl,
+                    "new_level": _lvl,
+                    "leveled_up": False,
+                }
+                logger.info(
+                    "Gamification: session %s already scored — skipping base XP + comeback",
+                    session_id,
+                )
             achievement_context = {
                 "session_count": session_count,
                 "badges": badges,
@@ -1180,41 +1232,44 @@ def _persist_session_data(ctx: PipelineContext, result: dict) -> None:
 
             # ── Comeback Shakedown (Phase 2b): multiply this session's
             #    gamification XP after a long absence (zero-shame return) ──
+            #    Gated on not already_scored: re-firing on reprocess would
+            #    double XP because it keys off xp_result["xp_gained"] > 0.
             comeback = None
-            try:
-                from gamification.quests import weeks_since_last_session
-                from gamification.catalog import COMEBACK_WEEKS, COMEBACK_XP_MULTIPLIER
-                from gamification.queries import upsert_driver_xp
-                from gamification.xp import compute_level
-
-                weeks_away = weeks_since_last_session(
-                    conn, driver_id, ctx.workspace_id, session_id, session_date
-                )
-                if weeks_away >= COMEBACK_WEEKS and xp_result.get("xp_gained", 0) > 0:
-                    bonus = int(xp_result["xp_gained"] * (COMEBACK_XP_MULTIPLIER - 1))
-                    if bonus > 0:
-                        upsert_driver_xp(
-                            conn, driver_id, ctx.workspace_id, xp_delta=bonus,
-                            level=compute_level(xp_result["new_total"] + bonus),
-                            streak=streak_result.get("current_streak", 0),
-                            longest=streak_result.get("longest_streak", 0),
-                            last_date=None,
-                        )
-                        # Commit BEFORE mutating in-memory xp_result so a
-                        # rollback on failure cannot leave xp_result inflated.
-                        conn.commit()
-                        # Only update in-memory state after the commit succeeds.
-                        xp_result["xp_gained"] += bonus
-                        xp_result["new_total"] += bonus
-                        xp_result["new_level"] = compute_level(xp_result["new_total"])
-                        xp_result["leveled_up"] = xp_result["new_level"] > xp_result["old_level"]
-                    comeback = {"weeks_away": weeks_away, "multiplier": COMEBACK_XP_MULTIPLIER}
-            except Exception:
-                logger.warning("Comeback step failed (non-fatal) for %s", session_id, exc_info=True)
+            if not already_scored:
                 try:
-                    conn.rollback()
+                    from gamification.quests import weeks_since_last_session
+                    from gamification.catalog import COMEBACK_WEEKS, COMEBACK_XP_MULTIPLIER
+                    from gamification.queries import upsert_driver_xp
+                    from gamification.xp import compute_level
+
+                    weeks_away = weeks_since_last_session(
+                        conn, driver_id, ctx.workspace_id, session_id, session_date
+                    )
+                    if weeks_away >= COMEBACK_WEEKS and xp_result.get("xp_gained", 0) > 0:
+                        bonus = int(xp_result["xp_gained"] * (COMEBACK_XP_MULTIPLIER - 1))
+                        if bonus > 0:
+                            upsert_driver_xp(
+                                conn, driver_id, ctx.workspace_id, xp_delta=bonus,
+                                level=compute_level(xp_result["new_total"] + bonus),
+                                streak=streak_result.get("current_streak", 0),
+                                longest=streak_result.get("longest_streak", 0),
+                                last_date=None,
+                            )
+                            # Commit BEFORE mutating in-memory xp_result so a
+                            # rollback on failure cannot leave xp_result inflated.
+                            conn.commit()
+                            # Only update in-memory state after the commit succeeds.
+                            xp_result["xp_gained"] += bonus
+                            xp_result["new_total"] += bonus
+                            xp_result["new_level"] = compute_level(xp_result["new_total"])
+                            xp_result["leveled_up"] = xp_result["new_level"] > xp_result["old_level"]
+                        comeback = {"weeks_away": weeks_away, "multiplier": COMEBACK_XP_MULTIPLIER}
                 except Exception:
-                    pass
+                    logger.warning("Comeback step failed (non-fatal) for %s", session_id, exc_info=True)
+                    try:
+                        conn.rollback()
+                    except Exception:
+                        pass
 
             result["gamification"] = {
                 "xp_gained": xp_result.get("xp_gained", 0),
