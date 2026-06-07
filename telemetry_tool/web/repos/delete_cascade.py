@@ -50,6 +50,7 @@ CASCADE_CONFIG: dict[str, dict[str, Any]] = {
         "parent_pk": "id",
         "children": [
             {"entity": "session", "fk": "workspace_id"},
+            {"table": "corner_mastery", "fk": "workspace_id"},
             {"table": "usage_events", "fk": "workspace_id"},
             {"table": "usage_monthly", "fk": "workspace_id"},
             {"table": "entitlement_overrides", "fk": "workspace_id"},
