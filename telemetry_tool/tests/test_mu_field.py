@@ -99,3 +99,71 @@ def test_never_exceeds_max_of_raw_and_prior():
         expected_unmeasured = np.broadcast_to(row_prior[:, None] * 0.95, (M, K))
         np.testing.assert_allclose(out[~measured], expected_unmeasured[~measured], rtol=1e-9)
     assert out.shape == mu.shape
+
+
+# ---------------------------------------------------------------------------
+# Task 3: dry + wet MuField builders
+# ---------------------------------------------------------------------------
+from track_surface.drainage import PuddleZone
+from track_surface.mu_field import build_dry_mu_field, build_wet_mu_field
+
+
+def _grip_surface_with_rubber_line(M=40, K=17) -> GripSurface:
+    """Synthetic dry grip: a high-mu 'rubber line' ridge at n = +2."""
+    s_bins = np.arange(0, M * 5.0, 5.0)
+    n_bins = np.arange(-8.0, 9.0, 1.0)
+    mu = np.full((M, K), 1.0)
+    ridge_col = int(np.argmin(np.abs(n_bins - 2.0)))
+    mu[:, ridge_col] = 1.4                       # rubbered-in line
+    count = np.full((M, K), 60, dtype=int)
+    return GripSurface(
+        s_bins=s_bins, n_bins=n_bins, mu_grid=mu,
+        count_grid=count, confidence=np.ones((M, K)),
+    )
+
+
+def test_build_dry_mu_field_applies_shrinkage_and_shapes():
+    gs = _grip_surface_with_rubber_line()
+    field = build_dry_mu_field(gs)
+    assert field.mu_grid.shape == gs.mu_grid.shape
+    np.testing.assert_array_equal(field.s_bins, gs.s_bins)
+    np.testing.assert_array_equal(field.n_bins, gs.n_bins)
+    # Full-confidence input → dry field equals raw grid
+    np.testing.assert_allclose(field.mu_grid, gs.mu_grid)
+
+
+def test_wet_field_penalizes_rubber_line():
+    gs = _grip_surface_with_rubber_line()
+    wet = build_wet_mu_field(gs, puddles=[])
+    ridge_col = int(np.argmin(np.abs(gs.n_bins - 2.0)))
+    clean_col = int(np.argmin(np.abs(gs.n_bins + 4.0)))
+    # In the wet, the rubber line must grip WORSE than clean asphalt
+    assert wet.mu_grid[:, ridge_col].mean() < wet.mu_grid[:, clean_col].mean()
+    # Bounded like invert_grip_for_wet
+    assert wet.mu_grid.min() >= 0.2 - 1e-9
+    assert wet.mu_grid.max() <= 1.0 + 1e-9
+
+
+def test_wet_field_clamps_puddle_cells():
+    gs = _grip_surface_with_rubber_line()
+    puddle = PuddleZone(s_center=100.0, n_center=-2.0, depth_score=0.8, area_cells=6)
+    wet = build_wet_mu_field(gs, puddles=[puddle])
+    si = int(np.argmin(np.abs(gs.s_bins - 100.0)))
+    ni = int(np.argmin(np.abs(gs.n_bins + 2.0)))
+    assert wet.mu_grid[si, ni] == pytest.approx(0.2)
+    # Far away from the puddle: unchanged vs the no-puddle wet field
+    wet_nopuddle = build_wet_mu_field(gs, puddles=[])
+    far_si = int(np.argmin(np.abs(gs.s_bins - 180.0)))
+    assert wet.mu_grid[far_si, :] == pytest.approx(wet_nopuddle.mu_grid[far_si, :])
+
+
+def test_wet_field_never_below_wet_floor_even_with_unmeasured_cells():
+    """Review carry-forward: shrinkage can emit row_prior*0.95 < 0.2 when a
+    row's wet prior sits at the 0.2 floor — the builder must re-clip."""
+    gs = _grip_surface_with_rubber_line()
+    # Make one row fully rubbered (wet prior at the floor) with one unmeasured cell
+    gs.mu_grid[10, :] = 1.4
+    gs.count_grid[10, 5] = 0
+    gs.confidence[10, 5] = 0.0
+    wet = build_wet_mu_field(gs, puddles=[])
+    assert wet.mu_grid.min() >= 0.2 - 1e-9

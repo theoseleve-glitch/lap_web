@@ -59,3 +59,64 @@ def shrink_mu_grid(
     out = w * mu_grid + (1.0 - w) * prior_2d            # measured blend
     out = np.where(measured, out, prior_2d * UNMEASURED_DISCOUNT)
     return out
+
+
+# ---------------------------------------------------------------------------
+# Solver-ready field builders
+# ---------------------------------------------------------------------------
+from track_surface.drainage import PuddleZone
+from track_surface.wet_model import invert_grip_for_wet
+
+PUDDLE_MU: Final[float] = 0.2  # standing water — domain-judgment constant
+_WET_MU_FLOOR: Final[float] = 0.2
+_WET_MU_CEIL: Final[float] = 1.0
+
+
+def build_dry_mu_field(grip_2d: GripSurface) -> MuField:
+    """Solver-ready dry field: raw 2D grip with confidence shrinkage."""
+    return MuField(
+        s_bins=grip_2d.s_bins.copy(),
+        n_bins=grip_2d.n_bins.copy(),
+        mu_grid=shrink_mu_grid(
+            grip_2d.mu_grid, grip_2d.count_grid, grip_2d.confidence
+        ),
+    )
+
+
+def build_wet_mu_field(
+    grip_2d: GripSurface,
+    puddles: list[PuddleZone],
+) -> MuField:
+    """Solver-ready wet field.
+
+    1. Invert the dry rubber line (wet_model.invert_grip_for_wet — high
+       dry mu means rubber, slick when wet; returns values in [0.2, 1]).
+    2. Shrink by the SAME dry confidence grids (wet is derived from dry
+       observations, so dry sample density is its provenance).
+    3. Re-clip to the wet envelope: shrinkage's unmeasured-cell discount
+       (row_prior * 0.95) can dip below the 0.2 floor when a row's wet
+       prior sits at the floor.
+    4. Clamp puddle zones to PUDDLE_MU within the puddle's footprint
+       radius r = sqrt(area_cells * cell_area / pi).
+    """
+    wet_grid = invert_grip_for_wet(grip_2d)
+    wet_grid = shrink_mu_grid(wet_grid, grip_2d.count_grid, grip_2d.confidence)
+    # Re-clip: shrinkage's unmeasured-cell path (row_prior * 0.95) can emit
+    # values below 0.2 when the wet row prior already sits at the floor.
+    wet_grid = np.clip(wet_grid, _WET_MU_FLOOR, _WET_MU_CEIL)
+
+    if puddles:
+        s_step = float(np.median(np.diff(grip_2d.s_bins))) if len(grip_2d.s_bins) > 1 else 5.0
+        n_step = float(np.median(np.diff(grip_2d.n_bins))) if len(grip_2d.n_bins) > 1 else 1.0
+        cell_area = s_step * n_step
+        ss, nn = np.meshgrid(grip_2d.s_bins, grip_2d.n_bins, indexing="ij")
+        for p in puddles:
+            radius_m = max(np.sqrt(p.area_cells * cell_area / np.pi), n_step)
+            inside = (ss - p.s_center) ** 2 + (nn - p.n_center) ** 2 <= radius_m ** 2
+            wet_grid = np.where(inside, np.minimum(wet_grid, PUDDLE_MU), wet_grid)
+
+    return MuField(
+        s_bins=grip_2d.s_bins.copy(),
+        n_bins=grip_2d.n_bins.copy(),
+        mu_grid=wet_grid,
+    )
