@@ -131,7 +131,7 @@ def _insert_quest(conn, driver_id, workspace_id, session_id, metric, target,
         "INSERT INTO quests (workspace_id, driver_id, spec, metric, comparator, "
         "target, baseline, human_text, xp, status, focused, source_session_id, "
         "created_at, expires_at) VALUES (:ws, :drv, :spec, :metric, :cmp, :tgt, "
-        ":base, :human, :xp, 'active', 0, :sid, :now, :exp)",
+        ":base, :human, :xp, 'active', false, :sid, :now, :exp)",
         {"ws": workspace_id, "drv": driver_id, "spec": json.dumps(spec),
          "metric": metric, "cmp": comparator, "tgt": target, "base": baseline,
          "human": human, "xp": xp, "sid": session_id, "now": now, "exp": expires},
