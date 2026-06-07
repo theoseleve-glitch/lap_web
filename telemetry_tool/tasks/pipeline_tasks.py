@@ -1097,27 +1097,34 @@ def _persist_session_data(ctx: PipelineContext, result: dict) -> None:
                              or meta.get("track_id") or "unknown_track")
                 _condition = meta.get("track_state", "dry")
                 _corner_scores = compute_corner_scores(conn, session_id)
+                _pending_star_events: list = []
+                _pending_star_xp = 0
                 if _corner_scores:
-                    star_events = update_corner_mastery(
+                    _pending_star_events = update_corner_mastery(
                         conn, driver_id, ctx.workspace_id, _track_id,
                         _condition, _corner_scores, session_id,
                     )
-                    star_xp = sum(e["xp"] for e in star_events)
-                    if star_xp:
+                    _pending_star_xp = sum(e["xp"] for e in _pending_star_events)
+                    if _pending_star_xp:
                         upsert_driver_xp(
                             conn, driver_id, ctx.workspace_id,
-                            xp_delta=star_xp,
-                            level=compute_level(xp_result["new_total"] + star_xp),
+                            xp_delta=_pending_star_xp,
+                            level=compute_level(xp_result["new_total"] + _pending_star_xp),
                             streak=streak_result.get("current_streak", 0),
                             longest=streak_result.get("longest_streak", 0),
                             last_date=None,
                         )
-                        xp_result["xp_gained"] += star_xp
-                        xp_result["new_total"] += star_xp
-                        xp_result["new_level"] = compute_level(xp_result["new_total"])
-                        xp_result["leveled_up"] = (
-                            xp_result["new_level"] > xp_result["old_level"])
-                    conn.commit()
+                # Commit BEFORE mutating in-memory xp_result so a rollback on
+                # failure cannot leave xp_result inflated.
+                conn.commit()
+                # Only update in-memory state after the commit succeeds.
+                if _pending_star_xp:
+                    xp_result["xp_gained"] += _pending_star_xp
+                    xp_result["new_total"] += _pending_star_xp
+                    xp_result["new_level"] = compute_level(xp_result["new_total"])
+                    xp_result["leveled_up"] = (
+                        xp_result["new_level"] > xp_result["old_level"])
+                star_events = _pending_star_events
             except Exception:
                 logger.warning("Corner mastery update failed (non-fatal) for %s",
                                session_id, exc_info=True)
@@ -1139,8 +1146,8 @@ def _persist_session_data(ctx: PipelineContext, result: dict) -> None:
 
                 _facts = extract_session_facts(conn, result, session_id, driver_id, ctx.workspace_id)
                 expire_stale_quests(conn, driver_id, ctx.workspace_id)
-                quests_completed = verify_quests(conn, _facts, driver_id, ctx.workspace_id, session_id)
-                quest_xp = sum(q["xp"] for q in quests_completed)
+                _pending_completed = verify_quests(conn, _facts, driver_id, ctx.workspace_id, session_id)
+                quest_xp = sum(q["xp"] for q in _pending_completed)
                 if quest_xp:
                     upsert_driver_xp(
                         conn, driver_id, ctx.workspace_id,
@@ -1150,12 +1157,20 @@ def _persist_session_data(ctx: PipelineContext, result: dict) -> None:
                         longest=streak_result.get("longest_streak", 0),
                         last_date=None,
                     )
+                _pending_active = generate_quests(conn, _facts, driver_id, ctx.workspace_id, session_id)
+                # Commit BEFORE mutating in-memory xp_result so a rollback on
+                # failure cannot leave xp_result inflated.
+                conn.commit()
+                # Only update in-memory state and expose quest lists after the
+                # commit succeeds.  quests_completed/quests_active remain [] if
+                # anything above threw.
+                if quest_xp:
                     xp_result["xp_gained"] += quest_xp
                     xp_result["new_total"] += quest_xp
                     xp_result["new_level"] = compute_level(xp_result["new_total"])
                     xp_result["leveled_up"] = xp_result["new_level"] > xp_result["old_level"]
-                quests_active = generate_quests(conn, _facts, driver_id, ctx.workspace_id, session_id)
-                conn.commit()
+                quests_completed = _pending_completed
+                quests_active = _pending_active
             except Exception:
                 logger.warning("Quest step failed (non-fatal) for %s", session_id, exc_info=True)
                 try:
