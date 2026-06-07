@@ -35,6 +35,9 @@ if HAS_CASADI:
 
 G: float = 9.80665
 RHO_AIR: float = 1.225
+EPS_GRIP: float = 0.05   # NLP conditioning floor — ocp.py clips grip to [0.3, 3.0];
+                         # without a floor a zero-grip cell NaN-poisons the Jacobian
+                         # and the except-path returns silent garbage as "suboptimal".
 
 
 @dataclass(frozen=True)
@@ -100,7 +103,9 @@ def solve_minimum_time_2d(
     Domain guards (CasADi linear interpolants EXTRAPOLATE outside the grid;
     see test_interpolant_extrapolates_outside_grid_documented): s coords are
     clamped into [s_bins[0], s_bins[-1]] and the N_lat bounds are
-    intersected with [n_bins[0], n_bins[-1]].
+    intersected with [n_bins[0], n_bins[-1]].  Grip is floored at EPS_GRIP
+    inside the NLP for conditioning; callers should still pass floored fields
+    (build_wet_mu_field clips to [0.2, 1.0]).
     """
     if not HAS_CASADI:
         raise ImportError("solve_minimum_time_2d requires casadi")
@@ -140,6 +145,7 @@ def solve_minimum_time_2d(
         v_guess = np.interp(s_coords, ws_d, warm_start.speed_mps)
         n_guess = np.interp(s_coords, ws_d, warm_start.lateral_offset_m)
         ax_guess = np.diff(v_guess ** 2) / (2.0 * np.maximum(ds, 1e-6))
+        ax_guess = np.clip(ax_guess, -50.0, 50.0)
         v_guess = np.clip(v_guess, 5.0, 120.0)
 
     opti = ca.Opti()
@@ -168,6 +174,7 @@ def solve_minimum_time_2d(
 
         # ── THE 2D UPGRADE: grip evaluated at the chosen line ──
         grip_i = mu_lut(ca.vertcat(s_coords[i], N_lat[i]))
+        grip_i = ca.fmax(grip_i, EPS_GRIP)
         mu_lat_i = mu_lat_base * grip_i
         mu_long_i = mu_long_base * grip_i
         ax_lim = mu_long_i * fz_total / m

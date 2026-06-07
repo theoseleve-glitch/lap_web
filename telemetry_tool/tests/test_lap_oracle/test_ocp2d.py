@@ -114,9 +114,12 @@ from telemetry_tool.lap_oracle.solver.ocp_2d import solve_minimum_time_2d
 # Minimum line displacement (m) that certifies 2D grip-awareness. Measured on
 # the symmetric _oval_track with smooth +/-0.05 grip ramps vs the uniform-grip
 # baseline (deterministic IPOPT solves): m_base=-1.472, m_up=+1.555 (disp
-# +3.026), m_down=-1.565 (disp +0.094). Set to ~half the smaller observed
-# displacement (0.094/2 = 0.047) but floored at the 0.05 minimum.
-MIN_SHIFT_M = 0.05
+# +3.026), m_down=-1.565 (disp +0.094). Margins are asymmetric on purpose:
+# the down-ramp grip pull aligns with the oval's geometric pull so the line is
+# already near its bound — small headroom; the up-ramp fights geometry and
+# wins big — demand a proportional shift.
+MIN_SHIFT_UP_M = 1.0
+MIN_SHIFT_DOWN_M = 0.05
 
 
 def _ramp_mu_field(total_length_m: float, slope: float) -> MuField:
@@ -178,8 +181,8 @@ def test_line_shifts_toward_high_grip_side():
     m_down = float(np.mean(down.lateral_offset_m))
 
     # Grip increasing toward +n pulls the line toward +n, and vice versa
-    assert m_up > m_base + MIN_SHIFT_M
-    assert m_down < m_base - MIN_SHIFT_M
+    assert m_up > m_base + MIN_SHIFT_UP_M
+    assert m_down < m_base - MIN_SHIFT_DOWN_M
 
 
 @needs_casadi
@@ -191,3 +194,20 @@ def test_uniform_low_grip_is_slower():
     lo = solve_minimum_time_2d(track, vp, _uniform_field(track.total_length_m, 0.6),
                                n_points=100, max_time_s=60.0)
     assert lo.optimal_lap_time_s > hi.optimal_lap_time_s
+
+
+@needs_casadi
+def test_zero_grip_field_does_not_nan_poison():
+    """A degenerate all-zero grip field must not NaN-poison the NLP: the
+    EPS_GRIP floor keeps the friction ellipse conditioned, so the solver
+    returns a finite (very slow) solution instead of silent garbage."""
+    track = _oval_track(n=60)
+    vp = _default_vehicle()
+    field = _uniform_field(track.total_length_m, mu=0.0)
+    sol = solve_minimum_time_2d(track, vp, field, n_points=60, max_time_s=30.0)
+    assert np.all(np.isfinite(sol.speed_mps))
+    assert np.all(np.isfinite(sol.lateral_offset_m))
+    # With grip floored at 0.05 the lap is dramatically slower than mu=1.0
+    ref = solve_minimum_time_2d(track, vp, _uniform_field(track.total_length_m, 1.0),
+                                n_points=60, max_time_s=30.0)
+    assert sol.optimal_lap_time_s > ref.optimal_lap_time_s * 1.5
