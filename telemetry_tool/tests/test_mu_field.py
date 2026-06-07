@@ -7,8 +7,9 @@ from __future__ import annotations
 import numpy as np
 import pytest
 
+from track_surface.drainage import PuddleZone
 from track_surface.grip_2d import GripSurface
-from track_surface.mu_field import shrink_mu_grid
+from track_surface.mu_field import build_dry_mu_field, build_wet_mu_field, shrink_mu_grid
 
 
 def _grids(M=20, K=9):
@@ -104,10 +105,6 @@ def test_never_exceeds_max_of_raw_and_prior():
 # ---------------------------------------------------------------------------
 # Task 3: dry + wet MuField builders
 # ---------------------------------------------------------------------------
-from track_surface.drainage import PuddleZone
-from track_surface.mu_field import build_dry_mu_field, build_wet_mu_field
-
-
 def _grip_surface_with_rubber_line(M=40, K=17) -> GripSurface:
     """Synthetic dry grip: a high-mu 'rubber line' ridge at n = +2."""
     s_bins = np.arange(0, M * 5.0, 5.0)
@@ -151,10 +148,11 @@ def test_wet_field_clamps_puddle_cells():
     si = int(np.argmin(np.abs(gs.s_bins - 100.0)))
     ni = int(np.argmin(np.abs(gs.n_bins + 2.0)))
     assert wet.mu_grid[si, ni] == pytest.approx(0.2)
-    # Far away from the puddle: unchanged vs the no-puddle wet field
+    # Just OUTSIDE the footprint radius (~3.09 m): cell at (100, +2) is 4 m
+    # from center and must be untouched — pins the boundary, not just far field
     wet_nopuddle = build_wet_mu_field(gs, puddles=[])
-    far_si = int(np.argmin(np.abs(gs.s_bins - 180.0)))
-    assert wet.mu_grid[far_si, :] == pytest.approx(wet_nopuddle.mu_grid[far_si, :])
+    nj_out = int(np.argmin(np.abs(gs.n_bins - 2.0)))
+    assert wet.mu_grid[si, nj_out] == pytest.approx(wet_nopuddle.mu_grid[si, nj_out])
 
 
 def test_wet_field_never_below_wet_floor_even_with_unmeasured_cells():
@@ -167,3 +165,13 @@ def test_wet_field_never_below_wet_floor_even_with_unmeasured_cells():
     gs.confidence[10, 5] = 0.0
     wet = build_wet_mu_field(gs, puddles=[])
     assert wet.mu_grid.min() >= 0.2 - 1e-9
+
+
+def test_puddle_outside_n_range_is_noop():
+    """A puddle centered far off the drivable n-range must not affect the
+    grid — guards against a future 'snap to nearest bin' regression."""
+    gs = _grip_surface_with_rubber_line()
+    off_grid = PuddleZone(s_center=100.0, n_center=50.0, depth_score=0.9, area_cells=6)
+    wet = build_wet_mu_field(gs, puddles=[off_grid])
+    wet_nopuddle = build_wet_mu_field(gs, puddles=[])
+    np.testing.assert_allclose(wet.mu_grid, wet_nopuddle.mu_grid)

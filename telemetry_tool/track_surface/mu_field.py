@@ -20,7 +20,9 @@ from typing import Final
 
 import numpy as np
 
+from track_surface.drainage import PuddleZone
 from track_surface.grip_2d import GripSurface
+from track_surface.wet_model import invert_grip_for_wet
 from telemetry_tool.lap_oracle.solver.ocp_2d import MuField
 
 # Domain-judgment constants — flagged in the plan as a tuning point.
@@ -64,9 +66,6 @@ def shrink_mu_grid(
 # ---------------------------------------------------------------------------
 # Solver-ready field builders
 # ---------------------------------------------------------------------------
-from track_surface.drainage import PuddleZone
-from track_surface.wet_model import invert_grip_for_wet
-
 PUDDLE_MU: Final[float] = 0.2  # standing water — domain-judgment constant
 _WET_MU_FLOOR: Final[float] = 0.2
 _WET_MU_CEIL: Final[float] = 1.0
