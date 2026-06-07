@@ -186,3 +186,47 @@ def generate_quests(conn, facts: dict[str, float], driver_id: int,
         _take("laps_completed", float(int(base) + LAPS_FALLBACK), base, None, "activity")
 
     return created
+
+
+def _passes(value: float, comparator: str, target: float) -> bool:
+    if value is None:
+        return False
+    return value >= target if comparator == ">=" else value <= target
+
+
+def verify_quests(conn, facts: dict[str, float], driver_id: int,
+                  workspace_id: int, session_id: str) -> list[dict]:
+    """Evaluate the driver's active quests against this session's facts; mark
+    passers completed and return them (with xp). Idempotent: completed/expired
+    quests are not evaluated."""
+    rows = conn.execute(
+        "SELECT id, spec, metric, comparator, target, human_text, xp FROM quests "
+        "WHERE driver_id = :drv AND workspace_id = :ws AND status = 'active'",
+        {"drv": driver_id, "ws": workspace_id},
+    ).fetchall()
+    now = datetime.now(timezone.utc).isoformat()
+    done: list[dict] = []
+    for r in rows:
+        d = dict(r) if not isinstance(r, dict) else r
+        spec = json.loads(d["spec"]) if isinstance(d.get("spec"), str) else (d.get("spec") or {})
+        cid = (spec.get("scope") or {}).get("corner_id")
+        fact_key = f"{d['metric']}@{int(cid)}" if cid is not None else d["metric"]
+        if _passes(facts.get(fact_key), d["comparator"], float(d["target"])):
+            conn.execute(
+                "UPDATE quests SET status = 'completed', completed_at = :now WHERE id = :id",
+                {"now": now, "id": d["id"]},
+            )
+            done.append({"id": d["id"], "metric": d["metric"], "xp": int(d["xp"]),
+                         "human_text": d["human_text"]})
+    return done
+
+
+def expire_stale_quests(conn, driver_id: int, workspace_id: int, now_iso: str | None = None) -> int:
+    """Mark active quests past expires_at as 'expired'. Returns count."""
+    now_iso = now_iso or datetime.now(timezone.utc).isoformat()
+    cur = conn.execute(
+        "UPDATE quests SET status = 'expired' WHERE driver_id = :drv AND workspace_id = :ws "
+        "AND status = 'active' AND expires_at IS NOT NULL AND expires_at < :now",
+        {"drv": driver_id, "ws": workspace_id, "now": now_iso},
+    )
+    return cur.rowcount if hasattr(cur, "rowcount") and isinstance(cur.rowcount, int) else 0

@@ -102,3 +102,50 @@ class TestGenerate:
     def test_caps_at_three(self, quests_conn):
         created = quests.generate_quests(quests_conn, self._facts(), 1, 1, "s1")
         assert len(created) <= 3
+
+
+class TestVerify:
+    def _make_active(self, conn, metric, comparator, target, corner_id=None):
+        import json as _j
+        scope = {"corner_id": corner_id} if corner_id is not None else {}
+        spec = {"metric": metric, "comparator": comparator, "target": target, "baseline": 0, "scope": scope}
+        conn.execute(
+            "INSERT INTO quests (workspace_id, driver_id, spec, metric, comparator, target, baseline, human_text, xp, status, source_session_id, created_at) "
+            "VALUES (1,1,:s,:m,:c,:t,0,'x',150,'active','s0','2026-06-01')",
+            {"s": _j.dumps(spec), "m": metric, "c": comparator, "t": target})
+
+    def test_passing_quest_completes_and_awards(self, quests_conn):
+        self._make_active(quests_conn, "corner.apex_speed_kmh", ">=", 57.0, corner_id=5)
+        facts = {"corner.apex_speed_kmh@5": 58.0}
+        done = quests.verify_quests(quests_conn, facts, driver_id=1, workspace_id=1, session_id="s1")
+        assert len(done) == 1 and done[0]["xp"] == 150
+        row = quests_conn.execute("SELECT status FROM quests WHERE metric='corner.apex_speed_kmh'").fetchone()
+        assert (row["status"] if isinstance(row, dict) else row[0]) == "completed"
+
+    def test_failing_quest_stays_active(self, quests_conn):
+        self._make_active(quests_conn, "consistency_cv_pct", "<=", 5.0)
+        done = quests.verify_quests(quests_conn, {"consistency_cv_pct": 6.0}, 1, 1, "s1")
+        assert done == []
+        row = quests_conn.execute("SELECT status FROM quests WHERE metric='consistency_cv_pct'").fetchone()
+        assert (row["status"] if isinstance(row, dict) else row[0]) == "active"
+
+    def test_idempotent_rerun_awards_nothing(self, quests_conn):
+        self._make_active(quests_conn, "session.score", ">=", 75.0)
+        quests.verify_quests(quests_conn, {"session.score": 80.0}, 1, 1, "s1")
+        quests_conn.commit()
+        again = quests.verify_quests(quests_conn, {"session.score": 80.0}, 1, 1, "s1")
+        assert again == []   # already completed → not re-evaluated
+
+    def test_missing_fact_does_not_complete(self, quests_conn):
+        self._make_active(quests_conn, "corner.apex_speed_kmh", ">=", 57.0, corner_id=9)
+        done = quests.verify_quests(quests_conn, {}, 1, 1, "s1")  # corner 9 not driven
+        assert done == []
+
+    def test_expire_stale(self, quests_conn):
+        quests_conn.execute(
+            "INSERT INTO quests (workspace_id, driver_id, spec, metric, comparator, target, baseline, human_text, xp, status, source_session_id, created_at, expires_at) "
+            "VALUES (1,1,'{}','session.score','>=',75,0,'x',100,'active','s0','2026-01-01','2026-01-15')")
+        n = quests.expire_stale_quests(quests_conn, 1, 1, now_iso="2026-06-01T00:00:00")
+        assert n == 1
+        row = quests_conn.execute("SELECT status FROM quests WHERE metric='session.score'").fetchone()
+        assert (row["status"] if isinstance(row, dict) else row[0]) == "expired"
