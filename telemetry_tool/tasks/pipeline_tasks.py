@@ -1126,6 +1126,43 @@ def _persist_session_data(ctx: PipelineContext, result: dict) -> None:
                 except Exception:
                     pass
 
+            # ── Quests (Phase 2a): verify active, then generate next ──
+            quests_completed: list = []
+            quests_active: list = []
+            try:
+                from gamification.quests import (
+                    expire_stale_quests, extract_session_facts,
+                    generate_quests, verify_quests,
+                )
+                from gamification.queries import upsert_driver_xp
+                from gamification.xp import compute_level
+
+                _facts = extract_session_facts(conn, result, session_id, driver_id, ctx.workspace_id)
+                expire_stale_quests(conn, driver_id, ctx.workspace_id)
+                quests_completed = verify_quests(conn, _facts, driver_id, ctx.workspace_id, session_id)
+                quest_xp = sum(q["xp"] for q in quests_completed)
+                if quest_xp:
+                    upsert_driver_xp(
+                        conn, driver_id, ctx.workspace_id,
+                        xp_delta=quest_xp,
+                        level=compute_level(xp_result["new_total"] + quest_xp),
+                        streak=streak_result.get("current_streak", 0),
+                        longest=streak_result.get("longest_streak", 0),
+                        last_date=None,
+                    )
+                    xp_result["xp_gained"] += quest_xp
+                    xp_result["new_total"] += quest_xp
+                    xp_result["new_level"] = compute_level(xp_result["new_total"])
+                    xp_result["leveled_up"] = xp_result["new_level"] > xp_result["old_level"]
+                quests_active = generate_quests(conn, _facts, driver_id, ctx.workspace_id, session_id)
+                conn.commit()
+            except Exception:
+                logger.warning("Quest step failed (non-fatal) for %s", session_id, exc_info=True)
+                try:
+                    conn.rollback()
+                except Exception:
+                    pass
+
             result["gamification"] = {
                 "xp_gained": xp_result.get("xp_gained", 0),
                 "old_level": xp_result.get("old_level", 0),
@@ -1133,6 +1170,8 @@ def _persist_session_data(ctx: PipelineContext, result: dict) -> None:
                 "leveled_up": xp_result.get("leveled_up", False),
                 "current_streak": streak_result.get("current_streak", 0),
                 "stars": star_events,
+                "quests_completed": quests_completed,
+                "quests_active": quests_active,
                 "new_achievements": [
                     {"key": a["key"], "label": a["label"], "description": a["description"], "icon": a["icon"]}
                     for a in new_achievements
