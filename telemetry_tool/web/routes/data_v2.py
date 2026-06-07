@@ -254,6 +254,54 @@ def dashboard_stats() -> tuple[dict, int]:
 
 
 # ══════════════════════════════════════════════════════════════════
+# 0a. GET /api/v1/mastery/tracks — Per-track corner-mastery aggregates
+# ══════════════════════════════════════════════════════════════════
+
+
+@bp.route("/mastery/tracks", methods=["GET"])
+@_safe_api
+def mastery_tracks() -> tuple[dict, int]:
+    """Per-track corner-mastery aggregates for the territory shelf."""
+    conn = get_db_connection()
+    drv_raw = request.args.get("driver_id")
+    try:
+        drv = int(drv_raw) if drv_raw is not None else None
+    except (ValueError, TypeError):
+        drv = None
+    if drv is not None:
+        rows = conn.execute(
+            "SELECT cm.track_id, t.track_name, cm.tier, COUNT(*) AS n "
+            "FROM corner_mastery cm LEFT JOIN tracks t ON t.track_id = cm.track_id "
+            "WHERE cm.driver_id = :drv "
+            "GROUP BY cm.track_id, t.track_name, cm.tier",
+            {"drv": drv},
+        ).fetchall()
+    else:
+        rows = conn.execute(
+            "SELECT cm.track_id, t.track_name, cm.tier, COUNT(*) AS n "
+            "FROM corner_mastery cm LEFT JOIN tracks t ON t.track_id = cm.track_id "
+            "GROUP BY cm.track_id, t.track_name, cm.tier"
+        ).fetchall()
+    tracks: dict = {}
+    for r in rows:
+        d = dict(r) if not isinstance(r, dict) else r
+        key = d["track_id"]
+        entry = tracks.setdefault(key, {
+            "track_id": key,
+            "track_name": d.get("track_name") or key,
+            "stars": {"bronze": 0, "silver": 0, "gold": 0},
+            "corners_starred": 0,
+        })
+        tier = d.get("tier")
+        if tier in entry["stars"]:
+            entry["stars"][tier] += int(d["n"])
+            entry["corners_starred"] += int(d["n"])
+    return api_response({
+        "tracks": sorted(tracks.values(), key=lambda x: -x["corners_starred"])
+    })
+
+
+# ══════════════════════════════════════════════════════════════════
 # 1. GET /api/v1/sessions — List sessions
 # ══════════════════════════════════════════════════════════════════
 
