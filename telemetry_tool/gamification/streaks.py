@@ -53,9 +53,8 @@ def update_streak(
         streak_xp = XP_STREAK_PER_WEEK
         passes = int((current or {}).get("pit_passes", 0) or 0)
         pit_pass_used = False
-        # First session: check earn at week-1 multiple (streak=1 is not a multiple of 4)
-        if streak % PIT_PASS_EARN_WEEKS == 0:
-            passes = min(PIT_PASS_CAP, passes + 1)
+        # streak=1 is never a multiple of PIT_PASS_EARN_WEEKS (4), so the earn
+        # check cannot fire here. Dead code removed; pass count unchanged.
     else:
         try:
             last = date.fromisoformat(str(current["last_session_date"])[:10])
@@ -76,6 +75,7 @@ def update_streak(
                 "longest_streak": current["longest_streak"],
                 "streak_xp": 0,
                 "pit_pass_used": False,
+                "pit_passes": passes,
             }
         elif week_delta == 1:
             streak = current["current_streak"] + 1
@@ -95,6 +95,9 @@ def update_streak(
 
         # Earn: crossing a PIT_PASS_EARN_WEEKS multiple grants +1 (capped).
         # Only earn on extension/reset — not when spending (pit_pass_used).
+        # The `not pit_pass_used` guard is intentional: a driver who reaches
+        # a milestone streak BY spending a pass does not also earn one that tick.
+        # Removing it would create a spend→earn→spend loop that defeats the cap.
         if (not pit_pass_used) and streak > 0 and streak % PIT_PASS_EARN_WEEKS == 0:
             passes = min(PIT_PASS_CAP, passes + 1)
 
@@ -113,4 +116,5 @@ def update_streak(
         "longest_streak": longest,
         "streak_xp": streak_xp,
         "pit_pass_used": pit_pass_used,
+        "pit_passes": passes,
     }

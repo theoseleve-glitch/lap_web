@@ -1184,6 +1184,8 @@ def _persist_session_data(ctx: PipelineContext, result: dict) -> None:
                 "new_level": xp_result.get("new_level", 0),
                 "leveled_up": xp_result.get("leveled_up", False),
                 "current_streak": streak_result.get("current_streak", 0),
+                "pit_pass_used": streak_result.get("pit_pass_used", False),
+                "pit_passes": streak_result.get("pit_passes", 0),
                 "stars": star_events,
                 "quests_completed": quests_completed,
                 "quests_active": quests_active,
