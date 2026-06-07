@@ -7997,4 +7997,65 @@ def focus_quest(quest_id: int) -> tuple[dict, int]:
     return api_response({"id": quest_id, "focused": focused})
 
 
+# ══════════════════════════════════════════════════════════════════
+# GET /api/v1/recap/latest — Most recent weekly recap (Phase 2b)
+# ══════════════════════════════════════════════════════════════════
+
+
+@bp.route("/recap/latest", methods=["GET"])
+@_safe_api
+def latest_recap() -> tuple[dict, int]:
+    """Most recent weekly recap for the driver (RLS-scoped).
+
+    RLS (FORCE) on the weekly_recap table is enforced by the per-request GUC
+    set in the tenant middleware (set_workspace_context → SET LOCAL
+    app.current_workspace_id).  get_db_connection() returns that
+    already-pinned connection — no extra setup required.
+
+    The card self-hides when no recap exists yet (the Monday beat task
+    has not run for this driver), so we return a success response with
+    recap=null rather than 404.  The frontend checks for a null/falsy
+    recap and suppresses the RecapCard accordingly.
+
+    Query params:
+        driver_id  (int, default 1)
+    """
+    conn = get_db_connection()
+    try:
+        drv = int(request.args.get("driver_id"))
+    except (TypeError, ValueError):
+        drv = 1  # single-driver default (matches dashboard_stats)
+
+    row = conn.execute(
+        "SELECT iso_week, payload, created_at, emailed FROM weekly_recap "
+        "WHERE driver_id = :drv ORDER BY created_at DESC LIMIT 1",
+        {"drv": drv},
+    ).fetchone()
+
+    if not row:
+        return api_response({"recap": None})
+
+    d = dict(row) if not isinstance(row, dict) else row
+
+    # Serialize created_at datetime to ISO string (mirrors sibling endpoints)
+    val = d.get("created_at")
+    if val is not None and hasattr(val, "isoformat"):
+        d["created_at"] = val.isoformat()
+
+    # Decode payload jsonb — PgConnectionWrapper gives a dict; sqlite gives TEXT
+    payload = d.pop("payload", None)
+    if isinstance(payload, str):
+        payload = json.loads(payload)
+    payload = payload or {}
+
+    return api_response({
+        "recap": {
+            "iso_week": d["iso_week"],
+            "created_at": d.get("created_at"),
+            "emailed": d.get("emailed", False),
+            **payload,
+        }
+    })
+
+
 # Dev-plans endpoints moved to api_v1_entities.py (Task 5).
