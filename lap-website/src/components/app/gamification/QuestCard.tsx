@@ -44,6 +44,13 @@ export function QuestCard({
         </p>
         <p className="font-telemetry text-[10px] text-steel">
           +{quest.xp} XP{done ? ' · done' : expired ? ' · expired' : ''}
+          {!done && quest.baseline != null && quest.target != null && (
+            <span className="ml-2 text-steel/70">
+              {Math.round(quest.baseline * 10) / 10}
+              <span className="mx-0.5">→</span>
+              <span className="text-chalk/80">{Math.round(quest.target * 10) / 10}</span>
+            </span>
+          )}
         </p>
       </div>
 

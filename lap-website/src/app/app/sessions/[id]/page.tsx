@@ -112,8 +112,8 @@ interface GamificationResult {
   new_achievements: { key: string; label: string; description: string; icon: string }[];
   xp_breakdown?: { personal_best?: boolean | number | null };
   stars?: Array<{ track_id: string; corner_id: number; tier: string; xp: number; score: number }>;
-  quests_completed?: Array<{ id: number; metric: string; human_text: string; xp: number }>;
-  quests_active?: Array<{ id: number; metric: string; human_text: string; xp: number }>;
+  quests_completed?: Array<{ id: number; metric: string; human_text: string; xp: number; baseline?: number | null; target?: number | null }>;
+  quests_active?: Array<{ id: number; metric: string; human_text: string; xp: number; baseline?: number | null; target?: number | null }>;
 }
 
 interface ScoreData {
@@ -695,9 +695,24 @@ export default function SessionDetailPage() {
           {(scores!.gamification!.quests_completed!).map((q) => (
             <QuestCard
               key={q.id}
-              quest={{ id: q.id, metric: q.metric, human_text: q.human_text, xp: q.xp, status: 'completed' }}
+              quest={{ id: q.id, metric: q.metric, human_text: q.human_text, xp: q.xp, status: 'completed', baseline: q.baseline, target: q.target }}
             />
           ))}
+        </div>
+      )}
+
+      {/* Up next — active quests generated for next session — read-only, no focus toggle here */}
+      {(scores?.gamification?.quests_active ?? []).length > 0 && (
+        <div className="mt-4">
+          <p className="font-telemetry text-[10px] text-steel uppercase tracking-wider mb-1">Up next</p>
+          <div className="flex flex-col gap-1">
+            {(scores!.gamification!.quests_active!).map((q) => (
+              <QuestCard
+                key={q.id}
+                quest={{ id: q.id, metric: q.metric, human_text: q.human_text, xp: q.xp, status: 'active', baseline: q.baseline, target: q.target }}
+              />
+            ))}
+          </div>
         </div>
       )}
 
