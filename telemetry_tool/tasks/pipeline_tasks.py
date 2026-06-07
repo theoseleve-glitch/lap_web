@@ -1079,25 +1079,17 @@ def _persist_session_data(ctx: PipelineContext, result: dict) -> None:
                     current_best_lap=current_best,
                     is_first_session=(session_count == 1),
                 )
+                # Stamp the flag in the SAME commit as the base-XP award so a
+                # crash between the two can never leave XP committed with the
+                # flag still false (which would cause one spurious re-award on
+                # the next reprocess).  award_session_xp does NOT commit
+                # internally, so both writes land in one atomic transaction.
+                conn.execute(
+                    "UPDATE sessions SET gamification_applied = true "
+                    "WHERE session_id = :sid",
+                    {"sid": session_id},
+                )
                 conn.commit()
-                # Stamp the flag atomically with the base-XP commit so a crash
-                # after awarding cannot leave gamification_applied = false.
-                try:
-                    conn.execute(
-                        "UPDATE sessions SET gamification_applied = true "
-                        "WHERE session_id = :sid",
-                        {"sid": session_id},
-                    )
-                    conn.commit()
-                except Exception:
-                    logger.warning(
-                        "Failed to set gamification_applied flag for %s", session_id,
-                        exc_info=True,
-                    )
-                    try:
-                        conn.rollback()
-                    except Exception:
-                        pass
             else:
                 # Reprocess path: base XP already awarded — synthesise a zero-
                 # delta xp_result so downstream in-memory code stays consistent.
