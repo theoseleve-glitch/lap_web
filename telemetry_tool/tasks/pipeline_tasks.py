@@ -1054,15 +1054,19 @@ def _persist_session_data(ctx: PipelineContext, result: dict) -> None:
             valid_times = [t for t in lap_times if t and isinstance(t, (int, float)) and t > 0]
             current_best = min(valid_times) if valid_times else None
 
+            # Count BEFORE awarding so we can detect the driver's first session.
+            # The session row for THIS session is already persisted (step 1),
+            # so the first upload sees count == 1.
+            session_count = count_driver_sessions(conn, driver_id, ctx.workspace_id)
+
             xp_result = award_session_xp(
                 conn, driver_id, ctx.workspace_id, session_id,
                 badges=badges,
                 previous_best_lap=prev_best,
                 current_best_lap=current_best,
+                is_first_session=(session_count == 1),
             )
             conn.commit()
-
-            session_count = count_driver_sessions(conn, driver_id, ctx.workspace_id)
             achievement_context = {
                 "session_count": session_count,
                 "badges": badges,

@@ -16,6 +16,7 @@ XP_BADGE_SILVER = 150
 XP_BADGE_GOLD = 300
 XP_STREAK_PER_DAY = 25
 XP_PERSONAL_BEST = 200
+XP_FIRST_SESSION = 75  # one-time: guarantees the first upload reaches level 1
 
 
 def compute_level(total_xp: int) -> int:
@@ -35,10 +36,17 @@ def award_session_xp(
     session_id: int, badges: list[dict] | None = None,
     previous_best_lap: float | None = None,
     current_best_lap: float | None = None,
+    is_first_session: bool = False,
 ) -> dict[str, Any]:
     """Award XP for a session upload. Returns XP summary."""
     xp_gained = XP_SESSION
     xp_breakdown: dict[str, int] = {"session": XP_SESSION}
+
+    # One-time first-upload bonus: 50 base + 75 bonus = 125 >= the 100 XP
+    # level-1 threshold, so the very first upload always levels the driver up.
+    if is_first_session:
+        xp_gained += XP_FIRST_SESSION
+        xp_breakdown["first_session"] = XP_FIRST_SESSION
 
     # Badge XP
     if badges:
