@@ -14,7 +14,7 @@ import XPProgressBar from '@/components/app/gamification/XPProgressBar';
 import { StreakTracker } from '@/components/app/gamification';
 import { ChallengeCard } from '@/components/app/gamification';
 import { TerritoryShelf } from '@/components/app/gamification';
-import { QuestList } from '@/components/app/gamification';
+import { QuestList, RecapCard } from '@/components/app/gamification';
 
 /**
  * ScoreTrendChart — a per-session bar readout (telemetry/stint style).
@@ -452,6 +452,11 @@ export default function DashboardPage() {
             </div>
           )}
         </div>
+      </div>
+
+      {/* Weekly recap — self-hides until the Monday beat task has run */}
+      <div className="mb-4">
+        <RecapCard />
       </div>
 
       {/* Active quests */}

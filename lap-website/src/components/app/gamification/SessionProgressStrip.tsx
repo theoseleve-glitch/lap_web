@@ -7,6 +7,8 @@ interface Gam {
   xp_gained?: number; leveled_up?: boolean; new_level?: number;
   current_streak?: number; stars?: StarEvent[];
   new_achievements?: Array<{ key: string; label: string }>;
+  pit_passes?: number;
+  pit_pass_used?: boolean;
 }
 
 /** One-glance "what moved this session" strip for the session report. */
@@ -31,6 +33,20 @@ export function SessionProgressStrip({ gam }: { gam?: Gam | null }) {
       {achievements.map((a) => (
         <span key={a.key} className="font-telemetry text-xs text-steel">🏆 {a.label}</span>
       ))}
+      {/* Pit-Pass pips — banked freezes the driver can spend on a missed week */}
+      {gam.pit_passes != null && gam.pit_passes > 0 && (
+        <span className="flex items-center gap-0.5 font-telemetry text-[10px] text-marshal-yellow" title="Banked Pit Passes">
+          {Array.from({ length: gam.pit_passes }).map((_, i) => (
+            <span key={i} aria-hidden="true">◆</span>
+          ))}
+          <span className="ml-1">pit{gam.pit_passes !== 1 ? ' passes' : ' pass'}</span>
+        </span>
+      )}
+      {gam.pit_pass_used && (
+        <span className="font-telemetry text-[10px] text-marshal-yellow/80">
+          Pit Pass used — streak saved.
+        </span>
+      )}
     </div>
   );
 }

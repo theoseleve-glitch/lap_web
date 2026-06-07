@@ -114,6 +114,9 @@ interface GamificationResult {
   stars?: Array<{ track_id: string; corner_id: number; tier: string; xp: number; score: number }>;
   quests_completed?: Array<{ id: number; metric: string; human_text: string; xp: number; baseline?: number | null; target?: number | null }>;
   quests_active?: Array<{ id: number; metric: string; human_text: string; xp: number; baseline?: number | null; target?: number | null }>;
+  comeback?: { weeks_away: number; multiplier: number } | null;
+  pit_pass_used?: boolean;
+  pit_passes?: number;
 }
 
 interface ScoreData {
@@ -685,6 +688,16 @@ export default function SessionDetailPage() {
           <ChartSyncToggle />
         </div>
       </div>
+
+      {/* Comeback banner — warm encouragement when returning after an absence */}
+      {scores?.gamification?.comeback && (
+        <div className="rounded-lg border border-acid-green/30 bg-acid-green/5 px-4 py-2 mb-3 font-telemetry text-xs text-acid-green">
+          Welcome back — Shakedown session,{' '}
+          {scores.gamification.comeback.multiplier}× XP after{' '}
+          {scores.gamification.comeback.weeks_away}{' '}
+          {scores.gamification.comeback.weeks_away === 1 ? 'week' : 'weeks'} away.
+        </div>
+      )}
 
       {/* Session progress strip — XP, star pips, achievements earned this session */}
       <SessionProgressStrip gam={scores?.gamification} />

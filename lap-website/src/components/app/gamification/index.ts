@@ -24,6 +24,7 @@ export { TerritoryShelf } from './TerritoryShelf';
 export { QuestCard } from './QuestCard';
 export { QuestList } from './QuestList';
 export type { Quest } from './QuestCard';
+export { RecapCard } from './RecapCard';
 
 export type { BadgeIcon, BadgeTier } from './BadgeHex';
 
