@@ -67,10 +67,14 @@ class MuField:
 
 
 def _make_mu_interpolant(field: MuField):
-    """Build the differentiable 2D lookup mu(s, n) for use inside the NLP.
+    """Linear 2D lookup mu(s, n) — the layout-locked SAMPLING contract.
 
-    CasADi expects ``values`` flattened with the FIRST grid dimension
-    varying FASTEST — Fortran order for our (M, K) grid.  Locked by
+    NOT used inside the NLP (the solver reads grip through
+    :func:`_make_mu_interpolant_smooth`, a C2 bspline — IPOPT needs smooth
+    derivatives).  This linear variant exactly matches GripSurface.mu_at's
+    bilinear interpolation and pins the data layout: CasADi expects
+    ``values`` flattened with the FIRST grid dimension varying FASTEST —
+    Fortran order for our (M, K) grid.  Locked by
     ``test_interpolant_matches_gripsurface_bilinear``.
     """
     return ca.interpolant(
