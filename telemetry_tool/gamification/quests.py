@@ -101,3 +101,90 @@ def extract_session_facts(conn, result: dict, session_id: str,
             facts[f"corner.mastery_score@{int(d['corner_id'])}"] = float(d["best_score"])
 
     return facts
+
+
+def _active_metric_scopes(conn, driver_id: int, workspace_id: int) -> set[str]:
+    rows = conn.execute(
+        "SELECT metric, spec FROM quests WHERE driver_id = :drv "
+        "AND workspace_id = :ws AND status = 'active'",
+        {"drv": driver_id, "ws": workspace_id},
+    ).fetchall()
+    out: set[str] = set()
+    for r in rows:
+        d = dict(r) if not isinstance(r, dict) else r
+        spec = json.loads(d["spec"]) if isinstance(d.get("spec"), str) else (d.get("spec") or {})
+        cid = (spec.get("scope") or {}).get("corner_id")
+        out.add(f"{d['metric']}@{cid}" if cid is not None else str(d["metric"]))
+    return out
+
+
+def _insert_quest(conn, driver_id, workspace_id, session_id, metric, target,
+                  baseline, corner_id, xp) -> dict:
+    comparator = comparator_for(metric)
+    scope = {"corner_id": corner_id} if corner_id is not None else {}
+    spec = {"metric": metric, "comparator": comparator, "target": target,
+            "baseline": baseline, "scope": scope}
+    human = render_label(metric, target, corner_id)
+    now = datetime.now(timezone.utc).isoformat()
+    expires = (datetime.now(timezone.utc) + timedelta(days=14)).isoformat()
+    conn.execute(
+        "INSERT INTO quests (workspace_id, driver_id, spec, metric, comparator, "
+        "target, baseline, human_text, xp, status, focused, source_session_id, "
+        "created_at, expires_at) VALUES (:ws, :drv, :spec, :metric, :cmp, :tgt, "
+        ":base, :human, :xp, 'active', 0, :sid, :now, :exp)",
+        {"ws": workspace_id, "drv": driver_id, "spec": json.dumps(spec),
+         "metric": metric, "cmp": comparator, "tgt": target, "base": baseline,
+         "human": human, "xp": xp, "sid": session_id, "now": now, "exp": expires},
+    )
+    return {"metric": metric, "comparator": comparator, "target": target,
+            "baseline": baseline, "scope": scope, "human_text": human, "xp": xp}
+
+
+def generate_quests(conn, facts: dict[str, float], driver_id: int,
+                    workspace_id: int, session_id: str, max_quests: int = 3) -> list[dict]:
+    """Emit up to ``max_quests`` machine-verifiable quests derived from session
+    facts (the coaching 'findings' are the weak corners / high CV the facts
+    capture). Skips metric@scope that already has an active quest. Guarantees
+    at least one quest (activity fallback)."""
+    from gamification.quest_metrics import (
+        APEX_SPEED_DELTA_KMH, CONSISTENCY_DELTA_PCT, BEST_LAP_TARGET_PCT, LAPS_FALLBACK,
+    )
+
+    active = _active_metric_scopes(conn, driver_id, workspace_id)
+    created: list[dict] = []
+
+    def _take(metric, target, baseline, corner_id, bucket):
+        key = f"{metric}@{corner_id}" if corner_id is not None else metric
+        if key in active or len(created) >= max_quests:
+            return
+        active.add(key)
+        created.append(_insert_quest(conn, driver_id, workspace_id, session_id,
+                                     metric, target, baseline, corner_id, QUEST_XP[bucket]))
+
+    # 1. Weakest corner (highest median time loss) → carry more apex speed there.
+    corner_losses = {
+        int(k.split("@")[1]): v for k, v in facts.items()
+        if k.startswith("corner.time_loss_ms@")
+    }
+    if corner_losses:
+        weakest = max(corner_losses, key=corner_losses.get)
+        apex_key = f"corner.apex_speed_kmh@{weakest}"
+        if apex_key in facts:
+            base = facts[apex_key]
+            _take("corner.apex_speed_kmh", round(base + APEX_SPEED_DELTA_KMH, 1), base, weakest, "corner")
+
+    # 2. Consistency, if loose (CV > 5%).
+    cv = facts.get("consistency_cv_pct")
+    if cv is not None and cv > 5.0:
+        _take("consistency_cv_pct", round(cv - CONSISTENCY_DELTA_PCT, 1), cv, None, "session")
+
+    # 3. Beat the personal best by a bit (only if we have a PB baseline).
+    if "best_lap_improvement_pct" in facts:
+        _take("best_lap_improvement_pct", BEST_LAP_TARGET_PCT, 0.0, None, "session")
+
+    # 4. Activity fallback — always leave the driver one target.
+    if not created:
+        base = facts.get("laps_completed", 0.0)
+        _take("laps_completed", float(int(base) + LAPS_FALLBACK), base, None, "activity")
+
+    return created
