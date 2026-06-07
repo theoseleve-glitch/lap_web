@@ -51,8 +51,9 @@ def mem_conn():
     """)
     conn.execute("""
         CREATE TABLE sessions (
-            session_id INTEGER PRIMARY KEY,
+            session_id TEXT PRIMARY KEY,
             driver_id INTEGER,
+            workspace_id INTEGER,
             csv_filename TEXT,
             session_date TEXT,
             best_lap_time_s REAL,
