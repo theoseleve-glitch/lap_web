@@ -82,7 +82,15 @@ def update_corner_mastery(
             silver_sessions = json.loads(raw) if isinstance(raw, str) else list(raw)
 
         new_best = max(best, score)
-        if score >= STAR_SILVER_SCORE and session_id not in silver_sessions:
+        # Cap at the required count: only the first SILVER_SESSIONS_REQUIRED
+        # distinct qualifying sessions matter. Capping the APPEND (not trimming)
+        # keeps it idempotent — once full, an old session that isn't in the list
+        # is never re-appended because the length guard short-circuits.
+        if (
+            score >= STAR_SILVER_SCORE
+            and session_id not in silver_sessions
+            and len(silver_sessions) < SILVER_SESSIONS_REQUIRED
+        ):
             silver_sessions = silver_sessions + [session_id]
         new_tier = _target_tier(new_best, silver_sessions)
         # Tiers never go down.
@@ -109,7 +117,7 @@ def update_corner_mastery(
                 {"ws": workspace_id, "drv": driver_id, "trk": track_id,
                  "cid": corner_id, "cond": condition, "tier": new_tier,
                  "best": new_best, "ss": json.dumps(silver_sessions),
-                 "sid": session_id, "at": now},
+                 "sid": session_id, "at": now},  # first_session_id = session that CREATED this row (may be sub-bronze), not the first star
             )
         elif changed:
             conn.execute(

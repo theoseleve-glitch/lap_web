@@ -92,3 +92,16 @@ class TestStarUpsert:
         mastery.update_corner_mastery(mastery_conn, 1, 1, "spa", "dry", self._scores(62.0), "s1")
         e = mastery.update_corner_mastery(mastery_conn, 1, 1, "spa", "wet", self._scores(62.0), "s2")
         assert [x["tier"] for x in e] == ["bronze"]
+
+    def test_silver_list_is_bounded(self, mastery_conn):
+        # Many qualifying sessions must not grow sessions_at_silver past the cap.
+        for i in range(6):
+            mastery.update_corner_mastery(
+                mastery_conn, 1, 1, "spa", "dry", self._scores(80.0), f"s{i}")
+        import json
+        row = mastery_conn.execute(
+            "SELECT sessions_at_silver FROM corner_mastery WHERE corner_id = 3"
+        ).fetchone()
+        raw = row["sessions_at_silver"] if isinstance(row, dict) else row[0]
+        stored = json.loads(raw) if isinstance(raw, str) else raw
+        assert len(stored) == 2  # capped at SILVER_SESSIONS_REQUIRED
