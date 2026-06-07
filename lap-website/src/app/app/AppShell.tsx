@@ -297,6 +297,9 @@ function SidebarXPIndicator({ collapsed }: { collapsed: boolean }) {
             <div className="text-[9px] font-telemetry text-steel/40">
               {totalXp} XP
             </div>
+            <p className="font-telemetry text-[9px] text-steel mt-1 tracking-wide">
+              {Math.max(0, xpNext - totalXp)} XP to Level {level + 1}
+            </p>
           </div>
         )}
       </div>
