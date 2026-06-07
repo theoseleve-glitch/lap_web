@@ -121,7 +121,7 @@ def _active_metric_scopes(conn, driver_id: int, workspace_id: int) -> set[str]:
 def _insert_quest(conn, driver_id, workspace_id, session_id, metric, target,
                   baseline, corner_id, xp) -> dict:
     comparator = comparator_for(metric)
-    scope = {"corner_id": corner_id} if corner_id is not None else {}
+    scope = {"corner_id": int(corner_id)} if corner_id is not None else {}
     spec = {"metric": metric, "comparator": comparator, "target": target,
             "baseline": baseline, "scope": scope}
     human = render_label(metric, target, corner_id)
@@ -146,10 +146,6 @@ def generate_quests(conn, facts: dict[str, float], driver_id: int,
     facts (the coaching 'findings' are the weak corners / high CV the facts
     capture). Skips metric@scope that already has an active quest. Guarantees
     at least one quest (activity fallback)."""
-    from gamification.quest_metrics import (
-        APEX_SPEED_DELTA_KMH, CONSISTENCY_DELTA_PCT, BEST_LAP_TARGET_PCT, LAPS_FALLBACK,
-    )
-
     active = _active_metric_scopes(conn, driver_id, workspace_id)
     created: list[dict] = []
 
@@ -183,6 +179,8 @@ def generate_quests(conn, facts: dict[str, float], driver_id: int,
         _take("best_lap_improvement_pct", BEST_LAP_TARGET_PCT, 0.0, None, "session")
 
     # 4. Activity fallback — always leave the driver one target.
+    # Activity fallback guarantees the driver is never left with ZERO active quests: when "active" is empty, laps_completed can't dedup-skip, so this always fires.
+    # When the driver is already saturated (all relevant metrics have active quests), returning [] new quests is intentional — they still have quests to pursue, and we avoid piling on duplicates.
     if not created:
         base = facts.get("laps_completed", 0.0)
         _take("laps_completed", float(int(base) + LAPS_FALLBACK), base, None, "activity")
