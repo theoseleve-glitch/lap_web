@@ -9,8 +9,9 @@ from datetime import datetime, timedelta, timezone
 from typing import Any
 
 from gamification.quest_metrics import (
-    APEX_SPEED_DELTA_KMH, BEST_LAP_TARGET_PCT, CONSISTENCY_DELTA_PCT,
-    LAPS_FALLBACK, METRICS, QUEST_XP, comparator_for, render_label,
+    APEX_SPEED_DELTA_KMH, BEST_LAP_TARGET_PCT, CLEAN_LAP_MAX_RATIO,
+    CONSISTENCY_DELTA_PCT, LAPS_FALLBACK, METRICS, QUEST_XP,
+    comparator_for, render_label,
 )
 
 _PLAUSIBLE_LAP_MAX_S = 600.0  # ignore obviously-bad lap rows
@@ -39,11 +40,11 @@ def extract_session_facts(conn, result: dict, session_id: str,
 
     raw_laps = [t for t in (result.get("lap_times") or [])
                if isinstance(t, (int, float)) and 0 < t < _PLAUSIBLE_LAP_MAX_S]
-    # Second pass: exclude laps more than 2× the fastest clean lap (formation /
-    # cool-down laps that slipped through the absolute ceiling).
+    # "clean laps" — stricter than the pipeline's canonical n_laps (which counts every t>0 lap).
+    # We drop out/cool-down laps (> CLEAN_LAP_MAX_RATIO × fastest) so the "complete N clean laps" quest can't be gamed by slow laps. Intentionally diverges from the session-card lap count.
     if raw_laps:
         _min_lap = min(raw_laps)
-        laps = [t for t in raw_laps if t < _min_lap * 2.0]
+        laps = [t for t in raw_laps if t < _min_lap * CLEAN_LAP_MAX_RATIO]
     else:
         laps = raw_laps
     facts["laps_completed"] = float(len(laps))
@@ -59,7 +60,7 @@ def extract_session_facts(conn, result: dict, session_id: str,
         ).fetchone()
         pb = (row["pb"] if isinstance(row, dict) else row[0]) if row else None
         if pb and pb > 0:
-            facts["best_lap_improvement_pct"] = (pb - cur_best) / pb * 100.0
+            facts["best_lap_improvement_pct"] = round((pb - cur_best) / pb * 100.0, 1)
 
     # per-corner speeds + time loss (median across laps)
     rows = conn.execute(

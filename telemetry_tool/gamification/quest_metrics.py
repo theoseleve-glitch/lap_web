@@ -48,6 +48,7 @@ MASTERY_TARGET_STEP = 15.0       # nudge corner score up by ~one band
 CONSISTENCY_DELTA_PCT = 0.5      # tighten CV by half a point
 BEST_LAP_TARGET_PCT = 1.0        # beat PB by 1%
 LAPS_FALLBACK = 15               # activity fallback target
+CLEAN_LAP_MAX_RATIO = 2.0        # a lap slower than this × the session's fastest is an out/cool-down lap, excluded from "clean laps"
 
 # XP per quest (vision §4: 75–150).
 QUEST_XP = {"corner": 150, "session": 100, "activity": 75}
