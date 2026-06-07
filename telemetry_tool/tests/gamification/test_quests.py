@@ -103,6 +103,15 @@ class TestGenerate:
         created = quests.generate_quests(quests_conn, self._facts(), 1, 1, "s1")
         assert len(created) <= 3
 
+    def test_generated_quests_have_id(self, quests_conn):
+        """Each dict returned by generate_quests must contain a non-None 'id'
+        (the newly inserted row id).  Missing id → key=undefined in React."""
+        created = quests.generate_quests(quests_conn, self._facts(), 1, 1, "s1")
+        assert created, "expected at least one quest to be generated"
+        for q in created:
+            assert "id" in q, f"quest dict missing 'id' key: {q}"
+            assert q["id"] is not None, f"quest 'id' is None: {q}"
+
 
 class TestVerify:
     def _make_active(self, conn, metric, comparator, target, corner_id=None):

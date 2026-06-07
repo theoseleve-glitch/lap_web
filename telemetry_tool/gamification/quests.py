@@ -6,11 +6,10 @@ from __future__ import annotations
 
 import json
 from datetime import datetime, timedelta, timezone
-from typing import Any
 
 from gamification.quest_metrics import (
     APEX_SPEED_DELTA_KMH, BEST_LAP_TARGET_PCT, CLEAN_LAP_MAX_RATIO,
-    CONSISTENCY_DELTA_PCT, LAPS_FALLBACK, METRICS, QUEST_XP,
+    CONSISTENCY_DELTA_PCT, LAPS_FALLBACK, QUEST_XP,
     comparator_for, render_label,
 )
 
@@ -127,7 +126,7 @@ def _insert_quest(conn, driver_id, workspace_id, session_id, metric, target,
     human = render_label(metric, target, corner_id)
     now = datetime.now(timezone.utc).isoformat()
     expires = (datetime.now(timezone.utc) + timedelta(days=14)).isoformat()
-    conn.execute(
+    cur = conn.execute(
         "INSERT INTO quests (workspace_id, driver_id, spec, metric, comparator, "
         "target, baseline, human_text, xp, status, focused, source_session_id, "
         "created_at, expires_at) VALUES (:ws, :drv, :spec, :metric, :cmp, :tgt, "
@@ -136,7 +135,17 @@ def _insert_quest(conn, driver_id, workspace_id, session_id, metric, target,
          "metric": metric, "cmp": comparator, "tgt": target, "base": baseline,
          "human": human, "xp": xp, "sid": session_id, "now": now, "exp": expires},
     )
-    return {"metric": metric, "comparator": comparator, "target": target,
+    # Capture the new row id: PG cursor exposes .fetchone() after INSERT ... RETURNING,
+    # but we use lastrowid (works on both sqlite and psycopg2 cursor wrappers) with a
+    # RETURNING fallback so the id is always present in the returned dict.
+    new_id: int | None = None
+    if hasattr(cur, "lastrowid") and cur.lastrowid:
+        new_id = cur.lastrowid
+    elif hasattr(cur, "fetchone"):
+        id_row = cur.fetchone()
+        if id_row is not None:
+            new_id = id_row[0] if not isinstance(id_row, dict) else id_row.get("id")
+    return {"id": new_id, "metric": metric, "comparator": comparator, "target": target,
             "baseline": baseline, "scope": scope, "human_text": human, "xp": xp}
 
 

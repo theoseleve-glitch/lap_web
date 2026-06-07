@@ -14,7 +14,6 @@ from __future__ import annotations
 
 import json
 import logging
-from typing import Any
 
 logger = logging.getLogger(__name__)
 
@@ -204,8 +203,6 @@ try:
         from datetime import date, timedelta
 
         from web.db_pg import (
-            PgConnectionWrapper,
-            _get_maint_url,
             get_maint_connection,
             return_pg_connection,
         )
@@ -329,21 +326,23 @@ try:
         return 0
 
     def _should_email(conn, ws_id: int, drv_id: int) -> bool:
-        """Return True if the driver's user has weekly_digest enabled (default True).
+        """Return True if the workspace owner has weekly_digest enabled (default True).
 
-        Looks up workspace_members → users → preferences.notifications.weekly_digest.
+        Resolves via workspace_id → workspace_members (role='owner') → users.preferences.
         Falls back to True (send) when the preference is absent or unreadable.
+        The drv_id parameter is retained for call-site compatibility but is not
+        used in the query — the recipient is always the workspace owner.
         """
         try:
             row = conn.execute(
                 "SELECT u.preferences FROM workspace_members wm "
                 "JOIN users u ON u.id = wm.user_id "
-                "WHERE wm.workspace_id = :ws AND wm.driver_id = :drv "
+                "WHERE wm.workspace_id = :ws AND wm.role = 'owner' "
                 "LIMIT 1",
-                {"ws": ws_id, "drv": drv_id},
+                {"ws": ws_id},
             ).fetchone()
             if not row:
-                return True  # no user record → send (conservative)
+                return True  # no owner record → send (conservative)
             prefs_raw = row["preferences"] if isinstance(row, dict) else row[0]
             if not prefs_raw:
                 return True
@@ -357,17 +356,19 @@ try:
     def _send_recap_email(
         conn, drv_id: int, ws_id: int, iso_week: str, payload: dict
     ) -> bool:
-        """Look up the user's email + display_name and send the digest.
+        """Look up the workspace owner's email + display_name and send the digest.
 
+        Resolves via workspace_id → workspace_members (role='owner') → users.
+        The drv_id parameter is retained for call-site compatibility and logging.
         Returns True on success.
         """
         try:
             row = conn.execute(
                 "SELECT u.email, u.display_name FROM workspace_members wm "
                 "JOIN users u ON u.id = wm.user_id "
-                "WHERE wm.workspace_id = :ws AND wm.driver_id = :drv "
+                "WHERE wm.workspace_id = :ws AND wm.role = 'owner' "
                 "LIMIT 1",
-                {"ws": ws_id, "drv": drv_id},
+                {"ws": ws_id},
             ).fetchone()
             if not row:
                 logger.debug(

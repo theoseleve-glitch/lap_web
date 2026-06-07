@@ -392,7 +392,13 @@ class TestRecapCounterNoInflation:
     """
 
     def _make_conn(self):
-        """Create a mem_conn with all required tables inline (no fixture)."""
+        """Create a mem_conn with all required tables inline (no fixture).
+
+        workspace_members uses the REAL schema: (workspace_id, user_id, role,
+        joined_at) — no driver_id column.  This mirrors migration
+        045_workspace_members_table.py so any SQL against workspace_members
+        will fail loudly if it references a non-existent column.
+        """
         conn = sqlite3.connect(":memory:")
         conn.row_factory = sqlite3.Row
         conn.execute("""
@@ -443,13 +449,25 @@ class TestRecapCounterNoInflation:
                 UNIQUE (workspace_id, driver_id, iso_week)
             )
         """)
+        # Real workspace_members schema (migration 045): workspace_id, user_id,
+        # role, joined_at — NO driver_id column.
         conn.execute("""
             CREATE TABLE workspace_members (
-                workspace_id INTEGER, driver_id INTEGER, user_id INTEGER
+                workspace_id INTEGER NOT NULL,
+                user_id INTEGER NOT NULL,
+                role TEXT NOT NULL DEFAULT 'member',
+                joined_at TEXT DEFAULT (datetime('now')),
+                PRIMARY KEY (workspace_id, user_id)
             )
         """)
+        # Real users schema: id, email, display_name, preferences (JSON text).
         conn.execute("""
-            CREATE TABLE users (id INTEGER PRIMARY KEY, email TEXT, display_name TEXT, preferences TEXT)
+            CREATE TABLE users (
+                id INTEGER PRIMARY KEY,
+                email TEXT NOT NULL,
+                display_name TEXT,
+                preferences TEXT NOT NULL DEFAULT '{}'
+            )
         """)
         return conn
 
@@ -490,4 +508,216 @@ class TestRecapCounterNoInflation:
 
         assert result_a == 1, "first call must return 1 (one email sent)"
         assert result_b == 1, "second call must return 1 (not accumulated 2)"
+        conn.close()
+
+
+# ── Email helper tests: real SQL against real schema ─────────────────────────
+#
+# These tests exercise _should_email and _send_recap_email directly against the
+# corrected fixture schema (workspace_members with NO driver_id column).  A bug
+# like the original WHERE wm.driver_id = :drv would raise sqlite3.OperationalError
+# here, catching it at test time instead of silently at runtime.
+
+class TestRecapEmailHelpers:
+    """_should_email and _send_recap_email run real SQL against the real schema."""
+
+    def _make_email_conn(self):
+        """Minimal sqlite mem_conn with the real workspace_members + users schema."""
+        conn = sqlite3.connect(":memory:")
+        conn.row_factory = sqlite3.Row
+        conn.execute("""
+            CREATE TABLE workspace_members (
+                workspace_id INTEGER NOT NULL,
+                user_id INTEGER NOT NULL,
+                role TEXT NOT NULL DEFAULT 'member',
+                joined_at TEXT DEFAULT (datetime('now')),
+                PRIMARY KEY (workspace_id, user_id)
+            )
+        """)
+        conn.execute("""
+            CREATE TABLE users (
+                id INTEGER PRIMARY KEY,
+                email TEXT NOT NULL,
+                display_name TEXT,
+                preferences TEXT NOT NULL DEFAULT '{}'
+            )
+        """)
+        # weekly_recap required by _process_driver / emailed-flag logic
+        conn.execute("""
+            CREATE TABLE weekly_recap (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                workspace_id INTEGER NOT NULL,
+                driver_id INTEGER NOT NULL,
+                iso_week TEXT NOT NULL,
+                payload TEXT NOT NULL,
+                emailed INTEGER NOT NULL DEFAULT 0,
+                created_at TEXT DEFAULT (datetime('now')),
+                UNIQUE (workspace_id, driver_id, iso_week)
+            )
+        """)
+        return conn
+
+    def _seed_owner(self, conn, ws_id=1, user_id=10,
+                    email="driver@example.com", display_name="Test Driver",
+                    preferences=None):
+        """Insert a workspace owner into the real-schema tables."""
+        prefs = json.dumps(preferences or {})
+        conn.execute(
+            "INSERT INTO users (id, email, display_name, preferences) VALUES (?,?,?,?)",
+            (user_id, email, display_name, prefs),
+        )
+        conn.execute(
+            "INSERT INTO workspace_members (workspace_id, user_id, role) VALUES (?,?,'owner')",
+            (ws_id, user_id),
+        )
+        conn.commit()
+
+    def test_should_email_true_when_digest_enabled(self):
+        """_should_email returns True when weekly_digest is explicitly true."""
+        from telemetry_tool.tasks import recap_tasks
+        if not hasattr(recap_tasks, "_should_email"):
+            pytest.skip("Celery not available")
+
+        conn = self._make_email_conn()
+        self._seed_owner(
+            conn,
+            preferences={"notifications": {"weekly_digest": True}},
+        )
+        assert recap_tasks._should_email(conn, ws_id=1, drv_id=99) is True
+        conn.close()
+
+    def test_should_email_false_when_digest_disabled(self):
+        """_should_email returns False when weekly_digest is false."""
+        from telemetry_tool.tasks import recap_tasks
+        if not hasattr(recap_tasks, "_should_email"):
+            pytest.skip("Celery not available")
+
+        conn = self._make_email_conn()
+        self._seed_owner(
+            conn,
+            preferences={"notifications": {"weekly_digest": False}},
+        )
+        assert recap_tasks._should_email(conn, ws_id=1, drv_id=99) is False
+        conn.close()
+
+    def test_should_email_defaults_true_when_pref_absent(self):
+        """_should_email returns True (send) when notifications key is missing."""
+        from telemetry_tool.tasks import recap_tasks
+        if not hasattr(recap_tasks, "_should_email"):
+            pytest.skip("Celery not available")
+
+        conn = self._make_email_conn()
+        self._seed_owner(conn, preferences={})
+        assert recap_tasks._should_email(conn, ws_id=1, drv_id=99) is True
+        conn.close()
+
+    def test_send_recap_email_resolves_address_from_workspace_id(self):
+        """_send_recap_email resolves the correct email via workspace_id → owner,
+        NOT via driver_id.  The mock _send captures the address passed to it."""
+        from telemetry_tool.tasks import recap_tasks
+        if not hasattr(recap_tasks, "_send_recap_email"):
+            pytest.skip("Celery not available")
+
+        conn = self._make_email_conn()
+        self._seed_owner(conn, email="owner@lap-coach.racing", display_name="Race Driver")
+
+        with mock.patch("auth.email._send", return_value=True) as mock_send:
+            result = recap_tasks._send_recap_email(
+                conn, drv_id=42, ws_id=1, iso_week="2026-W10",
+                payload={"quests_completed": 2, "current_streak": 3,
+                         "next_focus": None, "week_start": "2026-03-02",
+                         "week_end": "2026-03-09", "stars_earned": 1, "xp_gained": 150},
+            )
+
+        assert result is True
+        assert mock_send.called
+        called_email = mock_send.call_args[0][0]
+        assert called_email == "owner@lap-coach.racing", (
+            f"Expected owner@lap-coach.racing but got {called_email!r} — "
+            "email was not resolved via workspace_id→owner"
+        )
+        conn.close()
+
+    def test_send_recap_email_skips_when_no_owner(self):
+        """_send_recap_email returns False (no email) when workspace has no owner."""
+        from telemetry_tool.tasks import recap_tasks
+        if not hasattr(recap_tasks, "_send_recap_email"):
+            pytest.skip("Celery not available")
+
+        conn = self._make_email_conn()
+        # No rows inserted — workspace 1 has no owner.
+        result = recap_tasks._send_recap_email(
+            conn, drv_id=1, ws_id=1, iso_week="2026-W10", payload={},
+        )
+        assert result is False
+        conn.close()
+
+    def test_process_driver_sends_email_once_and_sets_emailed_flag(self):
+        """_process_driver: email sent on first call, not re-sent on second call
+        (emailed flag guards against double-send)."""
+        from telemetry_tool.tasks import recap_tasks
+        if not hasattr(recap_tasks, "_process_driver"):
+            pytest.skip("Celery not available")
+
+        conn = self._make_email_conn()
+        # Also need driver_xp for build_recap_payload
+        conn.execute("""
+            CREATE TABLE driver_xp (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                workspace_id INTEGER NOT NULL, driver_id INTEGER NOT NULL,
+                total_xp INTEGER NOT NULL DEFAULT 0, level INTEGER NOT NULL DEFAULT 0,
+                current_streak INTEGER NOT NULL DEFAULT 0,
+                longest_streak INTEGER NOT NULL DEFAULT 0,
+                last_session_date TEXT, pit_passes INTEGER NOT NULL DEFAULT 0,
+                updated_at TEXT DEFAULT (datetime('now')),
+                UNIQUE (workspace_id, driver_id)
+            )
+        """)
+        conn.execute("""
+            CREATE TABLE quests (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                workspace_id INTEGER, driver_id INTEGER, status TEXT,
+                xp INTEGER, human_text TEXT, focused INTEGER DEFAULT 0,
+                completed_at TEXT, created_at TEXT DEFAULT (datetime('now'))
+            )
+        """)
+        conn.execute("""
+            CREATE TABLE corner_mastery (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                workspace_id INTEGER NOT NULL, driver_id INTEGER NOT NULL,
+                track_id TEXT NOT NULL, corner_id INTEGER NOT NULL,
+                condition TEXT NOT NULL DEFAULT 'dry', tier TEXT NOT NULL DEFAULT 'none',
+                best_score REAL NOT NULL DEFAULT 0,
+                sessions_at_silver TEXT NOT NULL DEFAULT '[]',
+                first_session_id TEXT, achieved_at TEXT,
+                updated_at TEXT DEFAULT (datetime('now')),
+                UNIQUE (workspace_id, driver_id, track_id, corner_id, condition)
+            )
+        """)
+        conn.execute(
+            "INSERT INTO driver_xp "
+            "(workspace_id, driver_id, total_xp, level, current_streak, "
+            "longest_streak, last_session_date, pit_passes) VALUES (1,1,0,0,1,1,'2026-03-05',0)"
+        )
+        self._seed_owner(
+            conn,
+            email="pilot@example.com",
+            preferences={"notifications": {"weekly_digest": True}},
+        )
+
+        with mock.patch("auth.email._send", return_value=True):
+            r1 = recap_tasks._process_driver(
+                conn, ws_id=1, drv_id=1, iso_week="2026-W10",
+                week_start="2026-03-02", week_end="2026-03-09",
+            )
+            conn.commit()
+            # Second call same week — emailed=1, must skip.
+            r2 = recap_tasks._process_driver(
+                conn, ws_id=1, drv_id=1, iso_week="2026-W10",
+                week_start="2026-03-02", week_end="2026-03-09",
+            )
+            conn.commit()
+
+        assert r1 == 1, "first call should return 1 (email sent)"
+        assert r2 == 0, "second call must return 0 (already emailed)"
         conn.close()
