@@ -58,6 +58,26 @@ def mem_conn():
             UNIQUE (workspace_id, driver_id, iso_week)
         )
     """)
+    # corner_mastery: Phase-1 mastery stars.  achieved_at records when a
+    # corner's tier was last upgraded — used by build_recap_payload to count
+    # stars_earned in the week window.
+    conn.execute("""
+        CREATE TABLE corner_mastery (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            workspace_id INTEGER NOT NULL,
+            driver_id INTEGER NOT NULL,
+            track_id TEXT NOT NULL,
+            corner_id INTEGER NOT NULL,
+            condition TEXT NOT NULL DEFAULT 'dry',
+            tier TEXT NOT NULL DEFAULT 'none',
+            best_score REAL NOT NULL DEFAULT 0,
+            sessions_at_silver TEXT NOT NULL DEFAULT '[]',
+            first_session_id TEXT,
+            achieved_at TEXT,
+            updated_at TEXT DEFAULT (datetime('now')),
+            UNIQUE (workspace_id, driver_id, track_id, corner_id, condition)
+        )
+    """)
     yield conn
     conn.close()
 
@@ -243,3 +263,231 @@ class TestRecapIdempotent:
             "SELECT emailed FROM weekly_recap WHERE iso_week='2026-W10'"
         ).fetchone()
         assert (row["emailed"] if isinstance(row, sqlite3.Row) else row[0]) == 1
+
+
+# ── New fields: stars_earned + xp_gained ─────────────────────────────────────
+
+class TestRecapNewFields:
+    """build_recap_payload must return stars_earned and xp_gained."""
+
+    def _seed_xp(self, conn):
+        conn.execute(
+            "INSERT INTO driver_xp "
+            "(workspace_id, driver_id, total_xp, level, current_streak, longest_streak, "
+            "last_session_date, pit_passes) VALUES (1,1,300,1,2,2,'2026-03-05',0)"
+        )
+
+    def test_stars_earned_in_window(self, mem_conn):
+        """stars_earned counts corner_mastery tier upgrades whose achieved_at
+        falls inside [week_start, week_end), and excludes upgrades outside the
+        window."""
+        self._seed_xp(mem_conn)
+
+        # Two stars inside the window.
+        mem_conn.execute(
+            "INSERT INTO corner_mastery "
+            "(workspace_id, driver_id, track_id, corner_id, condition, tier, "
+            "best_score, achieved_at) "
+            "VALUES (1, 1, 'track_a', 1, 'dry', 'bronze', 65.0, '2026-03-03')"
+        )
+        mem_conn.execute(
+            "INSERT INTO corner_mastery "
+            "(workspace_id, driver_id, track_id, corner_id, condition, tier, "
+            "best_score, achieved_at) "
+            "VALUES (1, 1, 'track_a', 2, 'dry', 'silver', 78.0, '2026-03-06')"
+        )
+        # One star BEFORE the window — must not be counted.
+        mem_conn.execute(
+            "INSERT INTO corner_mastery "
+            "(workspace_id, driver_id, track_id, corner_id, condition, tier, "
+            "best_score, achieved_at) "
+            "VALUES (1, 1, 'track_a', 3, 'dry', 'gold', 88.0, '2026-02-28')"
+        )
+        # One star ON week_end (exclusive upper bound) — must not be counted.
+        mem_conn.execute(
+            "INSERT INTO corner_mastery "
+            "(workspace_id, driver_id, track_id, corner_id, condition, tier, "
+            "best_score, achieved_at) "
+            "VALUES (1, 1, 'track_a', 4, 'dry', 'bronze', 62.0, '2026-03-09')"
+        )
+        mem_conn.commit()
+
+        from telemetry_tool.tasks.recap_tasks import build_recap_payload
+
+        payload = build_recap_payload(
+            mem_conn,
+            driver_id=1,
+            workspace_id=1,
+            week_start="2026-03-02",
+            week_end="2026-03-09",
+        )
+
+        assert payload["stars_earned"] == 2
+
+    def test_xp_gained_sums_quest_xp_in_window(self, mem_conn):
+        """xp_gained sums quest xp for quests completed inside the window;
+        out-of-window or non-completed quests are excluded."""
+        self._seed_xp(mem_conn)
+
+        # Two quests completed inside the window (xp 150 + 100 = 250).
+        mem_conn.execute(
+            "INSERT INTO quests (workspace_id, driver_id, status, xp, human_text, completed_at) "
+            "VALUES (1, 1, 'completed', 150, 'Quest A', '2026-03-04')"
+        )
+        mem_conn.execute(
+            "INSERT INTO quests (workspace_id, driver_id, status, xp, human_text, completed_at) "
+            "VALUES (1, 1, 'completed', 100, 'Quest B', '2026-03-07')"
+        )
+        # Quest completed before the window — must not contribute.
+        mem_conn.execute(
+            "INSERT INTO quests (workspace_id, driver_id, status, xp, human_text, completed_at) "
+            "VALUES (1, 1, 'completed', 200, 'Old quest', '2026-02-20')"
+        )
+        # Active quest — must not contribute.
+        mem_conn.execute(
+            "INSERT INTO quests (workspace_id, driver_id, status, xp, human_text, created_at) "
+            "VALUES (1, 1, 'active', 120, 'Pending quest', '2026-03-03')"
+        )
+        mem_conn.commit()
+
+        from telemetry_tool.tasks.recap_tasks import build_recap_payload
+
+        payload = build_recap_payload(
+            mem_conn,
+            driver_id=1,
+            workspace_id=1,
+            week_start="2026-03-02",
+            week_end="2026-03-09",
+        )
+
+        assert payload["xp_gained"] == 250
+
+    def test_both_fields_zero_when_no_activity(self, mem_conn):
+        """stars_earned and xp_gained are 0 when there is nothing in-window."""
+        self._seed_xp(mem_conn)
+        mem_conn.commit()
+
+        from telemetry_tool.tasks.recap_tasks import build_recap_payload
+
+        payload = build_recap_payload(
+            mem_conn,
+            driver_id=1,
+            workspace_id=1,
+            week_start="2026-03-02",
+            week_end="2026-03-09",
+        )
+
+        assert payload["stars_earned"] == 0
+        assert payload["xp_gained"] == 0
+
+
+# ── Counter inflation: two sequential task invocations must not inflate n_emailed
+
+class TestRecapCounterNoInflation:
+    """The weekly_recap task must use a plain local counter (Fix 2).
+
+    Two sequential invocations on the same in-process _process_driver callable
+    must each return only the emails sent in THAT call — no cross-invocation
+    accumulation.
+    """
+
+    def _make_conn(self):
+        """Create a mem_conn with all required tables inline (no fixture)."""
+        conn = sqlite3.connect(":memory:")
+        conn.row_factory = sqlite3.Row
+        conn.execute("""
+            CREATE TABLE driver_xp (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                workspace_id INTEGER NOT NULL,
+                driver_id INTEGER NOT NULL,
+                total_xp INTEGER NOT NULL DEFAULT 0,
+                level INTEGER NOT NULL DEFAULT 0,
+                current_streak INTEGER NOT NULL DEFAULT 0,
+                longest_streak INTEGER NOT NULL DEFAULT 0,
+                last_session_date TEXT,
+                pit_passes INTEGER NOT NULL DEFAULT 0,
+                updated_at TEXT DEFAULT (datetime('now')),
+                UNIQUE (workspace_id, driver_id)
+            )
+        """)
+        conn.execute("""
+            CREATE TABLE quests (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                workspace_id INTEGER, driver_id INTEGER, status TEXT,
+                xp INTEGER, human_text TEXT, focused INTEGER DEFAULT 0,
+                completed_at TEXT, created_at TEXT DEFAULT (datetime('now'))
+            )
+        """)
+        conn.execute("""
+            CREATE TABLE corner_mastery (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                workspace_id INTEGER NOT NULL, driver_id INTEGER NOT NULL,
+                track_id TEXT NOT NULL, corner_id INTEGER NOT NULL,
+                condition TEXT NOT NULL DEFAULT 'dry', tier TEXT NOT NULL DEFAULT 'none',
+                best_score REAL NOT NULL DEFAULT 0,
+                sessions_at_silver TEXT NOT NULL DEFAULT '[]',
+                first_session_id TEXT, achieved_at TEXT,
+                updated_at TEXT DEFAULT (datetime('now')),
+                UNIQUE (workspace_id, driver_id, track_id, corner_id, condition)
+            )
+        """)
+        conn.execute("""
+            CREATE TABLE weekly_recap (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                workspace_id INTEGER NOT NULL,
+                driver_id INTEGER NOT NULL,
+                iso_week TEXT NOT NULL,
+                payload TEXT NOT NULL,
+                emailed INTEGER NOT NULL DEFAULT 0,
+                created_at TEXT DEFAULT (datetime('now')),
+                UNIQUE (workspace_id, driver_id, iso_week)
+            )
+        """)
+        conn.execute("""
+            CREATE TABLE workspace_members (
+                workspace_id INTEGER, driver_id INTEGER, user_id INTEGER
+            )
+        """)
+        conn.execute("""
+            CREATE TABLE users (id INTEGER PRIMARY KEY, email TEXT, display_name TEXT, preferences TEXT)
+        """)
+        return conn
+
+    def test_two_runs_do_not_inflate_emailed_count(self):
+        """Calling _process_driver twice (different iso_weeks) returns 0 the
+        second time if no email is sent — not an accumulated total."""
+        from telemetry_tool.tasks import recap_tasks
+
+        # If Celery isn't importable the beat-task block is skipped; skip this
+        # integration-style test gracefully in that case.
+        if not hasattr(recap_tasks, "_process_driver"):
+            pytest.skip("Celery not available — _process_driver not registered")
+
+        conn = self._make_conn()
+        conn.execute(
+            "INSERT INTO driver_xp "
+            "(workspace_id, driver_id, total_xp, level, current_streak, longest_streak, "
+            "last_session_date, pit_passes) VALUES (1,1,0,0,1,1,'2026-03-05',0)"
+        )
+        conn.commit()
+
+        with mock.patch("telemetry_tool.tasks.recap_tasks._should_email", return_value=True), \
+             mock.patch("telemetry_tool.tasks.recap_tasks._send_recap_email", return_value=True):
+
+            # First invocation (week A) — email sent → should return 1.
+            result_a = recap_tasks._process_driver(
+                conn, ws_id=1, drv_id=1, iso_week="2026-W10",
+                week_start="2026-03-02", week_end="2026-03-09",
+            )
+            conn.commit()
+
+            # Second invocation (week B) — fresh week, email sent → must return 1 (not 2).
+            result_b = recap_tasks._process_driver(
+                conn, ws_id=1, drv_id=1, iso_week="2026-W11",
+                week_start="2026-03-09", week_end="2026-03-16",
+            )
+            conn.commit()
+
+        assert result_a == 1, "first call must return 1 (one email sent)"
+        assert result_b == 1, "second call must return 1 (not accumulated 2)"
+        conn.close()

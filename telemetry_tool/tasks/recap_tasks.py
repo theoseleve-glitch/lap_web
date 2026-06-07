@@ -91,10 +91,45 @@ def build_recap_payload(
             focus_row["human_text"] if isinstance(focus_row, dict) else focus_row[0]
         )
 
+    # Stars earned this week: count of corner_mastery tier upgrades whose
+    # achieved_at falls in [week_start, week_end).  corner_mastery.achieved_at
+    # is set (or updated) exactly when a corner advances to a new tier, making
+    # it the canonical "mastery star earned" timestamp for Phase-1 gamification.
+    # One-time catalog achievements (achievements table, 15 total, UNIQUE per
+    # driver) are not counted here because they are lifetime milestones, not
+    # repeatable weekly stars.
+    stars_earned = int(_scalar(
+        "SELECT COUNT(*) FROM corner_mastery "
+        "WHERE driver_id = :d AND workspace_id = :w "
+        "AND tier != 'none' "
+        "AND achieved_at >= :a AND achieved_at < :b",
+        {"d": driver_id, "w": workspace_id, "a": week_start, "b": week_end},
+    ))
+
+    # XP gained this week — gamification-XP proxy (no per-event XP ledger exists).
+    # Source: SUM of xp on quests completed in-window.  Quest rows carry an
+    # integer xp column (migration 070); this is the most faithful weekly-scoped
+    # XP figure available without a separate events/ledger table.
+    # Corner-mastery star XP (XP_STAR = bronze 25 / silver 75 / gold 150) is
+    # NOT included here because corner_mastery stores no per-row XP amount and
+    # joining to the catalog would require hardcoding tier→XP — an acceptable
+    # simplification for Phase 2b, but the quest sum alone is already the primary
+    # weekly gamification signal.  If a ledger is added in future, replace this
+    # with a direct SUM on the ledger table.
+    xp_gained = int(_scalar(
+        "SELECT COALESCE(SUM(xp), 0) FROM quests "
+        "WHERE driver_id = :d AND workspace_id = :w "
+        "AND status = 'completed' AND completed_at >= :a AND completed_at < :b",
+        {"d": driver_id, "w": workspace_id, "a": week_start, "b": week_end},
+        default=0,
+    ))
+
     return {
         "quests_completed": quests_completed,
         "current_streak": streak,
         "next_focus": next_focus,
+        "stars_earned": stars_earned,
+        "xp_gained": xp_gained,
         "week_start": week_start,
         "week_end": week_end,
     }
@@ -209,18 +244,17 @@ try:
 
             for ws_id, drv_id in pairs:
                 try:
-                    _process_driver(
+                    emailed_this_driver = _process_driver(
                         conn,
                         ws_id=ws_id,
                         drv_id=drv_id,
                         iso_week=iso_week,
                         week_start=week_start,
                         week_end=week_end,
-                        n_emailed_ref=[n_emailed],
                     )
                     conn.commit()
                     n_written += 1
-                    n_emailed = _process_driver.last_emailed  # updated by helper
+                    n_emailed += emailed_this_driver  # plain local counter, no shared state
                 except Exception as exc:  # noqa: BLE001
                     try:
                         conn.rollback()
@@ -241,64 +275,58 @@ try:
 
     # ── Per-driver helper (keeps the loop body readable) ─────────────────────
 
-    class _ProcessDriver:
-        """Callable helper that upserts the recap row and emails if needed.
+    def _process_driver(
+        conn,
+        ws_id: int,
+        drv_id: int,
+        iso_week: str,
+        week_start: str,
+        week_end: str,
+    ) -> int:
+        """Upsert the recap row and email if needed.
 
-        Using a class so we can carry ``last_emailed`` out of the call without
-        a mutable-ref trick, while staying compatible with the simple loop above.
+        Returns 1 if an email was sent this call, 0 otherwise.  The caller
+        accumulates a plain local int — there is no cross-invocation shared
+        state, so running the task twice on the same Celery worker never
+        inflates the returned ``emailed`` count.
         """
+        payload = build_recap_payload(conn, drv_id, ws_id, week_start, week_end)
 
-        def __init__(self):
-            self.last_emailed = 0
+        # UPSERT — idempotent per (workspace_id, driver_id, iso_week).
+        conn.execute(
+            "INSERT INTO weekly_recap (workspace_id, driver_id, iso_week, payload) "
+            "VALUES (:ws, :drv, :wk, :pl) "
+            "ON CONFLICT (workspace_id, driver_id, iso_week) "
+            "DO UPDATE SET payload = EXCLUDED.payload",
+            {
+                "ws": ws_id,
+                "drv": drv_id,
+                "wk": iso_week,
+                "pl": json.dumps(payload),
+            },
+        )
 
-        def __call__(
-            self,
-            conn,
-            ws_id: int,
-            drv_id: int,
-            iso_week: str,
-            week_start: str,
-            week_end: str,
-            n_emailed_ref: list,
-        ) -> None:
-            payload = build_recap_payload(conn, drv_id, ws_id, week_start, week_end)
+        # Check emailed flag: only send if not already emailed this week.
+        emailed_row = conn.execute(
+            "SELECT emailed FROM weekly_recap "
+            "WHERE workspace_id = :ws AND driver_id = :drv AND iso_week = :wk",
+            {"ws": ws_id, "drv": drv_id, "wk": iso_week},
+        ).fetchone()
+        already_emailed = bool(
+            (emailed_row["emailed"] if isinstance(emailed_row, dict) else emailed_row[0])
+            if emailed_row else False
+        )
 
-            # UPSERT — idempotent per (workspace_id, driver_id, iso_week).
-            conn.execute(
-                "INSERT INTO weekly_recap (workspace_id, driver_id, iso_week, payload) "
-                "VALUES (:ws, :drv, :wk, :pl) "
-                "ON CONFLICT (workspace_id, driver_id, iso_week) "
-                "DO UPDATE SET payload = EXCLUDED.payload",
-                {
-                    "ws": ws_id,
-                    "drv": drv_id,
-                    "wk": iso_week,
-                    "pl": json.dumps(payload),
-                },
-            )
-
-            # Check emailed flag: only send if not already emailed this week.
-            emailed_row = conn.execute(
-                "SELECT emailed FROM weekly_recap "
-                "WHERE workspace_id = :ws AND driver_id = :drv AND iso_week = :wk",
-                {"ws": ws_id, "drv": drv_id, "wk": iso_week},
-            ).fetchone()
-            already_emailed = bool(
-                (emailed_row["emailed"] if isinstance(emailed_row, dict) else emailed_row[0])
-                if emailed_row else False
-            )
-
-            if not already_emailed and _should_email(conn, ws_id, drv_id):
-                sent = _send_recap_email(conn, drv_id, ws_id, iso_week, payload)
-                if sent:
-                    conn.execute(
-                        "UPDATE weekly_recap SET emailed = :t "
-                        "WHERE workspace_id = :ws AND driver_id = :drv AND iso_week = :wk",
-                        {"t": True, "ws": ws_id, "drv": drv_id, "wk": iso_week},
-                    )
-                    self.last_emailed += 1
-
-    _process_driver = _ProcessDriver()
+        if not already_emailed and _should_email(conn, ws_id, drv_id):
+            sent = _send_recap_email(conn, drv_id, ws_id, iso_week, payload)
+            if sent:
+                conn.execute(
+                    "UPDATE weekly_recap SET emailed = :t "
+                    "WHERE workspace_id = :ws AND driver_id = :drv AND iso_week = :wk",
+                    {"t": True, "ws": ws_id, "drv": drv_id, "wk": iso_week},
+                )
+                return 1
+        return 0
 
     def _should_email(conn, ws_id: int, drv_id: int) -> bool:
         """Return True if the driver's user has weekly_digest enabled (default True).
