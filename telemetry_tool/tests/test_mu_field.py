@@ -82,6 +82,20 @@ def test_never_exceeds_max_of_raw_and_prior():
     conf = np.clip(count / 50.0, 0.0, 1.0)
     out = shrink_mu_grid(mu, count, conf)
     measured = count > 0
-    # Shrinkage interpolates between raw and prior — it can never invent grip
-    assert np.all(out[measured] <= np.maximum(mu, out.max(axis=1, keepdims=True))[measured] + 1e-9)
+
+    # Independently recompute the row prior (count-weighted mean of measured
+    # cells per row, global measured mean as fallback) so this test can FAIL
+    # if the implementation ever invents grip.
+    global_prior = np.average(mu[measured], weights=count[measured])
+    row_prior = np.full(M, global_prior)
+    for i in range(M):
+        if measured[i].any():
+            row_prior[i] = np.average(mu[i, measured[i]], weights=count[i, measured[i]])
+
+    # Measured cells: bounded by max(raw, row prior) — a 5x-inflation mutant fails this
+    assert np.all(out[measured] <= np.maximum(mu, row_prior[:, None])[measured] + 1e-9)
+    # Unmeasured cells: exactly the discounted prior
+    if (~measured).any():
+        expected_unmeasured = np.broadcast_to(row_prior[:, None] * 0.95, (M, K))
+        np.testing.assert_allclose(out[~measured], expected_unmeasured[~measured], rtol=1e-9)
     assert out.shape == mu.shape

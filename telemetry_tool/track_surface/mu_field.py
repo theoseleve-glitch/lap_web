@@ -16,15 +16,12 @@ arclength (falls back to the global measured mean).
 """
 from __future__ import annotations
 
-import logging
 from typing import Final
 
 import numpy as np
 
 from track_surface.grip_2d import GripSurface
 from telemetry_tool.lap_oracle.solver.ocp_2d import MuField
-
-logger = logging.getLogger(__name__)
 
 # Domain-judgment constants — flagged in the plan as a tuning point.
 UNMEASURED_DISCOUNT: Final[float] = 0.95   # 5% pessimism on undriven asphalt
