@@ -57,6 +57,7 @@ def make_celery(app=None) -> Celery:
             "tasks.dead_letter_tasks",
             "tasks.ocp_tasks",
             "tasks.endurance_tasks",
+            "tasks.recap_tasks",
         ],
     )
     celery.conf.update(
@@ -170,6 +171,11 @@ def make_celery(app=None) -> Celery:
             "purge-dead-letter-queue": {
                 "task": "tasks.dead_letter_tasks.purge_dead_letters",
                 "schedule": 2592000,  # Monthly (30 days)
+                "options": {"queue": "default"},
+            },
+            "weekly-recap": {
+                "task": "tasks.recap_tasks.weekly_recap",
+                "schedule": crontab(hour=6, minute=0, day_of_week=1),  # Monday 06:00 UTC
                 "options": {"queue": "default"},
             },
         },
