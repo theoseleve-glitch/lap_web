@@ -130,21 +130,18 @@ def _insert_quest(conn, driver_id, workspace_id, session_id, metric, target,
         "INSERT INTO quests (workspace_id, driver_id, spec, metric, comparator, "
         "target, baseline, human_text, xp, status, focused, source_session_id, "
         "created_at, expires_at) VALUES (:ws, :drv, :spec, :metric, :cmp, :tgt, "
-        ":base, :human, :xp, 'active', false, :sid, :now, :exp)",
+        ":base, :human, :xp, 'active', false, :sid, :now, :exp) RETURNING id",
         {"ws": workspace_id, "drv": driver_id, "spec": json.dumps(spec),
          "metric": metric, "cmp": comparator, "tgt": target, "base": baseline,
          "human": human, "xp": xp, "sid": session_id, "now": now, "exp": expires},
     )
-    # Capture the new row id: PG cursor exposes .fetchone() after INSERT ... RETURNING,
-    # but we use lastrowid (works on both sqlite and psycopg2 cursor wrappers) with a
-    # RETURNING fallback so the id is always present in the returned dict.
+    # Capture the new row id via RETURNING id — works on both PostgreSQL (psycopg2)
+    # and modern SQLite (3.35+, which supports RETURNING).  lastrowid is unreliable
+    # on PostgreSQL: psycopg2 RealDictCursor always returns 0 for plain INSERTs.
     new_id: int | None = None
-    if hasattr(cur, "lastrowid") and cur.lastrowid:
-        new_id = cur.lastrowid
-    elif hasattr(cur, "fetchone"):
-        id_row = cur.fetchone()
-        if id_row is not None:
-            new_id = id_row[0] if not isinstance(id_row, dict) else id_row.get("id")
+    id_row = cur.fetchone()
+    if id_row is not None:
+        new_id = id_row[0] if not isinstance(id_row, dict) else id_row.get("id")
     return {"id": new_id, "metric": metric, "comparator": comparator, "target": target,
             "baseline": baseline, "scope": scope, "human_text": human, "xp": xp}
 
