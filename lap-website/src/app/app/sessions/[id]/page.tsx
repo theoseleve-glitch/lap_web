@@ -31,6 +31,9 @@ const LevelUpModal = lazy(() => import('@/components/app/gamification/LevelUpMod
 const AchievementUnlockOverlay = lazy(() =>
   import('@/components/app/gamification/AchievementUnlockOverlay').then(m => ({ default: m.AchievementUnlockOverlay }))
 );
+const ShareableCard = lazy(() =>
+  import('@/components/app/gamification/ShareableCard').then(m => ({ default: m.ShareableCard }))
+);
 
 const DrivingAnalyzer = lazy(() => import('@/components/app/driving-analyzer/DrivingAnalyzer'));
 const HandlingBalanceCard = lazy(() => import('@/components/app/HandlingBalanceCard').then(m => ({ default: m.HandlingBalanceCard })));
@@ -104,6 +107,7 @@ interface GamificationResult {
   leveled_up: boolean;
   current_streak: number;
   new_achievements: { key: string; label: string; description: string; icon: string }[];
+  xp_breakdown?: { personal_best?: boolean | number | null };
 }
 
 interface ScoreData {
@@ -340,6 +344,7 @@ export default function SessionDetailPage() {
   const [toastAchievement, setToastAchievement] = useState<GamificationResult['new_achievements'][0] | null>(null);
   const [achievementToShow, setAchievementToShow] = useState<{ key: string; label: string; description: string; icon: string; tier: string } | null>(null);
   const [gamShown, setGamShown] = useState(false);
+  const [showShare, setShowShare] = useState(false);
 
   const del = useEntityDelete({
     entity: 'session',
@@ -587,6 +592,18 @@ export default function SessionDetailPage() {
             Delete
           </button>
 
+          {/* Share PB — only shown when a personal best was set this session */}
+          {Boolean(scores?.gamification?.xp_breakdown?.personal_best) && (
+            <button
+              type="button"
+              onClick={() => setShowShare(true)}
+              className="border border-acid-green/40 text-acid-green font-telemetry text-xs uppercase tracking-wider px-3 py-1.5 rounded hover:bg-acid-green/10 transition-colors"
+              data-print="hide"
+            >
+              Share PB
+            </button>
+          )}
+
           {/* Focus Mode — hidden for endurance master reports (no per-lap chart data) */}
           {session.session_type !== 'endurance' && (
           <button
@@ -703,6 +720,43 @@ export default function SessionDetailPage() {
                   : undefined,
                 badges: scores?.badges,
               }} />
+            </Suspense>
+          </div>
+        </div>
+      )}
+
+      {/* Share PB modal — wires the dormant ShareableCard component */}
+      {showShare && session && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-asphalt/90"
+          onClick={() => setShowShare(false)}
+        >
+          <div onClick={(e) => e.stopPropagation()}>
+            <Suspense fallback={null}>
+              <ShareableCard
+                driverName={session.driver_name}
+                track={session.track_name || 'Unknown'}
+                date={formatDate(session.session_date)}
+                sessionType={session.session_type}
+                bestLap={session.best_lap_time_s != null ? formatLapTime(session.best_lap_time_s) : '--'}
+                score={scores ? Math.round([scores.pace_score, scores.consistency_score, scores.execution_score, scores.robustness_score, scores.adaptation_score].reduce<number>((s, v) => s + (v ?? 0), 0)) : Math.round(session.total_score ?? 0)}
+                maxScore={100}
+                laps={session.n_laps ?? 0}
+                consistency={scores?.consistency_score != null && scores.consistency_max ? Math.round((scores.consistency_score / scores.consistency_max) * 100) : 0}
+                badges={
+                  scores?.badges
+                    ? scores.badges.map((b) => ({
+                        title: b.label,
+                        description: b.criteria,
+                        unlocked: true,
+                        category: (['progress', 'technique', 'consistency', 'learning', 'endurance'] as const).includes(b.category as 'progress' | 'technique' | 'consistency' | 'learning' | 'endurance')
+                          ? (b.category as 'progress' | 'technique' | 'consistency' | 'learning' | 'endurance')
+                          : undefined,
+                      }))
+                    : []
+                }
+                licenseLevel="N"
+              />
             </Suspense>
           </div>
         </div>
