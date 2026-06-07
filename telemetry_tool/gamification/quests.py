@@ -230,3 +230,25 @@ def expire_stale_quests(conn, driver_id: int, workspace_id: int, now_iso: str | 
         {"drv": driver_id, "ws": workspace_id, "now": now_iso},
     )
     return cur.rowcount if hasattr(cur, "rowcount") and isinstance(cur.rowcount, int) else 0
+
+
+def weeks_since_last_session(conn, driver_id: int, workspace_id: int,
+                             session_id: str, session_date: str) -> int:
+    """Whole weeks between this session and the driver's previous one.
+    0 if there is no prior session."""
+    from datetime import date
+    row = conn.execute(
+        "SELECT MAX(session_date) AS prev FROM sessions "
+        "WHERE driver_id = :drv AND workspace_id = :ws AND session_id != :sid "
+        "AND session_date IS NOT NULL",
+        {"drv": driver_id, "ws": workspace_id, "sid": session_id},
+    ).fetchone()
+    prev = (row["prev"] if isinstance(row, dict) else row[0]) if row else None
+    if not prev:
+        return 0
+    try:
+        d_prev = date.fromisoformat(str(prev)[:10])
+        d_now = date.fromisoformat(str(session_date)[:10])
+    except (ValueError, TypeError):
+        return 0
+    return max(0, (d_now - d_prev).days // 7)

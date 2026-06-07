@@ -1178,6 +1178,44 @@ def _persist_session_data(ctx: PipelineContext, result: dict) -> None:
                 except Exception:
                     pass
 
+            # ── Comeback Shakedown (Phase 2b): multiply this session's
+            #    gamification XP after a long absence (zero-shame return) ──
+            comeback = None
+            try:
+                from gamification.quests import weeks_since_last_session
+                from gamification.catalog import COMEBACK_WEEKS, COMEBACK_XP_MULTIPLIER
+                from gamification.queries import upsert_driver_xp
+                from gamification.xp import compute_level
+
+                weeks_away = weeks_since_last_session(
+                    conn, driver_id, ctx.workspace_id, session_id, session_date
+                )
+                if weeks_away >= COMEBACK_WEEKS and xp_result.get("xp_gained", 0) > 0:
+                    bonus = int(xp_result["xp_gained"] * (COMEBACK_XP_MULTIPLIER - 1))
+                    if bonus > 0:
+                        upsert_driver_xp(
+                            conn, driver_id, ctx.workspace_id, xp_delta=bonus,
+                            level=compute_level(xp_result["new_total"] + bonus),
+                            streak=streak_result.get("current_streak", 0),
+                            longest=streak_result.get("longest_streak", 0),
+                            last_date=None,
+                        )
+                        # Commit BEFORE mutating in-memory xp_result so a
+                        # rollback on failure cannot leave xp_result inflated.
+                        conn.commit()
+                        # Only update in-memory state after the commit succeeds.
+                        xp_result["xp_gained"] += bonus
+                        xp_result["new_total"] += bonus
+                        xp_result["new_level"] = compute_level(xp_result["new_total"])
+                        xp_result["leveled_up"] = xp_result["new_level"] > xp_result["old_level"]
+                    comeback = {"weeks_away": weeks_away, "multiplier": COMEBACK_XP_MULTIPLIER}
+            except Exception:
+                logger.warning("Comeback step failed (non-fatal) for %s", session_id, exc_info=True)
+                try:
+                    conn.rollback()
+                except Exception:
+                    pass
+
             result["gamification"] = {
                 "xp_gained": xp_result.get("xp_gained", 0),
                 "old_level": xp_result.get("old_level", 0),
@@ -1189,6 +1227,7 @@ def _persist_session_data(ctx: PipelineContext, result: dict) -> None:
                 "stars": star_events,
                 "quests_completed": quests_completed,
                 "quests_active": quests_active,
+                "comeback": comeback,
                 "new_achievements": [
                     {"key": a["key"], "label": a["label"], "description": a["description"], "icon": a["icon"]}
                     for a in new_achievements
