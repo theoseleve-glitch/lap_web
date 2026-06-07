@@ -169,6 +169,16 @@ services:
       SIDECAR_ROOT: /data/sidecars
     volumes:
       - sidecar_data:/data/sidecars
+    # Beat is a scheduler, not a worker — it never answers `celery inspect ping`
+    # and serves no HTTP, so it would inherit the image's API healthcheck and be
+    # perpetually (falsely) "unhealthy". Check liveness via the schedule file,
+    # which beat rewrites as it ticks; a dead/hung beat stops updating it.
+    healthcheck:
+      test: ["CMD-SHELL", "python -c \"import os,sys,glob,time; fs=glob.glob('/tmp/celerybeat-schedule*'); sys.exit(0 if fs and (time.time()-max(os.path.getmtime(f) for f in fs))<1800 else 1)\""]
+      interval: 60s
+      timeout: 10s
+      retries: 3
+      start_period: 90s
     depends_on:
       redis:
         condition: service_healthy
