@@ -119,3 +119,6 @@ data/external/
 data/oracle/
 data/sidecars/
 data/outputs/
+
+# OCP-2D validation run artifacts (lap parquets, reports, params, diagnostics)
+reports/
