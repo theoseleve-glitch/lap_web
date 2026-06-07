@@ -30,6 +30,7 @@ import { useDriverProgress } from '@/hooks/useDriverProgress';
 import { AchievementUnlockOverlay } from '@/components/app/gamification';
 import AchievementToast from '@/components/app/gamification/AchievementToast';
 import LevelUpModal from '@/components/app/gamification/LevelUpModal';
+import { PointsAnimation } from '@/components/app/gamification/PointsAnimation';
 
 const SIDEBAR_KEY = 'lap-sidebar-collapsed';
 
@@ -313,6 +314,7 @@ function GlobalGamificationOverlays() {
     dismissAchievementOverlay,
     levelUp,
     dismissLevelUp,
+    floatingPoints,
   } = useGamificationStore();
 
   return (
@@ -339,6 +341,9 @@ function GlobalGamificationOverlays() {
           onClose={dismissLevelUp}
         />
       )}
+
+      {/* Floating +XP points animation — anchored near sidebar XP bar */}
+      <PointsAnimation floatingPoints={floatingPoints} />
     </>
   );
 }

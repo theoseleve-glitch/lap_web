@@ -37,6 +37,7 @@ interface GamificationState {
   achievementToast: Achievement | null;
   achievementOverlay: AchievementData | null;
   levelUp: LevelUpData | null;
+  floatingPoints: Array<{ id: string; points: number; x: number; y: number }>;
 
   // Actions
   showAchievementToast: (achievement: Achievement) => void;
@@ -45,6 +46,7 @@ interface GamificationState {
   dismissAchievementOverlay: () => void;
   showLevelUp: (data: LevelUpData) => void;
   dismissLevelUp: () => void;
+  pushPoints: (points: number) => void;
 
   // Process a GamificationEvent from the backend (fires all relevant overlays)
   processEvent: (event: {
@@ -60,6 +62,7 @@ export const useGamificationStore = create<GamificationState>((set, get) => ({
   achievementToast: null,
   achievementOverlay: null,
   levelUp: null,
+  floatingPoints: [],
 
   showAchievementToast: (achievement) => set({ achievementToast: achievement }),
   dismissAchievementToast: () => set({ achievementToast: null }),
@@ -70,7 +73,21 @@ export const useGamificationStore = create<GamificationState>((set, get) => ({
   showLevelUp: (data) => set({ levelUp: data }),
   dismissLevelUp: () => set({ levelUp: null }),
 
+  pushPoints: (points) => {
+    if (points <= 0) return;
+    const id = `fp-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
+    // Anchor near the sidebar XP bar (bottom-left); PointsAnimation floats it up.
+    const x = 120;
+    const y = typeof window !== 'undefined' ? window.innerHeight - 140 : 600;
+    set({ floatingPoints: [...get().floatingPoints, { id, points, x, y }] });
+    setTimeout(() => {
+      set({ floatingPoints: get().floatingPoints.filter((p) => p.id !== id) });
+    }, 1600);
+  },
+
   processEvent: (event) => {
+    if (event.xp_gained > 0) get().pushPoints(event.xp_gained);
+
     // Level up takes priority (shown as modal)
     if (event.new_level != null && event.old_level != null && event.new_level > event.old_level) {
       set({
