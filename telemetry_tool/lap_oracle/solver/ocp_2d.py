@@ -87,8 +87,9 @@ def _make_mu_interpolant_smooth(field: MuField):
     is C0 (derivative kinks at every knot), which stalls the line search on
     step-like fields (spurious "suboptimal") and lets iterates slide through
     gradient gaps into local basins.  The bspline passes through the same
-    grid values at the knots but is smooth between them.  Small overshoot/
-    undershoot ringing near steps is guarded by EPS_GRIP in the solver.
+    grid values at the knots but is smooth between them.  Small undershoot
+    ringing near steps is floored by EPS_GRIP in the solver; overshoot is
+    capped at the field's true maximum inside the NLP.
     Same Fortran-order data layout as _make_mu_interpolant.
     """
     return ca.interpolant(
@@ -124,6 +125,7 @@ def _solve_once(
     vehicle: VehicleParams,
     weather: WeatherConditions,
     max_time_s: float,
+    mu_ceiling: float,
 ) -> tuple[str, np.ndarray, np.ndarray, np.ndarray]:
     """Build a FRESH ca.Opti() and run one IPOPT solve from the given guess.
 
@@ -166,6 +168,8 @@ def _solve_once(
         # ── THE 2D UPGRADE: grip evaluated at the chosen line ──
         grip_i = mu_lut(ca.vertcat(s_coords[i], N_lat[i]))
         grip_i = ca.fmax(grip_i, EPS_GRIP)
+        grip_i = ca.fmin(grip_i, mu_ceiling)  # cap bspline overshoot: never
+        # hand the NLP more grip than the field's true maximum
         mu_lat_i = mu_lat_base * grip_i
         mu_long_i = mu_long_base * grip_i
         ax_lim = mu_long_i * fz_total / m
@@ -278,6 +282,8 @@ def solve_minimum_time_2d(
     """
     if not HAS_CASADI:
         raise ImportError("solve_minimum_time_2d requires casadi")
+    if not n_lat_starts:
+        raise ValueError("n_lat_starts must be non-empty")
     if weather is None:
         weather = WeatherConditions()
 
@@ -302,6 +308,9 @@ def solve_minimum_time_2d(
     # interpolant remains the layout-locked data-sampling contract elsewhere.
     # Built ONCE here and reused across every multi-start solve.
     mu_lut = _make_mu_interpolant_smooth(mu_field)
+    # Floor mu_ceiling at EPS_GRIP so a degenerate all-zero field doesn't let
+    # the cap override the EPS_GRIP floor (fmin(EPS_GRIP, 0) = 0 → NaN Jacobian)
+    mu_ceiling = max(float(mu_field.mu_grid.max()), EPS_GRIP)
 
     v_guess = corner_speed(kappa, vehicle) * weather.grip_multiplier
     v_guess = np.clip(v_guess, 10.0, 100.0)
@@ -342,6 +351,7 @@ def solve_minimum_time_2d(
             N=N, ds=ds, kappa=kappa, kv=kv, s_coords=s_coords, mu_lut=mu_lut,
             n_bounds=n_bounds, v_guess=v_guess, n_guess=n_guess, ax_guess=ax_guess,
             vehicle=vehicle, weather=weather, max_time_s=max_time_s,
+            mu_ceiling=mu_ceiling,
         )
         if first is None:
             first = cand
@@ -357,10 +367,10 @@ def solve_minimum_time_2d(
                 best_acc = cand
 
     winner = best_opt if best_opt is not None else (
-        best_acc if best_acc is not None else first
+        best_acc if best_acc is not None else first  # suboptimal exits have untrustworthy lap numbers — ranking them is false precision; first = deterministic
     )
-    assert winner is not None  # n_lat_starts is non-empty
-    status, v_sol, n_lat_sol, ax_sol = winner
+    # winner is not None — the loop ran at least once given the non-empty guard above
+    status, v_sol, n_lat_sol, ax_sol = winner  # type: ignore[misc]
 
     elapsed = time.perf_counter() - t0
     return _build_solution(

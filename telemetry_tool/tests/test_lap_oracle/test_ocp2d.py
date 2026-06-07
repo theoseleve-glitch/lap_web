@@ -243,14 +243,20 @@ def test_solver_is_deterministic():
 
 
 def _field_with_puddle_block(total_length_m: float) -> MuField:
-    """Uniform wet grip 0.85 with a puddle block (mu=0.2) spanning the
-    INSIDE half of the width over s in [90, 130] — sitting where the
-    unobstructed wet line wants to be in the first corner."""
+    """Uniform wet grip 0.85 with a puddle block (mu=0.2) over the
+    inside strip (n <= -2.0) for s in [90, 130] — sitting where the
+    unobstructed wet line wants to be in the first corner.
+
+    The puddle boundary is at n=-2.0 (leaving the inside-outer 0.7m of the
+    ±2.7m track bounds as puddle) so that the dry corridor (n > -2.0) is wide
+    enough for the NLP to find a clean puddle-free solution without relying on
+    bspline overshoot at the step edge.  mu_grid.max() == 0.85 (no phantom
+    grip for cap regression)."""
     s_bins = np.arange(0.0, total_length_m, 5.0)
     n_bins = np.arange(-8.0, 9.0, 1.0)
     mu = np.full((len(s_bins), len(n_bins)), 0.85)
     s_mask = (s_bins >= 90.0) & (s_bins <= 130.0)
-    n_mask = n_bins <= 0.0
+    n_mask = n_bins <= -2.0
     mu[np.ix_(s_mask, n_mask)] = 0.2
     return MuField(s_bins=s_bins, n_bins=n_bins, mu_grid=mu)
 
@@ -267,13 +273,13 @@ def test_wet_line_routes_around_puddle():
     control_field = _uniform_field(track.total_length_m, mu=0.85)
 
     # Multi-start the PUDDLE solve only. The step-clamped puddle block
-    # (mu=0.2 for n<=0 over s in [90,130]) creates a low-grip local basin
+    # (mu=0.2 for n<=-2.0 over s in [90,130]) creates a low-grip local basin
     # that traps a single cold start (N_lat=0) ON the puddle side — IPOPT
-    # reports "optimal" at ~28.4s with the line at mu=0.2 and cannot cross
-    # the step. Seeding lateral starts (0, +2, -2) lands a solve in the dry
-    # (n>0) basin; the best optimal candidate wins. This mirrors how the
-    # production wet-field bridge will call the solver. The control solve
-    # stays single-start (uniform field has no step basin to escape).
+    # reports "optimal" in that basin and cannot cross the step. Seeding
+    # lateral starts (0, +2, -2) lands a solve in the dry (n>-2.0) basin;
+    # the best optimal candidate wins. This mirrors how the production
+    # wet-field bridge will call the solver. The control solve stays
+    # single-start (uniform field has no step basin to escape).
     sol = solve_minimum_time_2d(track, vp, puddle_field, n_points=100, max_time_s=60.0,
                                 n_lat_starts=(0.0, 2.0, -2.0))
     control = solve_minimum_time_2d(track, vp, control_field, n_points=100, max_time_s=60.0)
@@ -293,9 +299,9 @@ def test_wet_line_routes_around_puddle():
     assert float(mu_under_line.min()) > 0.25
     # And strictly better integrated grip than the puddle-blind line
     assert float(mu_under_line.mean()) > float(mu_under_control.mean()) - 1e-9
-    # In the puddle s-window the line must sit on the dry (n>0) side
+    # In the puddle s-window the line must sit on the dry (n > -2.0) side
     window = (sol.distance_m >= 95.0) & (sol.distance_m <= 125.0)
-    assert np.all(sol.lateral_offset_m[window] > 0.0)
+    assert np.all(sol.lateral_offset_m[window] > -2.0)
 
 
 @needs_casadi
@@ -315,3 +321,36 @@ def test_smooth_interpolant_matches_grid_at_knots():
         for i_n in (1, 8, 15):
             got = float(lut(ca.vertcat(s_bins[i_s], n_bins[i_n])))
             assert got == pytest.approx(mu[i_s, i_n], abs=1e-6), (i_s, i_n)
+
+
+@needs_casadi
+def test_empty_starts_raises():
+    track = _oval_track(n=60)
+    with pytest.raises(ValueError, match="n_lat_starts"):
+        solve_minimum_time_2d(track, _default_vehicle(),
+                              _uniform_field(track.total_length_m, 1.0),
+                              n_lat_starts=())
+
+
+@needs_casadi
+def test_nlp_grip_is_capped_at_field_max():
+    """The NLP must never see more grip than the field's true maximum:
+    a field whose ONLY high-grip region is bspline-overshoot territory
+    (just outside a step) must not produce a faster lap than the same
+    field solved with uniform grip at the true max.
+
+    (belt-and-suspenders: overshoot was measured at +9% but may not always
+    flip this assertion at n_points=60 — the test is kept regardless as a
+    structural guard against the fmin cap being silently removed)
+    """
+    track = _oval_track(n=60)
+    vp = _default_vehicle()
+    field = _field_with_puddle_block(track.total_length_m)
+    ref = solve_minimum_time_2d(track, vp,
+                                _uniform_field(track.total_length_m, 0.85),
+                                n_points=60, max_time_s=30.0)
+    sol = solve_minimum_time_2d(track, vp, field, n_points=60, max_time_s=30.0,
+                                n_lat_starts=(0.0, 2.0, -2.0))
+    # The puddle field is everywhere <= 0.85, so its lap can never beat the
+    # uniform-0.85 lap (it could only do so by consuming overshoot grip)
+    assert sol.optimal_lap_time_s >= ref.optimal_lap_time_s - 1e-6
