@@ -7,7 +7,8 @@ import Link from 'next/link';
 import { PageIntro } from '@/components/ui/PageIntro';
 import { Modal } from '@/components/ui/Modal';
 import { QuotaIndicator } from '@/components/app/plan';
-import { BACKEND_URL, ApiError, api } from '@/lib/api-client';
+import { BACKEND_URL, ApiError, api, apiFetch } from '@/lib/api-client';
+import { useGamificationStore } from '@/stores/gamification-store';
 import { getAccessToken, getUserProfile } from '@/lib/auth-store';
 import { CornerEditor, type TrackLayout } from '@/components/app/CornerEditor';
 import { logger } from '@/lib/logger';
@@ -366,6 +367,45 @@ async function createKart(fields: NewKartFields): Promise<string> {
   return name;
 }
 
+/** Fetch the freshly-analyzed session's gamification payload and fire the
+ *  global celebration pipeline (toasts, level-up, floating XP). Guarded so
+ *  the same session never celebrates twice (e.g. upload page + session page). */
+async function fireGamificationFor(sessionId: string): Promise<void> {
+  const guardKey = `gam-shown-${sessionId}`;
+  try {
+    if (sessionStorage.getItem(guardKey)) return;
+    const scores = await apiFetch<{
+      gamification?: {
+        xp_gained: number;
+        old_level: number;
+        new_level: number;
+        leveled_up: boolean;
+        current_streak: number;
+        new_achievements: { key: string; label: string; description: string; icon: string }[];
+      };
+    }>(`/sessions/${sessionId}/scores`);
+    const gam = scores?.gamification;
+    if (!gam) return;
+    sessionStorage.setItem(guardKey, '1');
+    useGamificationStore.getState().processEvent({
+      xp_gained: gam.xp_gained ?? 0,
+      old_level: gam.old_level,
+      new_level: gam.leveled_up ? gam.new_level : null,
+      new_achievements: gam.new_achievements.map((a) => ({
+        key: a.key,
+        label: a.label,
+        description: a.description,
+        icon: a.icon,
+        unlocked: true,
+        unlocked_at: null,
+      })),
+      streak: gam.current_streak ?? 0,
+    });
+  } catch {
+    // Celebration is best-effort; never block the upload flow.
+  }
+}
+
 /**
  * Best-effort track follow-ups after a session upload completes. Resolves the
  * track_id by name (the upload upserts the track), then posts a track record
@@ -721,6 +761,7 @@ function UploadPage() {
               if (event.status === 'completed') {
                 const sid = event.session_id || jId;
                 trackEvent('session.upload', { session_id: sid ?? '' });
+                if (sid) void fireGamificationFor(String(sid));
                 // Apply user-specified track name (pipeline auto-detects, this overrides)
                 const tn = trackNameRef.current?.trim();
                 if (tn && sid) {
