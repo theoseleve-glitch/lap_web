@@ -211,3 +211,65 @@ def test_zero_grip_field_does_not_nan_poison():
     ref = solve_minimum_time_2d(track, vp, _uniform_field(track.total_length_m, 1.0),
                                 n_points=60, max_time_s=30.0)
     assert sol.optimal_lap_time_s > ref.optimal_lap_time_s * 1.5
+
+
+@needs_casadi
+def test_solver_is_deterministic():
+    """Gate 1: identical inputs → bit-identical line."""
+    track = _oval_track(n=100)
+    vp = _default_vehicle()
+    field = _ramp_mu_field(track.total_length_m, +0.05)
+
+    a = solve_minimum_time_2d(track, vp, field, n_points=100, max_time_s=60.0)
+    b = solve_minimum_time_2d(track, vp, field, n_points=100, max_time_s=60.0)
+
+    np.testing.assert_array_equal(a.lateral_offset_m, b.lateral_offset_m)
+    np.testing.assert_array_equal(a.speed_mps, b.speed_mps)
+    assert a.optimal_lap_time_s == b.optimal_lap_time_s
+
+
+def _field_with_puddle_block(total_length_m: float) -> MuField:
+    """Uniform wet grip 0.85 with a puddle block (mu=0.2) spanning the
+    INSIDE half of the width over s in [90, 130] — sitting where the
+    unobstructed wet line wants to be in the first corner."""
+    s_bins = np.arange(0.0, total_length_m, 5.0)
+    n_bins = np.arange(-8.0, 9.0, 1.0)
+    mu = np.full((len(s_bins), len(n_bins)), 0.85)
+    s_mask = (s_bins >= 90.0) & (s_bins <= 130.0)
+    n_mask = n_bins <= 0.0
+    mu[np.ix_(s_mask, n_mask)] = 0.2
+    return MuField(s_bins=s_bins, n_bins=n_bins, mu_grid=mu)
+
+
+@needs_casadi
+def test_wet_line_routes_around_puddle():
+    """Gate 3 (synthetic form): the line must not cross puddle cells, and
+    must carry more grip than the puddle-blind control line."""
+    from track_surface.grip_2d import GripSurface
+
+    track = _oval_track(n=100)
+    vp = _default_vehicle()
+    puddle_field = _field_with_puddle_block(track.total_length_m)
+    control_field = _uniform_field(track.total_length_m, mu=0.85)
+
+    sol = solve_minimum_time_2d(track, vp, puddle_field, n_points=100, max_time_s=60.0)
+    control = solve_minimum_time_2d(track, vp, control_field, n_points=100, max_time_s=60.0)
+    assert sol.solver_status == "optimal"
+
+    # Sample mu under each line via the same bilinear scheme
+    gs = GripSurface(
+        s_bins=puddle_field.s_bins, n_bins=puddle_field.n_bins,
+        mu_grid=puddle_field.mu_grid,
+        count_grid=np.full(puddle_field.mu_grid.shape, 1, dtype=int),
+        confidence=np.ones(puddle_field.mu_grid.shape),
+    )
+    mu_under_line = gs.mu_at_batch(sol.distance_m, sol.lateral_offset_m)
+    mu_under_control = gs.mu_at_batch(control.distance_m, control.lateral_offset_m)
+
+    # Zero puddle crossings: never inside mu<=0.25 territory
+    assert float(mu_under_line.min()) > 0.25
+    # And strictly better integrated grip than the puddle-blind line
+    assert float(mu_under_line.mean()) > float(mu_under_control.mean()) - 1e-9
+    # In the puddle s-window the line must sit on the dry (n>0) side
+    window = (sol.distance_m >= 95.0) & (sol.distance_m <= 125.0)
+    assert np.all(sol.lateral_offset_m[window] > 0.0)
