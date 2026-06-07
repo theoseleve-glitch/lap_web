@@ -7906,4 +7906,91 @@ def get_reference_data(session_id: str) -> tuple[dict, int]:
     })
 
 
+# ══════════════════════════════════════════════════════════════════
+# GET /api/v1/quests — Driver quest list (Phase 2a gamification)
+# POST /api/v1/quests/<id>/focus — Toggle quest focus flag
+# ══════════════════════════════════════════════════════════════════
+
+
+@bp.route("/quests", methods=["GET"])
+@_safe_api
+def list_quests() -> tuple[dict, int]:
+    """Active + recently-completed quests for the driver (RLS-scoped).
+
+    RLS (FORCE) on the quests table is enforced by the per-request GUC
+    set in the tenant middleware (set_workspace_context → SET LOCAL
+    app.current_workspace_id).  get_db_connection() returns that
+    already-pinned connection — no extra setup required.
+
+    Query params:
+        driver_id  (int, default 1)
+        status     (str, optional) — 'active' or 'completed' to filter
+    """
+    conn = get_db_connection()
+    try:
+        drv = int(request.args.get("driver_id"))
+    except (TypeError, ValueError):
+        drv = 1  # single-driver default (matches dashboard_stats)
+
+    status_filter = request.args.get("status")
+    if status_filter in ("active", "completed"):
+        rows = conn.execute(
+            "SELECT id, metric, comparator, target, baseline, human_text, xp, status, "
+            "focused, completed_at, expires_at, created_at FROM quests "
+            "WHERE driver_id = :drv AND status = :st "
+            "ORDER BY focused DESC, created_at DESC LIMIT 20",
+            {"drv": drv, "st": status_filter},
+        ).fetchall()
+    else:
+        rows = conn.execute(
+            "SELECT id, metric, comparator, target, baseline, human_text, xp, status, "
+            "focused, completed_at, expires_at, created_at FROM quests "
+            "WHERE driver_id = :drv AND status IN ('active','completed') "
+            "ORDER BY (status='active') DESC, focused DESC, created_at DESC LIMIT 20",
+            {"drv": drv},
+        ).fetchall()
+
+    out = []
+    for r in rows:
+        d = dict(r) if not isinstance(r, dict) else dict(r)
+        # Serialize datetimes to ISO strings (mirrors sibling endpoints)
+        for col in ("completed_at", "expires_at", "created_at"):
+            val = d.get(col)
+            if val is not None and hasattr(val, "isoformat"):
+                d[col] = val.isoformat()
+        out.append(d)
+
+    return api_response({"quests": out})
+
+
+@bp.route("/quests/<int:quest_id>/focus", methods=["POST"])
+@_safe_api
+def focus_quest(quest_id: int) -> tuple[dict, int]:
+    """Toggle a quest's pre-session 'focus' flag.
+
+    Ownership is verified implicitly by RLS (the GUC-pinned connection
+    limits the UPDATE to the authed driver's workspace) plus the explicit
+    driver_id filter: the UPDATE targets driver_id = :drv so a quest
+    belonging to another driver in the same workspace returns 0 rows.
+    Returns 404 if the quest is not found, not active, or not owned.
+    """
+    conn = get_db_connection()
+    body = request.get_json(silent=True) or {}
+    focused = bool(body.get("focused", True))
+    try:
+        drv = int(body.get("driver_id", 1))
+    except (TypeError, ValueError):
+        drv = 1
+
+    cur = conn.execute(
+        "UPDATE quests SET focused = :f "
+        "WHERE id = :id AND driver_id = :drv AND status = 'active'",
+        {"f": focused, "id": quest_id, "drv": drv},
+    )
+    conn.commit()
+    if getattr(cur, "rowcount", 0) == 0:
+        return api_error(ErrorCode.NOT_FOUND, "Quest not found or not active", status=404)
+    return api_response({"id": quest_id, "focused": focused})
+
+
 # Dev-plans endpoints moved to api_v1_entities.py (Task 5).
