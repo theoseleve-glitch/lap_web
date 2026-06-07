@@ -386,12 +386,11 @@ async function fireGamificationFor(sessionId: string): Promise<void> {
     }>(`/sessions/${sessionId}/scores`);
     const gam = scores?.gamification;
     if (!gam) return;
-    sessionStorage.setItem(guardKey, '1');
     useGamificationStore.getState().processEvent({
       xp_gained: gam.xp_gained ?? 0,
       old_level: gam.old_level,
       new_level: gam.leveled_up ? gam.new_level : null,
-      new_achievements: gam.new_achievements.map((a) => ({
+      new_achievements: (gam.new_achievements ?? []).map((a) => ({
         key: a.key,
         label: a.label,
         description: a.description,
@@ -401,6 +400,7 @@ async function fireGamificationFor(sessionId: string): Promise<void> {
       })),
       streak: gam.current_streak ?? 0,
     });
+    sessionStorage.setItem(guardKey, '1');
   } catch {
     // Celebration is best-effort; never block the upload flow.
   }
