@@ -69,6 +69,19 @@ def _safe_api(f: Callable) -> Callable:
 bp = Blueprint("data_v2", __name__, url_prefix="/api/v1")
 
 
+def _invalidate_workspace_cache() -> None:
+    """Drop the current workspace's aggregate API caches (e.g. dashboard stats)
+    after a session mutation, so cached views reflect the change immediately
+    instead of serving stale data until the cache TTL. Best-effort — the
+    dashboard cache is tagged ``ws:<id>`` (see dashboard_stats). Never raises.
+    """
+    try:
+        from web.cache import api_cache
+        api_cache.invalidate_tag(f"ws:{getattr(g, 'workspace_id', 'default')}")
+    except Exception:
+        logger.warning("Workspace cache invalidation failed", exc_info=True)
+
+
 # ── Blueprint-level rate limiting ─────────────────────────────────
 # Apply rate limits to all data endpoints without decorating each one.
 # GET → "read" tier (300/min), mutating methods → "write" tier (60/min).
@@ -1505,6 +1518,10 @@ def delete_session(session_id: str) -> tuple[dict, int]:
     except Exception:
         logger.warning("Chart-cache invalidation failed after delete", exc_info=True)
 
+    # Invalidate the workspace's aggregate API caches (dashboard stats) so the
+    # dashboard reflects the delete immediately instead of after the 60s TTL.
+    _invalidate_workspace_cache()
+
     try:
         from web.rollups import refresh_rollups
         refresh_rollups(conn, int(g.workspace_id))
@@ -1548,6 +1565,7 @@ def restore_session(session_id: str) -> tuple[dict, int]:
         return api_error(ErrorCode.CONFLICT, "Session is not deleted", status=409)
     models.restore_session(conn, session_id)
     conn.commit()
+    _invalidate_workspace_cache()
     return api_response({"restored": session_id})
 
 
@@ -1630,6 +1648,7 @@ def bulk_session_action() -> tuple[dict, int]:
         "processed": processed,
     })
     conn.commit()
+    _invalidate_workspace_cache()
 
     return api_response({
         "action": action,
