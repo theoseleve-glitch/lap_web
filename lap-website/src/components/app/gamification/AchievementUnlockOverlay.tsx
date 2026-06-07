@@ -2,6 +2,8 @@
 
 import { useEffect, useState, useCallback } from 'react';
 
+import { BadgeIcon } from './RacingBadge';
+
 /* ── Types ────────────────────────────────────────────────── */
 
 interface AchievementData {
@@ -183,18 +185,17 @@ export function AchievementUnlockOverlay({
               />
             </svg>
 
-            {/* Trophy icon */}
+            {/* The clicked achievement's own glyph — the same per-badge icon
+                the grid renders (keyed by label, star fallback), tinted with
+                the tier accent. Previously a hardcoded trophy, so every
+                trophy card looked identical regardless of the badge. */}
             <div className="absolute inset-0 flex items-center justify-center">
-              <svg width="44" height="44" viewBox="0 0 24 24" fill="none">
-                <path d="M8 7v5a4 4 0 008 0V7H8z" fill={accent} opacity="0.15" />
-                <path d="M6 2l2 5h8l2-5" stroke={accent} strokeWidth="1.2" strokeLinejoin="round" />
-                <path d="M8 7v5a4 4 0 008 0V7" stroke={accent} strokeWidth="1.2" />
-                <path d="M4 7h4M16 7h4" stroke={accent} strokeWidth="1.2" strokeLinecap="round" />
-                <path d="M4 7c-1 0-2 1-2 3s1 3 2 3" stroke={accent} strokeWidth="1" />
-                <path d="M20 7c1 0 2 1 2 3s-1 3-2 3" stroke={accent} strokeWidth="1" />
-                <path d="M10 17v2h4v-2" stroke={accent} strokeWidth="1.2" />
-                <path d="M8 21h8" stroke={accent} strokeWidth="1.2" strokeLinecap="round" />
-              </svg>
+              <BadgeIcon
+                title={achievement?.label ?? ''}
+                color={accent}
+                unlocked
+                size={52}
+              />
             </div>
           </div>
 

@@ -19,10 +19,21 @@ const categoryColors: Record<string, string> = {
 
 /* ── Badge Icons ──────────────────────────────────────────── */
 
-function BadgeIcon({ title, color, unlocked }: { title: string; color: string; unlocked: boolean }) {
+// Exported so AchievementUnlockOverlay can render the SAME per-achievement
+// glyph the grid shows (it previously hardcoded one trophy for every badge).
+export function BadgeIcon({
+  title,
+  color,
+  unlocked,
+  size = 28,
+}: {
+  title: string;
+  color: string;
+  unlocked: boolean;
+  size?: number;
+}) {
   const fill = unlocked ? color : '#949494';
   const opacity = unlocked ? 1 : 0.3;
-  const size = 28;
 
   const icons: Record<string, JSX.Element> = {
     /* === PROGRESS & MILESTONES === */
