@@ -6,6 +6,7 @@ import dynamic from 'next/dynamic';
 import Link from 'next/link';
 import { api, BACKEND_URL } from '@/lib/api-client';
 import { useEntityDelete } from '@/hooks/useEntityDelete';
+import { useFocusTrap } from '@/hooks/useFocusTrap';
 import { DeleteConfirmPanel } from '@/components/app/DeleteConfirmPanel';
 import { formatLapTime, formatDate, formatDistance, mpsToKmh, mps2ToG } from '@/lib/format-utils';
 import type { CornerData } from '@/components/app/corners';
@@ -345,6 +346,8 @@ export default function SessionDetailPage() {
   const [achievementToShow, setAchievementToShow] = useState<{ key: string; label: string; description: string; icon: string; tier: string } | null>(null);
   const [gamShown, setGamShown] = useState(false);
   const [showShare, setShowShare] = useState(false);
+  const shareModalRef = useRef<HTMLDivElement>(null);
+  useFocusTrap(shareModalRef, showShare, () => setShowShare(false));
 
   const del = useEntityDelete({
     entity: 'session',
@@ -731,7 +734,13 @@ export default function SessionDetailPage() {
           className="fixed inset-0 z-50 flex items-center justify-center bg-asphalt/90"
           onClick={() => setShowShare(false)}
         >
-          <div onClick={(e) => e.stopPropagation()}>
+          <div
+            ref={shareModalRef}
+            role="dialog"
+            aria-modal="true"
+            aria-label="Share personal best"
+            onClick={(e) => e.stopPropagation()}
+          >
             <Suspense fallback={null}>
               <ShareableCard
                 driverName={session.driver_name}
@@ -739,7 +748,24 @@ export default function SessionDetailPage() {
                 date={formatDate(session.session_date)}
                 sessionType={session.session_type}
                 bestLap={session.best_lap_time_s != null ? formatLapTime(session.best_lap_time_s) : '--'}
-                score={scores ? Math.round([scores.pace_score, scores.consistency_score, scores.execution_score, scores.robustness_score, scores.adaptation_score].reduce<number>((s, v) => s + (v ?? 0), 0)) : Math.round(session.total_score ?? 0)}
+                score={scores ? (() => {
+                  const pMax = scores.pace_max ?? 25;
+                  const cMax = scores.consistency_max ?? 25;
+                  const eMax = scores.execution_max ?? 20;
+                  const rMax = scores.robustness_max ?? 15;
+                  const aMax = Math.max(0, 100 - pMax - cMax - eMax - rMax);
+                  return Math.round(
+                    [
+                      { score: scores.pace_score, max: pMax },
+                      { score: scores.consistency_score, max: cMax },
+                      { score: scores.execution_score, max: eMax },
+                      { score: scores.robustness_score, max: rMax },
+                      { score: scores.adaptation_score, max: aMax },
+                    ]
+                      .filter((d) => d.max > 0)
+                      .reduce<number>((sum, d) => sum + (d.score ?? 0), 0),
+                  );
+                })() : Math.round(session.total_score ?? 0)}
                 maxScore={100}
                 laps={session.n_laps ?? 0}
                 consistency={scores?.consistency_score != null && scores.consistency_max ? Math.round((scores.consistency_score / scores.consistency_max) * 100) : 0}
