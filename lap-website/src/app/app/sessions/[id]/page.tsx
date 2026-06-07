@@ -110,6 +110,7 @@ interface GamificationResult {
   current_streak: number;
   new_achievements: { key: string; label: string; description: string; icon: string }[];
   xp_breakdown?: { personal_best?: boolean | number | null };
+  stars?: Array<{ track_id: string; corner_id: number; tier: string; xp: number; score: number }>;
 }
 
 interface ScoreData {
@@ -423,11 +424,34 @@ export default function SessionDetailPage() {
     }
   }, [sessionId]);
 
-  // Trigger gamification UI once when scores load
+  // Trigger gamification UI once when scores load.
+  // Cross-page guard: if the upload page already fired celebration for this
+  // session (sessionStorage key set by fireGamificationFor), skip firing here
+  // so the user doesn't see the overlays twice. Falls back to local-only
+  // behaviour if sessionStorage is unavailable (private-mode safety).
   useEffect(() => {
     const gam = scores?.gamification;
     if (!gam || gamShown) return;
+
+    // Always mark local guard so this effect doesn't retry within the page.
     setGamShown(true);
+
+    // Check cross-page sessionStorage guard.
+    const guardKey = `gam-shown-${sessionId}`;
+    let alreadyShown = false;
+    try {
+      alreadyShown = !!sessionStorage.getItem(guardKey);
+    } catch {
+      // sessionStorage unavailable (private mode) — fall back to local-only.
+    }
+    if (alreadyShown) return;
+
+    // Mark it now so a subsequent revisit or upload-page navigation won't re-fire.
+    try {
+      sessionStorage.setItem(guardKey, '1');
+    } catch {
+      // Best-effort.
+    }
 
     if (gam.leveled_up) {
       setShowLevelUp(true);
@@ -449,7 +473,7 @@ export default function SessionDetailPage() {
         });
       }
     }
-  }, [scores, gamShown]);
+  }, [scores, gamShown, sessionId]);
 
   // Derived values
   const bestLap = useMemo(() => {
