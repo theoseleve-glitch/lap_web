@@ -7936,7 +7936,7 @@ def list_quests() -> tuple[dict, int]:
     if status_filter in ("active", "completed"):
         rows = conn.execute(
             "SELECT id, metric, comparator, target, baseline, human_text, xp, status, "
-            "focused, completed_at, expires_at, created_at FROM quests "
+            "focused, completed_at, expires_at, created_at, spec FROM quests "
             "WHERE driver_id = :drv AND status = :st "
             "ORDER BY focused DESC, created_at DESC LIMIT 20",
             {"drv": drv, "st": status_filter},
@@ -7944,7 +7944,7 @@ def list_quests() -> tuple[dict, int]:
     else:
         rows = conn.execute(
             "SELECT id, metric, comparator, target, baseline, human_text, xp, status, "
-            "focused, completed_at, expires_at, created_at FROM quests "
+            "focused, completed_at, expires_at, created_at, spec FROM quests "
             "WHERE driver_id = :drv AND status IN ('active','completed') "
             "ORDER BY (status='active') DESC, focused DESC, created_at DESC LIMIT 20",
             {"drv": drv},
@@ -7958,6 +7958,10 @@ def list_quests() -> tuple[dict, int]:
             val = d.get(col)
             if val is not None and hasattr(val, "isoformat"):
                 d[col] = val.isoformat()
+        # Decode spec (JSONB → dict via PgConnectionWrapper; TEXT → parse for sqlite)
+        raw_spec = d.pop("spec", None)
+        parsed_spec = json.loads(raw_spec) if isinstance(raw_spec, str) else (raw_spec or {})
+        d["scope"] = parsed_spec.get("scope", {})
         out.append(d)
 
     return api_response({"quests": out})
