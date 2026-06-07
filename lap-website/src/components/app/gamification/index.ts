@@ -18,6 +18,9 @@ export { PointsAnimation } from './PointsAnimation';
 export { ChallengeCard } from './ChallengeCard';
 export { Leaderboard } from './Leaderboard';
 export { AchievementCard } from './AchievementCard';
+export { MasteryStars } from './MasteryStars';
+export { SessionProgressStrip } from './SessionProgressStrip';
+export { TerritoryShelf } from './TerritoryShelf';
 
 export type { BadgeIcon, BadgeTier } from './BadgeHex';
 

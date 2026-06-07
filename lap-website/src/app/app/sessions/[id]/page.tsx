@@ -16,6 +16,7 @@ import { exportCanvasAsPNG } from '@/lib/export-chart';
 import { ChartSyncToggle } from '@/components/app/ChartSyncToggle';
 import { trackEvent } from '@/hooks/useTrackEvent';
 import { useTrackSurfaceData } from '@/components/app/track-surface/useTrackSurfaceData';
+import { SessionProgressStrip } from '@/components/app/gamification/SessionProgressStrip';
 
 // Lazy-loaded tab content — only fetched when the user activates each tab/section
 const AnalyticsTab = lazy(() => import('@/components/app/analytics').then(m => ({ default: m.AnalyticsTab })));
@@ -657,6 +658,9 @@ export default function SessionDetailPage() {
           <ChartSyncToggle />
         </div>
       </div>
+
+      {/* Session progress strip — XP, star pips, achievements earned this session */}
+      <SessionProgressStrip gam={scores?.gamification} />
 
       {/* Tab content */}
       {activeTab === 'overview' && (

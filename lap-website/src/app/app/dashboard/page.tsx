@@ -13,6 +13,7 @@ import { QuotaIndicator } from '@/components/app/plan';
 import XPProgressBar from '@/components/app/gamification/XPProgressBar';
 import { StreakTracker } from '@/components/app/gamification';
 import { ChallengeCard } from '@/components/app/gamification';
+import { TerritoryShelf } from '@/components/app/gamification';
 
 /**
  * ScoreTrendChart — a per-session bar readout (telemetry/stint style).
@@ -450,6 +451,11 @@ export default function DashboardPage() {
             </div>
           )}
         </div>
+      </div>
+
+      {/* Corner mastery territories */}
+      <div className="mb-6">
+        <TerritoryShelf />
       </div>
 
       {/* Action Buttons */}
