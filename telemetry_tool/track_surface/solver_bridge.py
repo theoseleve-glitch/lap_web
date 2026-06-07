@@ -235,3 +235,169 @@ def solve_optimal_line(
         n_points=n_points,
         max_time_s=max_time_s,
     )
+
+
+# ---------------------------------------------------------------------------
+# Task 6: true-2D bridge + hard puddle corridor exclusions
+# ---------------------------------------------------------------------------
+_MIN_CORRIDOR_M = 0.5  # below this dry width on BOTH sides, skip the exclusion
+
+
+def puddles_to_n_windows(
+    puddles,
+    grip_2d,
+    width_left,
+    width_right,
+    s_grid,
+    margin_m: float = 0.5,
+):
+    """Convert known puddle zones into hard corridor exclusions.
+
+    For each puddle (disk of radius r at (s_c, n_c)): over the s-window
+    [s_c - r - margin, s_c + r + margin], the allowed lateral corridor is
+    the side of the puddle with MORE remaining track width:
+      keep-left  -> (s0, s1, n_c + r + margin, +inf)
+      keep-right -> (s0, s1, -inf, n_c - r - margin)
+    Radius matches build_wet_mu_field's footprint:
+      r = max(sqrt(area_cells * cell_area / pi), n_step).
+    Returns a list of (s_start, s_end, n_lo, n_hi) tuples (inf bounds mean
+    'unconstrained on that side' — use float('inf')/-float('inf')).
+
+    Side selection is deterministic: the available DRY width above the puddle
+    is (mean width_left over the window) - (n_c + r + margin); below is
+    (mean width_right over the window) + (n_c - r - margin) (width_right is a
+    positive distance to the n<0 edge).  The wider side wins.  If BOTH sides
+    leave less than ``_MIN_CORRIDOR_M`` of dry corridor, the window is skipped
+    entirely and a warning logged — a puddle crossing beats an infeasible NLP.
+    """
+    if not puddles:
+        return []
+
+    s_grid = np.asarray(s_grid, dtype=np.float64)
+    width_left = np.asarray(width_left, dtype=np.float64)
+    width_right = np.asarray(width_right, dtype=np.float64)
+
+    # Footprint geometry — identical contract to build_wet_mu_field.
+    s_bins = np.asarray(grip_2d.s_bins, dtype=np.float64)
+    n_bins = np.asarray(grip_2d.n_bins, dtype=np.float64)
+    s_step = float(np.median(np.diff(s_bins))) if len(s_bins) > 1 else 5.0
+    n_step = float(np.median(np.diff(n_bins))) if len(n_bins) > 1 else 1.0
+    cell_area = s_step * n_step
+
+    def _mean_over_window(arr: np.ndarray, s0: float, s1: float) -> float:
+        """Mean of a per-s_grid array over [s0, s1] (interpolated)."""
+        mask = (s_grid >= s0) & (s_grid <= s1)
+        if np.any(mask):
+            return float(np.mean(arr[mask]))
+        # Window narrower than the s_grid spacing — interpolate at the centre.
+        return float(np.interp((s0 + s1) / 2.0, s_grid, arr))
+
+    windows: list[tuple[float, float, float, float]] = []
+    for p in puddles:
+        r = max(np.sqrt(p.area_cells * cell_area / np.pi), n_step)
+        s0 = p.s_center - r - margin_m
+        s1 = p.s_center + r + margin_m
+
+        keep_left_lo = p.n_center + r + margin_m   # corridor ABOVE the puddle
+        keep_right_hi = p.n_center - r - margin_m  # corridor BELOW the puddle
+
+        mean_wl = _mean_over_window(width_left, s0, s1)
+        mean_wr = _mean_over_window(width_right, s0, s1)
+
+        # Remaining dry width on each side (positive = corridor exists).
+        avail_above = mean_wl - keep_left_lo
+        avail_below = keep_right_hi - (-mean_wr)  # = n_c - r - margin + mean_wr
+
+        if avail_above < _MIN_CORRIDOR_M and avail_below < _MIN_CORRIDOR_M:
+            logger.warning(
+                "puddles_to_n_windows: puddle at s=%.1f n=%.2f (r=%.2f) leaves "
+                "< %.2f m dry on both sides (above=%.2f, below=%.2f) — skipping "
+                "exclusion (a puddle crossing beats an infeasible NLP)",
+                p.s_center, p.n_center, r, _MIN_CORRIDOR_M, avail_above, avail_below,
+            )
+            continue
+
+        if avail_above >= avail_below:
+            windows.append((s0, s1, keep_left_lo, float("inf")))   # keep-left
+        else:
+            windows.append((s0, s1, -float("inf"), keep_right_hi))  # keep-right
+
+    return windows
+
+
+def solve_optimal_line_2d(
+    surface: TrackSurface,
+    vehicle_params=None,
+    weather=None,
+    condition: str = "dry",
+    puddles: list | None = None,
+    n_points: int = 400,
+    max_time_s: float = 120.0,
+):
+    """Compute the optimal racing line with the TRUE 2D grip field in the NLP.
+
+    condition='dry' -> confidence-shrunk measured grip, single cold start.
+    condition='wet' -> rubber-inverted grip; puddles become BOTH soft field
+    penalties (mu=0.2 cells via build_wet_mu_field) AND hard corridor
+    exclusions (puddles_to_n_windows), with multi-start (0, +2, -2).
+
+    Warm-starts from the casadi-free QSS solve.
+
+    Raises ValueError if surface.grip_2d is None (needs >= 10 laps),
+    ImportError if casadi/lap_oracle unavailable.
+    """
+    if surface.grip_2d is None:
+        raise ValueError(
+            "solve_optimal_line_2d needs a 2D grip field (surface.grip_2d) — "
+            f"got None (quality_tier={surface.quality_tier!r}, needs >= 10 laps "
+            "for gold tier). Use solve_optimal_line for the 1D centerline-slice path."
+        )
+    if condition not in ("dry", "wet"):
+        raise ValueError(f"condition must be 'dry' or 'wet', got {condition!r}")
+
+    try:
+        from track_surface.mu_field import build_dry_mu_field, build_wet_mu_field
+        from lap_oracle.solver.fallback_qss import solve_qss
+        from lap_oracle.solver.ocp_2d import solve_minimum_time_2d
+    except ImportError as exc:
+        raise ImportError(
+            "2D OCP solver not available — install casadi and ensure "
+            "lap_oracle.solver.ocp_2d / fallback_qss are importable "
+            f"({exc})"
+        ) from exc
+
+    if vehicle_params is None:
+        from lap_oracle.config import VehicleParams
+        vehicle_params = VehicleParams()
+
+    track_model = surface_to_track_model(surface)
+
+    # Casadi-free warm start: QSS speed profile (centerline line).
+    warm = solve_qss(track_model, vehicle_params, weather)
+
+    if condition == "dry":
+        mu_field = build_dry_mu_field(surface.grip_2d)
+        n_lat_starts = (0.0,)
+        n_windows: list = []
+    else:  # wet
+        puddle_list = puddles or []
+        mu_field = build_wet_mu_field(surface.grip_2d, puddle_list)
+        n_lat_starts = (0.0, 2.0, -2.0)
+        n = surface.frenet.n_points
+        wl = surface.width_left if surface.width_left is not None else np.full(n, 3.0)
+        wr = surface.width_right if surface.width_right is not None else np.full(n, 3.0)
+        n_windows = puddles_to_n_windows(
+            puddle_list, surface.grip_2d, wl, wr, surface.frenet.s_grid,
+        )
+
+    return solve_minimum_time_2d(
+        track_model,
+        vehicle_params,
+        mu_field,
+        weather=weather,
+        n_points=n_points,
+        max_time_s=max_time_s,
+        warm_start=warm,
+        n_lat_starts=n_lat_starts,
+        n_windows=n_windows,
+    )

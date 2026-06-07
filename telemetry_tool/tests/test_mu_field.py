@@ -175,3 +175,97 @@ def test_puddle_outside_n_range_is_noop():
     wet = build_wet_mu_field(gs, puddles=[off_grid])
     wet_nopuddle = build_wet_mu_field(gs, puddles=[])
     np.testing.assert_allclose(wet.mu_grid, wet_nopuddle.mu_grid)
+
+
+# ---------------------------------------------------------------------------
+# Task 6: solve_optimal_line_2d bridge + puddles_to_n_windows
+# ---------------------------------------------------------------------------
+from track_surface.frenet import FrenetFrame
+from track_surface.model import TrackSurface
+
+
+def _synthetic_surface_with_grip(n_pts: int = 200) -> TrackSurface:
+    """Oval TrackSurface with boundaries + a rubber-line GripSurface."""
+    t = np.linspace(0, 2 * np.pi, n_pts, endpoint=False)
+    a, b = 200.0, 100.0
+    xy = np.column_stack((a * np.cos(t), b * np.sin(t)))
+    frenet = FrenetFrame.from_centerline(xy)
+
+    s_bins = np.arange(0, frenet.total_length_m, 5.0)
+    n_bins = np.arange(-8.0, 9.0, 1.0)
+    M, K = len(s_bins), len(n_bins)
+    mu = np.full((M, K), 1.0)
+    ridge_col = int(np.argmin(np.abs(n_bins - 2.0)))
+    mu[:, ridge_col] = 1.4
+    gs = GripSurface(s_bins=s_bins, n_bins=n_bins, mu_grid=mu,
+                     count_grid=np.full((M, K), 60, dtype=int),
+                     confidence=np.ones((M, K)))
+    n = frenet.n_points
+    return TrackSurface(track_id="synthetic_oval", frenet=frenet,
+                        width_left=np.full(n, 3.0), width_right=np.full(n, 3.0),
+                        grip_2d=gs, n_laps=20, boundary_source="data_derived")
+
+
+def test_solve_optimal_line_2d_dry_and_wet():
+    pytest.importorskip("casadi")
+    from track_surface.solver_bridge import solve_optimal_line_2d
+
+    surface = _synthetic_surface_with_grip()
+    dry = solve_optimal_line_2d(surface, condition="dry", n_points=100, max_time_s=60.0)
+    wet = solve_optimal_line_2d(surface, condition="wet", n_points=100, max_time_s=60.0)
+
+    assert dry.solver_status in ("optimal", "acceptable", "suboptimal")
+    assert wet.solver_status in ("optimal", "acceptable", "suboptimal")
+    assert wet.optimal_lap_time_s > dry.optimal_lap_time_s
+    assert not np.allclose(dry.lateral_offset_m, wet.lateral_offset_m, atol=0.1)
+
+
+def test_solve_optimal_line_2d_wet_with_puddles_excludes_corridor():
+    pytest.importorskip("casadi")
+    from track_surface.solver_bridge import puddles_to_n_windows, solve_optimal_line_2d
+
+    surface = _synthetic_surface_with_grip()
+    # Puddle near the inside (n=-1.5) sized so a real dry corridor survives on
+    # the left (a radius-3.09 puddle would cover the whole ±3 m track and be
+    # skipped). area_cells=3 -> r ≈ 2.18, keep-left corridor n_lo ≈ 1.19, and a
+    # ~5.4 m exclusion window. n_points=200 -> ~4.8 m resample spacing so at
+    # least one constrained point lands inside the window.
+    puddle = PuddleZone(s_center=100.0, n_center=-1.5, depth_score=0.9, area_cells=3)
+    wet = solve_optimal_line_2d(surface, condition="wet", puddles=[puddle],
+                                n_points=200, max_time_s=60.0)
+    assert wet.solver_status in ("optimal", "acceptable")
+    # The corridor contract that matters: in the puddle s-window the line must
+    # stay on the chosen dry side (>= the window's n_lo).
+    windows = puddles_to_n_windows([puddle], surface.grip_2d, surface.width_left,
+                                   surface.width_right, surface.frenet.s_grid)
+    assert len(windows) == 1
+    s0, s1, n_lo, n_hi = windows[0]
+    window = (wet.distance_m >= s0) & (wet.distance_m <= s1)
+    assert np.any(window)  # a constrained resampled point exists in the window
+    assert np.all(wet.lateral_offset_m[window] >= n_lo - 1e-6)
+
+
+def test_solve_optimal_line_2d_requires_grip():
+    pytest.importorskip("casadi")
+    from track_surface.solver_bridge import solve_optimal_line_2d
+    surface = _synthetic_surface_with_grip()
+    surface.grip_2d = None
+    with pytest.raises(ValueError, match="grip_2d"):
+        solve_optimal_line_2d(surface, condition="dry")
+
+
+def test_puddles_to_n_windows_picks_wider_side():
+    from track_surface.solver_bridge import puddles_to_n_windows
+
+    surface = _synthetic_surface_with_grip()
+    # Puddle near the right edge: keep-left is the only sensible corridor
+    p = PuddleZone(s_center=50.0, n_center=-2.5, depth_score=0.5, area_cells=4)
+    windows = puddles_to_n_windows([p], surface.grip_2d, surface.width_left,
+                                   surface.width_right, surface.frenet.s_grid)
+    assert len(windows) == 1
+    s0, s1, n_lo, n_hi = windows[0]
+    # keep-left: corridor ABOVE the puddle -> (n_c + r + margin, +inf)
+    # r = max(sqrt(4 * 5.0 / pi), 1.0) ≈ 2.523, margin 0.5
+    # n_lo = -2.5 + 2.523 + 0.5 ≈ 0.523
+    assert n_hi == float("inf")
+    assert n_lo == pytest.approx(-2.5 + np.sqrt(4 * 5.0 / np.pi) + 0.5, abs=0.05)

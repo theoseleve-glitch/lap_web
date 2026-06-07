@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import logging
 import time
+from collections.abc import Sequence
 from dataclasses import dataclass
 
 import numpy as np
@@ -232,6 +233,7 @@ def solve_minimum_time_2d(
     max_time_s: float = 120.0,
     warm_start: OCPSolution | None = None,
     n_lat_starts: tuple[float, ...] = (0.0,),
+    n_windows: Sequence[tuple[float, float, float, float]] = (),
 ) -> OCPSolution:
     """Minimum-time OCP with a 2D friction field mu(s, n) inside the NLP.
 
@@ -279,6 +281,24 @@ def solve_minimum_time_2d(
 
     The default ``(0.0,)`` runs exactly one cold start — byte-for-byte the
     previous single-solve behavior and timing.
+
+    Hard corridor exclusions (``n_windows``)
+    ----------------------------------------
+    Each entry ``(s_start, s_end, n_lo, n_hi)`` further constrains the
+    lateral corridor: for every resampled point whose (clamped) arclength
+    ``s_coords[i]`` lies in ``[s_start, s_end]``, the per-point N_lat bounds
+    are INTERSECTED with ``[n_lo, n_hi]`` (use ``±float('inf')`` to leave one
+    side unconstrained).  This is the HARD-exclusion mechanism for KNOWN
+    hazards — standing-water puddles whose geometry comes from the drainage
+    model — as opposed to the soft mu-penalty cells that free optimization
+    routes around.  Free optimization handles PREFERENCE (route toward grip);
+    windows handle PROHIBITION (never enter this lateral band here).  The
+    bounds are applied BEFORE they are used for both the box constraints and
+    the multi-start guess clipping, so seeded guesses are clipped into the
+    corridor automatically.  If the intersection leaves ``lo > hi`` at any
+    point, a ``ValueError`` is raised with the offending ``s`` — an impossible
+    corridor is a caller bug (e.g. overlapping exclusions), not a solve
+    failure.  The default ``()`` applies no exclusions.
     """
     if not HAS_CASADI:
         raise ImportError("solve_minimum_time_2d requires casadi")
@@ -324,7 +344,10 @@ def solve_minimum_time_2d(
         ax_guess = np.clip(ax_guess, -50.0, 50.0)
         v_guess = np.clip(v_guess, 5.0, 120.0)
 
-    # Per-point N_lat bounds: track width ∩ field n-domain (same as constraints).
+    # Per-point N_lat bounds: track width ∩ field n-domain (same as
+    # constraints).  Then HARD corridor exclusions (n_windows) are intersected
+    # in BEFORE the bounds feed both the box constraints and the guess clip, so
+    # known-hazard prohibition and guess seeding stay consistent.
     n_lo_field = float(mu_field.n_bins[0])
     n_hi_field = float(mu_field.n_bins[-1])
     n_bounds: list[tuple[float, float]] = []
@@ -333,6 +356,16 @@ def solve_minimum_time_2d(
     for i in range(N):
         lo = max(-float(tk.width_right[i]) * 0.9, n_lo_field)
         hi = min(float(tk.width_left[i]) * 0.9, n_hi_field)
+        for (s_start, s_end, w_lo, w_hi) in n_windows:
+            if s_start <= s_coords[i] <= s_end:
+                lo = max(lo, w_lo)
+                hi = min(hi, w_hi)
+        if lo > hi:
+            raise ValueError(
+                f"n_windows produced an empty lateral corridor at s={s_coords[i]:.2f} "
+                f"(lo={lo:.3f} > hi={hi:.3f}) — an impossible corridor is a caller bug, "
+                "not a solve failure"
+            )
         n_bounds.append((lo, hi))
         lo_arr[i] = lo
         hi_arr[i] = hi

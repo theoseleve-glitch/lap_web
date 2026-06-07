@@ -354,3 +354,59 @@ def test_nlp_grip_is_capped_at_field_max():
     # The puddle field is everywhere <= 0.85, so its lap can never beat the
     # uniform-0.85 lap (it could only do so by consuming overshoot grip)
     assert sol.optimal_lap_time_s >= ref.optimal_lap_time_s - 1e-6
+
+
+# -- Task 6: hard corridor exclusions (n_windows) ----------------------------
+
+def _field_with_flooded_inside_half(total_length_m: float) -> MuField:
+    """The extreme scenario: puddle block covering the ENTIRE inside half
+    (n <= 0) over s in [90, 130]. Free optimization cannot certify a dry
+    line here once bspline overshoot is capped (see Task-5 history) — the
+    production path excludes the flooded corridor as a HARD constraint."""
+    s_bins = np.arange(0.0, total_length_m, 5.0)
+    n_bins = np.arange(-8.0, 9.0, 1.0)
+    mu = np.full((len(s_bins), len(n_bins)), 0.85)
+    s_mask = (s_bins >= 90.0) & (s_bins <= 130.0)
+    n_mask = n_bins <= 0.0
+    mu[np.ix_(s_mask, n_mask)] = 0.2
+    return MuField(s_bins=s_bins, n_bins=n_bins, mu_grid=mu)
+
+
+@needs_casadi
+def test_n_windows_force_dry_line_through_flooded_half():
+    """Hard corridor exclusion solves the extreme flooded-inside-half case
+    that free optimization cannot (capped grip, local basins)."""
+    from track_surface.grip_2d import GripSurface
+
+    track = _oval_track(n=100)
+    vp = _default_vehicle()
+    field = _field_with_flooded_inside_half(track.total_length_m)
+
+    # Corridor lower bound clears the mu=0.2 step at n=0 with a 1 m margin —
+    # exactly how puddles_to_n_windows sets it in production (puddle radius +
+    # margin keeps the active bound off the steep grip transition that would
+    # otherwise ill-condition the friction ellipse). The flooded inside half
+    # (n <= 0) is excluded HARD; the line is forced onto the dry side.
+    sol = solve_minimum_time_2d(
+        track, vp, field, n_points=100, max_time_s=60.0,
+        n_lat_starts=(0.0, 2.0),
+        n_windows=((85.0, 135.0, 1.0, float("inf")),),
+    )
+    assert sol.solver_status in ("optimal", "acceptable")
+    window = (sol.distance_m >= 90.0) & (sol.distance_m <= 130.0)
+    assert np.all(sol.lateral_offset_m[window] >= 1.0 - 1e-6)
+    gs = GripSurface(s_bins=field.s_bins, n_bins=field.n_bins, mu_grid=field.mu_grid,
+                     count_grid=np.ones(field.mu_grid.shape, dtype=int),
+                     confidence=np.ones(field.mu_grid.shape))
+    mu_under = gs.mu_at_batch(sol.distance_m, sol.lateral_offset_m)
+    assert float(mu_under.min()) > 0.25
+
+
+@needs_casadi
+def test_n_windows_impossible_corridor_raises():
+    track = _oval_track(n=60)
+    vp = _default_vehicle()
+    field = _uniform_field(track.total_length_m, 1.0)
+    with pytest.raises(ValueError):
+        solve_minimum_time_2d(track, vp, field, n_points=60, max_time_s=30.0,
+                              n_windows=((50.0, 100.0, 2.0, -2.0),))
