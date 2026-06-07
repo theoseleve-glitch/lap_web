@@ -7,27 +7,57 @@ from typing import Any
 def upsert_driver_xp(conn, driver_id: int, workspace_id: int,
                       xp_delta: int, level: int,
                       streak: int, longest: int,
-                      last_date: str | None) -> None:
-    """Insert or update driver XP row. Adds xp_delta to existing total."""
-    sql = """
-        INSERT INTO driver_xp (workspace_id, driver_id, total_xp, level,
-                                current_streak, longest_streak, last_session_date, updated_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, datetime('now'))
-        ON CONFLICT (workspace_id, driver_id) DO UPDATE SET
-            total_xp = driver_xp.total_xp + excluded.total_xp,
-            level = excluded.level,
-            current_streak = excluded.current_streak,
-            longest_streak = excluded.longest_streak,
-            last_session_date = COALESCE(excluded.last_session_date, driver_xp.last_session_date),
-            updated_at = datetime('now')
+                      last_date: str | None,
+                      pit_passes: int | None = None) -> None:
+    """Insert or update driver XP row. Adds xp_delta to existing total.
+
+    pit_passes: when provided, sets the counter to this exact value (managed
+    by update_streak).  When None the existing pit_passes value is preserved
+    (XP-only upserts must not clobber the counter).
     """
-    conn.execute(sql, (workspace_id, driver_id, xp_delta, level,
-                       streak, longest, last_date))
+    if pit_passes is None:
+        sql = """
+            INSERT INTO driver_xp (workspace_id, driver_id, total_xp, level,
+                                    current_streak, longest_streak, last_session_date, updated_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, datetime('now'))
+            ON CONFLICT (workspace_id, driver_id) DO UPDATE SET
+                total_xp = driver_xp.total_xp + excluded.total_xp,
+                level = excluded.level,
+                current_streak = excluded.current_streak,
+                longest_streak = excluded.longest_streak,
+                last_session_date = COALESCE(excluded.last_session_date, driver_xp.last_session_date),
+                updated_at = datetime('now')
+        """
+        conn.execute(sql, (workspace_id, driver_id, xp_delta, level,
+                           streak, longest, last_date))
+    else:
+        sql = """
+            INSERT INTO driver_xp (workspace_id, driver_id, total_xp, level,
+                                    current_streak, longest_streak, last_session_date,
+                                    pit_passes, updated_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))
+            ON CONFLICT (workspace_id, driver_id) DO UPDATE SET
+                total_xp = driver_xp.total_xp + excluded.total_xp,
+                level = excluded.level,
+                current_streak = excluded.current_streak,
+                longest_streak = excluded.longest_streak,
+                last_session_date = COALESCE(excluded.last_session_date, driver_xp.last_session_date),
+                pit_passes = excluded.pit_passes,
+                updated_at = datetime('now')
+        """
+        conn.execute(sql, (workspace_id, driver_id, xp_delta, level,
+                           streak, longest, last_date, pit_passes))
 
 
 def get_driver_xp(conn, driver_id: int, workspace_id: int) -> dict[str, Any] | None:
-    """Fetch driver XP row or None."""
-    sql = "SELECT * FROM driver_xp WHERE driver_id = ? AND workspace_id = ?"
+    """Fetch driver XP row or None.  Always includes pit_passes (0 if the
+    column is absent on older rows — migration 071 adds it with DEFAULT 0)."""
+    sql = """
+        SELECT id, workspace_id, driver_id, total_xp, level,
+               current_streak, longest_streak, last_session_date, updated_at,
+               COALESCE(pit_passes, 0) AS pit_passes
+        FROM driver_xp WHERE driver_id = ? AND workspace_id = ?
+    """
     row = conn.execute(sql, (driver_id, workspace_id)).fetchone()
     return dict(row) if row else None
 

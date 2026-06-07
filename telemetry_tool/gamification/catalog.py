@@ -28,3 +28,10 @@ TIER_ORDER = ["none", "bronze", "silver", "gold"]
 
 def tier_rank(tier: str) -> int:
     return TIER_ORDER.index(tier) if tier in TIER_ORDER else 0
+
+
+# ── Pit Pass + comeback (Phase 2b) ────────────────────────────
+PIT_PASS_EARN_WEEKS = 4     # +1 banked freeze each 4-week streak milestone
+PIT_PASS_CAP = 3
+COMEBACK_WEEKS = 3          # >= this many weeks away triggers a Shakedown
+COMEBACK_XP_MULTIPLIER = 2

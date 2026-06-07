@@ -20,6 +20,7 @@ def mem_conn():
             longest_streak INTEGER NOT NULL DEFAULT 0,
             last_session_date TEXT,
             updated_at TEXT DEFAULT (datetime('now')),
+            pit_passes INTEGER NOT NULL DEFAULT 0,
             UNIQUE (workspace_id, driver_id)
         )
     """)
