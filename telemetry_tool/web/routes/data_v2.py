@@ -296,8 +296,9 @@ def mastery_tracks() -> tuple[dict, int]:
         if tier in entry["stars"]:
             entry["stars"][tier] += int(d["n"])
             entry["corners_starred"] += int(d["n"])
+    starred = [t for t in tracks.values() if t["corners_starred"] > 0]
     return api_response({
-        "tracks": sorted(tracks.values(), key=lambda x: -x["corners_starred"])
+        "tracks": sorted(starred, key=lambda x: -x["corners_starred"])
     })
 
 
