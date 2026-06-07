@@ -14,6 +14,7 @@ import XPProgressBar from '@/components/app/gamification/XPProgressBar';
 import { StreakTracker } from '@/components/app/gamification';
 import { ChallengeCard } from '@/components/app/gamification';
 import { TerritoryShelf } from '@/components/app/gamification';
+import { QuestList } from '@/components/app/gamification';
 
 /**
  * ScoreTrendChart — a per-session bar readout (telemetry/stint style).
@@ -451,6 +452,11 @@ export default function DashboardPage() {
             </div>
           )}
         </div>
+      </div>
+
+      {/* Active quests */}
+      <div className="mb-4">
+        <QuestList />
       </div>
 
       {/* Corner mastery territories */}

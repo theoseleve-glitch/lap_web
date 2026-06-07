@@ -17,6 +17,7 @@ import { ChartSyncToggle } from '@/components/app/ChartSyncToggle';
 import { trackEvent } from '@/hooks/useTrackEvent';
 import { useTrackSurfaceData } from '@/components/app/track-surface/useTrackSurfaceData';
 import { SessionProgressStrip } from '@/components/app/gamification/SessionProgressStrip';
+import { QuestCard } from '@/components/app/gamification/QuestCard';
 
 // Lazy-loaded tab content — only fetched when the user activates each tab/section
 const AnalyticsTab = lazy(() => import('@/components/app/analytics').then(m => ({ default: m.AnalyticsTab })));
@@ -111,6 +112,8 @@ interface GamificationResult {
   new_achievements: { key: string; label: string; description: string; icon: string }[];
   xp_breakdown?: { personal_best?: boolean | number | null };
   stars?: Array<{ track_id: string; corner_id: number; tier: string; xp: number; score: number }>;
+  quests_completed?: Array<{ id: number; metric: string; human_text: string; xp: number }>;
+  quests_active?: Array<{ id: number; metric: string; human_text: string; xp: number }>;
 }
 
 interface ScoreData {
@@ -685,6 +688,18 @@ export default function SessionDetailPage() {
 
       {/* Session progress strip — XP, star pips, achievements earned this session */}
       <SessionProgressStrip gam={scores?.gamification} />
+
+      {/* Quests completed this session — read-only, no focus toggle */}
+      {(scores?.gamification?.quests_completed ?? []).length > 0 && (
+        <div className="flex flex-col gap-1 mt-2">
+          {(scores!.gamification!.quests_completed!).map((q) => (
+            <QuestCard
+              key={q.id}
+              quest={{ id: q.id, metric: q.metric, human_text: q.human_text, xp: q.xp, status: 'completed' }}
+            />
+          ))}
+        </div>
+      )}
 
       {/* Tab content */}
       {activeTab === 'overview' && (
