@@ -90,3 +90,6 @@ shapely>=2.0,<3.0
 
 # XXE / billion-laughs safe XML parsing for GPX / TCX uploads (untrusted input)
 defusedxml>=0.7.1
+
+# Garmin / ANT+ FIT file parsing (pure-Python, MIT)
+fitparse>=1.2.0
