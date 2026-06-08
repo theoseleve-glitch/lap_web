@@ -37,6 +37,8 @@ def test_finalize_derives_speed_distance_heading():
     assert out["distance_m"].iloc[-1] == pytest.approx(111.19, abs=1.0)
     assert out["speed_mps"].iloc[-1] == pytest.approx(111.19, abs=1.0)
     assert out["heading_deg"].iloc[-1] == pytest.approx(0.0, abs=1.0)
+    assert out["speed_mps"].iloc[0] == out["speed_mps"].iloc[1]
+    assert out["heading_deg"].iloc[0] == out["heading_deg"].iloc[1]
 
 
 def test_finalize_preserves_supplied_speed():
@@ -52,5 +54,11 @@ def test_finalize_preserves_supplied_speed():
 
 def test_finalize_requires_position():
     df = pd.DataFrame({"time_s": [0.0, 1.0]})
+    with pytest.raises(ValueError):
+        finalize_gps_frame(df, source="test")
+
+
+def test_finalize_requires_two_points():
+    df = pd.DataFrame({"time_s": [0.0], "lat_deg": [51.5], "lon_deg": [-0.1]})
     with pytest.raises(ValueError):
         finalize_gps_frame(df, source="test")

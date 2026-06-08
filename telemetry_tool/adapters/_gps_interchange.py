@@ -11,11 +11,12 @@ from typing import Final
 
 import numpy as np
 import pandas as pd
+from numpy.typing import ArrayLike
 
 _EARTH_RADIUS_M: Final[float] = 6_371_000.0
 
 
-def haversine_m(lat1, lon1, lat2, lon2):
+def haversine_m(lat1: ArrayLike, lon1: ArrayLike, lat2: ArrayLike, lon2: ArrayLike) -> np.ndarray:
     """Great-circle distance in metres between arrays of lat/lon in degrees."""
     lat1r = np.radians(lat1)
     lat2r = np.radians(lat2)
@@ -26,7 +27,7 @@ def haversine_m(lat1, lon1, lat2, lon2):
     return 2.0 * _EARTH_RADIUS_M * np.arcsin(np.sqrt(np.clip(a, 0.0, 1.0)))
 
 
-def initial_bearing_deg(lat1, lon1, lat2, lon2):
+def initial_bearing_deg(lat1: ArrayLike, lon1: ArrayLike, lat2: ArrayLike, lon2: ArrayLike) -> np.ndarray:
     """Initial bearing (deg, 0-360) from point 1 to point 2 (arrays)."""
     lat1r = np.radians(lat1)
     lat2r = np.radians(lat2)
@@ -52,9 +53,9 @@ def finalize_gps_frame(df: pd.DataFrame, *, source: str) -> pd.DataFrame:
             f"{source}: GPS frame missing required columns: {sorted(missing)}"
         )
 
-    df = df.dropna(subset=["lat_deg", "lon_deg"]).reset_index(drop=True)
+    df = df.dropna(subset=["time_s", "lat_deg", "lon_deg"]).reset_index(drop=True).copy()
     if len(df) < 2:
-        raise ValueError(f"{source}: need at least 2 valid GPS points")
+        raise ValueError(f"{source}: need at least 2 valid GPS points, got {len(df)}")
 
     lat = df["lat_deg"].to_numpy(dtype=float)
     lon = df["lon_deg"].to_numpy(dtype=float)
@@ -72,6 +73,7 @@ def finalize_gps_frame(df: pd.DataFrame, *, source: str) -> pd.DataFrame:
         with np.errstate(divide="ignore", invalid="ignore"):
             spd = np.where(dt > 0, seg / dt, 0.0)
         if len(spd) > 1:
+            # Row 0 has no prior point; copy row 1's speed as the best estimate.
             spd[0] = spd[1]
         df["speed_mps"] = spd
 
