@@ -387,6 +387,7 @@ def solve_optimal_line_2d(
     puddles: list | None = None,
     n_points: int = 400,
     max_time_s: float = 120.0,
+    envelope_caps: dict | None = None,
 ):
     """Compute the optimal racing line with the TRUE 2D grip field in the NLP.
 
@@ -400,6 +401,10 @@ def solve_optimal_line_2d(
     Note: ``damp``/``heavy_wet`` from the store vocabulary must be bucketed
     to ``wet`` by the caller — this bridge uses a binary wet model
     (dry vs. wet), intentionally.
+
+    envelope_caps: optional demonstrated longitudinal limits (from
+    vehicle_profile.resolve_vehicle_params) — bounds drive/brake per speed;
+    None uses the vehicle's power/brake scalars.
 
     Raises ValueError if surface.grip_2d is None (needs >= 10 laps),
     ImportError if casadi/lap_oracle unavailable.
@@ -476,4 +481,5 @@ def solve_optimal_line_2d(
         warm_start=warm,
         n_lat_starts=n_lat_starts,
         n_windows=n_windows,
+        envelope_caps=envelope_caps,
     )

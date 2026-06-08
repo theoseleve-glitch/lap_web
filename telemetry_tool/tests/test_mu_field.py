@@ -427,3 +427,23 @@ def test_no_double_count_warning_at_unit_d(caplog):
         solve_optimal_line_2d(surface, vehicle_params=VehicleParams(), condition="dry",
                               n_points=60, max_time_s=30.0)
     assert not any("double" in r.message.lower() for r in caplog.records)
+
+
+def test_solve_optimal_line_2d_passes_envelope_caps(monkeypatch):
+    pytest.importorskip("casadi")
+    import lap_oracle.solver.ocp_2d as ocp2d_mod
+    from track_surface.solver_bridge import solve_optimal_line_2d
+
+    captured = {}
+    orig = ocp2d_mod.solve_minimum_time_2d
+    def spy(*args, **kwargs):
+        captured["envelope_caps"] = kwargs.get("envelope_caps")
+        return orig(*args, **kwargs)
+    monkeypatch.setattr(ocp2d_mod, "solve_minimum_time_2d", spy)
+
+    surface = _synthetic_surface_with_grip()
+    caps = {"v_grid": [5.0, 60.0], "ax_drive_max": [30.0, 30.0],
+            "ax_brake_max": [12.0, 12.0]}
+    solve_optimal_line_2d(surface, condition="dry", envelope_caps=caps,
+                          n_points=60, max_time_s=30.0)
+    assert captured["envelope_caps"] == caps
