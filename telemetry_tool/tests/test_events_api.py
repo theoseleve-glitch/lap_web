@@ -53,7 +53,8 @@ class TestPostEvents:
 
     def test_accepts_single_event(self):
         """_insert_events is called with the accepted event payload."""
-        with patch("web.routes.events._insert_events") as mock_insert:
+        with patch("web.routes.events.analytics_consent_granted", return_value=True), \
+             patch("web.routes.events._insert_events") as mock_insert:
             resp = self.client.post(
                 "/api/v1/events",
                 json={"events": [{"event": "page.view", "path": "/dashboard"}]},
@@ -100,7 +101,8 @@ class TestPostEvents:
 
     def test_strips_unknown_event_types(self):
         """Events with unknown prefixes are dropped; valid ones are kept."""
-        with patch("web.routes.events._insert_events") as mock_insert:
+        with patch("web.routes.events.analytics_consent_granted", return_value=True), \
+             patch("web.routes.events._insert_events") as mock_insert:
             resp = self.client.post(
                 "/api/v1/events",
                 json={
