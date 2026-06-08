@@ -203,6 +203,7 @@ _UPGRADE_TIERS = {
     "gamification": "racer",
     "live_monitoring": "racer",
     "export_pdf": "racer",
+    "exports": "racer",          # middleware alias for export_pdf
     "race_strategy": "racer",
     "race_strategy_full": "world-class",
     "optimizer_performance": "world-class",
@@ -404,25 +405,74 @@ def get_user_entitlements(conn, user_id: int, workspace_id: int | None = None) -
         entitlements["upload_volume_mb_used"] = 0
         entitlements["upload_volume_mb_remaining"] = entitlements.get("upload_volume_mb_per_month")
 
-    # Handle subscription status impact on entitlements
-    # | active/trialing  | Full per plan           |
-    # | past_due         | Full per plan (grace)   |
-    # | canceled         | Downgrade to demo after period ends |
-    # | paused           | Read-only (no new uploads/analyses) |
-    if sub_status == "paused":
-        # Paused: read-only access, block new uploads and analyses
-        entitlements["_paused"] = True
-        entitlements["analyses_per_month"] = 0
-        entitlements["analyses_remaining"] = 0
-    elif sub_status == "canceled":
-        # Canceled: grace period features kept, but flag for downstream
-        entitlements["_cancel_pending"] = True
-    elif sub_status in ("active", "trialing"):
-        # Full access per plan tier (default state, nothing to override)
-        pass
-    elif sub_status == "past_due":
-        # Grace period: full access, but flag it
-        entitlements["_past_due"] = True
+    # ── Subscription-status gating (fail CLOSED) ────────────────────────
+    # INVARIANT: Full access requires BOTH a paid plan_tier AND an
+    # active-enough subscription_status.  A paid tier alone is NOT sufficient
+    # — the subscription must be in one of the allowed states below.
+    #
+    # Allowed (full per-tier) statuses:
+    #   active     — fully paid, normal state
+    #   trialing   — trial period, full access
+    #   past_due   — grace period (flag set, uploads may be blocked by middleware)
+    #   canceled   — grace period retained (flag set; middleware enforces expiry)
+    #
+    # Everything else — including free, expired, unpaid, incomplete,
+    # incomplete_expired, inactive, paused, and empty/None — is forced
+    # to the zero-access locked floor.  The plan_tier and subscription_status
+    # keys are kept for display purposes (billing UI needs them), but all
+    # quota grants and boolean feature flags are zeroed.
+    _ALLOWED_STATUSES = {"active", "trialing", "past_due", "canceled"}
+
+    if sub_status not in _ALLOWED_STATUSES:
+        # Force the locked floor: zero entitlements.
+        # Preserve plan_tier + subscription_status so the billing UI can show
+        # the correct upgrade CTA, but grant nothing.
+        locked = get_plan_entitlements("locked")
+        entitlements.update({
+            "analyses_per_month": locked["analyses_per_month"],        # 0
+            "upload_volume_mb_per_month": locked["upload_volume_mb_per_month"],  # 0
+            "max_upload_size_mb": locked["max_upload_size_mb"],        # 0
+            "max_session_data_mb": locked["max_session_data_mb"],      # 0
+            "api_access": locked["api_access"],                        # False
+            "comparison_enabled": locked["comparison_progress"],       # False
+            "coaching_plans_enabled": locked["coaching_drills"],       # False
+            "visualization_enabled": locked["viz_workspace"],          # False
+            "gamification": locked["gamification"],                    # False
+            "badge_share_card": locked["badge_share_card"],            # False
+            "live_monitoring": False,
+            "device_sync": locked["device_sync"],                      # False
+            "auto_analyze_on_sync": locked["auto_analyze_on_sync"],    # False
+            "max_linked_devices": locked["max_linked_devices"],        # 0
+            "race_strategy_limit": locked["strategy_dashboard"],       # "none"
+            "race_strategy_max_duration_s": locked["race_strategy_max_duration_s"],  # 0
+            "race_strategy_params": locked["race_strategy_params"],    # "none"
+            "optimizer_modes": locked["optimizer_modes"],              # []
+            "export_formats": ["csv"],                                 # no PDF
+            "max_concurrent_jobs": 1,
+            "analyses_used": entitlements.get("analyses_used", 0),
+            "analyses_remaining": 0,
+            "upload_volume_mb_used": entitlements.get("upload_volume_mb_used", 0),
+            "upload_volume_mb_remaining": 0,
+            "_locked_by_status": sub_status,                           # debug key
+        })
+    else:
+        # Allowed status — apply per-status flags only.
+        if sub_status == "paused":
+            # NOTE: paused is NOT in _ALLOWED_STATUSES (hits the locked branch
+            # above).  This elif is unreachable in the current model and kept
+            # only for belt-and-suspenders clarity.
+            entitlements["_paused"] = True
+            entitlements["analyses_per_month"] = 0
+            entitlements["analyses_remaining"] = 0
+        elif sub_status == "canceled":
+            # Canceled: grace period features kept, but flag for downstream
+            entitlements["_cancel_pending"] = True
+        elif sub_status in ("active", "trialing"):
+            # Full access per plan tier (default state, nothing to override)
+            pass
+        elif sub_status == "past_due":
+            # Grace period: full access, but flag it
+            entitlements["_past_due"] = True
 
     return entitlements
 
@@ -454,8 +504,10 @@ def authorize_feature(conn, user_id: int, feature: str) -> tuple[bool, dict]:
             }
         return True, {"current_tier": tier}
 
-    # Check export_pdf (derived from export_formats)
-    if feature == "export_pdf":
+    # Check exports / export_pdf (derived from export_formats).
+    # 'exports' is the middleware-facing alias; 'export_pdf' is the internal key.
+    # Both require Racer or higher (pdf must be in export_formats).
+    if feature in ("export_pdf", "exports"):
         formats = entitlements.get("export_formats", ["csv"])
         if "pdf" not in formats:
             return False, {
@@ -509,8 +561,15 @@ def authorize_feature(conn, user_id: int, feature: str) -> tuple[bool, dict]:
             "current_tier": tier,
         }
 
-    # Unknown feature — allow by default (fail open for non-gated features)
-    return True, {"current_tier": tier}
+    # Unknown feature — fail CLOSED: an unmapped feature is not available.
+    # Any new feature must be explicitly registered in _BOOLEAN_FEATURES,
+    # a dedicated check above, or _UPGRADE_TIERS before it can be granted.
+    return False, {
+        "reason": f"{feature} is not available or requires a subscription",
+        "upgrade_tier": "racer",
+        "upgrade_url": "/billing?plan=RACER",
+        "current_tier": tier,
+    }
 
 
 def check_quota(conn, user_id: int, workspace_id: int, meter_key: str, cost: int = 1) -> tuple[bool, dict]:
@@ -530,9 +589,18 @@ def check_quota(conn, user_id: int, workspace_id: int, meter_key: str, cost: int
         return True, {"remaining": None, "limit": None}
 
     limit = entitlements.get(quota_col)
-    if limit is None or limit == -1:
-        # Unlimited
+    if limit == -1:
+        # Explicitly unlimited (sentinel value)
         return True, {"remaining": None, "limit": None}
+    if limit is None:
+        # NULL/missing limit in plan_definitions → fail CLOSED to the tier
+        # floor value; if that's also None, deny with 0.
+        current_tier = entitlements.get("plan_tier", "locked")
+        limit = get_plan_entitlements(current_tier).get(quota_col, 0)
+        if limit is None:
+            limit = 0
+        if limit == -1:
+            return True, {"remaining": None, "limit": None}
 
     used = entitlements.get(f"{meter_key}_used", 0)
     remaining = max(0, limit - used)
@@ -582,10 +650,19 @@ def check_and_record_quota(conn, user_id: int, workspace_id: int,
         return True, {"remaining": None, "limit": None}
 
     limit = plan.get(quota_col)
-    if limit is None:
-        # Unlimited — record usage but don't enforce
+    if limit == -1:
+        # Explicitly unlimited (sentinel value) — record usage, don't enforce
         record_usage(conn, user_id, workspace_id, meter_key, cost, metadata)
         return True, {"remaining": None, "limit": None}
+    if limit is None:
+        # NULL/missing limit in plan_definitions → fail CLOSED to the tier
+        # floor value; if that's also None → 0 (deny).
+        limit = get_plan_entitlements(plan_tier).get(quota_col, 0)
+        if limit is None:
+            limit = 0
+        if limit == -1:
+            record_usage(conn, user_id, workspace_id, meter_key, cost, metadata)
+            return True, {"remaining": None, "limit": None}
 
     first_of_month = date.today().replace(day=1).isoformat()
 

@@ -359,11 +359,48 @@ def _identity() -> tuple[int | None, int | None]:
 def entitlement_snapshot() -> dict:
     """Resolve entitlement snapshot from request context.
 
+    Fails CLOSED: if user_id or workspace_id cannot be resolved, returns the
+    locked/zero-access entitlement snapshot instead of inheriting workspace-1's
+    entitlements.  Never substitutes DEFAULT_WORKSPACE_ID for an unresolved
+    workspace — doing so would grant workspace-1's grants to an unauthenticated
+    or tenant-less caller.
+
     Uses Redis cache (cache-aside) when available. Falls back to DB.
     """
     user_id, workspace_id = _identity()
-    if workspace_id is None:
-        workspace_id = current_app.config.get("DEFAULT_WORKSPACE_ID", 1)
+    if user_id is None or workspace_id is None:
+        # Unresolved identity → return zero-access locked floor immediately.
+        # Auth middleware is responsible for the 401; here we just ensure that
+        # any downstream code that calls entitlement_snapshot() before the auth
+        # check can't accidentally inherit real grants.
+        locked = get_plan_entitlements("locked")
+        return {
+            "plan_tier": "locked",
+            "subscription_status": "none",
+            "analyses_per_month": locked["analyses_per_month"],
+            "analyses_used": 0,
+            "analyses_remaining": 0,
+            "upload_volume_mb_per_month": locked["upload_volume_mb_per_month"],
+            "upload_volume_mb_used": 0,
+            "upload_volume_mb_remaining": 0,
+            "max_upload_size_mb": locked["max_upload_size_mb"],
+            "max_session_data_mb": locked["max_session_data_mb"],
+            "api_access": False,
+            "comparison_enabled": False,
+            "coaching_plans_enabled": False,
+            "visualization_enabled": False,
+            "gamification": False,
+            "badge_share_card": False,
+            "live_monitoring": False,
+            "device_sync": False,
+            "auto_analyze_on_sync": False,
+            "max_linked_devices": 0,
+            "race_strategy_limit": locked["strategy_dashboard"],
+            "export_formats": ["csv"],
+            "max_concurrent_jobs": 1,
+            "rate_multiplier": 1.0,
+            "_locked_by_missing_identity": True,
+        }
     try:
         from web.entitlement_cache import cached_entitlements
         return cached_entitlements(user_id, workspace_id)

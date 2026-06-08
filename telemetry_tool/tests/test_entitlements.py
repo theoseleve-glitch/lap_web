@@ -113,6 +113,13 @@ class TestGetPlanDefinitions:
 
 class TestGetUserEntitlements:
     def test_demo_tier_entitlements(self):
+        """demo tier with 'free' subscription_status → locked floor (B3 fix).
+
+        PRE-FIX: demo + free returned 1 analysis (fail-open gap: subscription
+        status was not enforced as a hard gate alongside plan_tier).
+        POST-FIX: 'free' is not in the allowed-status set → locked floor (0).
+        The plan_tier and subscription_status keys are kept for display.
+        """
         from auth.entitlements import get_user_entitlements
         conn = _mock_conn([
             [{"plan_tier": "demo"}],                # get_user_plan_tier
@@ -125,12 +132,14 @@ class TestGetUserEntitlements:
         ents = get_user_entitlements(conn, 1, workspace_id=1)
 
         assert ents["plan_tier"] == "demo"
-        assert ents["analyses_per_month"] == 1
-        assert ents["analyses_remaining"] == 1
+        assert ents["subscription_status"] == "free"
+        # B3: 'free' status → locked floor (zero grants)
+        assert ents["analyses_per_month"] == 0
+        assert ents["analyses_remaining"] == 0
         assert ents["api_access"] is False
         assert ents["comparison_enabled"] is False
         assert ents["visualization_enabled"] is False
-        assert ents["race_strategy_limit"] == "4h_basic"
+        assert ents.get("_locked_by_status") == "free"
         assert ents["max_concurrent_jobs"] == 1
 
     def test_worldclass_has_all_features(self):
@@ -155,10 +164,15 @@ class TestGetUserEntitlements:
         assert ents["max_concurrent_jobs"] == 5
 
     def test_override_increases_quota(self):
+        """Overrides on an active subscription are respected (B3 fix scope).
+
+        With subscription_status='active', a support override to 5 analyses
+        is honoured.  The B3 locked-floor only fires for disallowed statuses.
+        """
         from auth.entitlements import get_user_entitlements
         conn = _mock_conn([
             [{"plan_tier": "demo"}],
-            [{"subscription_status": "free"}],
+            [{"subscription_status": "active"}],   # active → not locked
             [_make_plan_row("demo")],
             [{"override_key": "analyses_per_month",
               "override_value": json.dumps({"value": 5})}],  # user override
@@ -169,20 +183,25 @@ class TestGetUserEntitlements:
         assert ents["analyses_per_month"] == 5
 
     def test_expired_override_ignored(self):
-        """Expired overrides should not be returned by _get_active_overrides."""
+        """Expired overrides should not be returned by _get_active_overrides.
+
+        With an active subscription, expired overrides are filtered by the DB
+        query (WHERE expires_at > now()), so the plan default is used.
+        Using active subscription to isolate override behaviour from B3 locking.
+        """
         from auth.entitlements import get_user_entitlements
 
         # The query has WHERE expires_at > now(), so expired rows won't be returned
         conn = _mock_conn([
-            [{"plan_tier": "demo"}],
-            [{"subscription_status": "free"}],
-            [_make_plan_row("demo")],
+            [{"plan_tier": "racer"}],
+            [{"subscription_status": "active"}],   # active → not locked
+            [_make_plan_row("racer")],
             [],  # no active overrides (expired ones filtered by query)
             [],  # ws overrides
             [],  # usage
         ])
         ents = get_user_entitlements(conn, 1, workspace_id=1)
-        assert ents["analyses_per_month"] == 1  # default demo
+        assert ents["analyses_per_month"] == 10  # default racer (no override)
 
     def test_usage_counted_correctly(self):
         from auth.entitlements import get_user_entitlements
@@ -199,7 +218,14 @@ class TestGetUserEntitlements:
         assert ents["analyses_used"] == 7
         assert ents["analyses_remaining"] == 3
 
-    def test_paused_subscription_sets_flag(self):
+    def test_paused_subscription_forces_locked_floor(self):
+        """paused subscription is now treated as a disallowed status (B3 fix).
+
+        PRE-FIX: paused set _paused=True but left most entitlements in place.
+        POST-FIX: 'paused' is not in the allowed-status set → locked floor.
+        The middleware's GRACE_POLICY already blocked COMPUTE/EXPORT/UPLOAD for
+        paused, so this aligns the entitlement layer with that policy.
+        """
         from auth.entitlements import get_user_entitlements
         conn = _mock_conn([
             [{"plan_tier": "racer"}],
@@ -208,7 +234,8 @@ class TestGetUserEntitlements:
             [], [], [],
         ])
         ents = get_user_entitlements(conn, 1, workspace_id=1)
-        assert ents.get("_paused") is True
+        assert ents["analyses_per_month"] == 0
+        assert ents.get("_locked_by_status") == "paused"
 
 
 # ── Tests: authorize_feature ─────────────────────────────────────────
@@ -319,15 +346,22 @@ class TestAuthorizeFeature:
             allowed, ctx = authorize_feature(conn, 1, "export_pdf")
             assert allowed is True
 
-    def test_unknown_feature_allowed(self):
-        """Unknown features should fail open (allowed by default)."""
+    def test_unknown_feature_denied(self):
+        """Unknown (unmapped) features must fail CLOSED — B1 fix.
+
+        PRE-FIX behaviour: `authorize_feature` returned True for any feature
+        not in _BOOLEAN_FEATURES or the explicit checks (fail-open gap).
+        POST-FIX: unmapped features return False so new feature keys cannot
+        accidentally grant access before they are wired into the entitlement map.
+        """
         from auth.entitlements import authorize_feature
         app = Flask(__name__)
         with app.test_request_context():
             g.workspace_id = 1
             conn = self._setup_conn("demo")
             allowed, ctx = authorize_feature(conn, 1, "some_future_feature")
-            assert allowed is True
+            assert allowed is False, "Unknown feature must be DENIED (fail-closed)"
+            assert "reason" in ctx
 
 
 # ── Tests: check_quota ───────────────────────────────────────────────
@@ -843,3 +877,329 @@ class TestDeviceSyncEntitlements:
         wc_alias = get_plan_entitlements("world-class")
         assert wc["device_sync"] == wc_alias["device_sync"]
         assert wc["auto_analyze_on_sync"] == wc_alias["auto_analyze_on_sync"]
+
+
+# ── Security fix tests (B1 / B3 / B8 / B9) ──────────────────────────────────
+# Each class covers one fix and contains a regression guard for the "good"
+# world-class+active path to ensure we haven't over-locked paying users.
+
+class TestB1UnknownFeatureFailClosed:
+    """Fix B1: authorize_feature() must DENY unknown/unmapped features."""
+
+    def _setup_conn(self, tier="locked", status="free"):
+        return _mock_conn([
+            [{"plan_tier": tier}],
+            [{"subscription_status": status}],
+            [_make_plan_row(tier)],
+            [], [], [],
+        ])
+
+    def test_unknown_feature_is_denied(self):
+        """(a) Unmapped feature → denied, not allowed."""
+        from auth.entitlements import authorize_feature
+        app = Flask(__name__)
+        with app.test_request_context():
+            g.workspace_id = 1
+            conn = self._setup_conn("racer", "active")
+            allowed, ctx = authorize_feature(conn, 1, "nonexistent_feature_xyz")
+            assert allowed is False, "Unknown feature must be denied (B1)"
+            assert "reason" in ctx
+
+    def test_exports_feature_denied_for_locked(self):
+        """(a) 'exports' feature key (middleware alias) is denied for locked tier."""
+        from auth.entitlements import authorize_feature
+        app = Flask(__name__)
+        with app.test_request_context():
+            g.workspace_id = 1
+            conn = self._setup_conn("locked", "free")
+            # locked plan has no PDF in export_formats → denied
+            allowed, ctx = authorize_feature(conn, 1, "exports")
+            assert allowed is False, "'exports' must be denied for locked tier"
+            assert ctx.get("upgrade_tier") == "racer"
+
+    def test_exports_feature_allowed_for_racer(self):
+        """'exports' feature key is granted for Racer+ (has pdf in export_formats)."""
+        from auth.entitlements import authorize_feature
+        app = Flask(__name__)
+        with app.test_request_context():
+            g.workspace_id = 1
+            conn = self._setup_conn("racer", "active")
+            allowed, ctx = authorize_feature(conn, 1, "exports")
+            assert allowed is True, "'exports' must be allowed for racer tier"
+
+    def test_world_class_active_not_over_locked_by_b1(self):
+        """(b) Regression guard: world-class + active → known features still granted."""
+        from auth.entitlements import authorize_feature
+        app = Flask(__name__)
+        with app.test_request_context():
+            g.workspace_id = 1
+            for feature in ("api_access", "comparison", "visualization", "export_pdf"):
+                conn = self._setup_conn("world-class", "active")
+                allowed, ctx = authorize_feature(conn, 1, feature)
+                assert allowed is True, (
+                    f"B1 regression: world-class+active must keep {feature} granted"
+                )
+
+
+class TestB3PaidTierRequiresActiveStatus:
+    """Fix B3: get_user_entitlements() requires paid tier AND active status.
+
+    Previously, a user with plan_tier='world-class' but subscription_status='unpaid'
+    would receive full world-class entitlements (fail-open gap).  After this fix,
+    any status not in {active, trialing, past_due, canceled} forces the locked floor.
+    """
+
+    def _make_conn(self, tier, status, usage=0):
+        return _mock_conn([
+            [{"plan_tier": tier}],
+            [{"subscription_status": status}],
+            [_make_plan_row(tier)],
+            [], [],  # overrides
+            [{"event_type": "analyses", "total": usage}] if usage else [],
+        ])
+
+    def test_world_class_active_keeps_full_access(self):
+        """(b) world-class + active → unlimited analyses, premium features on."""
+        from auth.entitlements import get_user_entitlements
+        conn = self._make_conn("world-class", "active")
+        ents = get_user_entitlements(conn, 1, workspace_id=1)
+        assert ents["plan_tier"] == "world-class"
+        assert ents["subscription_status"] == "active"
+        assert ents["analyses_per_month"] == -1, "world-class+active must be unlimited"
+        assert ents["api_access"] is True
+        assert ents["comparison_enabled"] is True
+        assert ents.get("_locked_by_status") is None, "Must NOT be locked for active status"
+
+    def test_world_class_trialing_keeps_full_access(self):
+        """(b) world-class + trialing → full access (trial is allowed)."""
+        from auth.entitlements import get_user_entitlements
+        conn = self._make_conn("world-class", "trialing")
+        ents = get_user_entitlements(conn, 1, workspace_id=1)
+        assert ents["analyses_per_month"] == -1
+        assert ents.get("_locked_by_status") is None
+
+    def test_world_class_past_due_keeps_full_access(self):
+        """(b) world-class + past_due → full access with grace flag."""
+        from auth.entitlements import get_user_entitlements
+        conn = self._make_conn("world-class", "past_due")
+        ents = get_user_entitlements(conn, 1, workspace_id=1)
+        assert ents["analyses_per_month"] == -1
+        assert ents.get("_past_due") is True
+        assert ents.get("_locked_by_status") is None
+
+    def test_world_class_canceled_keeps_grace_access(self):
+        """(b) world-class + canceled → grace period features kept, cancel flag set."""
+        from auth.entitlements import get_user_entitlements
+        conn = self._make_conn("world-class", "canceled")
+        ents = get_user_entitlements(conn, 1, workspace_id=1)
+        assert ents["analyses_per_month"] == -1
+        assert ents.get("_cancel_pending") is True
+        assert ents.get("_locked_by_status") is None
+
+    def test_world_class_unpaid_forced_to_locked_floor(self):
+        """(c) world-class + unpaid → zero entitlements (locked floor)."""
+        from auth.entitlements import get_user_entitlements
+        conn = self._make_conn("world-class", "unpaid")
+        ents = get_user_entitlements(conn, 1, workspace_id=1)
+        # plan_tier + subscription_status preserved for display
+        assert ents["plan_tier"] == "world-class"
+        assert ents["subscription_status"] == "unpaid"
+        # But grants are zeroed
+        assert ents["analyses_per_month"] == 0, "unpaid → 0 analyses"
+        assert ents["analyses_remaining"] == 0
+        assert ents["api_access"] is False
+        assert ents["comparison_enabled"] is False
+        assert ents.get("_locked_by_status") == "unpaid"
+
+    def test_world_class_free_status_forced_to_locked_floor(self):
+        """(c) world-class + free status → zero entitlements."""
+        from auth.entitlements import get_user_entitlements
+        conn = self._make_conn("world-class", "free")
+        ents = get_user_entitlements(conn, 1, workspace_id=1)
+        assert ents["analyses_per_month"] == 0
+        assert ents["api_access"] is False
+        assert ents.get("_locked_by_status") == "free"
+
+    def test_world_class_expired_forced_to_locked_floor(self):
+        """(c) world-class + expired → zero entitlements."""
+        from auth.entitlements import get_user_entitlements
+        conn = self._make_conn("world-class", "expired")
+        ents = get_user_entitlements(conn, 1, workspace_id=1)
+        assert ents["analyses_per_month"] == 0
+        assert ents.get("_locked_by_status") == "expired"
+
+    def test_world_class_incomplete_forced_to_locked_floor(self):
+        """(c) world-class + incomplete → zero entitlements."""
+        from auth.entitlements import get_user_entitlements
+        conn = self._make_conn("world-class", "incomplete")
+        ents = get_user_entitlements(conn, 1, workspace_id=1)
+        assert ents["analyses_per_month"] == 0
+        assert ents.get("_locked_by_status") == "incomplete"
+
+    def test_racer_active_keeps_10_analyses(self):
+        """(b) Regression guard: racer + active must keep 10 analyses per month."""
+        from auth.entitlements import get_user_entitlements
+        conn = self._make_conn("racer", "active")
+        ents = get_user_entitlements(conn, 1, workspace_id=1)
+        assert ents["analyses_per_month"] == 10
+        assert ents.get("_locked_by_status") is None
+
+
+class TestB8NullPlanLimitFailClosed:
+    """Fix B8: NULL/None plan_definitions limit must coalesce to the tier floor,
+    never to unlimited.  Only -1 means unlimited.
+    """
+
+    def test_null_limit_in_check_quota_denied(self):
+        """(d) NULL plan limit → denied (0), not unlimited."""
+        from auth.entitlements import check_quota
+        # Simulate world-class plan with NULL reports_per_month in DB
+        # (plan row has None → should coalesce to py tier floor, which is -1
+        # for world-class, but test with a racer having NULL to ensure denial
+        # when py default is also finite).
+        # We test with a plan row that has None for reports_per_month, and
+        # the py_defaults for 'racer' give 10 — so it should use 10, not unlimited.
+        conn = _mock_conn([
+            [{"plan_tier": "racer"}],
+            [{"subscription_status": "active"}],
+            [_make_plan_row("racer", reports_per_month=None)],  # NULL in DB
+            [], [],
+            [],  # usage: 0
+        ])
+        allowed, ctx = check_quota(conn, 1, 1, "analyses", cost=1)
+        # With NULL DB limit, py default for racer = 10 → should be allowed at 0 used
+        assert allowed is True
+        assert ctx["limit"] == 10  # coalesced to tier floor, not None/unlimited
+
+    def test_null_limit_explicit_none_in_check_quota_uses_floor(self):
+        """(d) NULL plan limit with locked tier → 0 (deny at 0 used)."""
+        from auth.entitlements import check_quota
+        # locked tier has analyses_per_month=0 as its floor
+        conn = _mock_conn([
+            [{"plan_tier": "locked"}],
+            [{"subscription_status": "free"}],
+            [_make_plan_row("locked", reports_per_month=None)],
+            [], [],
+            [],
+        ])
+        allowed, ctx = check_quota(conn, 1, 1, "analyses", cost=1)
+        assert allowed is False, "NULL limit + locked tier → 0 → deny"
+        assert ctx["limit"] == 0
+
+    def test_minus_one_limit_is_unlimited(self):
+        """(d) -1 plan limit → unlimited (explicitly allowed)."""
+        from auth.entitlements import check_quota
+        conn = _mock_conn([
+            [{"plan_tier": "world-class"}],
+            [{"subscription_status": "active"}],
+            [_make_plan_row("world-class", reports_per_month=-1)],
+            [], [], [],
+        ])
+        allowed, ctx = check_quota(conn, 1, 1, "analyses", cost=1)
+        assert allowed is True
+        assert ctx["remaining"] is None  # unlimited sentinel
+        assert ctx["limit"] is None
+
+    def test_null_limit_in_check_and_record_quota_uses_floor(self):
+        """(d) NULL in plan_definitions for check_and_record_quota → tier floor."""
+        from auth.entitlements import check_and_record_quota
+        # racer with NULL in plan row → py default = 10
+        plan_row = _make_plan_row("racer", reports_per_month=None)
+        conn = _mock_conn([
+            [{"plan_tier": "racer"}],          # get_user_plan_tier
+            [plan_row],                         # get_plan_definitions
+            # SELECT FOR UPDATE (usage_monthly) — 0 used
+            [],
+        ])
+        # Patch record_usage to avoid further DB calls
+        from unittest.mock import patch
+        with patch("auth.entitlements.record_usage"):
+            allowed, ctx = check_and_record_quota(conn, 1, 1, "analyses", cost=1)
+        assert allowed is True
+        assert ctx["limit"] == 10  # tier floor for racer
+
+    def test_minus_one_in_check_and_record_quota_is_unlimited(self):
+        """(d) -1 in plan_definitions → unlimited, usage recorded."""
+        from auth.entitlements import check_and_record_quota
+        plan_row = _make_plan_row("world-class", reports_per_month=-1)
+        conn = _mock_conn([
+            [{"plan_tier": "world-class"}],
+            [plan_row],
+        ])
+        from unittest.mock import patch
+        with patch("auth.entitlements.record_usage") as mock_record:
+            allowed, ctx = check_and_record_quota(conn, 1, 1, "analyses", cost=1)
+        assert allowed is True
+        assert ctx["remaining"] is None
+        mock_record.assert_called_once()
+
+
+class TestB9MissingIdentityLockedFloor:
+    """Fix B9: entitlement_snapshot() must fail CLOSED when user or workspace
+    is unresolved — never inherit workspace-1 entitlements.
+    """
+
+    def test_missing_user_returns_locked_snapshot(self):
+        """(e) user_id=None → locked floor snapshot returned."""
+        from web.middleware.entitlements import entitlement_snapshot
+        app = Flask(__name__)
+        app.config["USE_PG"] = True
+        with app.test_request_context():
+            from flask import g
+            g.current_user_id = None
+            g.workspace_id = 1  # workspace present but user absent
+            snapshot = entitlement_snapshot()
+            assert snapshot["plan_tier"] == "locked"
+            assert snapshot["analyses_per_month"] == 0
+            assert snapshot["api_access"] is False
+            assert snapshot.get("_locked_by_missing_identity") is True
+
+    def test_missing_workspace_returns_locked_snapshot(self):
+        """(e) workspace_id=None → locked floor snapshot returned."""
+        from web.middleware.entitlements import entitlement_snapshot
+        app = Flask(__name__)
+        app.config["USE_PG"] = True
+        with app.test_request_context():
+            from flask import g
+            g.current_user_id = 42
+            g.workspace_id = None
+            snapshot = entitlement_snapshot()
+            assert snapshot["plan_tier"] == "locked"
+            assert snapshot["analyses_per_month"] == 0
+            assert snapshot.get("_locked_by_missing_identity") is True
+
+    def test_missing_both_returns_locked_snapshot(self):
+        """(e) Both user_id and workspace_id None → locked floor."""
+        from web.middleware.entitlements import entitlement_snapshot
+        app = Flask(__name__)
+        app.config["USE_PG"] = True
+        with app.test_request_context():
+            from flask import g
+            g.current_user_id = None
+            g.workspace_id = None
+            snapshot = entitlement_snapshot()
+            assert snapshot["plan_tier"] == "locked"
+            assert snapshot["api_access"] is False
+
+    def test_resolved_identity_does_not_lock(self):
+        """(e) Regression guard: resolved user + workspace → DB lookup attempted."""
+        from web.middleware.entitlements import entitlement_snapshot
+        from unittest.mock import MagicMock, patch
+        app = Flask(__name__)
+        app.config["USE_PG"] = True
+        with app.test_request_context():
+            from flask import g
+            g.current_user_id = 1
+            g.workspace_id = 1
+            fake_snap = {"plan_tier": "world-class", "analyses_per_month": -1}
+            with patch("web.middleware.entitlements.get_user_entitlements",
+                       return_value=fake_snap):
+                # Simulate cache miss → falls through to DB
+                with patch("web.middleware.entitlements._get_conn",
+                           return_value=MagicMock()):
+                    # cached_entitlements raises → falls back to get_user_entitlements
+                    with patch("web.entitlement_cache.cached_entitlements",
+                               side_effect=Exception("cache miss")):
+                        snapshot = entitlement_snapshot()
+            assert snapshot["plan_tier"] == "world-class"
+            assert snapshot.get("_locked_by_missing_identity") is None
