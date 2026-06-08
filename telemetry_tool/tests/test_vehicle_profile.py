@@ -211,3 +211,11 @@ def test_envelope_to_caps_accepts_plausible_limits():
     env = _reliable_env([_bin(10.0, 0.4, 1.2), _bin(20.0, 0.5, 1.3), _bin(30.0, 0.45, 1.1)])
     caps = _envelope_to_caps(env)
     assert caps is not None    # ~1.2 g brake is plausible
+
+
+def test_envelope_to_caps_rejects_asymmetric_near_zero_drive():
+    """Plausible brake but near-zero drive (one axis not really demonstrated)
+    must be rejected -- a tiny drive cap would over-constrain the solver."""
+    env = _reliable_env([_bin(10.0, 0.04, 1.2), _bin(20.0, 0.05, 1.3),
+                         _bin(30.0, 0.03, 1.1)])   # brake ~1.2g OK, drive ~0.04g absurd
+    assert _envelope_to_caps(env) is None

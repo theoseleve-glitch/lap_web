@@ -103,9 +103,12 @@ def _envelope_to_caps(env: FrictionEnvelope | None) -> dict | None:
     # it must not pass as "demonstrated" — caller falls back to the class scalar.
     drive_peak_g = max(ax_drive_max) / _G
     brake_peak_g = max(ax_brake_max) / _G
-    if max(drive_peak_g, brake_peak_g) < _MIN_PLAUSIBLE_LONG_G:
-        return None     # implausibly weak -> scale bug; use class default
-    if max(drive_peak_g, brake_peak_g) > _MAX_PLAUSIBLE_LONG_G:
+    # Both axes must be plausibly demonstrated. A single axis below the floor
+    # means that direction wasn't really demonstrated (or is a scale bug) and
+    # would feed the solver a crippling near-zero cap -> fall back to class.
+    if drive_peak_g < _MIN_PLAUSIBLE_LONG_G or brake_peak_g < _MIN_PLAUSIBLE_LONG_G:
+        return None     # implausibly weak on one axis -> scale bug; use class default
+    if drive_peak_g > _MAX_PLAUSIBLE_LONG_G or brake_peak_g > _MAX_PLAUSIBLE_LONG_G:
         return None     # implausibly strong -> sensor garbage; use class default
     return {
         "v_grid": v,
