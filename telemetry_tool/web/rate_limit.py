@@ -60,6 +60,7 @@ RATE_TIERS: dict[str, dict[str, int]] = {
     "device_pair": {"max_requests": 5, "window_seconds": 3600},
     "device_poll": {"max_requests": 20, "window_seconds": 60},
     "sync_upload": {"max_requests": 30, "window_seconds": 3600},
+    "marketing": {"max_requests": 60, "window_seconds": 60},
 }
 
 # Plan-tier multipliers — applied to base limits above.

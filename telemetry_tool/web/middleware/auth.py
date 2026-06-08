@@ -52,6 +52,7 @@ def auth_middleware() -> Response | tuple | None:
         "/api/v1/billing/checkout",  # Guest checkout (pre-signup); Stripe collects email + creates customer
         "/api/v1/devices/pair",        # Device pairing (no auth)
         "/api/v1/sessions/sync-upload",  # Uses DeviceToken auth
+        "/api/v1/marketing-events",    # Public anonymous marketing collector
     }
     if request.path in _AUTH_PUBLIC_PATHS or _OAUTH_PATH_RE.match(request.path) or _DEVICE_PAIR_STATUS_RE.match(request.path):
         return None
