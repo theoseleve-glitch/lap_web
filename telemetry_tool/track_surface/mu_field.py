@@ -3,13 +3,15 @@ track_surface/mu_field.py
 -------------------------
 Builders that turn GripSurface data into solver-ready MuField grids.
 
-Confidence shrinkage guards the 2D optimizer's classic failure mode:
-exploiting sparse high-mu noise cells or undriven asphalt.  House rule
-(matches robust_ocp.py): never let the solver see MORE grip than the
-trusted estimate.
+The dry field sources the per-cell cornering-LIMIT grid (`mu_limit_grid`,
+per-session p90) when present — see `_base_grip_grid` — falling back to the
+per-cell mean for old/pre-limit sidecars. Confidence shrinkage then guards
+the 2D optimizer's classic failure mode: exploiting sparse high-mu noise
+cells or undriven asphalt. House rule (matches robust_ocp.py): never let the
+solver see MORE grip than the trusted estimate.
 
   measured cell:    mu_eff = conf*mu_raw + (1-conf)*row_prior
-  unmeasured cell:  mu_eff = row_prior * UNMEASURED_DISCOUNT
+  unmeasured cell:  mu_eff = row_prior * UNMEASURED_DISCOUNT   (also NaN cells)
 
 where row_prior is the count-weighted mean of measured cells at that
 arclength (falls back to the global measured mean).
@@ -95,7 +97,8 @@ def _base_grip_grid(grip_2d: GripSurface) -> np.ndarray:
 
 
 def build_dry_mu_field(grip_2d: GripSurface) -> MuField:
-    """Solver-ready dry field: raw 2D grip with confidence shrinkage."""
+    """Solver-ready dry field: the cornering-LIMIT grid (mean fallback) via
+    _base_grip_grid, with confidence shrinkage."""
     return MuField(
         s_bins=grip_2d.s_bins.copy(),
         n_bins=grip_2d.n_bins.copy(),
