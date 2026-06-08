@@ -375,3 +375,27 @@ def test_build_dry_falls_back_to_mean_when_no_limit():
     gs.mu_limit_grid = None
     field = build_dry_mu_field(gs)
     np.testing.assert_allclose(field.mu_grid, gs.mu_grid)   # behaves exactly as before
+
+
+def test_base_grip_uses_mean_for_sparse_below_floor_cells():
+    """A sampled cell below the limit's sample floor (NaN limit) degrades to
+    its measured MEAN in _base_grip_grid, never the global limit prior."""
+    from track_surface.mu_field import _base_grip_grid
+    gs = _grip_surface_with_rubber_line()
+    gs.mu_limit_grid = np.full(gs.mu_grid.shape, 1.4)
+    gs.mu_limit_grid[2, 2] = np.nan
+    gs.mu_grid[2, 2] = 0.6
+    gs.count_grid[2, 2] = 5
+    base = _base_grip_grid(gs)
+    assert base[2, 2] == pytest.approx(0.6)     # mean, not NaN, not 1.4
+    assert base[0, 0] == pytest.approx(1.4)     # well-sampled cell keeps the limit
+
+
+def test_base_grip_leaves_unmeasured_cells_nan():
+    from track_surface.mu_field import _base_grip_grid
+    gs = _grip_surface_with_rubber_line()
+    gs.mu_limit_grid = np.full(gs.mu_grid.shape, 1.4)
+    gs.mu_limit_grid[1, 1] = np.nan
+    gs.count_grid[1, 1] = 0          # truly unmeasured
+    base = _base_grip_grid(gs)
+    assert np.isnan(base[1, 1])      # stays NaN -> shrink's unmeasured path

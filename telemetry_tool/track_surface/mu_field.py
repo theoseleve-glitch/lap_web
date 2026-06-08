@@ -74,12 +74,24 @@ _WET_MU_CEIL: Final[float] = 1.0
 
 
 def _base_grip_grid(grip_2d: GripSurface) -> np.ndarray:
-    """The grip the SOLVER should see: the cornering-limit grid when available,
-    else the per-cell mean (old sidecars / pre-limit builds). NaN cells in the
-    limit grid are handled downstream by shrink_mu_grid's unmeasured path."""
-    if grip_2d.mu_limit_grid is not None:
-        return grip_2d.mu_limit_grid
-    return grip_2d.mu_grid
+    """The grip the SOLVER should see.
+
+    With a limit grid: each well-sampled cell uses its cornering-limit (p90);
+    cells that HAD samples but fell below the limit's sample floor (NaN in the
+    limit grid, but real in the mean grid) degrade to their measured MEAN — a
+    conservative local estimate, never the global limit prior (which would
+    OVER-state grip in sparse sections, violating "never show the solver more
+    grip than the trusted estimate"). Truly-unmeasured cells (count==0) stay
+    NaN and take shrink_mu_grid's unmeasured-prior path.
+
+    Without a limit grid (old sidecars / pre-limit builds): the per-cell mean.
+    """
+    if grip_2d.mu_limit_grid is None:
+        return grip_2d.mu_grid
+    base = grip_2d.mu_limit_grid.copy()
+    gap = ~np.isfinite(base) & (grip_2d.count_grid > 0)
+    base[gap] = grip_2d.mu_grid[gap]
+    return base
 
 
 def build_dry_mu_field(grip_2d: GripSurface) -> MuField:
