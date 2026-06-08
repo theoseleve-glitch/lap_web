@@ -2,8 +2,9 @@
 
 Verifies:
 - get_workspace_usage_summary returns correct aggregation
-- create_override inserts row and logs audit event
-- detect_anomalies finds overspend, stale overrides, missing plans, tier mismatches
+- create_override inserts row and logs audit event (hardened: allowlist, bounds, expiry)
+- detect_anomalies finds overspend, stale overrides, missing plans, tier mismatches,
+  long-lived/powerful overrides
 - refresh_user_tier updates tier when needed
 """
 import sys
@@ -18,6 +19,8 @@ if str(_PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(_PROJECT_ROOT))
 
 from admin.entitlements import (
+    OVERRIDE_ALLOWLIST,
+    OVERRIDE_MAX_DURATION_DAYS,
     Anomaly,
     create_override,
     detect_anomalies,
@@ -68,17 +71,30 @@ class TestGetWorkspaceUsageSummary:
 
 
 class TestCreateOverride:
-    def test_inserts_override(self):
+    # ── helpers ────────────────────────────────────────────────────────
+
+    def _valid_expires(self, days: int = 30) -> datetime:
+        return datetime.now(timezone.utc) + timedelta(days=days)
+
+    def _make_conn(self, override_id: int = 42) -> MagicMock:
         conn = MagicMock()
         cur = MagicMock()
-        cur.fetchone.return_value = {"id": 42}
+        cur.fetchone.return_value = {"id": override_id}
         conn.execute.return_value = cur
+        return conn
+
+    # ── existing behaviour (updated for mandatory expires_at) ──────────
+
+    def test_inserts_override(self):
+        """A valid allowlisted override with a bounded expiry inserts successfully."""
+        conn = self._make_conn(42)
 
         override_id = create_override(
             conn,
-            override_key="reports_per_month",
+            override_key="analyses_per_month",
             override_value="50",
             reason="Promo code LAUNCH50",
+            expires_at=self._valid_expires(30),
             user_id=1,
             created_by=99,
         )
@@ -86,7 +102,7 @@ class TestCreateOverride:
         assert override_id == 42
         sql, params = conn.execute.call_args_list[0][0]
         assert "INSERT INTO entitlement_overrides" in sql
-        assert params["key"] == "reports_per_month"
+        assert params["key"] == "analyses_per_month"
         assert params["val"] == "50"
         assert params["uid"] == 1
         assert params["by"] == 99
@@ -100,20 +116,20 @@ class TestCreateOverride:
                 override_key="api_access",
                 override_value="true",
                 reason="test",
+                expires_at=self._valid_expires(7),
                 created_by=1,
             )
 
     def test_workspace_level_override(self):
-        conn = MagicMock()
-        cur = MagicMock()
-        cur.fetchone.return_value = {"id": 7}
-        conn.execute.return_value = cur
+        """Workspace-scoped override still works when allowlisted + bounded."""
+        conn = self._make_conn(7)
 
         override_id = create_override(
             conn,
             override_key="max_concurrent_jobs",
             override_value="5",
             reason="Enterprise deal",
+            expires_at=self._valid_expires(60),
             workspace_id=10,
             created_by=99,
         )
@@ -122,6 +138,131 @@ class TestCreateOverride:
         sql, params = conn.execute.call_args_list[0][0]
         assert params["ws"] == 10
         assert params["uid"] is None
+
+    # ── new hardening tests ────────────────────────────────────────────
+
+    def test_rejects_non_allowlisted_key(self):
+        """An arbitrary key not in OVERRIDE_ALLOWLIST must be rejected."""
+        conn = MagicMock()
+
+        with pytest.raises(ValueError, match="not permitted"):
+            create_override(
+                conn,
+                override_key="is_superuser",
+                override_value="true",
+                reason="test",
+                expires_at=self._valid_expires(7),
+                user_id=1,
+                created_by=99,
+            )
+
+    def test_rejects_null_expires_at(self):
+        """NULL/absent expires_at must be rejected — no forever overrides."""
+        conn = MagicMock()
+
+        with pytest.raises(ValueError, match="expires_at is required"):
+            create_override(
+                conn,
+                override_key="analyses_per_month",
+                override_value="100",
+                reason="test",
+                expires_at=None,
+                user_id=1,
+                created_by=99,
+            )
+
+    def test_rejects_over_cap_duration(self):
+        """expires_at beyond OVERRIDE_MAX_DURATION_DAYS must be rejected."""
+        conn = MagicMock()
+        too_far = datetime.now(timezone.utc) + timedelta(days=OVERRIDE_MAX_DURATION_DAYS + 1)
+
+        with pytest.raises(ValueError, match="maximum allowed duration"):
+            create_override(
+                conn,
+                override_key="analyses_per_month",
+                override_value="100",
+                reason="test",
+                expires_at=too_far,
+                user_id=1,
+                created_by=99,
+            )
+
+    def test_rejects_over_cap_numeric_value(self):
+        """A numeric value above the defined cap must be rejected."""
+        conn = MagicMock()
+
+        with pytest.raises(ValueError, match="out of range"):
+            create_override(
+                conn,
+                override_key="analyses_per_month",
+                override_value="999999",   # far above 10_000 cap
+                reason="test",
+                expires_at=self._valid_expires(7),
+                user_id=1,
+                created_by=99,
+            )
+
+    def test_rejects_non_bool_for_bool_key(self):
+        """A non-boolean JSON value for a bool key must be rejected."""
+        conn = MagicMock()
+
+        with pytest.raises(ValueError, match="boolean"):
+            create_override(
+                conn,
+                override_key="api_access",
+                override_value='"yes"',   # string, not JSON true/false
+                reason="test",
+                expires_at=self._valid_expires(7),
+                user_id=1,
+                created_by=99,
+            )
+
+    def test_valid_bounded_allowlisted_override_succeeds(self):
+        """A well-formed, allowlisted, bounded override must go through."""
+        conn = self._make_conn(99)
+
+        override_id = create_override(
+            conn,
+            override_key="api_access",
+            override_value="true",
+            reason="Support credit — ticket #1234",
+            expires_at=self._valid_expires(14),
+            user_id=7,
+            created_by=1,
+        )
+
+        assert override_id == 99
+
+    def test_unlimited_sentinel_allowed_for_supported_keys(self):
+        """Value -1 (unlimited) is accepted for keys that support it."""
+        conn = self._make_conn(55)
+
+        override_id = create_override(
+            conn,
+            override_key="analyses_per_month",
+            override_value="-1",
+            reason="World-class trial grant",
+            expires_at=self._valid_expires(30),
+            user_id=3,
+            created_by=1,
+        )
+
+        assert override_id == 55
+
+    def test_rejects_invalid_json_value(self):
+        """A non-JSON override_value must be rejected."""
+        conn = MagicMock()
+
+        with pytest.raises(ValueError, match="valid JSON"):
+            create_override(
+                conn,
+                override_key="analyses_per_month",
+                override_value="not-json",
+                reason="test",
+                expires_at=self._valid_expires(7),
+                user_id=1,
+                created_by=99,
+            )
 
 
 class TestRefreshUserTier:
@@ -258,6 +399,99 @@ class TestDetectAnomalies:
         # Should not raise — each check catches its own errors
         anomalies = detect_anomalies(conn)
         assert anomalies == []
+
+
+class TestDetectAnomaliesLongLived:
+    """Verify the long-lived / powerful-grant override anomaly check."""
+
+    def _make_conn_with_active_overrides(self, active_overrides: list) -> MagicMock:
+        """Mock a conn that returns empty for the first 4 queries, then active_overrides."""
+        conn = MagicMock()
+        call_count = [0]
+
+        def mock_execute(sql, params=None):
+            cur = MagicMock()
+            idx = call_count[0]
+            call_count[0] += 1
+            # Queries 0–3 are overspend/stale/missing/mismatch → empty
+            # Query 4 is the long-lived override check → return our data
+            cur.fetchall.return_value = active_overrides if idx == 4 else []
+            return cur
+
+        conn.execute.side_effect = mock_execute
+        return conn
+
+    def test_flags_long_lived_override(self):
+        """An override with > _ANOMALY_LONG_OVERRIDE_DAYS remaining is flagged."""
+        far_future = datetime.now(timezone.utc) + timedelta(days=60)
+        conn = self._make_conn_with_active_overrides([
+            {
+                "id": 11, "user_id": 5, "workspace_id": None,
+                "override_key": "max_concurrent_jobs",
+                "override_value": "10",
+                "expires_at": far_future,
+                "created_by": 1,
+            }
+        ])
+
+        anomalies = detect_anomalies(conn)
+        long_lived = [a for a in anomalies if a.anomaly_type == "long_lived_override"]
+        assert len(long_lived) == 1
+        assert long_lived[0].details["is_long_lived"] is True
+        assert long_lived[0].user_id == 5
+
+    def test_flags_powerful_api_access_grant(self):
+        """An active api_access=true override is flagged as powerful."""
+        near_future = datetime.now(timezone.utc) + timedelta(days=5)
+        conn = self._make_conn_with_active_overrides([
+            {
+                "id": 22, "user_id": 7, "workspace_id": None,
+                "override_key": "api_access",
+                "override_value": "true",
+                "expires_at": near_future,
+                "created_by": 1,
+            }
+        ])
+
+        anomalies = detect_anomalies(conn)
+        long_lived = [a for a in anomalies if a.anomaly_type == "long_lived_override"]
+        assert len(long_lived) == 1
+        assert long_lived[0].details["is_powerful_grant"] is True
+
+    def test_flags_unlimited_quota_grant(self):
+        """analyses_per_month=-1 (unlimited) is flagged as a powerful grant."""
+        near_future = datetime.now(timezone.utc) + timedelta(days=5)
+        conn = self._make_conn_with_active_overrides([
+            {
+                "id": 33, "user_id": 9, "workspace_id": None,
+                "override_key": "analyses_per_month",
+                "override_value": "-1",
+                "expires_at": near_future,
+                "created_by": 1,
+            }
+        ])
+
+        anomalies = detect_anomalies(conn)
+        long_lived = [a for a in anomalies if a.anomaly_type == "long_lived_override"]
+        assert len(long_lived) == 1
+        assert long_lived[0].details["is_powerful_grant"] is True
+
+    def test_short_lived_non_powerful_override_not_flagged(self):
+        """A short-lived, low-privilege override should not appear in anomalies."""
+        near_future = datetime.now(timezone.utc) + timedelta(days=10)
+        conn = self._make_conn_with_active_overrides([
+            {
+                "id": 44, "user_id": 11, "workspace_id": None,
+                "override_key": "max_concurrent_jobs",
+                "override_value": "3",
+                "expires_at": near_future,
+                "created_by": 1,
+            }
+        ])
+
+        anomalies = detect_anomalies(conn)
+        long_lived = [a for a in anomalies if a.anomaly_type == "long_lived_override"]
+        assert len(long_lived) == 0
 
 
 class TestGetEffectiveEntitlements:

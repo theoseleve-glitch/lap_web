@@ -8,9 +8,80 @@ from __future__ import annotations
 import json
 import logging
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 logger = logging.getLogger(__name__)
+
+# ── Override allowlist & bounds ─────────────────────────────────────────
+# Only keys that appear in the entitlements dict built by
+# auth.entitlements.get_user_entitlements are permitted.  Every other key
+# is rejected so a billing_admin cannot inject arbitrary state.
+
+# Maximum calendar duration for any single override.
+OVERRIDE_MAX_DURATION_DAYS = 90
+
+# Keys whose values must be booleans.
+_OVERRIDE_BOOL_KEYS: frozenset[str] = frozenset({
+    "api_access",
+    "comparison_enabled",
+    "coaching_plans_enabled",
+    "visualization_enabled",
+    "gamification",
+    "badge_share_card",
+    "live_monitoring",
+    "device_sync",
+    "auto_analyze_on_sync",
+})
+
+# Keys whose values must be non-negative integers (or -1 = unlimited).
+# Each entry: key → (min_value, max_value) where -1 is always permitted as
+# the unlimited sentinel for keys that support it.
+_OVERRIDE_INT_KEYS: dict[str, tuple[int, int]] = {
+    # (inclusive min, inclusive max); -1 = unlimited permitted separately
+    "analyses_per_month":           (0, 10_000),  # -1 = unlimited allowed
+    "upload_volume_mb_per_month":   (0, 500_000), # -1 = unlimited allowed
+    "max_upload_size_mb":           (0, 10_000),  # -1 = unlimited allowed
+    "max_session_data_mb":          (0, 10_000),  # -1 = unlimited allowed
+    "raw_retention_days":           (1, 3_650),   # no unlimited sentinel
+    "max_linked_devices":           (0, 100),
+    "max_concurrent_jobs":          (1, 50),
+    "race_strategy_max_duration_s": (0, 86_400 * 7),  # up to 1 week
+    "telemetry_retention_days":     (1, 3_650),
+}
+
+# Keys that support -1 as the "unlimited" sentinel.
+_OVERRIDE_INT_UNLIMITED_KEYS: frozenset[str] = frozenset({
+    "analyses_per_month",
+    "upload_volume_mb_per_month",
+    "max_upload_size_mb",
+    "max_session_data_mb",
+})
+
+# Keys whose values must be floats in a stated range.
+_OVERRIDE_FLOAT_KEYS: dict[str, tuple[float, float]] = {
+    "rate_multiplier": (0.1, 10.0),
+}
+
+# Keys whose values are free-form strings from a restricted set.
+_OVERRIDE_STRING_KEYS: dict[str, frozenset[str]] = {
+    "race_strategy_limit": frozenset({
+        "none", "24h_complex", "unlimited",
+    }),
+    "race_strategy_params": frozenset({
+        "none", "basic", "complex",
+    }),
+}
+
+# All allowed override keys (union of all categories above).
+OVERRIDE_ALLOWLIST: frozenset[str] = (
+    _OVERRIDE_BOOL_KEYS
+    | frozenset(_OVERRIDE_INT_KEYS)
+    | frozenset(_OVERRIDE_FLOAT_KEYS)
+    | frozenset(_OVERRIDE_STRING_KEYS)
+)
+
+# Threshold above which an active override is flagged as long-lived.
+_ANOMALY_LONG_OVERRIDE_DAYS = 30
 
 
 @dataclass
@@ -58,6 +129,78 @@ def get_effective_entitlements(conn, user_id: int, workspace_id: int) -> dict:
     return get_user_entitlements(conn, user_id, workspace_id)
 
 
+def _validate_override_key_value(override_key: str, override_value: str) -> None:
+    """Validate override_key is allowlisted and override_value is in-range.
+
+    Raises ValueError with a descriptive message on any violation.
+    The value is expected as a JSON-encoded string (the DB column type).
+    """
+    if override_key not in OVERRIDE_ALLOWLIST:
+        raise ValueError(
+            f"Override key {override_key!r} is not permitted. "
+            f"Allowed keys: {sorted(OVERRIDE_ALLOWLIST)}"
+        )
+
+    # Parse the value — it must be valid JSON.
+    try:
+        parsed = json.loads(override_value)
+    except (json.JSONDecodeError, TypeError) as exc:
+        raise ValueError(
+            f"override_value must be valid JSON (got {override_value!r})"
+        ) from exc
+
+    # Boolean keys
+    if override_key in _OVERRIDE_BOOL_KEYS:
+        if not isinstance(parsed, bool):
+            raise ValueError(
+                f"Override key {override_key!r} requires a boolean value "
+                f"(true/false), got {type(parsed).__name__}"
+            )
+        return
+
+    # Integer keys
+    if override_key in _OVERRIDE_INT_KEYS:
+        if not isinstance(parsed, int) or isinstance(parsed, bool):
+            raise ValueError(
+                f"Override key {override_key!r} requires an integer value, "
+                f"got {type(parsed).__name__}"
+            )
+        min_val, max_val = _OVERRIDE_INT_KEYS[override_key]
+        if parsed == -1 and override_key in _OVERRIDE_INT_UNLIMITED_KEYS:
+            return  # -1 = unlimited is explicitly permitted for these keys
+        if not (min_val <= parsed <= max_val):
+            raise ValueError(
+                f"Override key {override_key!r} value {parsed} is out of range "
+                f"[{min_val}, {max_val}] (use -1 for unlimited where supported)"
+            )
+        return
+
+    # Float keys
+    if override_key in _OVERRIDE_FLOAT_KEYS:
+        if not isinstance(parsed, (int, float)) or isinstance(parsed, bool):
+            raise ValueError(
+                f"Override key {override_key!r} requires a numeric value, "
+                f"got {type(parsed).__name__}"
+            )
+        min_val, max_val = _OVERRIDE_FLOAT_KEYS[override_key]
+        if not (min_val <= float(parsed) <= max_val):
+            raise ValueError(
+                f"Override key {override_key!r} value {parsed} is out of range "
+                f"[{min_val}, {max_val}]"
+            )
+        return
+
+    # String enum keys
+    if override_key in _OVERRIDE_STRING_KEYS:
+        allowed_vals = _OVERRIDE_STRING_KEYS[override_key]
+        if not isinstance(parsed, str) or parsed not in allowed_vals:
+            raise ValueError(
+                f"Override key {override_key!r} must be one of "
+                f"{sorted(allowed_vals)}, got {parsed!r}"
+            )
+        return
+
+
 def create_override(
     conn,
     *,
@@ -72,9 +215,39 @@ def create_override(
     """Create an entitlement override. Returns the new override ID.
 
     At least one of user_id or workspace_id must be set.
+
+    Hardening rules (fail-closed, defense-in-depth):
+    - override_key must be in OVERRIDE_ALLOWLIST; arbitrary keys are rejected.
+    - override_value must be valid JSON and in-range for its key type.
+    - expires_at is mandatory; NULL (forever) overrides are rejected.
+    - expires_at must be within OVERRIDE_MAX_DURATION_DAYS from now.
     """
     if not user_id and not workspace_id:
         raise ValueError("At least one of user_id or workspace_id required")
+
+    # 1. Allowlist + value-range validation
+    _validate_override_key_value(override_key, override_value)
+
+    # 2. Require a bounded, non-NULL expires_at
+    now_utc = datetime.now(timezone.utc)
+    if expires_at is None:
+        raise ValueError(
+            "expires_at is required; open-ended (never-expiring) overrides are not permitted"
+        )
+    # Normalise naive datetimes to UTC
+    if expires_at.tzinfo is None:
+        expires_at = expires_at.replace(tzinfo=timezone.utc)
+
+    if expires_at <= now_utc:
+        raise ValueError("expires_at must be in the future")
+
+    max_expires = now_utc + timedelta(days=OVERRIDE_MAX_DURATION_DAYS)
+    if expires_at > max_expires:
+        raise ValueError(
+            f"expires_at exceeds the maximum allowed duration of "
+            f"{OVERRIDE_MAX_DURATION_DAYS} days from now "
+            f"(max: {max_expires.isoformat()})"
+        )
 
     cur = conn.execute(
         "INSERT INTO entitlement_overrides "
@@ -104,7 +277,7 @@ def create_override(
             target_type="user" if user_id else "workspace",
             target_id=str(user_id or workspace_id),
             reason=reason,
-            details={"key": override_key, "value": override_value},
+            details={"key": override_key, "value": override_value, "expires_at": expires_at.isoformat()},
         )
         conn.commit()
     except Exception:
@@ -264,5 +437,81 @@ def detect_anomalies(conn) -> list[Anomaly]:
             ))
     except Exception:
         logger.debug("Tier mismatch detection failed", exc_info=True)
+
+    # 5. Long-lived or powerful active overrides.
+    # Flags any non-expired override that either:
+    #   (a) has more than _ANOMALY_LONG_OVERRIDE_DAYS remaining, or
+    #   (b) grants a high-privilege key (api_access=true or an unlimited quota).
+    try:
+        cur = conn.execute(
+            "SELECT id, user_id, workspace_id, override_key, override_value, "
+            "       expires_at, created_by "
+            "FROM entitlement_overrides "
+            "WHERE (expires_at IS NULL OR expires_at > NOW())"
+        )
+        now_utc = datetime.now(timezone.utc)
+        _HIGH_PRIV_KEYS = frozenset({
+            "api_access",
+            "analyses_per_month",
+            "upload_volume_mb_per_month",
+            "max_upload_size_mb",
+        })
+        for row in cur.fetchall():
+            r = dict(row) if not isinstance(row, dict) else row
+            exp = r.get("expires_at")
+            key = r.get("override_key", "")
+            raw_val = r.get("override_value")
+
+            # (a) Long-lived: NULL expiry or > threshold days remaining
+            remaining_days: float | None = None
+            if exp is None:
+                remaining_days = float("inf")
+                is_long = True
+            else:
+                if isinstance(exp, str):
+                    try:
+                        exp = datetime.fromisoformat(exp)
+                    except ValueError:
+                        exp = None
+                if exp is not None:
+                    if exp.tzinfo is None:
+                        exp = exp.replace(tzinfo=timezone.utc)
+                    remaining_days = (exp - now_utc).total_seconds() / 86400
+                    is_long = remaining_days > _ANOMALY_LONG_OVERRIDE_DAYS
+                else:
+                    is_long = False
+
+            # (b) Powerful grant: api_access=true or unlimited quota (-1)
+            is_powerful = False
+            if key in _HIGH_PRIV_KEYS and raw_val is not None:
+                try:
+                    parsed_val = json.loads(raw_val)
+                    if key == "api_access" and parsed_val is True:
+                        is_powerful = True
+                    elif key in ("analyses_per_month",
+                                 "upload_volume_mb_per_month",
+                                 "max_upload_size_mb") and parsed_val == -1:
+                        is_powerful = True
+                except (json.JSONDecodeError, TypeError):
+                    pass
+
+            if is_long or is_powerful:
+                anomalies.append(Anomaly(
+                    anomaly_type="long_lived_override",
+                    severity="warning",
+                    user_id=r.get("user_id"),
+                    workspace_id=r.get("workspace_id"),
+                    details={
+                        "override_id": r.get("id"),
+                        "key": key,
+                        "value": raw_val,
+                        "expires_at": str(exp),
+                        "remaining_days": remaining_days,
+                        "is_powerful_grant": is_powerful,
+                        "is_long_lived": is_long,
+                    },
+                ))
+    except Exception:
+        logger.debug("Long-lived override detection failed", exc_info=True)
 
     return anomalies
