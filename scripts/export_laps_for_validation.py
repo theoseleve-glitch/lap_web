@@ -67,7 +67,12 @@ _EQUIRECT_M_PER_DEG = 111_320.0  # metres per degree of latitude (WGS84 mean)
 
 
 def _load_session(path: Path) -> pd.DataFrame:
-    """Return a frame with columns: lat, lon, speed_mps, lap (int).
+    """Return a frame with columns: lat, lon, speed_mps, lap (int), time_s.
+
+    ``time_s`` carries the log's REAL timestamp (seconds; absolute or elapsed —
+    only intra-lap differences are used downstream) so per-lap accel can be
+    differentiated at the true sample rate instead of a hardcoded dt. It is NaN
+    when the source has no time/``t`` column.
 
     Handles both RaceChrono exports and flat trackreco triplet CSVs.
     """
@@ -77,11 +82,16 @@ def _load_session(path: Path) -> pd.DataFrame:
         # trackreco flat CSV
         df = pd.read_csv(path)
         cols = {c.lower(): c for c in df.columns}
+        time_col = next((cols[k] for k in ("t", "time", "timestamp", "time_s", "t_s")
+                         if k in cols), None)
+        time_s = (pd.to_numeric(df[time_col], errors="coerce")
+                  if time_col is not None else pd.Series(np.nan, index=df.index))
         return pd.DataFrame({
             "lat": pd.to_numeric(df[cols["lat"]], errors="coerce"),
             "lon": pd.to_numeric(df[cols["lon"]], errors="coerce"),
             "speed_mps": pd.to_numeric(df[cols.get("speed", "speed")], errors="coerce"),
             "lap": pd.to_numeric(df[cols.get("lap_id", "lap_id")], errors="coerce"),
+            "time_s": time_s,
         }).dropna(subset=["lat", "lon"])
 
     # RaceChrono export — reuse the production reader.
@@ -94,11 +104,21 @@ def _load_session(path: Path) -> pd.DataFrame:
                 return pd.to_numeric(df[n], errors="coerce")
         raise KeyError(f"none of {names} present in {list(df.columns)[:12]}")
 
+    def pick_opt(*names: str) -> pd.Series:
+        """Like pick, but returns an all-NaN column instead of raising."""
+        for n in names:
+            if n in df.columns:
+                return pd.to_numeric(df[n], errors="coerce")
+        return pd.Series(np.nan, index=df.index)
+
     return pd.DataFrame({
         "lat": pick("Latitude (deg)", "Latitude"),
         "lon": pick("Longitude (deg)", "Longitude"),
         "speed_mps": pick("Speed (m/s)", "Speed (m/s) *calc"),
         "lap": pick("Lap #", "lap_number"),
+        # Real timestamp: RaceChrono fused logs carry a per-sample "Time (s)"
+        # (absolute epoch) and an "Elapsed time (s)"; either gives the true dt.
+        "time_s": pick_opt("Time (s)", "Elapsed time (s)", "time_s", "t_s"),
     }).dropna(subset=["lat", "lon"])
 
 
@@ -241,16 +261,41 @@ def main() -> int:
         x = xy[:, 0]
         y = xy[:, 1]
         v = sess["speed_mps"].to_numpy()[mask]
+        t_real = sess["time_s"].to_numpy()[mask]
 
         # ── friction-envelope channels ────────────────────────────────────
         # The validation harness's resolver path feeds these to
         # friction_envelope.compute_friction_envelope to build the driver's
-        # DEMONSTRATED longitudinal envelope (no time column in the session,
-        # so use a uniform 10 Hz base; matches RaceChrono resampling).
-        t = np.arange(len(v)) * 0.1
-        dt = np.gradient(t)
-        dt[dt <= 1e-6] = 1e-6
-        accel_long = np.gradient(v) / dt
+        # DEMONSTRATED longitudinal envelope. accel_long = d(speed)/dt MUST be
+        # differentiated at the log's REAL sample interval. RaceChrono fused
+        # logs run at ~hundreds of Hz with non-uniform spacing; using a
+        # hardcoded dt mis-scales accel_long by ~30x. When a real time column
+        # exists we resample the lap onto a uniform 20 Hz grid (kills the fused
+        # -log spike noise too) and differentiate on that base; geometry (x/y)
+        # is resampled on the SAME grid so accel_lat stays aligned.
+        DT_U = 0.05  # 20 Hz uniform resample step (s)
+        have_time = np.isfinite(t_real).all() and len(t_real) > 1
+        if have_time:
+            t0, t1 = float(np.nanmin(t_real)), float(np.nanmax(t_real))
+        if have_time and (t1 - t0) > 1.0:
+            # Ensure strictly increasing time for np.interp (sort defensively).
+            order = np.argsort(t_real)
+            t_s, v_s = t_real[order], v[order]
+            x_s, y_s = x[order], y[order]
+            t_u = np.arange(t0, t1, DT_U)
+            v = np.interp(t_u, t_s, v_s)
+            x = np.interp(t_u, t_s, x_s)
+            y = np.interp(t_u, t_s, y_s)
+            accel_long = np.gradient(v) / DT_U
+        else:
+            # No usable real time: fall back to a uniform 10 Hz assumption.
+            # accel scale is ASSUMED here and may be mis-scaled — warn loudly.
+            print(f"WARNING: lap {lap_id}: no real time column; assuming 10 Hz "
+                  f"(accel_long scale is unverified for this lap).")
+            tt = np.arange(len(v)) * 0.1
+            dt = np.gradient(tt)
+            dt[dt <= 1e-6] = 1e-6
+            accel_long = np.gradient(v) / dt
         dx, dy = np.gradient(x), np.gradient(y)
         ddx, ddy = np.gradient(dx), np.gradient(dy)
         denom = (dx * dx + dy * dy) ** 1.5

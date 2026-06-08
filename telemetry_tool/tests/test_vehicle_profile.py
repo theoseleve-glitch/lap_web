@@ -100,13 +100,17 @@ from track_surface.vehicle_profile import resolve_vehicle_params
 def _accel_lap(*, n=400, v_lo=12.0, v_hi=38.0, a_lat_g=0.8):
     """A realistic lap: accelerate v_lo->v_hi (accel_long>0), then brake
     v_hi->v_lo (accel_long<0). Each speed bin in [v_lo,v_hi] sees BOTH an
-    accel and a brake sample, so the friction envelope's bins have both axes."""
+    accel and a brake sample, so the friction envelope's bins have both axes.
+
+    dt is chosen so the demonstrated longitudinal limit lands in a physically
+    plausible band (~0.5 g) — within the _envelope_to_caps plausibility guard
+    so these Tier-A bins are correctly accepted as demonstrated."""
     half = n // 2
     v_up = np.linspace(v_lo, v_hi, half)
     v_dn = np.linspace(v_hi, v_lo, n - half)
     v = np.concatenate([v_up, v_dn])
-    # accel_long = dv/dt along travel; assume uniform dt=0.1s
-    dt = 0.1
+    # accel_long = dv/dt along travel; uniform dt=0.025s (40 Hz) -> ~0.5 g peak.
+    dt = 0.025
     accel_long = np.gradient(v) / dt
     return pd.DataFrame({
         "Speed (m/s)": v,
@@ -193,3 +197,17 @@ def test_resolver_degrades_when_envelope_raises(monkeypatch):
     assert prov.longitudinal_source == "class_default"
     assert prov.envelope_reliable is False
     assert vp.mass_kg == CLASS_PROFILES["kart"].mass_kg
+
+
+def test_envelope_to_caps_rejects_implausibly_weak_limits():
+    """A ~30x-underscaled envelope (e.g. accel_long differentiated at the wrong
+    dt) must NOT pass as demonstrated — fall back to class default."""
+    env = _reliable_env([_bin(10.0, 0.01, 0.01), _bin(20.0, 0.012, 0.011),
+                         _bin(30.0, 0.009, 0.013)])   # ~0.01 g -> absurd
+    assert _envelope_to_caps(env) is None
+
+
+def test_envelope_to_caps_accepts_plausible_limits():
+    env = _reliable_env([_bin(10.0, 0.4, 1.2), _bin(20.0, 0.5, 1.3), _bin(30.0, 0.45, 1.1)])
+    caps = _envelope_to_caps(env)
+    assert caps is not None    # ~1.2 g brake is plausible

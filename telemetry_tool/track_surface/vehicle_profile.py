@@ -19,6 +19,7 @@ from __future__ import annotations
 import copy as _copy
 import logging
 from dataclasses import dataclass
+from typing import Final
 
 from telemetry_tool.lap_oracle.config import PacejkaParams, VehicleParams
 
@@ -66,6 +67,13 @@ from telemetry_tool.friction_envelope import (
     _MIN_SAMPLES_PER_BIN,
 )
 
+# Plausibility band for a demonstrated longitudinal limit (g). Below the floor
+# is almost certainly a unit/scale bug (e.g. GPS speed differentiated at the
+# wrong dt); above the ceiling is sensor garbage. Either way, don't trust it as
+# "demonstrated" — fall back to the class scalar.
+_MIN_PLAUSIBLE_LONG_G: Final[float] = 0.3
+_MAX_PLAUSIBLE_LONG_G: Final[float] = 3.5
+
 
 def _envelope_to_caps(env: FrictionEnvelope | None) -> dict | None:
     """Demonstrated FrictionEnvelope -> ocp_2d envelope_caps (v_grid + per-speed
@@ -88,10 +96,21 @@ def _envelope_to_caps(env: FrictionEnvelope | None) -> dict | None:
     v = [float(fb.speed_center_mps) for fb in bins]
     if any(b <= a for a, b in zip(v, v[1:])):   # not strictly increasing -> bad interpolant grid
         return None
+    ax_drive_max = [float(fb.accel_max_g * _G) for fb in bins]
+    ax_brake_max = [float(fb.brake_max_g * _G) for fb in bins]
+    # Plausibility guard: a demonstrated longitudinal limit outside the physical
+    # band is a scale bug (too weak) or sensor garbage (too strong); either way
+    # it must not pass as "demonstrated" — caller falls back to the class scalar.
+    drive_peak_g = max(ax_drive_max) / _G
+    brake_peak_g = max(ax_brake_max) / _G
+    if max(drive_peak_g, brake_peak_g) < _MIN_PLAUSIBLE_LONG_G:
+        return None     # implausibly weak -> scale bug; use class default
+    if max(drive_peak_g, brake_peak_g) > _MAX_PLAUSIBLE_LONG_G:
+        return None     # implausibly strong -> sensor garbage; use class default
     return {
         "v_grid": v,
-        "ax_drive_max": [float(fb.accel_max_g * _G) for fb in bins],
-        "ax_brake_max": [float(fb.brake_max_g * _G) for fb in bins],
+        "ax_drive_max": ax_drive_max,
+        "ax_brake_max": ax_brake_max,
     }
 
 
