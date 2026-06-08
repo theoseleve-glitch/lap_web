@@ -33,6 +33,7 @@ VALID_CATEGORIES = frozenset(
         "aero",
         "fuel",
         "environment",
+        "driver",
     }
 )
 

@@ -102,6 +102,12 @@ _channel_list += [
         "Compass heading"),
     _ch("combined_g", "g", TIER_STANDARD, "motion", (0.0, 10.0),
         "Combined longitudinal + lateral g-force magnitude"),
+    _ch("accel_vert_mps2", "m/s2", TIER_STANDARD, "motion", (-80.0, 80.0),
+        "Vertical acceleration"),
+    _ch("pitch_rate_dps", "deg/s", TIER_STANDARD, "motion", (-500.0, 500.0),
+        "Pitch rate"),
+    _ch("roll_rate_dps", "deg/s", TIER_STANDARD, "motion", (-500.0, 500.0),
+        "Roll rate"),
 ]
 
 # ---- Tier 3: Controls ----------------------------------------------------
@@ -199,6 +205,10 @@ _channel_list += [
         "Engine oil pressure"),
     _ch("boost_pressure", "kPa", TIER_PROFESSIONAL, "engine", (-100.0, 400.0),
         "Turbo / supercharger boost pressure"),
+    _ch("exhaust_temp", "C", TIER_PROFESSIONAL, "engine", (-40.0, 1300.0),
+        "Exhaust gas temperature (EGT)"),
+    _ch("head_temp", "C", TIER_PROFESSIONAL, "engine", (-40.0, 400.0),
+        "Cylinder head temperature (CHT)"),
 ]
 
 # Slip angle (4-corner)
@@ -231,6 +241,12 @@ _channel_list += [
         "Ambient air temperature"),
     _ch("track_temp", "C", TIER_PROFESSIONAL, "environment", (-40.0, 80.0),
         "Track surface temperature"),
+]
+
+# Driver biometrics
+_channel_list += [
+    _ch("heart_rate_bpm", "bpm", TIER_PROFESSIONAL, "driver", (0.0, 250.0),
+        "Driver heart rate"),
 ]
 
 # Build the canonical dict: name -> ChannelDef
