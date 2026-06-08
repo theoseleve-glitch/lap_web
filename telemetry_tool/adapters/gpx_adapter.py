@@ -40,8 +40,10 @@ class GPXAdapter(BaseAdapter):
             path = Path(file_path)
             if not path.exists() or path.stat().st_size == 0:
                 return 0.0
+            if path.suffix.lower() != ".gpx":
+                return 0.0
             with path.open(encoding="utf-8", errors="replace") as fh:
-                head = fh.read(2048)
+                head = fh.read(4096)
             if "<gpx" in head and "topografix.com/GPX" in head:
                 return 0.95
             if "<gpx" in head and "<trkpt" in head:
@@ -54,7 +56,10 @@ class GPXAdapter(BaseAdapter):
 
     def parse(self, file_path: str,
               progress_cb: Optional[object] = None) -> pd.DataFrame:
-        root = ET.parse(file_path).getroot()
+        try:
+            root = ET.parse(file_path).getroot()
+        except ET.ParseError as exc:
+            raise ValueError(f"GPX parse error in {file_path}: {exc}") from exc
 
         rows: list[dict] = []
         for elem in root.iter():
@@ -64,17 +69,26 @@ class GPXAdapter(BaseAdapter):
             lon = elem.get("lon")
             if lat is None or lon is None:
                 continue
-            row: dict = {"lat_deg": float(lat), "lon_deg": float(lon)}
+            try:
+                row: dict = {"lat_deg": float(lat), "lon_deg": float(lon)}
+            except ValueError:
+                continue
             for child in elem:
                 name = _localname(child.tag)
                 if name == "ele" and child.text:
-                    row["altitude_m"] = float(child.text)
+                    try:
+                        row["altitude_m"] = float(child.text)
+                    except ValueError:
+                        pass
                 elif name == "time" and child.text:
                     row["_iso_time"] = child.text.strip()
                 elif name == "extensions":
                     for ext in child.iter():
                         if _localname(ext.tag) == "speed" and ext.text:
-                            row["speed_mps"] = float(ext.text)
+                            try:
+                                row["speed_mps"] = float(ext.text)
+                            except ValueError:
+                                pass
             rows.append(row)
 
         if not rows:

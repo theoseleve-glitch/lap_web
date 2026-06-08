@@ -31,6 +31,26 @@ def _write(tmp_path: Path, name: str, content: str) -> str:
     return str(p)
 
 
+_GPX_NO_TIME = textwrap.dedent("""\
+    <?xml version="1.0" encoding="UTF-8"?>
+    <gpx version="1.1" creator="test" xmlns="http://www.topografix.com/GPX/1/1">
+      <trk><trkseg>
+        <trkpt lat="51.5000000" lon="-0.1000000"><ele>10.0</ele></trkpt>
+        <trkpt lat="51.5009000" lon="-0.1000000"><ele>11.0</ele></trkpt>
+        <trkpt lat="51.5018000" lon="-0.1000000"><ele>12.0</ele></trkpt>
+      </trkseg></trk>
+    </gpx>
+""")
+
+
+def test_parse_gpx_synthetic_clock(tmp_path):
+    path = _write(tmp_path, "notime.gpx", _GPX_NO_TIME)
+    df = GPXAdapter().parse(path)
+    assert len(df) == 3
+    assert df["time_s"].tolist() == pytest.approx([0.0, 0.1, 0.2])
+    assert {"speed_mps", "distance_m", "heading_deg"} <= set(df.columns)
+
+
 def test_detect_gpx(tmp_path):
     path = _write(tmp_path, "track.gpx", _GPX)
     assert GPXAdapter.detect(path) >= 0.9
