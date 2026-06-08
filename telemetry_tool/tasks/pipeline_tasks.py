@@ -35,6 +35,7 @@ from tasks.concurrency import (
     check_worker_memory,
     release_workspace_lock,
 )
+from auth.entitlements import get_user_entitlements
 
 logger = logging.getLogger(__name__)
 
@@ -64,30 +65,142 @@ def _make_import_error_json(exc: BaseException) -> str | None:
 # ---------------------------------------------------------------------------
 
 
-def _verify_task_entitlements(user_id: int, workspace_id: int) -> bool:
-    """Lightweight entitlement check for Celery workers.
+def _resolve_session_owner(conn, session_id, workspace_id) -> tuple[int | None, int | None]:
+    """Resolve the owning (workspace_id, owner_user_id) for a session.
 
-    Returns True if the user's current plan allows report generation.
-    Fails open if the check itself errors (don't break pipeline on
-    transient DB issues).
+    Used when ctx.user_id is absent (reprocess / batch tasks).  Walks:
+      session_id → sessions.workspace_id (if workspace_id not already known)
+                 → workspaces.owner_user_id
+
+    Returns (resolved_workspace_id, owner_user_id) or (None, None) if
+    either lookup fails or the session/workspace row does not exist.
     """
     try:
-        from auth.entitlements import get_plan_entitlements, get_user_plan_tier
+        ws_id = workspace_id
+        if not ws_id and session_id:
+            row = conn.execute(
+                text("SELECT workspace_id FROM sessions WHERE session_id = :sid"),
+                {"sid": session_id},
+            ).fetchone()
+            if row is None:
+                return None, None
+            ws_id = row[0] if not isinstance(row, dict) else row.get("workspace_id")
 
-        conn = _get_pg_connection()
-        tier = get_user_plan_tier(conn, user_id)
-        plan = get_plan_entitlements(tier)
-        if plan.get("reports_per_month") == 0:
+        if not ws_id:
+            return None, None
+
+        owner_row = conn.execute(
+            text("SELECT owner_user_id FROM workspaces WHERE id = :wsid"),
+            {"wsid": ws_id},
+        ).fetchone()
+        if owner_row is None:
+            return ws_id, None
+        owner_id = (
+            owner_row[0]
+            if not isinstance(owner_row, dict)
+            else owner_row.get("owner_user_id")
+        )
+        return ws_id, owner_id
+    except Exception:
+        logger.warning(
+            "Worker entitlement: failed to resolve session owner "
+            "(session_id=%s workspace_id=%s)",
+            session_id, workspace_id, exc_info=True,
+        )
+        return None, None
+
+
+def _verify_task_entitlements(
+    user_id: int | None,
+    workspace_id: int | None,
+    conn=None,
+    session_id=None,
+) -> bool:
+    """Entitlement check for Celery workers — fails CLOSED on any error.
+
+    Behaviour:
+    - If user_id is absent, resolves the workspace owner via session_id so
+      reprocess/batch tasks are checked against the owning tier.
+    - Calls get_user_entitlements() (status-aware since cfe9cbf) and denies
+      when analyses_per_month == 0 (the locked floor for any inactive/unpaid
+      subscription regardless of plan_tier).
+    - On ANY exception during the check, raises TransientError so the Celery
+      retry policy can attempt once more on a transient DB blip.  A check
+      failure NEVER grants access.
+    - Only if the owning workspace/user genuinely cannot be resolved
+      (session not found, workspace orphaned) does it deny definitively
+      (return False) rather than retrying — those are not transient states.
+
+    Returns True only when the owner has a non-zero analyses entitlement
+    (i.e. active/trialing/past_due/canceled subscription + paid tier).
+    """
+    # Resolve the identity we'll check against.
+    resolved_user_id = user_id
+    resolved_ws_id = workspace_id
+
+    # Manage connection lifetime: if the caller already owns a connection, use
+    # it (avoids a second connection open from the worker pool).  If not, open
+    # one ourselves — but we own it, so we must close it when done.
+    _owned_conn = False
+    if conn is None:
+        try:
+            conn = _get_pg_connection()
+            _owned_conn = True
+        except Exception:
+            logger.error(
+                "Worker entitlement: could not open DB connection "
+                "(user=%s workspace=%s) — failing CLOSED",
+                user_id, workspace_id, exc_info=True,
+            )
+            raise TransientError("Entitlement DB connection failed") from None
+
+    try:
+        # --- Step 1: resolve owner when user_id is absent -------------------
+        if not resolved_user_id:
+            resolved_ws_id, resolved_user_id = _resolve_session_owner(
+                conn, session_id, workspace_id
+            )
+            if not resolved_user_id:
+                # Session/workspace genuinely unresolvable — not a transient
+                # error.  Deny without retry to avoid infinite retry storms on
+                # a legitimately missing job.
+                logger.warning(
+                    "Worker entitlement: could not resolve owner for "
+                    "session_id=%s workspace_id=%s — denying",
+                    session_id, workspace_id,
+                )
+                return False
+
+        # --- Step 2: fetch status-aware entitlements ------------------------
+        try:
+            ents = get_user_entitlements(conn, resolved_user_id, resolved_ws_id)
+        except Exception:
+            logger.error(
+                "Worker entitlement: get_user_entitlements raised "
+                "(user=%s workspace=%s) — failing CLOSED",
+                resolved_user_id, resolved_ws_id, exc_info=True,
+            )
+            raise TransientError("Entitlement lookup failed") from None
+
+        # --- Step 3: deny when on the locked floor --------------------------
+        # analyses_per_month == 0 is the invariant set by get_user_entitlements
+        # for every locked/unpaid/expired/inactive status (cfe9cbf).
+        # -1 means unlimited (world_class); any positive value is permitted.
+        analyses_allowed = ents.get("analyses_per_month", 0)
+        if analyses_allowed == 0:
             logger.warning(
-                "Worker entitlement check failed: user=%s tier=%s",
-                user_id,
-                tier,
+                "Worker entitlement denied: user=%s workspace=%s "
+                "tier=%s status=%s analyses_per_month=0",
+                resolved_user_id, resolved_ws_id,
+                ents.get("plan_tier"), ents.get("subscription_status"),
             )
             return False
+
         return True
-    except Exception:
-        logger.warning("Worker entitlement check error (failing open)", exc_info=True)
-        return True  # Fail open — don't break pipeline on DB transient errors
+
+    finally:
+        if _owned_conn:
+            _return_pg_connection(conn)
 
 
 # ---------------------------------------------------------------------------
@@ -1346,11 +1459,19 @@ def pipeline_ingest(self, job_id: str) -> Optional[str]:
     # every helper; close it in the finally.
     conn = _open_task_conn(ctx)
     try:
-        # Verify user's plan still allows report generation
-        if (
-            hasattr(ctx, "user_id")
-            and ctx.user_id
-            and not _verify_task_entitlements(ctx.user_id, ctx.workspace_id)
+        # Verify the owning user's plan allows report generation.
+        # Always checked — even when ctx.user_id is absent (reprocess/batch
+        # paths), the guard resolves the session owner via session_id so locked
+        # workspaces cannot bypass the check by omitting user_id.
+        # TransientError from the guard is caught by the autoretry_for clause
+        # above; definitive False (locked/unresolvable) marks the job failed.
+        user_id_for_check = getattr(ctx, "user_id", None) or None
+        session_id_for_check = getattr(ctx, "session_id", None) or None
+        if not _verify_task_entitlements(
+            user_id=user_id_for_check,
+            workspace_id=ctx.workspace_id,
+            conn=conn,
+            session_id=session_id_for_check,
         ):
             _update_job_progress(
                 job_id=job_id,
