@@ -152,6 +152,7 @@ def _write_zip(
     annotations: list[dict[str, Any]],
     teams: list[dict[str, Any]],
     telemetry: dict[str, list[dict[str, Any]]] | None = None,
+    app_events: list[dict[str, Any]] | None = None,
 ):
     """Write a GDPR export ZIP file containing JSON files per resource.
 
@@ -159,7 +160,8 @@ def _write_zip(
     ``telemetry`` is an optional map of ``{table_name: rows}`` for the bulk
     per-session data (gps_traces, weather, corner metrics, theoretical lines)
     that Art. 15/20 portability requires — omitting these made the export
-    materially incomplete.
+    materially incomplete. ``app_events`` is the user's PII-scrubbed behavioral
+    events (written as ``app_events.json`` when provided).
     """
     def _default(obj):
         if isinstance(obj, datetime):
@@ -175,6 +177,11 @@ def _write_zip(
         zf.writestr("teams.json", json.dumps(teams, indent=2, default=_default))
         for _name, _rows in (telemetry or {}).items():
             zf.writestr(f"{_name}.json", json.dumps(_rows, indent=2, default=_default))
+        if app_events is not None:
+            zf.writestr(
+                "app_events.json",
+                json.dumps(app_events, indent=2, default=_default),
+            )
 
 
 # ---------------------------------------------------------------------------
@@ -326,6 +333,45 @@ def _export_user_data_impl(user_id: int, export_id: str) -> dict[str, Any]:
         ).fetchall()
         teams = [dict(r) for r in team_rows]
 
+        # Query behavioral events (PII-scrubbed, user-scoped) for GDPR export.
+        # Uses the shared web.pii_guard.scrub_properties (single source of truth,
+        # per reconciliation §3) — falls back to a local denylist-identical
+        # scrubber only if the import fails at runtime.
+        try:
+            from web.pii_guard import scrub_properties as _scrub_event_props
+        except Exception:  # pragma: no cover - defensive import fallback
+            _PII_DENYLIST = {
+                "email", "ip", "ip_address", "token", "access_token",
+                "password", "phone", "ssn",
+            }
+
+            def _scrub_event_props(props):
+                if not isinstance(props, dict):
+                    return {}
+                return {
+                    k: v for k, v in props.items()
+                    if isinstance(k, str) and k.lower() not in _PII_DENYLIST
+                }
+
+        event_rows = conn.execute(
+            text(
+                "SELECT event_type, properties, path, created_at "
+                "FROM app_events WHERE user_id = :uid"
+            ),
+            {"uid": user_id},
+        ).fetchall()
+        app_events = [
+            {
+                "event_type": (r["event_type"] if isinstance(r, dict) else r.event_type),
+                "properties": _scrub_event_props(
+                    (r["properties"] if isinstance(r, dict) else r.properties) or {}
+                ),
+                "path": (r["path"] if isinstance(r, dict) else r.path),
+                "created_at": (r["created_at"] if isinstance(r, dict) else r.created_at),
+            }
+            for r in event_rows
+        ]
+
         # Bulk per-session telemetry — the user's actual lap data (GPS traces,
         # weather, corner metrics, theoretical lines). Required for a complete
         # Art. 15/20 export; previously omitted. Missing/absent tables are
@@ -357,7 +403,10 @@ def _export_user_data_impl(user_id: int, export_id: str) -> dict[str, Any]:
         zip_filename = f"export_{user_id}_{export_id}.zip"
         zip_path = os.path.join(export_dir, zip_filename)
 
-        _write_zip(zip_path, profile, sessions, laps, scores, annotations, teams, telemetry=telemetry)
+        _write_zip(
+            zip_path, profile, sessions, laps, scores, annotations, teams,
+            telemetry=telemetry, app_events=app_events,
+        )
 
         # 5. Update status to completed
         expires_at = datetime.now(timezone.utc) + timedelta(days=7)
