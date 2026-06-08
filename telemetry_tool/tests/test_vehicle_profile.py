@@ -171,3 +171,25 @@ def test_caps_never_emit_zero_limits():
     assert caps is not None
     assert all(d > 0.0 for d in caps["ax_drive_max"])
     assert all(b > 0.0 for b in caps["ax_brake_max"])
+
+
+def test_envelope_to_caps_none_on_non_monotonic_grid():
+    """A non-strictly-increasing v_grid would crash ca.interpolant at solve
+    time; _envelope_to_caps must fail soft to class scalars instead."""
+    env = _reliable_env([_bin(20.0, 0.5, 1.2), _bin(20.0, 0.4, 1.3), _bin(10.0, 0.3, 1.1)])
+    assert _envelope_to_caps(env) is None
+
+
+def test_resolver_degrades_when_envelope_raises(monkeypatch):
+    """If friction-envelope estimation raises, the resolver must still return a
+    usable class-default vp (envelope is an optional enhancement)."""
+    import track_surface.vehicle_profile as vpmod
+    def boom(*a, **k):
+        raise ValueError("synthetic envelope failure")
+    monkeypatch.setattr(vpmod, "compute_friction_envelope", boom)
+    laps = {i: _accel_lap() for i in range(8)}
+    vp, caps, prov = resolve_vehicle_params("kart", laps=laps)
+    assert caps is None
+    assert prov.longitudinal_source == "class_default"
+    assert prov.envelope_reliable is False
+    assert vp.mass_kg == CLASS_PROFILES["kart"].mass_kg

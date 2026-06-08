@@ -85,8 +85,11 @@ def _envelope_to_caps(env: FrictionEnvelope | None) -> dict | None:
     ]
     if len(bins) < 2:
         return None
+    v = [float(fb.speed_center_mps) for fb in bins]
+    if any(b <= a for a, b in zip(v, v[1:])):   # not strictly increasing -> bad interpolant grid
+        return None
     return {
-        "v_grid": [float(fb.speed_center_mps) for fb in bins],
+        "v_grid": v,
         "ax_drive_max": [float(fb.accel_max_g * _G) for fb in bins],
         "ax_brake_max": [float(fb.brake_max_g * _G) for fb in bins],
     }
