@@ -69,17 +69,19 @@ from telemetry_tool.friction_envelope import (
 
 def _envelope_to_caps(env: FrictionEnvelope | None) -> dict | None:
     """Demonstrated FrictionEnvelope -> ocp_2d envelope_caps (v_grid + per-speed
-    drive/brake accel limits in m/s^2). Reliable bins with sufficient samples AND
-    at least one demonstrated axis (drive OR brake) are included; the missing axis
-    reads as 0 m/s^2 and the solver falls back to class scalars for that direction.
-    Returns None unless >= 2 such bins (the CasADi interpolant needs >= 2 grid
-    points), so the solver falls back to class scalars entirely."""
+    drive/brake accel limits in m/s^2). Only bins with sufficient samples AND
+    BOTH axes demonstrated (accel AND brake) are included; this guarantees no
+    0.0 cap ever reaches the solver (a 0.0 brake/drive cap collapses the
+    corresponding solver constraint, making the problem infeasible or producing
+    garbage lap times). Returns None unless >= 2 such bins (the CasADi
+    interpolant needs >= 2 grid points), so the solver falls back to class
+    scalars entirely."""
     if env is None or not env.is_reliable or not env.friction_bins:
         return None
     bins = [
         fb for fb in env.friction_bins
         if fb.sample_count >= _MIN_SAMPLES_PER_BIN
-        and (fb.accel_max_g > 0.0 or fb.brake_max_g > 0.0)
+        and fb.accel_max_g > 0.0 and fb.brake_max_g > 0.0
     ]
     if len(bins) < 2:
         return None

@@ -97,12 +97,21 @@ import pandas as pd
 from track_surface.vehicle_profile import resolve_vehicle_params
 
 
-def _accel_lap(*, n=200, speed=25.0, a_lat_g=0.8, a_long_g=0.3):
-    rng = np.linspace(0, 1, n)
+def _accel_lap(*, n=400, v_lo=12.0, v_hi=38.0, a_lat_g=0.8):
+    """A realistic lap: accelerate v_lo->v_hi (accel_long>0), then brake
+    v_hi->v_lo (accel_long<0). Each speed bin in [v_lo,v_hi] sees BOTH an
+    accel and a brake sample, so the friction envelope's bins have both axes."""
+    half = n // 2
+    v_up = np.linspace(v_lo, v_hi, half)
+    v_dn = np.linspace(v_hi, v_lo, n - half)
+    v = np.concatenate([v_up, v_dn])
+    # accel_long = dv/dt along travel; assume uniform dt=0.1s
+    dt = 0.1
+    accel_long = np.gradient(v) / dt
     return pd.DataFrame({
-        "Speed (m/s)": np.full(n, speed) + 5.0 * np.sin(2 * np.pi * rng),
+        "Speed (m/s)": v,
         "accel_lat_mps2": np.full(n, a_lat_g * 9.80665),
-        "accel_long_mps2": (a_long_g * 9.80665) * np.sin(2 * np.pi * rng),
+        "accel_long_mps2": accel_long,
     })
 
 
@@ -152,3 +161,13 @@ def test_user_power_takes_precedence_over_demonstrated():
     assert vp.max_power_w == pytest.approx(30_000.0)
     assert caps is not None
     assert prov.longitudinal_source == "user_power"
+
+
+def test_caps_never_emit_zero_limits():
+    """Regression: a bin passing the filter must have BOTH axes demonstrated,
+    so no cap is ever 0.0 (a 0.0 brake/drive cap cripples the solver)."""
+    laps = {i: _accel_lap() for i in range(8)}
+    _, caps, _ = resolve_vehicle_params("kart", laps=laps)
+    assert caps is not None
+    assert all(d > 0.0 for d in caps["ax_drive_max"])
+    assert all(b > 0.0 for b in caps["ax_brake_max"])
