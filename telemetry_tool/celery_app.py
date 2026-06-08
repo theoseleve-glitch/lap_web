@@ -96,6 +96,11 @@ def make_celery(app=None) -> Celery:
                 "schedule": 86400,  # Daily
                 "options": {"queue": "default"},
             },
+            "prune-behavioral-events": {
+                "task": "tasks.gdpr_tasks.prune_behavioral_events",
+                "schedule": 86400,  # Daily (24h in seconds)
+                "options": {"queue": "default"},
+            },
             "reconcile-storage-usage": {
                 "task": "tasks.usage_tasks.reconcile_storage_usage",
                 "schedule": 86400,  # Daily — keep storage allocation matched to consumption
