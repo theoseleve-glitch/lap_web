@@ -36,7 +36,9 @@ def shrink_mu_grid(
     confidence: np.ndarray,
 ) -> np.ndarray:
     """Confidence-shrunk friction grid (same shape as mu_grid)."""
-    measured = count_grid > 0
+    # A cell is "measured" only if it has samples AND a finite value. The limit
+    # grid carries NaN below its sample floor; those cells take the prior path.
+    measured = (count_grid > 0) & np.isfinite(mu_grid)
 
     # Global prior: count-weighted mean over all measured cells
     if measured.any():
@@ -71,13 +73,22 @@ _WET_MU_FLOOR: Final[float] = 0.2
 _WET_MU_CEIL: Final[float] = 1.0
 
 
+def _base_grip_grid(grip_2d: GripSurface) -> np.ndarray:
+    """The grip the SOLVER should see: the cornering-limit grid when available,
+    else the per-cell mean (old sidecars / pre-limit builds). NaN cells in the
+    limit grid are handled downstream by shrink_mu_grid's unmeasured path."""
+    if grip_2d.mu_limit_grid is not None:
+        return grip_2d.mu_limit_grid
+    return grip_2d.mu_grid
+
+
 def build_dry_mu_field(grip_2d: GripSurface) -> MuField:
     """Solver-ready dry field: raw 2D grip with confidence shrinkage."""
     return MuField(
         s_bins=grip_2d.s_bins.copy(),
         n_bins=grip_2d.n_bins.copy(),
         mu_grid=shrink_mu_grid(
-            grip_2d.mu_grid, grip_2d.count_grid, grip_2d.confidence
+            _base_grip_grid(grip_2d), grip_2d.count_grid, grip_2d.confidence
         ),
     )
 

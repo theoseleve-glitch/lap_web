@@ -345,3 +345,33 @@ def test_bridge_passes_qss_warm_start(monkeypatch):
         "warm_start was None — bridge dropped the QSS warm start"
     )
     assert captured["warm_start"].solver_status == "qss_fallback"
+
+
+# ---------------------------------------------------------------------------
+# Task 5: NaN-aware shrink + limit-grid source for build_dry_mu_field
+# ---------------------------------------------------------------------------
+def test_shrink_treats_nan_as_unmeasured():
+    s_bins, n_bins = _grids()
+    M, K = len(s_bins), len(n_bins)
+    mu = np.full((M, K), 1.2)
+    count = np.full((M, K), 50, dtype=int)
+    conf = np.ones((M, K))
+    mu[3, 2] = np.nan          # count>0 but NaN value (limit below the sample floor)
+    out = shrink_mu_grid(mu, count, conf)
+    assert np.isfinite(out[3, 2])                       # filled by prior, not NaN
+    assert out[3, 2] == pytest.approx(1.2 * 0.95, rel=1e-6)   # row prior * discount
+
+
+def test_build_dry_reads_limit_grid_when_present():
+    gs = _grip_surface_with_rubber_line()
+    gs.mu_limit_grid = np.full(gs.mu_grid.shape, 1.5)
+    field = build_dry_mu_field(gs)
+    # Full confidence -> dry field equals the LIMIT grid (1.5), not the mean
+    assert field.mu_grid.mean() == pytest.approx(1.5, abs=1e-6)
+
+
+def test_build_dry_falls_back_to_mean_when_no_limit():
+    gs = _grip_surface_with_rubber_line()
+    gs.mu_limit_grid = None
+    field = build_dry_mu_field(gs)
+    np.testing.assert_allclose(field.mu_grid, gs.mu_grid)   # behaves exactly as before
