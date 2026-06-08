@@ -266,6 +266,51 @@ class TestPurgeDeletedAccounts:
         purge_deleted_accounts()
         assert mock_logger.info.called
 
+    @patch("tasks.gdpr_tasks.get_maint_connection")
+    def test_purge_deletes_app_events_for_user(self, mock_db):
+        """Purge issues DELETE FROM app_events WHERE user_id = :uid (GDPR erasure).
+
+        Routes queries by SQL text so the workspace cascade short-circuits
+        (no workspaces -> no sessions) and the per-user erasure block runs to
+        completion, reaching the new app_events delete.
+        """
+        old_date = datetime.now(timezone.utc) - timedelta(days=31)
+        conn = MagicMock()
+
+        def _execute(stmt, params=None):
+            sql = str(stmt)
+            result = MagicMock()
+            if "FROM users" in sql and "deleted_at" in sql:
+                # The sweep's candidate-user query.
+                result.fetchall.return_value = [
+                    _user_row(user_id=42, deleted_at=old_date),
+                ]
+            else:
+                # Everything else (workspace lookup, etc.) returns empty so the
+                # cascade does nothing and the per-user block proceeds.
+                result.fetchall.return_value = []
+                result.fetchone.return_value = None
+            result.rowcount = 0
+            return result
+
+        conn.execute.side_effect = _execute
+        mock_db.return_value = conn
+
+        purge_deleted_accounts()
+
+        # Inspect the SQL text (TextClause), not the Call repr.
+        app_event_deletes = [
+            c for c in conn.execute.call_args_list
+            if c.args and "DELETE FROM app_events" in str(c.args[0])
+        ]
+        assert app_event_deletes, (
+            "Expected a 'DELETE FROM app_events' call; got: "
+            + " | ".join(str(c.args[0]) for c in conn.execute.call_args_list if c.args)
+        )
+        # The params dict (2nd positional arg) must carry uid=42.
+        params = app_event_deletes[0].args[1]
+        assert params.get("uid") == 42
+
 
 class TestCleanupExpiredExports:
     def test_deletes_old_files(self, tmp_path):

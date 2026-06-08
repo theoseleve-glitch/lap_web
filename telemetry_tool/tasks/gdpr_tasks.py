@@ -527,6 +527,11 @@ def _purge_deleted_accounts_with_conn(conn) -> dict[str, int]:
                 # BOTH the session and workspace tiers.
                 delete_entity_cascade(conn, "workspace", ws_id)
 
+            # GDPR erasure: behavioral events (parent table cascades to all partitions)
+            conn.execute(
+                text("DELETE FROM app_events WHERE user_id = :uid"),
+                {"uid": uid},
+            )
             conn.execute(
                 text("DELETE FROM team_members WHERE user_id = :uid"),
                 {"uid": uid},
