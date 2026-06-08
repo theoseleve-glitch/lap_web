@@ -1,6 +1,7 @@
 """Cross-format detection: every sample routes to exactly one adapter."""
 from __future__ import annotations
 
+import struct
 import textwrap
 from pathlib import Path
 
@@ -28,6 +29,15 @@ _RACEBOX = textwrap.dedent("""\
     2024-01-01T00:00:01Z,51.5009,-0.1,40.0,11.0,90.0
 """)
 
+_TRACKADDICT = textwrap.dedent("""\
+    # RaceRender Data: TrackAddict 4.3.5 on Android 9 (Mode: 0)
+    "Time","UTC Time","Lap","Latitude","Longitude","Altitude (m)","Speed (Km/h)","Heading","Accel X","Accel Y","Accel Z"
+    0.00,1700000000.0,0,51.5,-0.1,10.0,36.0,90.0,0.1,0.2,0.98
+    0.10,1700000000.1,0,51.5,-0.0998,10.1,40.0,90.0,0.1,0.2,0.99
+""")
+
+_FIT_HEADER = struct.pack("<BBHI4sH", 14, 0x20, 0, 0, b".FIT", 0) + b"\x00" * 4
+
 
 def _write(tmp_path: Path, name: str, content: str) -> str:
     p = tmp_path / name
@@ -39,6 +49,7 @@ def _write(tmp_path: Path, name: str, content: str) -> str:
     ("track.gpx", _GPX, "gpx"),
     ("drive.nmea", _NMEA, "nmea"),
     ("session.csv", _RACEBOX, "racebox_csv"),
+    ("log.csv", _TRACKADDICT, "trackaddict"),
 ])
 def test_detection_routes_correctly(tmp_path, name, content, expected):
     path = _write(tmp_path, name, content)
@@ -58,3 +69,11 @@ def test_detection_routes_correctly(tmp_path, name, content, expected):
         f"{name}: {cls.FORMAT_NAME} (conf {conf}) is not the unambiguous winner; "
         f"also matched at >= conf: {contenders}"
     )
+
+
+def test_fit_detection_routes(tmp_path):
+    from telemetry_tool.adapters import detect_format
+    p = tmp_path / "ride.fit"
+    p.write_bytes(_FIT_HEADER)
+    cls, conf = detect_format(str(p))
+    assert cls is not None and cls.FORMAT_NAME == "fit" and conf >= 0.5
