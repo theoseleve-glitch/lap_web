@@ -1,0 +1,154 @@
+"""Tests for vehicle-class profiles + demonstrated-envelope resolver."""
+from __future__ import annotations
+
+import numpy as np
+import pytest
+
+from telemetry_tool.lap_oracle.config import VehicleParams
+from track_surface.vehicle_profile import CLASS_PROFILES, ParamProvenance
+
+
+_ALL_CLASSES = ["kart", "gt3", "gt4", "formula", "lmp", "touring", "road", "generic"]
+
+
+def test_every_class_has_a_finite_bounded_profile():
+    for cls in _ALL_CLASSES:
+        vp = CLASS_PROFILES[cls]
+        assert isinstance(vp, VehicleParams)
+        assert 100.0 <= vp.mass_kg <= 2000.0
+        assert 0.5 <= vp.wheelbase_m <= 3.5
+        assert 0.0 <= vp.cla <= 5.0
+        assert vp.max_power_w > 0
+        assert vp.max_brake_decel > 0
+        assert vp.tyre_lat.D == pytest.approx(1.0)
+        assert vp.tyre_long.D == pytest.approx(1.0)
+
+
+def test_kart_profile_is_light_and_downforce_free():
+    kart = CLASS_PROFILES["kart"]
+    assert kart.mass_kg < 250.0
+    assert kart.cla == 0.0
+    assert kart.wheelbase_m < 1.3
+
+
+def test_aero_classes_have_downforce():
+    for cls in ("gt3", "formula", "lmp"):
+        assert CLASS_PROFILES[cls].cla > 0.0
+
+
+def test_param_provenance_fields():
+    p = ParamProvenance(vehicle_class="kart", lateral_source="grip_grid",
+                        longitudinal_source="demonstrated", mass_source="class_default",
+                        envelope_reliable=True)
+    assert p.vehicle_class == "kart"
+    assert p.longitudinal_source == "demonstrated"
+
+
+# ---------------------------------------------------------------------------
+# Task 2 — _envelope_to_caps
+# ---------------------------------------------------------------------------
+from telemetry_tool.friction_envelope import FrictionEnvelope, FrictionBin, _G
+from track_surface.vehicle_profile import _envelope_to_caps
+
+
+def _bin(speed, accel_g, brake_g, n=20):
+    return FrictionBin(speed_center_mps=speed, combined_g_p95=1.5,
+                       lat_max_g=1.4, accel_max_g=accel_g, brake_max_g=brake_g,
+                       sample_count=n, confidence=1.0)
+
+
+def _reliable_env(bins):
+    return FrictionEnvelope(speed_bins=np.array([b.speed_center_mps for b in bins]),
+                            friction_bins=bins, global_combined_g=1.5,
+                            is_reliable=True, warning=None)
+
+
+def test_envelope_to_caps_converts_g_to_mps2_over_reliable_bins():
+    env = _reliable_env([_bin(10.0, 0.5, 1.2), _bin(20.0, 0.4, 1.3), _bin(30.0, 0.3, 1.1)])
+    caps = _envelope_to_caps(env)
+    assert caps is not None
+    assert caps["v_grid"] == pytest.approx([10.0, 20.0, 30.0])
+    assert caps["ax_drive_max"] == pytest.approx([0.5 * _G, 0.4 * _G, 0.3 * _G])
+    assert caps["ax_brake_max"] == pytest.approx([1.2 * _G, 1.3 * _G, 1.1 * _G])
+
+
+def test_envelope_to_caps_drops_low_sample_bins():
+    env = _reliable_env([_bin(10.0, 0.5, 1.2, n=20), _bin(20.0, 0.4, 1.3, n=3),
+                         _bin(30.0, 0.3, 1.1, n=20)])
+    caps = _envelope_to_caps(env)
+    assert caps["v_grid"] == pytest.approx([10.0, 30.0])
+
+
+def test_envelope_to_caps_none_when_unreliable():
+    env = FrictionEnvelope(speed_bins=np.array([]), friction_bins=[],
+                           global_combined_g=1.0, is_reliable=False, warning="sparse")
+    assert _envelope_to_caps(env) is None
+
+
+def test_envelope_to_caps_none_with_fewer_than_two_bins():
+    env = _reliable_env([_bin(10.0, 0.5, 1.2)])
+    assert _envelope_to_caps(env) is None
+
+
+# ---------------------------------------------------------------------------
+# Task 3 — resolve_vehicle_params (3 tiers)
+# ---------------------------------------------------------------------------
+import pandas as pd
+from track_surface.vehicle_profile import resolve_vehicle_params
+
+
+def _accel_lap(*, n=200, speed=25.0, a_lat_g=0.8, a_long_g=0.3):
+    rng = np.linspace(0, 1, n)
+    return pd.DataFrame({
+        "Speed (m/s)": np.full(n, speed) + 5.0 * np.sin(2 * np.pi * rng),
+        "accel_lat_mps2": np.full(n, a_lat_g * 9.80665),
+        "accel_long_mps2": (a_long_g * 9.80665) * np.sin(2 * np.pi * rng),
+    })
+
+
+def test_tier_c_nothing_is_pure_class_profile():
+    vp, caps, prov = resolve_vehicle_params("kart")
+    assert vp.mass_kg == CLASS_PROFILES["kart"].mass_kg
+    assert caps is None
+    assert prov.longitudinal_source == "class_default"
+    assert prov.mass_source == "class_default"
+    assert prov.envelope_reliable is False
+
+
+def test_tier_b_weight_and_power_overrides():
+    vp, caps, prov = resolve_vehicle_params("kart", weight_kg=175.0, power_w=30_000.0)
+    assert vp.mass_kg == pytest.approx(175.0)
+    assert vp.max_power_w == pytest.approx(30_000.0)
+    assert caps is None
+    assert prov.mass_source == "user_weight"
+    assert prov.longitudinal_source == "user_power"
+
+
+def test_tier_a_demonstrated_envelope_from_laps():
+    laps = {i: _accel_lap() for i in range(8)}
+    vp, caps, prov = resolve_vehicle_params("kart", laps=laps)
+    assert caps is not None
+    assert "v_grid" in caps and "ax_drive_max" in caps and "ax_brake_max" in caps
+    assert prov.longitudinal_source == "demonstrated"
+    assert prov.envelope_reliable is True
+
+
+def test_sparse_laps_fall_back_to_class_default():
+    laps = {0: _accel_lap(n=5)}
+    vp, caps, prov = resolve_vehicle_params("kart", laps=laps)
+    assert caps is None
+    assert prov.longitudinal_source == "class_default"
+
+
+def test_unknown_class_uses_generic():
+    vp, caps, prov = resolve_vehicle_params("spaceship")
+    assert vp.mass_kg == CLASS_PROFILES["generic"].mass_kg
+    assert prov.vehicle_class == "spaceship"
+
+
+def test_user_power_takes_precedence_over_demonstrated():
+    laps = {i: _accel_lap() for i in range(8)}
+    vp, caps, prov = resolve_vehicle_params("kart", laps=laps, power_w=30_000.0)
+    assert vp.max_power_w == pytest.approx(30_000.0)
+    assert caps is not None
+    assert prov.longitudinal_source == "user_power"
