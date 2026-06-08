@@ -168,3 +168,58 @@ def test_load_old_sidecar_without_limit_column(tmp_path):
     loaded = _load_grip_2d(path)
     assert loaded is not None
     assert loaded.mu_limit_grid is None
+
+
+# ---------------------------------------------------------------------------
+# Task 4 — MAX-combine mu_limit_grid across sessions (NaN-aware)
+# ---------------------------------------------------------------------------
+from track_surface.store import _merge_grip_2d
+
+
+def _aligned_grip(M=6, K=5, mean=0.6, count=20, limit=None):
+    s_bins = np.arange(0, M * 5.0, 5.0)
+    n_bins = np.arange(-(K // 2), K // 2 + 1, 1.0)
+    return GripSurface(
+        s_bins=s_bins, n_bins=n_bins,
+        mu_grid=np.full((M, K), mean),
+        count_grid=np.full((M, K), count, dtype=int),
+        confidence=np.clip(np.full((M, K), count) / 50.0, 0, 1),
+        mu_limit_grid=limit,
+    )
+
+
+def test_merge_limit_is_elementwise_max():
+    M, K = 6, 5
+    lim_a = np.full((M, K), 1.0); lim_a[2, 2] = 1.4
+    lim_b = np.full((M, K), 1.1); lim_b[2, 2] = 1.2
+    a = _aligned_grip(M, K, limit=lim_a)
+    b = _aligned_grip(M, K, limit=lim_b)
+    merged = _merge_grip_2d(a, b)
+    assert merged.mu_limit_grid is not None
+    assert merged.mu_limit_grid[2, 2] == pytest.approx(1.4)   # a wins this cell
+    assert merged.mu_limit_grid[0, 0] == pytest.approx(1.1)   # b wins elsewhere
+
+
+def test_merge_limit_nan_aware():
+    M, K = 6, 5
+    lim_a = np.full((M, K), np.nan); lim_a[1, 1] = 1.3
+    lim_b = np.full((M, K), np.nan); lim_b[4, 3] = 1.25
+    merged = _merge_grip_2d(_aligned_grip(M, K, limit=lim_a),
+                            _aligned_grip(M, K, limit=lim_b))
+    assert merged.mu_limit_grid[1, 1] == pytest.approx(1.3)   # real beats NaN
+    assert merged.mu_limit_grid[4, 3] == pytest.approx(1.25)
+    assert np.isnan(merged.mu_limit_grid[0, 0])              # both NaN -> NaN
+
+
+def test_merge_both_none_limit_gives_none():
+    merged = _merge_grip_2d(_aligned_grip(limit=None), _aligned_grip(limit=None))
+    assert merged.mu_limit_grid is None
+
+
+def test_merge_mean_unchanged_regression():
+    """The mean/count additive merge must be byte-identical to before."""
+    a = _aligned_grip(mean=0.5, count=10, limit=np.full((6, 5), 1.0))
+    b = _aligned_grip(mean=0.9, count=30, limit=np.full((6, 5), 1.0))
+    merged = _merge_grip_2d(a, b)
+    assert merged.mu_grid[0, 0] == pytest.approx(0.8)   # (0.5*10+0.9*30)/40
+    assert merged.count_grid[0, 0] == 40
