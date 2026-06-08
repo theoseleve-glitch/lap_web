@@ -223,3 +223,19 @@ def test_merge_mean_unchanged_regression():
     merged = _merge_grip_2d(a, b)
     assert merged.mu_grid[0, 0] == pytest.approx(0.8)   # (0.5*10+0.9*30)/40
     assert merged.count_grid[0, 0] == 40
+
+
+def test_merge_swap_preserves_limit_on_smaller_grid():
+    """When the SMALLER grid (passed as `new`) carries the limit and the
+    larger grid is `old` (no limit), the swap-recursion must still land the
+    limit at the larger base shape. Covers the subtlest merge branch."""
+    big = _aligned_grip(M=10, K=5, limit=None)           # larger -> base after no swap
+    lim = np.full((6, 5), np.nan); lim[1, 1] = 1.42
+    small = _aligned_grip(M=6, K=5, limit=lim)            # smaller, carries the limit
+    # old=small (smaller) , new=big (larger) -> triggers the swap recursion
+    merged = _merge_grip_2d(small, big)
+    assert merged.mu_limit_grid is not None
+    assert merged.mu_limit_grid.shape == big.mu_grid.shape   # larger base shape (10,5)
+    # the small grid's limit cell maps to the nearest base bin and survives
+    assert np.isfinite(merged.mu_limit_grid).any()
+    assert float(np.nanmax(merged.mu_limit_grid)) == pytest.approx(1.42)
