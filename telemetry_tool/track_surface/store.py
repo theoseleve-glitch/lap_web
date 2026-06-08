@@ -233,12 +233,21 @@ def _load_grip_2d(path: Path) -> GripSurface | None:
         count_grid = count_flat[:M * K].reshape(M, K).astype(int)
         confidence = np.clip(count_grid / 50.0, 0.0, 1.0)
 
+        if "mu_limit_grid" in df.columns:
+            lim_flat = df["mu_limit_grid"].to_numpy()
+            mu_limit_grid = lim_flat[:M * K].reshape(M, K)
+            if np.isnan(mu_limit_grid).all():
+                mu_limit_grid = None     # a written-but-empty limit == no limit
+        else:
+            mu_limit_grid = None
+
         return GripSurface(
             s_bins=s_bins[:M],
             n_bins=n_bins[:K],
             mu_grid=mu_grid,
             count_grid=count_grid,
             confidence=confidence,
+            mu_limit_grid=mu_limit_grid,
         )
     except Exception as exc:
         logger.warning("Failed to load grip_2d: %s", exc)
@@ -528,6 +537,11 @@ def _save_grip_2d(path: Path, grip: GripSurface) -> None:
         "count_grid": grip.count_grid.flatten().astype(float),
         "grid_shape_m": np.full(max_len, M),
         "grid_shape_k": np.full(max_len, K),
+        "mu_limit_grid": (
+            grip.mu_limit_grid.flatten()
+            if grip.mu_limit_grid is not None
+            else np.full(max_len, np.nan)
+        ),
     }
     table = pa.table(data)
     pq.write_table(table, path, compression="snappy")

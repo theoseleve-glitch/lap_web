@@ -103,3 +103,68 @@ def test_mean_grid_unchanged_by_limit_addition():
     ni = int(np.argmax(gs.count_grid.sum(axis=0)))
     si = int(gs.count_grid.shape[0] // 2)
     assert gs.mu_grid[si, ni] == pytest.approx(1.0, abs=0.05)
+
+
+# ---------------------------------------------------------------------------
+# Task 3 — Parquet sidecar persistence for mu_limit_grid
+# ---------------------------------------------------------------------------
+from track_surface.store import _save_grip_2d, _load_grip_2d
+
+
+def _grip_with_limit(M=8, K=5):
+    s_bins = np.arange(0, M * 5.0, 5.0)
+    n_bins = np.arange(-(K // 2), K // 2 + 1, 1.0)
+    mu = np.full((M, K), 0.6)
+    count = np.full((M, K), 20, dtype=int)
+    conf = np.clip(count / 50.0, 0, 1)
+    lim = np.full((M, K), np.nan)
+    lim[2, 1] = 1.31
+    lim[4, 3] = 1.18
+    return GripSurface(s_bins=s_bins, n_bins=n_bins, mu_grid=mu,
+                       count_grid=count, confidence=conf, mu_limit_grid=lim)
+
+
+def test_limit_grid_roundtrips_through_parquet(tmp_path):
+    gs = _grip_with_limit()
+    path = tmp_path / "grip_2d.parquet"
+    _save_grip_2d(path, gs)
+    loaded = _load_grip_2d(path)
+    assert loaded is not None and loaded.mu_limit_grid is not None
+    assert loaded.mu_limit_grid[2, 1] == pytest.approx(1.31)
+    assert loaded.mu_limit_grid[4, 3] == pytest.approx(1.18)
+    assert np.isnan(loaded.mu_limit_grid[0, 0])
+
+
+def test_save_handles_none_limit_grid(tmp_path):
+    gs = _grip_with_limit()
+    gs.mu_limit_grid = None
+    path = tmp_path / "grip_2d.parquet"
+    _save_grip_2d(path, gs)   # must not raise
+    loaded = _load_grip_2d(path)
+    assert loaded is not None
+    assert loaded.mu_limit_grid is None or np.isnan(loaded.mu_limit_grid).all()
+
+
+def test_load_old_sidecar_without_limit_column(tmp_path):
+    """A sidecar written before this feature has no mu_limit_grid column ->
+    loaded.mu_limit_grid must be None (mean fallback downstream)."""
+    import pyarrow as pa
+    import pyarrow.parquet as pq
+    M, K = 6, 5
+    max_len = M * K
+    s_bins = np.arange(0, M * 5.0, 5.0)
+    n_bins = np.arange(-2.0, 3.0, 1.0)
+    s_pad = np.zeros(max_len); s_pad[:M] = s_bins
+    n_pad = np.zeros(max_len); n_pad[:K] = n_bins
+    table = pa.table({
+        "s_bins": s_pad, "n_bins": n_pad,
+        "mu_grid": np.full(max_len, 0.7),
+        "count_grid": np.full(max_len, 15.0),
+        "grid_shape_m": np.full(max_len, M),
+        "grid_shape_k": np.full(max_len, K),
+    })
+    path = tmp_path / "grip_2d.parquet"
+    pq.write_table(table, path, compression="snappy")
+    loaded = _load_grip_2d(path)
+    assert loaded is not None
+    assert loaded.mu_limit_grid is None
