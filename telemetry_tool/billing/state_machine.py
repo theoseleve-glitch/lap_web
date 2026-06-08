@@ -16,13 +16,23 @@ from datetime import datetime, timedelta, timezone
 
 logger = logging.getLogger(__name__)
 
+# Single authoritative grace window (B10/B11 — standardized to 7 days).
+# Used by SUBSCRIPTION_STATES below AND by the billing webhook handlers that
+# compute grace_period_end directly (past_due, canceled, trial-cancel).
+GRACE_PERIOD_DAYS = 7
+
 SUBSCRIPTION_STATES: dict[str, dict] = {
     "free": {"allowed_transitions": ["trialing", "active"], "grace_days": 0},
     "trialing": {"allowed_transitions": ["active", "canceled"], "grace_days": 0},
     "active": {"allowed_transitions": ["past_due", "canceled", "paused", "unpaid"], "grace_days": 0},
-    "past_due": {"allowed_transitions": ["active", "canceled", "unpaid"], "grace_days": 7},
-    "unpaid": {"allowed_transitions": ["active", "canceled"], "grace_days": 0},
-    "canceled": {"allowed_transitions": ["active", "free", "expired"], "grace_days": 30},
+    # past_due: 7-day grace window before hard downgrade (B11 — was 14 days).
+    # Now also allows → expired for the grace task demotion path (B5).
+    "past_due": {"allowed_transitions": ["active", "canceled", "unpaid", "expired"], "grace_days": GRACE_PERIOD_DAYS},
+    # unpaid: terminal Stripe end-of-dunning state.  Must allow → expired so
+    # enforce_subscription_grace_periods can demote immediately (B5).
+    "unpaid": {"allowed_transitions": ["active", "canceled", "expired"], "grace_days": 0},
+    # canceled: 7-day grace before expiry (B10 — was 30 days).
+    "canceled": {"allowed_transitions": ["active", "free", "expired"], "grace_days": GRACE_PERIOD_DAYS},
     "paused": {"allowed_transitions": ["active", "canceled"], "grace_days": 0},
     "expired": {"allowed_transitions": ["free", "active"], "grace_days": 0},
 }

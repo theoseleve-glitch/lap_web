@@ -207,9 +207,18 @@ class TestEntitlementStateTransitions:
         assert ents.get("_cancel_pending") is True
 
     def test_paused_blocks_reports(self):
-        """Paused subscription blocks new reports."""
+        """Paused subscription blocks new reports via the locked floor.
+
+        The entitlement engine no longer sets ``_paused`` directly; instead it
+        sets ``_locked_by_status = 'paused'`` and zeros out the quota.  The
+        important invariant — that a paused user CANNOT run new analyses — is
+        preserved: analyses_per_month and analyses_remaining must both be 0.
+        """
         ents = self._make_entitlements("paused")
-        assert ents.get("_paused") is True
+        # Block is enforced via the locked-floor mechanism, not the old _paused flag.
+        assert ents.get("_locked_by_status") == "paused", (
+            f"Expected _locked_by_status='paused', got: {ents}"
+        )
         assert ents["analyses_per_month"] == 0
         assert ents["analyses_remaining"] == 0
 

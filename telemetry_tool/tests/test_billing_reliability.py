@@ -213,7 +213,8 @@ class TestGracePeriodEnforcement:
         # Build per-call result mocks: the impl calls execute() multiple
         # times: (1) fetchall for canceled users, (2) fetchone for user
         # lookup inside transition_subscription, (3) execute for audit
-        # inserts / updates / grace_period, (4) fetchall for past_due.
+        # inserts / updates / grace_period, (4) UPDATE users SET plan_tier,
+        # (5) fetchall for past_due users, (6) fetchall for unpaid users.
         canceled_result = MagicMock()
         canceled_result.fetchall.return_value = [
             {"id": 1, "email": "test@x.com", "plan_tier": "racer"},
@@ -229,6 +230,9 @@ class TestGracePeriodEnforcement:
         past_due_result = MagicMock()
         past_due_result.fetchall.return_value = []
 
+        unpaid_result = MagicMock()
+        unpaid_result.fetchall.return_value = []
+
         # Default for audit / update / commit calls
         default_result = MagicMock()
         default_result.fetchone.return_value = None
@@ -238,9 +242,10 @@ class TestGracePeriodEnforcement:
             canceled_result,   # SELECT canceled users (fetchall)
             user_lookup,       # SELECT user in transition_subscription (fetchone)
             default_result,    # INSERT audit_log
-            default_result,    # UPDATE grace_period_end
+            default_result,    # UPDATE grace_period_end / subscription_status
             default_result,    # UPDATE users SET plan_tier='locked'
             past_due_result,   # SELECT past_due users (fetchall)
+            unpaid_result,     # SELECT unpaid users (fetchall)  ← new section
         ]
 
         with patch("auth.email._send"):
@@ -253,7 +258,8 @@ class TestGracePeriodEnforcement:
     def test_no_expired_users_noop(self, mock_db):
         conn = _mock_conn()
         mock_db.return_value = conn
-        conn.execute.return_value.fetchall.side_effect = [[], []]
+        # Three fetchall calls: canceled, past_due, unpaid — all return empty.
+        conn.execute.return_value.fetchall.side_effect = [[], [], []]
 
         from tasks.billing_tasks import _enforce_grace_periods_impl
         result = _enforce_grace_periods_impl()
@@ -395,3 +401,238 @@ class TestIdempotencyReplayMetric:
                     resp = dummy()
 
                     mock_incr.assert_called_with("idempotency_replay")
+
+
+# ===========================================================================
+# 8. Grace enforcement — B5/B10/B11 regression suite
+# ===========================================================================
+
+
+class TestGraceEnforcementB5:
+    """B5: unpaid + past_due past grace → locked/expired; active/trialing safe."""
+
+    # ------------------------------------------------------------------
+    # (a) unpaid user past grace → demoted to locked/expired +
+    #     stripe_subscription_id cleared
+    # ------------------------------------------------------------------
+    @patch("tasks.billing_tasks.get_pg_connection")
+    def test_unpaid_user_demoted_to_expired(self, mock_db):
+        """Unpaid user is immediately demoted to expired/locked; Stripe ID cleared."""
+        conn = _mock_conn()
+        mock_db.return_value = conn
+
+        no_canceled = MagicMock(); no_canceled.fetchall.return_value = []
+        no_past_due = MagicMock(); no_past_due.fetchall.return_value = []
+        unpaid_list = MagicMock()
+        unpaid_list.fetchall.return_value = [
+            {"id": 7, "email": "unpaid@x.com", "plan_tier": "world-class"},
+        ]
+        user_lookup = MagicMock()
+        user_lookup.fetchone.return_value = {
+            "email": "unpaid@x.com",
+            "subscription_status": "unpaid",
+            "plan_tier": "world-class",
+        }
+        default = MagicMock()
+        default.fetchone.return_value = None
+        default.fetchall.return_value = []
+
+        conn.execute.side_effect = [
+            no_canceled,   # canceled SELECT
+            no_past_due,   # past_due SELECT
+            unpaid_list,   # unpaid SELECT
+            user_lookup,   # transition_subscription: SELECT user
+            default,       # transition_subscription: UPDATE status
+            default,       # transition_subscription: INSERT audit_log
+            default,       # UPDATE plan_tier + stripe_subscription_id
+        ]
+
+        with patch("auth.email._send"):
+            from tasks.billing_tasks import _enforce_grace_periods_impl
+            result = _enforce_grace_periods_impl()
+
+        assert result["downgraded"] == 1, f"Expected 1 downgrade, got {result}"
+
+        # Confirm stripe_subscription_id = NULL is part of the clearing UPDATE
+        update_calls = [
+            str(call) for call in conn.execute.call_args_list
+            if "stripe_subscription_id" in str(call)
+        ]
+        assert update_calls, "Expected an UPDATE that clears stripe_subscription_id"
+
+    # ------------------------------------------------------------------
+    # (b) past_due user past their 7-day grace → demoted
+    # ------------------------------------------------------------------
+    @patch("tasks.billing_tasks.get_pg_connection")
+    def test_past_due_past_grace_demoted(self, mock_db):
+        """past_due user whose grace_period_end has passed is locked."""
+        from datetime import datetime, timedelta, timezone
+
+        conn = _mock_conn()
+        mock_db.return_value = conn
+
+        expired_grace = datetime.now(timezone.utc) - timedelta(days=1)
+
+        no_canceled = MagicMock(); no_canceled.fetchall.return_value = []
+        past_due_list = MagicMock()
+        past_due_list.fetchall.return_value = [
+            {
+                "id": 5,
+                "email": "pastdue@x.com",
+                "plan_tier": "world-class",
+                "grace_period_end": expired_grace,
+            },
+        ]
+        no_unpaid = MagicMock(); no_unpaid.fetchall.return_value = []
+        user_lookup = MagicMock()
+        user_lookup.fetchone.return_value = {
+            "email": "pastdue@x.com",
+            "subscription_status": "past_due",
+            "plan_tier": "world-class",
+        }
+        default = MagicMock()
+        default.fetchone.return_value = None
+        default.fetchall.return_value = []
+
+        conn.execute.side_effect = [
+            no_canceled,
+            past_due_list,
+            user_lookup,   # transition_subscription: SELECT user
+            default,       # transition_subscription: UPDATE status
+            default,       # transition_subscription: INSERT audit_log
+            default,       # UPDATE plan_tier + stripe_subscription_id
+            no_unpaid,
+        ]
+
+        with patch("auth.email._send"):
+            from tasks.billing_tasks import _enforce_grace_periods_impl
+            result = _enforce_grace_periods_impl()
+
+        assert result["downgraded"] == 1, f"Expected 1 downgrade, got {result}"
+
+    # ------------------------------------------------------------------
+    # (c) active / trialing user → NOT demoted
+    # ------------------------------------------------------------------
+    @patch("tasks.billing_tasks.get_pg_connection")
+    def test_active_trialing_users_never_demoted(self, mock_db):
+        """Active and trialing users are not touched by the grace task."""
+        conn = _mock_conn()
+        mock_db.return_value = conn
+
+        # All three SELECTs return empty — the task only queries for
+        # canceled/past_due/unpaid, so active/trialing are never matched.
+        conn.execute.return_value.fetchall.side_effect = [[], [], []]
+
+        from tasks.billing_tasks import _enforce_grace_periods_impl
+        result = _enforce_grace_periods_impl()
+
+        assert result["downgraded"] == 0
+        assert result["warned"] == 0
+
+    # ------------------------------------------------------------------
+    # (d) canceled within 7-day grace → still has access (no downgrade);
+    #     past 7 days → locked
+    # ------------------------------------------------------------------
+    @patch("tasks.billing_tasks.get_pg_connection")
+    def test_canceled_within_grace_not_demoted(self, mock_db):
+        """canceled user still within 7-day grace window is NOT downgraded."""
+        conn = _mock_conn()
+        mock_db.return_value = conn
+
+        # The SQL WHERE clause filters by grace_period_end < now, so a user
+        # whose grace_period_end is in the future won't appear in the result.
+        # Simulate this by returning an empty canceled list.
+        no_canceled = MagicMock(); no_canceled.fetchall.return_value = []
+        no_past_due = MagicMock(); no_past_due.fetchall.return_value = []
+        no_unpaid = MagicMock(); no_unpaid.fetchall.return_value = []
+
+        conn.execute.side_effect = [no_canceled, no_past_due, no_unpaid]
+
+        from tasks.billing_tasks import _enforce_grace_periods_impl
+        result = _enforce_grace_periods_impl()
+
+        assert result["downgraded"] == 0
+
+    @patch("tasks.billing_tasks.get_pg_connection")
+    def test_canceled_past_7_day_grace_locked(self, mock_db):
+        """canceled user past 7-day grace is locked/expired."""
+        conn = _mock_conn()
+        mock_db.return_value = conn
+
+        canceled_list = MagicMock()
+        canceled_list.fetchall.return_value = [
+            {"id": 3, "email": "gone@x.com", "plan_tier": "world-class"},
+        ]
+        no_past_due = MagicMock(); no_past_due.fetchall.return_value = []
+        no_unpaid = MagicMock(); no_unpaid.fetchall.return_value = []
+        user_lookup = MagicMock()
+        user_lookup.fetchone.return_value = {
+            "email": "gone@x.com",
+            "subscription_status": "canceled",
+            "plan_tier": "world-class",
+        }
+        default = MagicMock()
+        default.fetchone.return_value = None
+        default.fetchall.return_value = []
+
+        conn.execute.side_effect = [
+            canceled_list,
+            user_lookup,
+            default,  # UPDATE status
+            default,  # INSERT audit_log
+            default,  # UPDATE plan_tier
+            no_past_due,
+            no_unpaid,
+        ]
+
+        with patch("auth.email._send"):
+            from tasks.billing_tasks import _enforce_grace_periods_impl
+            result = _enforce_grace_periods_impl()
+
+        assert result["downgraded"] == 1
+
+
+# ===========================================================================
+# 9. State machine — B5 terminal transitions
+# ===========================================================================
+
+
+class TestStateMachineTerminalTransitions:
+    """(e) State machine allows unpaid→expired and past_due→expired."""
+
+    def test_unpaid_to_expired_allowed(self):
+        from billing.state_machine import validate_transition
+        assert validate_transition("unpaid", "expired") is True, (
+            "unpaid→expired must be allowed (B5 fix)"
+        )
+
+    def test_past_due_to_expired_allowed(self):
+        from billing.state_machine import validate_transition
+        assert validate_transition("past_due", "expired") is True, (
+            "past_due→expired must be allowed (B5 fix)"
+        )
+
+    def test_active_to_expired_still_rejected(self):
+        """active→expired must remain invalid (safety: no direct lock of paying users)."""
+        from billing.state_machine import validate_transition
+        assert validate_transition("active", "expired") is False
+
+    def test_trialing_to_expired_still_rejected(self):
+        """trialing→expired must remain invalid."""
+        from billing.state_machine import validate_transition
+        assert validate_transition("trialing", "expired") is False
+
+    def test_grace_period_days_constant_is_7(self):
+        """GRACE_PERIOD_DAYS constant is 7 (B10/B11 standardization)."""
+        from billing.state_machine import GRACE_PERIOD_DAYS
+        assert GRACE_PERIOD_DAYS == 7
+
+    def test_canceled_grace_days_is_7(self):
+        """canceled state uses 7-day grace (B10 — was 30)."""
+        from billing.state_machine import SUBSCRIPTION_STATES
+        assert SUBSCRIPTION_STATES["canceled"]["grace_days"] == 7
+
+    def test_past_due_grace_days_is_7(self):
+        """past_due state uses 7-day grace (B11 — was 14 effective)."""
+        from billing.state_machine import SUBSCRIPTION_STATES
+        assert SUBSCRIPTION_STATES["past_due"]["grace_days"] == 7
