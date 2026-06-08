@@ -27,15 +27,17 @@ _GUC = "current_setting('app.current_workspace_id', true)::int"
 
 
 def upgrade() -> None:
-    op.execute(f"""
+    # Inner EXECUTE strings are dollar-quoted ($q$) so the single quotes in
+    # current_setting('app.current_workspace_id', ...) need no escaping. The
+    # earlier f-string form interpolated un-doubled single quotes into a
+    # single-quoted EXECUTE literal and broke at parse time.
+    op.execute("""
         DO $$
         BEGIN
             IF to_regclass('public.app_events') IS NOT NULL THEN
                 EXECUTE 'ALTER TABLE app_events ENABLE ROW LEVEL SECURITY';
                 EXECUTE 'DROP POLICY IF EXISTS app_events_workspace_isolation ON app_events';
-                EXECUTE 'CREATE POLICY app_events_workspace_isolation ON app_events '
-                        'USING (workspace_id = {_GUC}) '
-                        'WITH CHECK (workspace_id = {_GUC})';
+                EXECUTE $q$CREATE POLICY app_events_workspace_isolation ON app_events USING (workspace_id = current_setting('app.current_workspace_id', true)::int) WITH CHECK (workspace_id = current_setting('app.current_workspace_id', true)::int)$q$;
             END IF;
         END $$;
     """)
