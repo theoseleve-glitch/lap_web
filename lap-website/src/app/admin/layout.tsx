@@ -8,6 +8,7 @@ import { getUserProfile } from "@/lib/auth-store";
 
 const adminNav = [
   { href: "/admin", label: "Dashboard", icon: "◉" },
+  { href: "/admin/overview", label: "Overview", icon: "▦" },
   { href: "/admin/analytics", label: "Analytics", icon: "◈" },
   { href: "/admin/users", label: "Users", icon: "◎" },
   { href: "/admin/audit", label: "Audit Log", icon: "☰" },
