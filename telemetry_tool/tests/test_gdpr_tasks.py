@@ -266,6 +266,123 @@ class TestPurgeDeletedAccounts:
         purge_deleted_accounts()
         assert mock_logger.info.called
 
+    @patch("tasks.gdpr_tasks.get_maint_connection")
+    def test_purge_deletes_app_events_for_user(self, mock_db):
+        """Purge issues DELETE FROM app_events WHERE user_id = :uid (GDPR erasure).
+
+        Routes queries by SQL text so the workspace cascade short-circuits
+        (no workspaces -> no sessions) and the per-user erasure block runs to
+        completion, reaching the new app_events delete.
+        """
+        old_date = datetime.now(timezone.utc) - timedelta(days=31)
+        conn = MagicMock()
+
+        def _execute(stmt, params=None):
+            sql = str(stmt)
+            result = MagicMock()
+            if "FROM users" in sql and "deleted_at" in sql:
+                # The sweep's candidate-user query.
+                result.fetchall.return_value = [
+                    _user_row(user_id=42, deleted_at=old_date),
+                ]
+            else:
+                # Everything else (workspace lookup, etc.) returns empty so the
+                # cascade does nothing and the per-user block proceeds.
+                result.fetchall.return_value = []
+                result.fetchone.return_value = None
+            result.rowcount = 0
+            return result
+
+        conn.execute.side_effect = _execute
+        mock_db.return_value = conn
+
+        purge_deleted_accounts()
+
+        # Inspect the SQL text (TextClause), not the Call repr.
+        app_event_deletes = [
+            c for c in conn.execute.call_args_list
+            if c.args and "DELETE FROM app_events" in str(c.args[0])
+        ]
+        assert app_event_deletes, (
+            "Expected a 'DELETE FROM app_events' call; got: "
+            + " | ".join(str(c.args[0]) for c in conn.execute.call_args_list if c.args)
+        )
+        # The params dict (2nd positional arg) must carry uid=42.
+        params = app_event_deletes[0].args[1]
+        assert params.get("uid") == 42
+
+
+class TestExportAppEvents:
+    """C2 — PII-scrubbed app_events.json added to the GDPR export ZIP.
+
+    Per reconciliation §3, the export uses the shared
+    ``web.pii_guard.scrub_properties`` (no duplicate scrubber), so the scrub
+    behavior is exercised end-to-end through the export rather than by importing
+    a now-nonexistent ``_scrub_event_properties``.
+    """
+
+    def test_write_zip_includes_app_events_json(self, tmp_path):
+        from tasks.gdpr_tasks import _write_zip
+        zip_path = str(tmp_path / "out.zip")
+        events = [
+            {"event_type": "page.view", "properties": {"path": "/app"},
+             "path": "/app", "created_at": datetime(2026, 6, 1, tzinfo=timezone.utc)},
+        ]
+        _write_zip(zip_path, {"id": 1}, [], [], [], [], [], app_events=events)
+        with zipfile.ZipFile(zip_path) as zf:
+            assert "app_events.json" in zf.namelist()
+            data = json.loads(zf.read("app_events.json"))
+        assert len(data) == 1
+        assert data[0]["event_type"] == "page.view"
+        # datetime serialized via isoformat (the _default hook)
+        assert data[0]["created_at"].startswith("2026-06-01")
+
+    @patch("tasks.gdpr_tasks.get_pg_connection")
+    @patch("tasks.gdpr_tasks._resolve_export_workspace_id", return_value=1)
+    @patch("tasks.gdpr_tasks._update_export_status")
+    def test_export_writes_user_app_events_scrubbed(
+        self, mock_update, mock_ws, mock_db, tmp_path
+    ):
+        """End-to-end: export queries app_events for the user, scrubs PII, zips them.
+
+        The shared ``scrub_properties`` is strict: it drops denylisted keys
+        (``email``) entirely, leaving the clean scalar properties behind.
+        """
+        os.environ["TELEMETRY_EXPORT_DIR"] = str(tmp_path)
+        conn = MagicMock()
+
+        # fetchall returns app-event rows only for the app_events query, [] else.
+        # Route by SQL text.
+        def _execute(stmt, params=None):
+            sql = str(stmt)
+            result = MagicMock()
+            if "FROM app_events" in sql:
+                result.fetchall.return_value = [{
+                    "event_type": "chart.zoom",
+                    "properties": {"chart": "gg", "email": "leak@x.com"},
+                    "path": "/app/analyze",
+                    "created_at": datetime(2026, 6, 2, tzinfo=timezone.utc),
+                }]
+            else:
+                result.fetchall.return_value = []
+            result.fetchone.return_value = _user_row(user_id=7)
+            return result
+        conn.execute.side_effect = _execute
+        mock_db.return_value = conn
+
+        export_user_data(user_id=7, export_id="exp_app")
+
+        zips = list(Path(tmp_path).glob("*.zip"))
+        assert zips, "no export zip written"
+        with zipfile.ZipFile(zips[0]) as zf:
+            assert "app_events.json" in zf.namelist()
+            data = json.loads(zf.read("app_events.json"))
+        assert len(data) == 1
+        assert data[0]["event_type"] == "chart.zoom"
+        # PII denylist enforced: 'email' must not survive in properties.
+        assert "email" not in data[0]["properties"]
+        assert data[0]["properties"]["chart"] == "gg"
+
 
 class TestCleanupExpiredExports:
     def test_deletes_old_files(self, tmp_path):

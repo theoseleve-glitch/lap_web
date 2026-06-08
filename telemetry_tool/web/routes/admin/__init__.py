@@ -46,10 +46,12 @@ from .training import bp as training_bp  # noqa: E402
 from .users import bp as users_bp  # noqa: E402
 from .analytics import bp as analytics_bp  # noqa: E402
 from .user_detail import bp as user_detail_bp  # noqa: E402
+from .overview import bp as overview_bp  # noqa: E402
 
 for _sub_bp in [health_bp, users_bp, jobs_bp, billing_admin_bp,
                 entitlements_bp, email_bp, security_bp, infra_bp,
-                training_bp, monitoring_bp, analytics_bp, user_detail_bp]:
+                training_bp, monitoring_bp, analytics_bp, user_detail_bp,
+                overview_bp]:
     admin_bp.register_blueprint(_sub_bp)
 
 # Re-export endpoint functions for backward compat with tests/imports

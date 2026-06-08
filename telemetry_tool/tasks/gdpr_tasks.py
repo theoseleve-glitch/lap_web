@@ -152,6 +152,7 @@ def _write_zip(
     annotations: list[dict[str, Any]],
     teams: list[dict[str, Any]],
     telemetry: dict[str, list[dict[str, Any]]] | None = None,
+    app_events: list[dict[str, Any]] | None = None,
 ):
     """Write a GDPR export ZIP file containing JSON files per resource.
 
@@ -159,7 +160,8 @@ def _write_zip(
     ``telemetry`` is an optional map of ``{table_name: rows}`` for the bulk
     per-session data (gps_traces, weather, corner metrics, theoretical lines)
     that Art. 15/20 portability requires — omitting these made the export
-    materially incomplete.
+    materially incomplete. ``app_events`` is the user's PII-scrubbed behavioral
+    events (written as ``app_events.json`` when provided).
     """
     def _default(obj):
         if isinstance(obj, datetime):
@@ -175,6 +177,11 @@ def _write_zip(
         zf.writestr("teams.json", json.dumps(teams, indent=2, default=_default))
         for _name, _rows in (telemetry or {}).items():
             zf.writestr(f"{_name}.json", json.dumps(_rows, indent=2, default=_default))
+        if app_events is not None:
+            zf.writestr(
+                "app_events.json",
+                json.dumps(app_events, indent=2, default=_default),
+            )
 
 
 # ---------------------------------------------------------------------------
@@ -326,6 +333,45 @@ def _export_user_data_impl(user_id: int, export_id: str) -> dict[str, Any]:
         ).fetchall()
         teams = [dict(r) for r in team_rows]
 
+        # Query behavioral events (PII-scrubbed, user-scoped) for GDPR export.
+        # Uses the shared web.pii_guard.scrub_properties (single source of truth,
+        # per reconciliation §3) — falls back to a local denylist-identical
+        # scrubber only if the import fails at runtime.
+        try:
+            from web.pii_guard import scrub_properties as _scrub_event_props
+        except Exception:  # pragma: no cover - defensive import fallback
+            _PII_DENYLIST = {
+                "email", "ip", "ip_address", "token", "access_token",
+                "password", "phone", "ssn",
+            }
+
+            def _scrub_event_props(props):
+                if not isinstance(props, dict):
+                    return {}
+                return {
+                    k: v for k, v in props.items()
+                    if isinstance(k, str) and k.lower() not in _PII_DENYLIST
+                }
+
+        event_rows = conn.execute(
+            text(
+                "SELECT event_type, properties, path, created_at "
+                "FROM app_events WHERE user_id = :uid"
+            ),
+            {"uid": user_id},
+        ).fetchall()
+        app_events = [
+            {
+                "event_type": (r["event_type"] if isinstance(r, dict) else r.event_type),
+                "properties": _scrub_event_props(
+                    (r["properties"] if isinstance(r, dict) else r.properties) or {}
+                ),
+                "path": (r["path"] if isinstance(r, dict) else r.path),
+                "created_at": (r["created_at"] if isinstance(r, dict) else r.created_at),
+            }
+            for r in event_rows
+        ]
+
         # Bulk per-session telemetry — the user's actual lap data (GPS traces,
         # weather, corner metrics, theoretical lines). Required for a complete
         # Art. 15/20 export; previously omitted. Missing/absent tables are
@@ -357,7 +403,10 @@ def _export_user_data_impl(user_id: int, export_id: str) -> dict[str, Any]:
         zip_filename = f"export_{user_id}_{export_id}.zip"
         zip_path = os.path.join(export_dir, zip_filename)
 
-        _write_zip(zip_path, profile, sessions, laps, scores, annotations, teams, telemetry=telemetry)
+        _write_zip(
+            zip_path, profile, sessions, laps, scores, annotations, teams,
+            telemetry=telemetry, app_events=app_events,
+        )
 
         # 5. Update status to completed
         expires_at = datetime.now(timezone.utc) + timedelta(days=7)
@@ -527,6 +576,11 @@ def _purge_deleted_accounts_with_conn(conn) -> dict[str, int]:
                 # BOTH the session and workspace tiers.
                 delete_entity_cascade(conn, "workspace", ws_id)
 
+            # GDPR erasure: behavioral events (parent table cascades to all partitions)
+            conn.execute(
+                text("DELETE FROM app_events WHERE user_id = :uid"),
+                {"uid": uid},
+            )
             conn.execute(
                 text("DELETE FROM team_members WHERE user_id = :uid"),
                 {"uid": uid},
@@ -733,6 +787,122 @@ def _enforce_raw_data_retention_with_conn(conn) -> dict[str, int]:
     }
 
 # ---------------------------------------------------------------------------
+# Task: prune_behavioral_events (180d retention + future-partition rollover)
+# ---------------------------------------------------------------------------
+
+BEHAVIORAL_RETENTION_DAYS = 180
+BEHAVIORAL_PARTITIONED_TABLES = ("app_events", "marketing_events")
+
+
+def _next_month(d):
+    """First day of the month after the month containing date ``d``."""
+    if d.month == 12:
+        return d.replace(year=d.year + 1, month=1, day=1)
+    return d.replace(month=d.month + 1, day=1)
+
+
+def _create_next_month_partition(conn, table) -> str | None:
+    """Create next month's partition for ``table`` if it does not already exist.
+
+    Returns the partition name when created, else ``None``.
+    """
+    from datetime import date as _date
+
+    from sqlalchemy import text
+
+    start = _next_month(_date.today().replace(day=1))
+    end = _next_month(start)
+    part_name = f"{table}_{start.year}_{start.month:02d}"
+
+    exists = conn.execute(
+        text("SELECT 1 FROM pg_class WHERE relname = :name"),
+        {"name": part_name},
+    ).fetchone()
+    if exists:
+        return None
+
+    conn.execute(
+        text(
+            f'CREATE TABLE IF NOT EXISTS "{part_name}" '
+            f'PARTITION OF "{table}" '
+            f"FOR VALUES FROM ('{start.isoformat()}') TO ('{end.isoformat()}')"
+        )
+    )
+    return part_name
+
+
+def _drop_aged_partitions(conn, table, cutoff) -> list[str]:
+    """Drop monthly partitions of ``table`` whose data window ends before ``cutoff``.
+
+    A partition ``<table>_YYYY_MM`` covers [YYYY-MM-01, next-month-01); it is
+    droppable only when its END date is < cutoff (so no in-window rows are lost).
+    """
+    from datetime import date as _date
+
+    from sqlalchemy import text
+
+    rows = conn.execute(
+        text(
+            "SELECT c.relname AS relname FROM pg_inherits i "
+            "JOIN pg_class c ON c.oid = i.inhrelid "
+            "JOIN pg_class p ON p.oid = i.inhparent "
+            "WHERE p.relname = :parent"
+        ),
+        {"parent": table},
+    ).fetchall()
+
+    dropped: list[str] = []
+    for r in rows:
+        relname = r["relname"] if isinstance(r, dict) else r.relname
+        try:
+            ym = relname.replace(f"{table}_", "").split("_")
+            part_start = _date(int(ym[0]), int(ym[1]), 1)
+        except (ValueError, IndexError):
+            continue  # unparseable (e.g. *_default) — never drop
+        part_end = _next_month(part_start)
+        if part_end < cutoff:
+            conn.execute(text(f'DROP TABLE IF EXISTS "{relname}"'))
+            dropped.append(relname)
+    return dropped
+
+
+def _prune_behavioral_events_impl() -> dict[str, list[str]]:
+    """Retention for behavioral-event tables.
+
+    For ``app_events`` and ``marketing_events``: drop partitions older than
+    ``BEHAVIORAL_RETENTION_DAYS`` and create next month's partition if missing.
+    Each table is isolated in its own try/except so a missing table (e.g.
+    marketing_events not yet migrated) degrades gracefully. Idempotent.
+    """
+    from datetime import date as _date
+
+    conn = get_pg_connection()
+    cutoff = _date.today() - timedelta(days=BEHAVIORAL_RETENTION_DAYS)
+
+    dropped_all: list[str] = []
+    created_all: list[str] = []
+    for table in BEHAVIORAL_PARTITIONED_TABLES:
+        try:
+            dropped_all.extend(_drop_aged_partitions(conn, table, cutoff))
+            created = _create_next_month_partition(conn, table)
+            if created:
+                created_all.append(created)
+        except Exception as exc:
+            logger.warning("prune_behavioral_events: skipped %s (%s)", table, exc)
+            try:
+                conn.rollback()
+            except Exception:
+                pass
+            continue
+
+    conn.commit()
+    logger.info(
+        "prune_behavioral_events: dropped=%s created=%s", dropped_all, created_all
+    )
+    return {"dropped": dropped_all, "created": created_all}
+
+
+# ---------------------------------------------------------------------------
 # Task: cleanup_expired_exports
 # ---------------------------------------------------------------------------
 
@@ -817,6 +987,10 @@ if _USE_CELERY and _celery_app is not None:
     @_celery_app.task(name="tasks.gdpr_tasks.cleanup_expired_exports")
     def cleanup_expired_exports() -> dict[str, int]:
         return _cleanup_expired_exports_impl()
+
+    @_celery_app.task(name="tasks.gdpr_tasks.prune_behavioral_events")
+    def prune_behavioral_events() -> dict[str, list[str]]:
+        return _prune_behavioral_events_impl()
 else:
     def export_user_data(user_id: int, export_id: str) -> dict[str, Any]:  # type: ignore[misc]
         return _export_user_data_impl(user_id, export_id)
@@ -832,3 +1006,6 @@ else:
 
     def cleanup_expired_exports() -> dict[str, int]:  # type: ignore[misc]
         return _cleanup_expired_exports_impl()
+
+    def prune_behavioral_events() -> dict[str, list[str]]:  # type: ignore[misc]
+        return _prune_behavioral_events_impl()

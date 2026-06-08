@@ -295,6 +295,8 @@ def create_app(config: Config | None = None) -> Flask:
         ('.routes.api_rss',            'bp', 'api_rss_bp'),        # RSS feed endpoint
         ('.routes.theoretical',        'bp', 'theoretical_bp'),    # Sim optimizer theoretical lap endpoints
         ('.routes.events',             'bp', 'events_bp'),          # Engagement tracking + usage dashboard
+        ('.routes.consent',            'bp', 'consent_bp'),         # Server-side consent of record
+        ('.routes.marketing',          'bp', 'marketing_bp'),       # Public anonymous marketing collector
         ('.routes.seo_health',         'bp', 'seo_health_bp'),      # SEO health check endpoint
         ('.routes.track_surface_analysis', 'bp', 'track_surface_analysis_bp'),  # Track-surface analysis app layer
         ('.routes.bundles',                'bp', 'bundles_bp'),                 # Logger bundle intake boundary

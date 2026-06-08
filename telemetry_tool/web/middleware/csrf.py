@@ -13,7 +13,9 @@ logger = logging.getLogger(__name__)
 
 _CSRF_COOKIE = "csrf_token"
 _CSRF_HEADER = "X-CSRF-Token"
-_EXEMPT_PATHS = {"/api/v1/billing/webhook"}
+# Public, anonymous, cross-origin POST endpoints with no session/cookie to
+# protect — CSRF (double-submit cookie) does not apply.
+_EXEMPT_PATHS = {"/api/v1/billing/webhook", "/api/v1/marketing-events"}
 _MUTATING_METHODS = {"POST", "PUT", "DELETE", "PATCH"}
 
 

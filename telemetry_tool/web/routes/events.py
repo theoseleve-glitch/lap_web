@@ -7,11 +7,13 @@ Endpoints:
 """
 from __future__ import annotations
 
+import json
 import logging
 
 from flask import Blueprint, g, request
 
 from web.api_utils import ErrorCode, api_error, api_response
+from web.pii_guard import scrub_properties
 
 logger = logging.getLogger(__name__)
 
@@ -53,6 +55,26 @@ def entitlement_snapshot() -> dict:
     return _snap()
 
 
+def analytics_consent_granted(user_id: int) -> bool:
+    """Return True only when user_consent.analytics is explicitly true.
+
+    Default-deny: no row, false row, or any DB error → no consent.
+    """
+    try:
+        conn = _get_conn()
+        row = conn.execute(
+            "SELECT analytics FROM user_consent WHERE user_id = %(uid)s",
+            {"uid": user_id},
+        ).fetchone()
+    except Exception:
+        logger.warning("Consent lookup failed for user %s — denying", user_id, exc_info=True)
+        return False
+    if row is None:
+        return False
+    analytics = row["analytics"] if isinstance(row, dict) else row[0]
+    return bool(analytics)
+
+
 def _insert_events(events: list[dict], user_id: int, workspace_id: int) -> None:
     """Bulk-insert engagement events into app_events table.
 
@@ -68,40 +90,26 @@ def _insert_events(events: list[dict], user_id: int, workspace_id: int) -> None:
                 user_id,
                 ev["event"],
                 ev.get("path", ""),
-                ev.get("properties") or {},
+                json.dumps(ev.get("properties") or {}),
             )
             for ev in events
         ]
-        # Use executemany for efficiency; fall back row-by-row if needed.
-        try:
-            conn.executemany(
-                """
-                INSERT INTO app_events
-                    (workspace_id, user_id, event_type, path, properties)
-                VALUES (%s, %s, %s, %s, %s)
-                """,
-                rows,
-            )
-        except TypeError:
-            # Some DB wrappers use :name style params — try named approach
-            for row in rows:
-                conn.execute(
-                    """
-                    INSERT INTO app_events
-                        (workspace_id, user_id, event_type, path, properties)
-                    VALUES (:wid, :uid, :etype, :path, :props)
-                    """,
-                    {
-                        "wid": row[0],
-                        "uid": row[1],
-                        "etype": row[2],
-                        "path": row[3],
-                        "props": row[4],
-                    },
-                )
+        conn.executemany(
+            """
+            INSERT INTO app_events
+                (workspace_id, user_id, event_type, path, properties)
+            VALUES (%s, %s, %s, %s, %s::jsonb)
+            """,
+            rows,
+        )
         conn.commit()
     except Exception:
-        logger.warning("Failed to insert events (silently ignored)", exc_info=True)
+        logger.warning("Failed to insert events", exc_info=True)
+        try:
+            from web.metrics import incr_counter
+            incr_counter("app_events_insert_failed")
+        except Exception:
+            pass
 
 
 @bp.route("/events", methods=["POST"])
@@ -139,7 +147,12 @@ def post_events():
                 status=400,
             )
 
-    # Filter + normalise events.
+    # Consent gate (default-deny): drop the whole batch if analytics
+    # consent is not granted. Never error the UX (HTTP 200).
+    if not analytics_consent_granted(user_id):
+        return api_response({"accepted": 0, "reason": "no_consent"})
+
+    # Filter + normalise + PII-scrub events.
     accepted: list[dict] = []
     for ev in events:
         event_type = str(ev["event"])
@@ -150,7 +163,7 @@ def post_events():
             {
                 "event": event_type[:_MAX_EVENT_TYPE_LEN],
                 "path": str(ev.get("path", ""))[:_MAX_PATH_LEN],
-                "properties": ev.get("properties"),
+                "properties": scrub_properties(ev.get("properties")),
             }
         )
 
