@@ -82,7 +82,7 @@ __all__ = [
     "QstarzBinaryStub",
     "LMUAdapter",
     "F1Adapter",
-    "GenericCSVAdapter",
     "GPXAdapter",
     "NMEAAdapter",
+    "GenericCSVAdapter",
 ]

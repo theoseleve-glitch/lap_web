@@ -41,7 +41,20 @@ def _write(tmp_path: Path, name: str, content: str) -> str:
     ("session.csv", _RACEBOX, "racebox_csv"),
 ])
 def test_detection_routes_correctly(tmp_path, name, content, expected):
-    cls, conf = detect_format(_write(tmp_path, name, content))
+    path = _write(tmp_path, name, content)
+    cls, conf = detect_format(path)
     assert cls is not None, f"{name} matched no adapter"
     assert cls.FORMAT_NAME == expected
     assert conf >= 0.5
+    # Unambiguous winner: no OTHER registered adapter scores as high as the winner.
+    # (GenericCSVAdapter is a catch-all and may score up to 0.7 on a GPS CSV, so we
+    #  assert strict-top-winner rather than "only one adapter >= 0.5".)
+    from telemetry_tool.adapters.registry import _ADAPTERS
+    contenders = [
+        c.FORMAT_NAME for c in _ADAPTERS
+        if c is not cls and c.detect(path) >= conf
+    ]
+    assert contenders == [], (
+        f"{name}: {cls.FORMAT_NAME} (conf {conf}) is not the unambiguous winner; "
+        f"also matched at >= conf: {contenders}"
+    )
