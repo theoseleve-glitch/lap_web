@@ -1783,6 +1783,7 @@ def get_usage():
         200 with usage dict.
     """
     from auth.usage import get_usage_snapshot
+    from auth.entitlements import get_plan_entitlements, normalize_tier
 
     user_id = getattr(g, "current_user_id", None)
     if user_id is None:
@@ -1799,17 +1800,59 @@ def get_usage():
         text = str  # PgConnectionWrapper handles plain strings
 
     row = conn.execute(
-        text("SELECT plan_tier FROM users WHERE id = :uid"),
+        text("SELECT plan_tier, subscription_status FROM users WHERE id = :uid"),
         {"uid": user_id},
     ).fetchone()
 
     plan = "locked"
+    sub_status = "inactive"
     if row is not None:
-        plan = (dict(row) if not isinstance(row, dict) else row).get("plan_tier") or "locked"
+        rd = dict(row) if not isinstance(row, dict) else row
+        plan = rd.get("plan_tier") or "locked"
+        sub_status = rd.get("subscription_status") or "inactive"
 
     snapshot = get_usage_snapshot(conn, workspace_id, plan)
+    ent = get_plan_entitlements(plan)
 
-    return api_response(snapshot)
+    def _metric(m):
+        # Frontend contract (useUserPlan / UsageMetric): null == unlimited.
+        # The backend represents unlimited internally as -1; translate it so a
+        # world-class member never reads -1 as a real "0 remaining" limit.
+        lim = m.get("limit")
+        rem = m.get("remaining")
+        return {
+            "used": m.get("used", 0),
+            "limit": None if lim in (-1, None) else lim,
+            "remaining": None if rem in (-1, None) else rem,
+            "resets": m.get("resets"),
+        }
+
+    features = {
+        "comparison": bool(ent.get("comparison_progress")),
+        "coaching_plans": bool(ent.get("coaching_drills")),
+        "visualization": bool(ent.get("viz_workspace")),
+        "gamification": bool(ent.get("gamification")),
+        "live_monitoring": bool(ent.get("live_pace")),
+        "api_access": bool(ent.get("api_access")),
+        "device_sync": bool(ent.get("device_sync")),
+        "auto_analyze_on_sync": bool(ent.get("auto_analyze_on_sync")),
+        "pdf_reports": bool(ent.get("pdf_reports")),
+        "badge_share_card": bool(ent.get("badge_share_card")),
+        "race_strategy_complex": ent.get("race_strategy_params") == "complex",
+        "race_strategy_full": ent.get("strategy_dashboard") == "unlimited",
+    }
+
+    # Full UserPlan contract: plan_tier + subscription_status + per-metric usage
+    # (null limit == unlimited) + boolean feature map. Previously this returned
+    # only the raw metric snapshot (no plan_tier, limit=-1), which made the
+    # upload-page QuotaIndicator show "demo / Quota reached" for paid members.
+    return api_response({
+        "plan_tier": normalize_tier(plan),
+        "subscription_status": sub_status,
+        "analyses": _metric(snapshot.get("analyses", {})),
+        "upload_volume_mb": _metric(snapshot.get("upload_volume_mb", {})),
+        "features": features,
+    })
 
 
 # ---------------------------------------------------------------------------

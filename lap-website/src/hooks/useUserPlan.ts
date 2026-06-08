@@ -48,17 +48,25 @@ export function useUserPlan() {
 
   const plan = query.data;
 
+  // Unlimited iff the backend sends null (the contract) or -1 (legacy
+  // sentinel). A limit of 0 is NOT unlimited — that's the zero-access
+  // 'locked' floor, which should correctly read as "0 remaining".
+  const rawLimit = plan?.analyses.limit;
+  const unlimited = plan != null && (rawLimit === null || rawLimit === -1);
+  const normalizedLimit = rawLimit === -1 ? null : (rawLimit ?? null);
+
   return {
     ...query,
     plan,
-    tier: plan?.plan_tier ?? 'demo',
-    isUnlimited: (plan?.analyses.limit ?? 0) === 0 && plan?.plan_tier !== 'demo',
-    analysesRemaining:
-      plan?.analyses.limit != null
-        ? Math.max(0, plan.analyses.limit - plan.analyses.used)
+    tier: plan?.plan_tier ?? 'locked',
+    isUnlimited: unlimited,
+    analysesRemaining: unlimited
+      ? Infinity
+      : normalizedLimit != null
+        ? Math.max(0, normalizedLimit - (plan?.analyses.used ?? 0))
         : Infinity,
     analysesUsed: plan?.analyses.used ?? 0,
-    analysesLimit: plan?.analyses.limit ?? null,
+    analysesLimit: normalizedLimit,
     hasFeature: (feature: string) => plan?.features?.[feature] ?? false,
   };
 }
