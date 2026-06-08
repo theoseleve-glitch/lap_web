@@ -15,6 +15,8 @@ from telemetry_tool.adapters.aim_adapter import AiMAdapter
 from telemetry_tool.adapters.base import BaseAdapter
 from telemetry_tool.adapters.f1_adapter import F1Adapter
 from telemetry_tool.adapters.generic_csv_adapter import GenericCSVAdapter
+from telemetry_tool.adapters.gpx_adapter import GPXAdapter
+from telemetry_tool.adapters.nmea_adapter import NMEAAdapter
 from telemetry_tool.adapters.iracing_adapter import IRacingAdapter
 from telemetry_tool.adapters.lmu_adapter import LMUAdapter
 from telemetry_tool.adapters.motec_adapter import MoTeCAdapter
@@ -58,6 +60,9 @@ except ImportError:
 register_adapter(LMUAdapter)
 register_adapter(F1Adapter)
 
+register_adapter(GPXAdapter)
+register_adapter(NMEAAdapter)
+
 register_adapter(GenericCSVAdapter)
 
 __all__ = [
@@ -78,4 +83,6 @@ __all__ = [
     "LMUAdapter",
     "F1Adapter",
     "GenericCSVAdapter",
+    "GPXAdapter",
+    "NMEAAdapter",
 ]

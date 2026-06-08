@@ -1,0 +1,47 @@
+"""Cross-format detection: every sample routes to exactly one adapter."""
+from __future__ import annotations
+
+import textwrap
+from pathlib import Path
+
+import pytest
+
+from telemetry_tool.adapters import detect_format  # registers all adapters
+
+_GPX = textwrap.dedent("""\
+    <?xml version="1.0"?>
+    <gpx version="1.1" creator="t" xmlns="http://www.topografix.com/GPX/1/1">
+      <trk><trkseg>
+        <trkpt lat="51.5" lon="-0.1"><time>2024-01-01T00:00:00Z</time></trkpt>
+        <trkpt lat="51.5009" lon="-0.1"><time>2024-01-01T00:00:01Z</time></trkpt>
+      </trkseg></trk></gpx>
+""")
+
+_NMEA = textwrap.dedent("""\
+    $GPRMC,120000.00,A,5114.0000,N,00010.0000,W,10.0,90.0,010124,,,A*6A
+    $GPRMC,120001.00,A,5114.0000,N,00010.0100,W,12.0,90.0,010124,,,A*6C
+""")
+
+_RACEBOX = textwrap.dedent("""\
+    UTC Time,Latitude,Longitude,Speed(km/h),Altitude(m),Heading
+    2024-01-01T00:00:00Z,51.5,-0.1,36.0,10.0,90.0
+    2024-01-01T00:00:01Z,51.5009,-0.1,40.0,11.0,90.0
+""")
+
+
+def _write(tmp_path: Path, name: str, content: str) -> str:
+    p = tmp_path / name
+    p.write_text(content, encoding="utf-8")
+    return str(p)
+
+
+@pytest.mark.parametrize("name,content,expected", [
+    ("track.gpx", _GPX, "gpx"),
+    ("drive.nmea", _NMEA, "nmea"),
+    ("session.csv", _RACEBOX, "racebox_csv"),
+])
+def test_detection_routes_correctly(tmp_path, name, content, expected):
+    cls, conf = detect_format(_write(tmp_path, name, content))
+    assert cls is not None, f"{name} matched no adapter"
+    assert cls.FORMAT_NAME == expected
+    assert conf >= 0.5
