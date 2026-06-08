@@ -213,6 +213,41 @@ def test_zero_grip_field_does_not_nan_poison():
     assert sol.optimal_lap_time_s > ref.optimal_lap_time_s * 1.5
 
 
+# -- Task 4b: envelope_caps support -----------------------------------------
+
+def _brake_caps(total_length_m, brake_g):
+    """Uniform demonstrated brake cap across speed (drive generous, non-binding)."""
+    v = [5.0, 60.0]
+    return {"v_grid": v,
+            "ax_drive_max": [30.0, 30.0],
+            "ax_brake_max": [brake_g * 9.80665, brake_g * 9.80665]}
+
+
+@needs_casadi
+def test_envelope_caps_none_is_byte_identical():
+    track = _oval_track(n=100)
+    vp = _default_vehicle()
+    field = _uniform_field(track.total_length_m, mu=1.0)
+    a = solve_minimum_time_2d(track, vp, field, n_points=100, max_time_s=60.0)
+    b = solve_minimum_time_2d(track, vp, field, n_points=100, max_time_s=60.0,
+                              envelope_caps=None)
+    np.testing.assert_array_equal(a.lateral_offset_m, b.lateral_offset_m)
+    np.testing.assert_array_equal(a.speed_mps, b.speed_mps)
+
+
+@needs_casadi
+def test_tighter_demonstrated_brake_cap_slows_the_lap():
+    track = _oval_track(n=100)
+    vp = _default_vehicle()
+    field = _uniform_field(track.total_length_m, mu=1.0)
+    loose = solve_minimum_time_2d(track, vp, field, n_points=100, max_time_s=60.0,
+                                  envelope_caps=_brake_caps(track.total_length_m, 3.0))
+    tight = solve_minimum_time_2d(track, vp, field, n_points=100, max_time_s=60.0,
+                                  envelope_caps=_brake_caps(track.total_length_m, 0.5))
+    assert tight.solver_status in ("optimal", "acceptable")
+    assert tight.optimal_lap_time_s > loose.optimal_lap_time_s + 0.1
+
+
 @needs_casadi
 def test_solver_is_deterministic():
     """Gate 1: identical inputs → bit-identical line."""

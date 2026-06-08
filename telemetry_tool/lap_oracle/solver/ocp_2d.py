@@ -131,6 +131,8 @@ def _solve_once(
     weather: WeatherConditions,
     max_time_s: float,
     mu_ceiling: float,
+    ax_drive_interp=None,
+    ax_brake_interp=None,
 ) -> tuple[str, np.ndarray, np.ndarray, np.ndarray]:
     """Build a FRESH ca.Opti() and run one IPOPT solve from the given guess.
 
@@ -186,6 +188,10 @@ def _solve_once(
         v_safe = ca.fmax(V[i], 5.0)
         opti.subject_to(Ax[i] <= p_max / (m * v_safe) - drag - rr)
         opti.subject_to(Ax[i] >= -(a_brake_max * g_eff_i / G + drag + rr))
+        if ax_drive_interp is not None:
+            opti.subject_to(Ax[i] <= ax_drive_interp(V[i]) - drag - rr)
+        if ax_brake_interp is not None:
+            opti.subject_to(Ax[i] >= -(ax_brake_interp(V[i]) + drag + rr))
 
     opti.subject_to(opti.bounded(5.0, V, 120.0))
     for i in range(N):
@@ -238,6 +244,7 @@ def solve_minimum_time_2d(
     warm_start: OCPSolution | None = None,
     n_lat_starts: tuple[float, ...] = (0.0,),
     n_windows: Sequence[tuple[float, float, float, float]] = (),
+    envelope_caps: dict | None = None,
 ) -> OCPSolution:
     """Minimum-time OCP with a 2D friction field mu(s, n) inside the NLP.
 
@@ -339,6 +346,17 @@ def solve_minimum_time_2d(
     # interpolant remains the layout-locked data-sampling contract elsewhere.
     # Built ONCE here and reused across every multi-start solve.
     mu_lut = _make_mu_interpolant_smooth(mu_field)
+    ax_drive_interp = None
+    ax_brake_interp = None
+    if (envelope_caps and "v_grid" in envelope_caps
+            and "ax_drive_max" in envelope_caps and "ax_brake_max" in envelope_caps):
+        _ev = [float(x) for x in envelope_caps["v_grid"]]
+        ax_drive_interp = ca.interpolant(
+            "ax_drive_lookup", "linear", [_ev],
+            [float(x) for x in envelope_caps["ax_drive_max"]])
+        ax_brake_interp = ca.interpolant(
+            "ax_brake_lookup", "linear", [_ev],
+            [float(x) for x in envelope_caps["ax_brake_max"]])
     # Floor mu_ceiling at EPS_GRIP so a degenerate all-zero field doesn't let
     # the cap override the EPS_GRIP floor (fmin(EPS_GRIP, 0) = 0 → NaN Jacobian)
     mu_ceiling = max(float(mu_field.mu_grid.max()), EPS_GRIP)
@@ -396,6 +414,7 @@ def solve_minimum_time_2d(
             n_bounds=n_bounds, v_guess=v_guess, n_guess=n_guess, ax_guess=ax_guess,
             vehicle=vehicle, weather=weather, max_time_s=max_time_s,
             mu_ceiling=mu_ceiling,
+            ax_drive_interp=ax_drive_interp, ax_brake_interp=ax_brake_interp,
         )
         if first is None:
             first = cand
