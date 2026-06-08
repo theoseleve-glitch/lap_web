@@ -4,7 +4,10 @@ Companion to ``scripts/validate_ocp2d.py`` (Task 8b real-data run). Takes a
 RaceChrono session CSV (or a trackreco ``x_local``/``y_local`` triplet CSV),
 projects each driven lap into the **sidecar's own local XY frame**, runs an
 alignment sanity gate, and writes ``lap_NN.parquet`` files with the columns the
-validation harness expects: ``pos_x_m``, ``pos_y_m``, ``speed_mps``.
+validation harness expects: ``pos_x_m``, ``pos_y_m``, ``speed_mps`` plus the
+friction-envelope channels ``Speed (m/s)``, ``accel_long_mps2``,
+``accel_lat_mps2`` (so the harness's no-spec resolver path can build the
+driver's demonstrated longitudinal envelope without a hand-written vehicle JSON).
 
 Why alignment matters
 ---------------------
@@ -235,10 +238,34 @@ def main() -> int:
         if mask.sum() < args.min_lap_pts:
             continue
         xy = aligned[mask]
+        x = xy[:, 0]
+        y = xy[:, 1]
+        v = sess["speed_mps"].to_numpy()[mask]
+
+        # ── friction-envelope channels ────────────────────────────────────
+        # The validation harness's resolver path feeds these to
+        # friction_envelope.compute_friction_envelope to build the driver's
+        # DEMONSTRATED longitudinal envelope (no time column in the session,
+        # so use a uniform 10 Hz base; matches RaceChrono resampling).
+        t = np.arange(len(v)) * 0.1
+        dt = np.gradient(t)
+        dt[dt <= 1e-6] = 1e-6
+        accel_long = np.gradient(v) / dt
+        dx, dy = np.gradient(x), np.gradient(y)
+        ddx, ddy = np.gradient(dx), np.gradient(dy)
+        denom = (dx * dx + dy * dy) ** 1.5
+        denom[denom < 1e-9] = 1e-9
+        kappa = (dx * ddy - dy * ddx) / denom
+        accel_lat = v * v * kappa
+
         lap_df = pd.DataFrame({
-            "pos_x_m": xy[:, 0],
-            "pos_y_m": xy[:, 1],
-            "speed_mps": sess["speed_mps"].to_numpy()[mask],
+            "pos_x_m": x,
+            "pos_y_m": y,
+            "speed_mps": v,
+            # channels read by friction_envelope (vehicle_profile resolver)
+            "Speed (m/s)": v,
+            "accel_long_mps2": accel_long,
+            "accel_lat_mps2": accel_lat,
         }).dropna()
         if len(lap_df) < args.min_lap_pts:
             continue

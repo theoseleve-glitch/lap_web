@@ -42,6 +42,11 @@ from track_surface.drainage import compute_drainage                 # noqa: E402
 from track_surface.grip_2d import GripSurface                       # noqa: E402
 from track_surface.mu_field import build_wet_mu_field               # noqa: E402
 from track_surface.solver_bridge import solve_optimal_line_2d       # noqa: E402
+from track_surface.vehicle_profile import resolve_vehicle_params    # noqa: E402
+
+
+# Channels the resolver's demonstrated-envelope path needs (friction_envelope).
+_ENV_COLS = ("Speed (m/s)", "accel_lat_mps2", "accel_long_mps2")
 
 
 def _load_lap(path: str) -> pd.DataFrame | None:
@@ -52,11 +57,17 @@ def _load_lap(path: str) -> pd.DataFrame | None:
     if not (x and y and spd):
         print(f"  skip {path}: missing pos/speed columns ({list(df.columns)[:8]}...)")
         return None
-    out = pd.DataFrame({
+    cols = {
         "x": pd.to_numeric(df[x], errors="coerce"),
         "y": pd.to_numeric(df[y], errors="coerce"),
         "v": pd.to_numeric(df[spd], errors="coerce"),
-    }).dropna()
+    }
+    # Retain the friction-envelope channels when the parquet carries them, so the
+    # resolver-driven (no --vehicle-json) path can build a demonstrated envelope.
+    for c in _ENV_COLS:
+        if c in df.columns:
+            cols[c] = pd.to_numeric(df[c], errors="coerce")
+    out = pd.DataFrame(cols).dropna()
     return out if len(out) > 50 else None
 
 
@@ -81,11 +92,14 @@ def main() -> int:
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--track", required=True, help="track_id of the sidecar")
     ap.add_argument("--sidecar-root", required=True)
-    ap.add_argument("--vehicle-class", default="kart")
+    ap.add_argument("--vehicle-class", default="kart",
+                    help="vehicle class for the no-spec resolver path (default: kart); "
+                         "used when --vehicle-json is omitted")
     ap.add_argument("--vehicle-json", default=None,
-                    help="path to JSON file of VehicleParams fields "
-                         "(e.g. {\"mass_kg\": 170, \"wheelbase_m\": 1.05, ...}); "
-                         "required for gate-4 validity")
+                    help="OPTIONAL path to JSON file of VehicleParams fields "
+                         "(e.g. {\"mass_kg\": 170, \"wheelbase_m\": 1.05, ...}). "
+                         "If omitted, params are resolved from --vehicle-class + the "
+                         "laps' demonstrated longitudinal envelope (resolve_vehicle_params)")
     ap.add_argument("--condition", default="dry", help="grip sidecar partition to load")
     ap.add_argument("--laps", required=True, help="glob of driven-lap parquet/csv files")
     ap.add_argument("--best-lap-s", type=float, default=None,
@@ -126,15 +140,29 @@ def main() -> int:
     fast_laps = [laps[i] for i in order[:n_fast]]
     best_real = args.best_lap_s if args.best_lap_s else float(min(lap_times))
 
-    # ── Fix 1: vehicle params from JSON or default ─────────────────────────
-    vehicle_params = None
+    # ── Fix 1: vehicle params from JSON, or resolver-driven no-spec path ───
+    # The honest field scenario: no hand-written vehicle JSON. We resolve from
+    # --vehicle-class plus the laps' DEMONSTRATED longitudinal envelope built by
+    # resolve_vehicle_params (envelope_caps drive the solver's drive/brake limits
+    # where reliable; class defaults fill every gap).
+    env_caps = None
+    param_provenance = None
     if args.vehicle_json is not None:
         from telemetry_tool.lap_oracle.config import VehicleParams
         with open(args.vehicle_json) as fh:
             vehicle_params = VehicleParams.from_dict(json.load(fh))
         vp_label = "from_json"
     else:
-        vp_label = "default_gt_warning"
+        # The (length-filtered) lap frames carry the friction-envelope channels
+        # when the export emitted them; keep only those with all three present.
+        env_laps = {
+            i: df for i, df in enumerate(laps)
+            if set(_ENV_COLS) <= set(df.columns)
+        }
+        vehicle_params, env_caps, param_provenance = resolve_vehicle_params(
+            args.vehicle_class, laps=env_laps or None,
+        )
+        vp_label = f"class:{args.vehicle_class}"
 
     report: dict = {"track": args.track, "vehicle_class": args.vehicle_class,
                     "condition": args.condition, "n_laps": len(laps),
@@ -144,6 +172,12 @@ def main() -> int:
                     "vehicle_params": vp_label,
                     "vehicle_json": args.vehicle_json,
                     "gates": {}}
+    if param_provenance is not None:
+        report["param_provenance"] = {
+            "longitudinal_source": param_provenance.longitudinal_source,
+            "mass_source": param_provenance.mass_source,
+            "envelope_reliable": param_provenance.envelope_reliable,
+        }
 
     # ── Fix 6: partial report on mid-run failure ───────────────────────────
     out_path = Path(args.out)
@@ -154,10 +188,10 @@ def main() -> int:
         # ── Solve dry twice (gate 1 + gate 5) ─────────────────────────────
         current_gate = "gate1"
         dry_a = solve_optimal_line_2d(surface, vehicle_params=vehicle_params,
-                                      condition="dry",
+                                      condition="dry", envelope_caps=env_caps,
                                       n_points=args.n_points, max_time_s=args.max_time_s)
         dry_b = solve_optimal_line_2d(surface, vehicle_params=vehicle_params,
-                                      condition="dry",
+                                      condition="dry", envelope_caps=env_caps,
                                       n_points=args.n_points, max_time_s=args.max_time_s)
         gate1_passed = bool(
             np.array_equal(dry_a.lateral_offset_m, dry_b.lateral_offset_m)
@@ -194,6 +228,7 @@ def main() -> int:
                    if surface.elevation_surface is not None else [])
         wet = solve_optimal_line_2d(surface, vehicle_params=vehicle_params,
                                     condition="wet", puddles=puddles,
+                                    envelope_caps=env_caps,
                                     n_points=args.n_points, max_time_s=args.max_time_s)
         wet_field = build_wet_mu_field(surface.grip_2d, puddles)
         wet_gs = GripSurface(
@@ -233,24 +268,41 @@ def main() -> int:
         }
 
         # ── Gate 4: lap-time sanity ────────────────────────────────────────
+        # The gate is a hard pct-err check ONLY when the longitudinal model is
+        # an honest performance source: real vehicle JSON, or a DEMONSTRATED
+        # envelope built from the driver's own laps. When params fall back to a
+        # class default (no reliable demonstrated envelope), the predicted lap
+        # time is an ESTIMATE — a real field scenario, not an invalid gate — so
+        # we report predicted vs. real without a pass/fail.
         current_gate = "gate4"
-        if vehicle_params is None:
-            # No real vehicle params — gate is invalid
-            report["gates"]["gate4_laptime_sanity"] = {
-                "status": "invalid_without_vehicle_params",
-                "predicted_s": round(dry_a.optimal_lap_time_s, 2),
-                "best_real_s": round(best_real, 2),
-                "passed": None,
-            }
-        else:
+        demonstrated = (
+            param_provenance is not None
+            and param_provenance.longitudinal_source == "demonstrated"
+        )
+        gate4_valid = (vp_label == "from_json") or demonstrated
+        if gate4_valid:
             pct_err = abs(dry_a.optimal_lap_time_s - best_real) / best_real * 100.0
             report["gates"]["gate4_laptime_sanity"] = {
                 "status": "valid",
+                "longitudinal_source": (
+                    "from_json" if vp_label == "from_json" else "demonstrated"
+                ),
                 "predicted_s": round(dry_a.optimal_lap_time_s, 2),
                 "best_real_s": round(best_real, 2),
                 "pct_err": round(pct_err, 2),
                 "target_pct": 3.0,
                 "passed": pct_err <= 3.0,
+            }
+        else:
+            report["gates"]["gate4_laptime_sanity"] = {
+                "status": "estimate_class_default",
+                "longitudinal_source": (
+                    param_provenance.longitudinal_source
+                    if param_provenance is not None else "class_default"
+                ),
+                "predicted_s": round(dry_a.optimal_lap_time_s, 2),
+                "best_real_s": round(best_real, 2),
+                "passed": None,
             }
 
         # ── Gate 5: robustness ─────────────────────────────────────────────
