@@ -625,9 +625,9 @@ class TestStripePriceMapping:
     def test_resolve_ignores_invalid_metadata(self):
         from web.routes.billing import _resolve_tier_from_checkout
         session = {"metadata": {"plan_tier": "invalid_tier"}}
-        # Should fall through to line items or default
+        # Invalid/unmapped metadata must resolve to 'locked', never a paid default (B4).
         tier = _resolve_tier_from_checkout(session)
-        assert tier == "racer"  # default fallback
+        assert tier == "locked"  # strict fail-closed: unmapped → locked
 
     def test_resolve_from_line_items(self):
         from web.routes.billing import STRIPE_PRICE_TO_TIER, _resolve_tier_from_checkout

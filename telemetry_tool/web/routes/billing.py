@@ -84,22 +84,49 @@ def _get_conn():
     return get_db_connection()
 
 
-def _redis_event_check(event_id: str) -> bool:
-    """Fast-path Redis dedup: returns True if event already processed.
+def _redis_event_is_seen(event_id: str) -> bool:
+    """Fast-path Redis dedup READ: returns True if event key already exists.
 
-    Uses SETNX with 24hr TTL. If Redis is unavailable, falls through
-    to the DB dedup check.
+    Does NOT set the key — use _redis_event_mark_seen() after successful
+    processing so that a handler failure leaves the key absent and Stripe
+    can retry.
     """
     try:
         from web.rate_limit import get_redis
         r = get_redis()
         if r is None:
             return False
-        # SET NX returns True if key was set (new event), None if already exists
-        was_set = r.set(f"stripe_event:{event_id}", "1", nx=True, ex=86400)
-        return was_set is None  # Already existed = already processed
+        return r.get(f"stripe_event:{event_id}") is not None
     except Exception:
         return False  # Fail open to DB check
+
+
+def _redis_event_mark_seen(event_id: str) -> None:
+    """Set the Redis dedup key for a successfully-processed event (24hr TTL).
+
+    Called ONLY after the handler succeeds so that a failure leaves no key
+    and Stripe retries.
+    """
+    try:
+        from web.rate_limit import get_redis
+        r = get_redis()
+        if r is None:
+            return
+        r.set(f"stripe_event:{event_id}", "1", ex=86400)
+    except Exception:
+        pass  # Non-fatal: DB dedup still guards idempotency
+
+
+def _redis_event_clear(event_id: str) -> None:
+    """Delete the Redis dedup key so a retried delivery can be reprocessed."""
+    try:
+        from web.rate_limit import get_redis
+        r = get_redis()
+        if r is None:
+            return
+        r.delete(f"stripe_event:{event_id}")
+    except Exception:
+        pass
 
 
 def _check_event_ordering(customer_id: str, event_timestamp: int) -> bool:
@@ -217,9 +244,13 @@ def _resolve_tier_from_checkout(session: dict) -> str:
     """Resolve plan tier from a Stripe checkout session.
 
     Checks in order:
-    1. session.metadata.plan_tier (set by our checkout route)
-    2. Line items price ID → STRIPE_PRICE_TO_TIER mapping
-    3. Fallback: 'racer' (most common paid plan)
+    1. session.metadata.plan_tier (set by our checkout route) — must be in
+       the known-paid-tier allowlist.
+    2. Line items price ID → STRIPE_PRICE_TO_TIER allowlist mapping.
+    3. Subscription items price ID → STRIPE_PRICE_TO_TIER (fetched from Stripe).
+
+    STRICT: an unmapped / unknown price or invalid metadata falls through to
+    'locked', never to a paid default.  Emits logger.error + Sentry alert.
     """
     # Check metadata first (our checkout route should set this)
     metadata = session.get("metadata", {}) or {}
@@ -227,14 +258,14 @@ def _resolve_tier_from_checkout(session: dict) -> str:
     if tier in ("racer", "world-class", "b2b"):
         return tier
 
-    # Fallback: check line items price IDs
+    # Fallback: check line items price IDs against strict allowlist
     line_items = session.get("line_items", {}).get("data", [])
     for item in line_items:
         price_id = item.get("price", {}).get("id") if isinstance(item.get("price"), dict) else item.get("price")
         if price_id and price_id in STRIPE_PRICE_TO_TIER:
             return STRIPE_PRICE_TO_TIER[price_id]
 
-    # Last resort: check subscription metadata if available
+    # Last resort: check subscription items if available
     sub_id = session.get("subscription")
     if sub_id and STRIPE_SECRET_KEY:
         try:
@@ -247,9 +278,28 @@ def _resolve_tier_from_checkout(session: dict) -> str:
         except Exception:
             logger.warning("Could not fetch subscription %s to resolve tier", sub_id)
 
-    logger.warning("Could not resolve tier from checkout session %s — defaulting to world-class",
-                   session.get("id"))
-    return "world-class"
+    # No recognised price found — fail closed to 'locked', never grant a paid tier.
+    _unmapped_alert(
+        "checkout session",
+        session.get("id"),
+        extra={"metadata_tier": tier, "sub_id": sub_id},
+    )
+    return "locked"
+
+
+def _unmapped_alert(context: str, identifier: str | None, extra: dict | None = None) -> None:
+    """Emit a loud alert for an unmapped/unrecognised Stripe price or session."""
+    msg = "Unmapped Stripe price in %s (id=%s) — resolving to locked%s"
+    extra_str = f": {extra}" if extra else ""
+    logger.error(msg, context, identifier, extra_str)
+    try:
+        import sentry_sdk
+        sentry_sdk.capture_message(
+            f"Unmapped Stripe price in {context} id={identifier}{extra_str}",
+            level="error",
+        )
+    except Exception:
+        pass
 
 
 @bp.route("/webhook", methods=["POST"])
@@ -296,8 +346,8 @@ def stripe_webhook():
     data = event["data"]["object"]
     logger.info("Stripe event: %s (id=%s)", event_type, event_id)
 
-    # ── Fast-path Redis dedup ────────────────────────────────────
-    if _redis_event_check(event_id):
+    # ── Fast-path Redis dedup (READ ONLY — do NOT set key yet) ──────────
+    if _redis_event_is_seen(event_id):
         logger.info("Duplicate Stripe event %s (Redis) — skipping", event_id)
         return jsonify({"status": "ok", "skipped": True}), 200
 
@@ -315,15 +365,20 @@ def stripe_webhook():
 
     payload_hash = hashlib.sha256(payload.encode()).hexdigest()[:16]
 
-    # Log webhook to stripe_webhook_log (pending)
+    # Log webhook to stripe_webhook_log (pending).  This insert is best-effort:
+    # a logging failure must not prevent event processing, but we do log the
+    # error so it is visible in the audit trail.
+    _webhook_log_ok = False
     try:
         from admin.audit import _sanitize_payload, log_stripe_webhook
         sanitized = _sanitize_payload(event.get("data", {}).get("object", {}))
         log_stripe_webhook(conn, event_id, event_type, sanitized,
                            signature_valid=True, processing_status="pending")
         conn.commit()
+        _webhook_log_ok = True
     except Exception:
-        logger.debug("Failed to log webhook to stripe_webhook_log", exc_info=True)
+        logger.warning("Failed to log webhook %s to stripe_webhook_log — continuing",
+                       event_id, exc_info=True)
 
     try:
         if event_type == "checkout.session.completed":
@@ -348,23 +403,33 @@ def stripe_webhook():
             _handle_charge_refunded(data)
         else:
             logger.debug("Unhandled Stripe event type: %s", event_type)
-        # Track successful webhook processing
-        _update_webhook_status(conn, event_id, "processed")
-        # Mark processed_at timestamp
+
+        # ── Handler succeeded — mark as processed ───────────────────────
+        # Record in DB first (persistent dedup), then Redis (fast-path).
         try:
-            from datetime import datetime, timezone
-            conn.execute(
-                "UPDATE stripe_webhook_log SET processed_at = %(now)s "
-                "WHERE stripe_event_id = %(eid)s",
-                {"now": datetime.now(timezone.utc), "eid": event_id},
-            )
-            conn.commit()
+            _record_event(conn, event_id, event_type, payload_hash)
         except Exception:
-            pass
+            logger.warning("Failed to record event %s in stripe_events (processing succeeded)",
+                           event_id)
+        # Only mark Redis seen AFTER successful processing so a crashed handler
+        # leaves the key absent and Stripe can retry.
+        _redis_event_mark_seen(event_id)
+
+        if _webhook_log_ok:
+            _update_webhook_status(conn, event_id, "processed")
+            try:
+                from datetime import datetime, timezone
+                conn.execute(
+                    "UPDATE stripe_webhook_log SET processed_at = %(now)s "
+                    "WHERE stripe_event_id = %(eid)s",
+                    {"now": datetime.now(timezone.utc), "eid": event_id},
+                )
+                conn.commit()
+            except Exception:
+                pass
         try:
             from web.metrics import incr_counter, record_histogram
             incr_counter("webhook_processed")
-            # Track processing latency (event created → processed)
             if event_created:
                 import time
                 latency_ms = (time.time() - event_created) * 1000
@@ -373,24 +438,24 @@ def stripe_webhook():
             pass
         # Invalidate entitlement cache for affected user
         _invalidate_cache_for_event(customer_id)
+
     except Exception:
-        logger.exception("Error processing Stripe event %s", event_type)
+        logger.exception("Error processing Stripe event %s (id=%s)", event_type, event_id)
         error_str = str(sys.exc_info()[1])[:500]
-        _update_webhook_status(conn, event_id, "failed", error_str)
-        # Schedule retry with backoff
-        _schedule_webhook_retry(conn, event_id)
+
+        # Clear the Redis key so a Stripe retry can reprocess this event.
+        _redis_event_clear(event_id)
+
+        if _webhook_log_ok:
+            _update_webhook_status(conn, event_id, "failed", error_str)
+            _schedule_webhook_retry(conn, event_id)
         try:
             from web.metrics import incr_counter
             incr_counter("webhook_failed")
         except Exception:
             pass
-        return jsonify({"status": "error_logged"}), 200
-
-    # Record event after successful processing
-    try:
-        _record_event(conn, event_id, event_type, payload_hash)
-    except Exception:
-        logger.warning("Failed to record event %s (processing succeeded)", event_id)
+        # Return non-2xx so Stripe retries the delivery.
+        return jsonify({"status": "handler_error", "event_id": event_id}), 500
 
     return jsonify({"status": "ok"}), 200
 
@@ -400,47 +465,66 @@ def _handle_checkout_completed(session: dict):
 
     Sets both plan_tier (the actual tier) and subscription_status (active).
     Uses the state machine for the status transition.
+
+    User lookup order (A4):
+    1. client_reference_id / metadata.user_id (explicit user binding)
+    2. stripe_customer_id match (handles repeat buyers / updated customer)
+    3. customer_email fallback (initial purchase path)
+
+    On NO match: records a pending entitlement keyed by stripe_customer_id,
+    emits logger.error + Sentry, and still confirms the founding-50 slot so
+    the ≤50 cap stays accurate.
     """
-    customer_email = session.get("customer_email") or session.get("customer_details", {}).get("email")
+    customer_email = session.get("customer_email") or (session.get("customer_details") or {}).get("email")
     subscription_id = session.get("subscription")
     customer_id = session.get("customer")
-
-    if not customer_email:
-        logger.warning("Checkout completed but no email found: %s", session.get("id"))
-        return
+    session_id = session.get("id")
 
     plan_tier = _resolve_tier_from_checkout(session)
 
     conn = _get_conn()
 
-    # First update Stripe IDs (these aren't state-machine concerns)
-    conn.execute(
-        "UPDATE users SET stripe_customer_id = %(cid)s, "
-        "stripe_subscription_id = %(sid)s "
-        "WHERE email = %(email)s",
-        {"cid": customer_id, "sid": subscription_id, "email": customer_email},
-    )
-    conn.commit()
+    # ── Resolve user row — strict priority order ──────────────────
+    user_row = None
+    match_method = None
 
-    # Get user ID for state machine
-    cur = conn.execute(
-        "SELECT id FROM users WHERE email = %(email)s",
-        {"email": customer_email},
-    )
-    user_row = cur.fetchone()
-    if user_row:
-        uid = (dict(user_row) if not isinstance(user_row, dict) else user_row)["id"]
-        from billing.state_machine import transition_subscription
-        transition_subscription(
-            conn, uid, "active",
-            plan_tier=plan_tier,
-            metadata={"checkout_session": session.get("id"), "customer": customer_id},
+    # 1. client_reference_id or metadata.user_id (most explicit)
+    meta_uid = (session.get("metadata") or {}).get("user_id")
+    client_ref = session.get("client_reference_id")
+    uid_hint = meta_uid or client_ref
+    if uid_hint:
+        try:
+            cur = conn.execute(
+                "SELECT id, email FROM users WHERE id = %(uid)s",
+                {"uid": int(uid_hint)},
+            )
+            user_row = cur.fetchone()
+            if user_row:
+                match_method = "client_reference_id"
+        except Exception:
+            pass
+
+    # 2. stripe_customer_id (handles re-purchases and updated customer objects)
+    if user_row is None and customer_id:
+        cur = conn.execute(
+            "SELECT id, email FROM users WHERE stripe_customer_id = %(cid)s",
+            {"cid": customer_id},
         )
-        audit_log(conn, "billing_checkout_completed", {"user_id": uid, "tier": plan_tier})
-    else:
-        logger.warning("Checkout completed but user not found: %s", customer_email)
+        user_row = cur.fetchone()
+        if user_row:
+            match_method = "stripe_customer_id"
 
-    # Founding-50: confirm the reserved capacity slot now that payment is in.
+    # 3. customer_email fallback
+    if user_row is None and customer_email:
+        cur = conn.execute(
+            "SELECT id, email FROM users WHERE email = %(email)s",
+            {"email": customer_email},
+        )
+        user_row = cur.fetchone()
+        if user_row:
+            match_method = "customer_email"
+
+    # ── Founding-50 slot confirmation — happens regardless of user match ──
     slot_raw = (session.get("metadata") or {}).get("founding_slot_no")
     if slot_raw:
         try:
@@ -449,6 +533,75 @@ def _handle_checkout_completed(session: dict):
             conn.commit()
         except Exception:
             logger.warning("Failed to confirm founding slot %s", slot_raw, exc_info=True)
+
+    if user_row is None:
+        # No matching user — record a pending/unmatched entitlement so it can
+        # be reconciled later.  This is loud: money arrived but no account found.
+        msg = (
+            "Checkout completed but NO user found for stripe_customer_id=%s "
+            "email=%s session=%s — recording pending entitlement for reconciliation"
+        )
+        logger.error(msg, customer_id, customer_email, session_id)
+        try:
+            import sentry_sdk
+            sentry_sdk.capture_message(
+                f"Unmatched checkout: customer_id={customer_id} email={customer_email} session={session_id}",
+                level="error",
+            )
+        except Exception:
+            pass
+        # Store pending entitlement keyed by stripe_customer_id for later reconciliation.
+        try:
+            import json as _json
+            conn.execute(
+                "INSERT INTO stripe_pending_entitlements "
+                "(stripe_customer_id, stripe_session_id, stripe_subscription_id, "
+                "customer_email, plan_tier, payload_json) "
+                "VALUES (%(cid)s, %(sid)s, %(sub)s, %(email)s, %(tier)s, %(payload)s) "
+                "ON CONFLICT (stripe_session_id) DO NOTHING",
+                {
+                    "cid": customer_id,
+                    "sid": session_id,
+                    "sub": subscription_id,
+                    "email": customer_email,
+                    "tier": plan_tier,
+                    "payload": _json.dumps({
+                        "session_id": session_id,
+                        "customer_id": customer_id,
+                        "subscription_id": subscription_id,
+                        "email": customer_email,
+                        "plan_tier": plan_tier,
+                    }),
+                },
+            )
+            conn.commit()
+        except Exception:
+            logger.error(
+                "Failed to record pending entitlement for customer=%s session=%s",
+                customer_id, session_id, exc_info=True,
+            )
+        return
+
+    user = dict(user_row) if not isinstance(user_row, dict) else user_row
+    uid = user["id"]
+    logger.info("Checkout matched user %s via %s", uid, match_method)
+
+    # ── Persist Stripe IDs on the user row (so future events match by customer_id) ──
+    conn.execute(
+        "UPDATE users SET stripe_customer_id = %(cid)s, "
+        "stripe_subscription_id = %(sid)s "
+        "WHERE id = %(uid)s",
+        {"cid": customer_id, "sid": subscription_id, "uid": uid},
+    )
+    conn.commit()
+
+    from billing.state_machine import transition_subscription
+    transition_subscription(
+        conn, uid, "active",
+        plan_tier=plan_tier,
+        metadata={"checkout_session": session_id, "customer": customer_id},
+    )
+    audit_log(conn, "billing_checkout_completed", {"user_id": uid, "tier": plan_tier})
 
 
 def _handle_subscription_created(subscription: dict):
@@ -474,6 +627,17 @@ def _handle_subscription_created(subscription: dict):
             plan_tier = STRIPE_PRICE_TO_TIER[price_id]
             break
 
+    # Strict tier resolution: unmapped price → 'locked', never a paid default (B4).
+    if plan_tier is None:
+        _unmapped_alert(
+            "customer.subscription.created",
+            sub_id,
+            extra={"customer": customer_id, "items": [
+                i.get("price", {}).get("id") for i in items
+            ]},
+        )
+        plan_tier = "locked"
+
     conn = _get_conn()
 
     # Set stripe IDs
@@ -498,12 +662,12 @@ def _handle_subscription_created(subscription: dict):
     from billing.state_machine import transition_subscription
     transition_subscription(
         conn, uid, new_status,
-        plan_tier=plan_tier or "racer",
+        plan_tier=plan_tier,
         metadata={"subscription": sub_id, "customer": customer_id},
     )
     audit_log(conn, "billing_subscription_created", {"user_id": uid, "status": new_status})
     logger.info("Subscription created for customer %s: status=%s tier=%s",
-                customer_id, new_status, plan_tier or "racer")
+                customer_id, new_status, plan_tier)
 
 
 def _handle_subscription_updated(subscription: dict):
