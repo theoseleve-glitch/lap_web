@@ -96,10 +96,13 @@ class NMEAAdapter(BaseAdapter):
                     if t is None or lat is None or lon is None:
                         continue
                     row: dict = {"time_s": t, "lat_deg": lat, "lon_deg": lon}
-                    if f[7]:
-                        row["speed_mps"] = float(f[7]) * _KNOTS_TO_MPS
-                    if len(f) > 8 and f[8]:
-                        row["heading_deg"] = float(f[8])
+                    try:
+                        if f[7]:
+                            row["speed_mps"] = float(f[7]) * _KNOTS_TO_MPS
+                        if len(f) > 8 and f[8]:
+                            row["heading_deg"] = float(f[8])
+                    except ValueError:
+                        pass  # malformed speed/course — finalize_gps_frame derives both
                     rows.append(row)
 
                 elif stype == "GGA" and len(f) >= 10:
@@ -115,6 +118,7 @@ class NMEAAdapter(BaseAdapter):
 
         df = pd.DataFrame(rows)
         if alt_by_time:
+            # Exact-float match is safe: RMC and GGA share the same hhmmss.ss per 1 Hz burst.
             df["altitude_m"] = df["time_s"].map(alt_by_time)
 
         # Time-of-day -> relative seconds from first fix (handle midnight wrap).

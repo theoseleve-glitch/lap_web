@@ -52,3 +52,18 @@ def test_parse_nmea_channels(tmp_path):
     assert df["speed_mps"].iloc[0] == pytest.approx(5.144, abs=0.01)
     assert df["altitude_m"].iloc[0] == pytest.approx(45.0, abs=0.5)
     assert df["time_s"].iloc[0] == pytest.approx(0.0)
+    assert adapter.data_tier() >= 1
+
+
+_NMEA_NO_GGA = textwrap.dedent("""\
+    $GPRMC,120000.00,A,5114.0000,N,00010.0000,W,10.000,90.0,010124,,,A*6A
+    $GPRMC,120001.00,A,5114.0000,N,00010.0100,W,12.000,90.0,010124,,,A*6C
+""")
+
+
+def test_parse_nmea_no_gga(tmp_path):
+    path = _write(tmp_path, "rmc_only.nmea", _NMEA_NO_GGA)
+    df = NMEAAdapter().parse(path)
+    assert len(df) == 2
+    assert "altitude_m" not in df.columns
+    assert {"time_s", "lat_deg", "lon_deg", "speed_mps"} <= set(df.columns)
