@@ -60,7 +60,7 @@ export default function AdminOverviewPage() {
   const p = data?.product;
   const o = data?.live_ops;
   const gr = data?.growth;
-  const dash = (n: number | null | undefined) => (n ?? n === 0 ? n : "—");
+  const dash = (n: number | null | undefined) => (n ?? "—");
 
   return (
     <div className="mx-auto max-w-5xl">
