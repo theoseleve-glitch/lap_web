@@ -72,7 +72,10 @@ def find_existing_product(stripe, metadata_key: str):
     """Find product by metadata tag (idempotent lookup)."""
     products = stripe.Product.list(limit=100, active=True)
     for p in products.auto_paging_iter():
-        if p.metadata.get("lap_coach_product") == metadata_key:
+        # metadata is a StripeObject; coerce to a plain dict before .get()
+        # (newer stripe-python intercepts .get via __getattr__ and raises).
+        md = dict(getattr(p, "metadata", None) or {})
+        if md.get("lap_coach_product") == metadata_key:
             return p
     return None
 
@@ -81,7 +84,7 @@ def find_existing_price(stripe, product_id: str, nickname: str):
     """Find price by nickname on a product (idempotent lookup)."""
     prices = stripe.Price.list(product=product_id, limit=100, active=True)
     for p in prices.auto_paging_iter():
-        if p.nickname == nickname:
+        if getattr(p, "nickname", None) == nickname:
             return p
     return None
 
