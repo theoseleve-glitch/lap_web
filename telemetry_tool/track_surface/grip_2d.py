@@ -33,6 +33,10 @@ class GripSurface:
     mu_grid: np.ndarray      # (M, K) friction coefficient
     count_grid: np.ndarray   # (M, K) number of samples per cell
     confidence: np.ndarray   # (M, K) confidence 0-1
+    # (M, K) per-cell cornering LIMIT (absolute mu, per-session p90, MAX-merged
+    # across sessions). NaN where < _MIN_LIMIT_SAMPLES samples or unmeasured.
+    # None when no limit data exists (old sidecars). Only the OCP path reads it.
+    mu_limit_grid: np.ndarray | None = None
 
     def mu_at(self, s: float, n: float) -> float:
         """Bilinear interpolation of grip at a single (s, n) point."""
