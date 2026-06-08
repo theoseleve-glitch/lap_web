@@ -50,37 +50,40 @@ class FITAdapter(BaseAdapter):
               progress_cb: Optional[object] = None) -> pd.DataFrame:
         import fitparse  # declared in requirements.txt
 
-        fitfile = fitparse.FitFile(str(file_path))
         rows: list[dict] = []
-        for record in fitfile.get_messages("record"):
-            vals = {d.name: d.value for d in record}
-            lat = vals.get("position_lat")
-            lon = vals.get("position_long")
-            ts = vals.get("timestamp")
-            if lat is None or lon is None or ts is None:
-                continue
-            row: dict = {
-                "lat_deg": lat * _SEMICIRCLE_TO_DEG,
-                "lon_deg": lon * _SEMICIRCLE_TO_DEG,
-                "_ts": ts,
-            }
-            spd = vals.get("enhanced_speed")
-            if spd is None:
-                spd = vals.get("speed")
-            if spd is not None:
-                row["speed_mps"] = float(spd)
-            alt = vals.get("enhanced_altitude")
-            if alt is None:
-                alt = vals.get("altitude")
-            if alt is not None:
-                row["altitude_m"] = float(alt)
-            hr = vals.get("heart_rate")
-            if hr is not None:
-                row["heart_rate_bpm"] = float(hr)
-            rows.append(row)
+        try:
+            fitfile = fitparse.FitFile(str(file_path))
+            for record in fitfile.get_messages("record"):
+                vals = {d.name: d.value for d in record}
+                rec_ts = vals.get("timestamp")
+                lat = vals.get("position_lat")
+                lon = vals.get("position_long")
+                if lat is None or lon is None or rec_ts is None:
+                    continue
+                row: dict = {
+                    "lat_deg": lat * _SEMICIRCLE_TO_DEG,
+                    "lon_deg": lon * _SEMICIRCLE_TO_DEG,
+                    "_ts": rec_ts,
+                }
+                spd = vals.get("enhanced_speed")
+                if spd is None:
+                    spd = vals.get("speed")
+                if spd is not None:
+                    row["speed_mps"] = float(spd)
+                alt = vals.get("enhanced_altitude")
+                if alt is None:
+                    alt = vals.get("altitude")
+                if alt is not None:
+                    row["altitude_m"] = float(alt)
+                hr = vals.get("heart_rate")
+                if hr is not None:
+                    row["heart_rate_bpm"] = float(hr)
+                rows.append(row)
+        except fitparse.FitParseError as exc:
+            raise ValueError(f"FIT file is corrupt or unreadable: {exc}") from exc
 
         if len(rows) < 2:
-            raise ValueError("FIT file contains no usable GPS 'record' data")
+            raise ValueError(f"FIT file has fewer than 2 usable GPS records (got {len(rows)})")
 
         df = pd.DataFrame(rows)
         ts = pd.to_datetime(df["_ts"])
