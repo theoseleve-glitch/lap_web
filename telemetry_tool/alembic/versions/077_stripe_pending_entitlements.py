@@ -20,8 +20,8 @@ Chains off 072_session_gamification_applied.
 """
 from alembic import op
 
-revision = "073_stripe_pending_entitlements"
-down_revision = "072_session_gamification_applied"
+revision = "077_stripe_pending_entitlements"
+down_revision = "076"
 branch_labels = None
 depends_on = None
 
