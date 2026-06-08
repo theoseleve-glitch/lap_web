@@ -68,14 +68,26 @@ def get_stripe():
     return stripe
 
 
+def _metadata_value(obj, key):
+    """Read a metadata key from a Stripe object, version-robustly.
+
+    StripeObject does NOT support .get() (intercepted by __getattr__) and is
+    not dict()-able, but it supports `in` (__contains__) and [] (__getitem__).
+    """
+    md = getattr(obj, "metadata", None)
+    if md is None:
+        return None
+    try:
+        return md[key] if key in md else None
+    except Exception:
+        return None
+
+
 def find_existing_product(stripe, metadata_key: str):
     """Find product by metadata tag (idempotent lookup)."""
     products = stripe.Product.list(limit=100, active=True)
     for p in products.auto_paging_iter():
-        # metadata is a StripeObject; coerce to a plain dict before .get()
-        # (newer stripe-python intercepts .get via __getattr__ and raises).
-        md = dict(getattr(p, "metadata", None) or {})
-        if md.get("lap_coach_product") == metadata_key:
+        if _metadata_value(p, "lap_coach_product") == metadata_key:
             return p
     return None
 
