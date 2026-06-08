@@ -42,6 +42,26 @@ export function getConsent(): ConsentState | null {
   }
 }
 
+/** Mirror the consent decision to the backend (server-side consent of record).
+ * Fire-and-forget: only when authenticated, never blocks or throws. */
+export function syncConsentToServer(state: ConsentState): void {
+  // Lazy import avoids a client-bundle cycle (api-client imports auth lazily too).
+  void (async () => {
+    try {
+      const { getAccessToken } = await import('./auth-store');
+      if (!getAccessToken()) return; // unauthenticated — server has no user row to upsert
+      const { api } = await import('./api-client');
+      await api.post('/consent', {
+        analytics: state.analytics,
+        marketing: state.marketing,
+        version: SCHEMA_VERSION,
+      });
+    } catch {
+      // Tracking/consent sync must never break the UX (mirrors api-client patterns).
+    }
+  })();
+}
+
 /** Write consent decision to cookie and dispatch event. */
 export function setConsent(state: ConsentState): void {
   const payload: CookiePayload = {
@@ -52,6 +72,7 @@ export function setConsent(state: ConsentState): void {
   };
   document.cookie = `${COOKIE_NAME}=${encodeURIComponent(JSON.stringify(payload))}; path=/; max-age=${COOKIE_MAX_AGE}; samesite=lax`;
   window.dispatchEvent(new CustomEvent(CONSENT_CHANGED_EVENT, { detail: state }));
+  syncConsentToServer(state);
 }
 
 /** Check if analytics consent has been granted. */
