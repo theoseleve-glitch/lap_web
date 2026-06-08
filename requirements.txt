@@ -87,3 +87,6 @@ casadi>=3.6,<4.0
 # against hand-traced gt_*.geojson boundaries to canonical_id-resolve
 # session GPS in register_or_match_track.
 shapely>=2.0,<3.0
+
+# XXE / billion-laughs safe XML parsing for GPX / TCX uploads (untrusted input)
+defusedxml>=0.7.1
