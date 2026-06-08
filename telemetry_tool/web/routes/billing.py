@@ -1088,14 +1088,20 @@ def billing_email():
 
 
 # ---------------------------------------------------------------------------
-# POST /checkout — create Stripe Checkout Session (server-side, reuses customer)
+# POST /checkout/upgrade — create Stripe Checkout Session (authenticated, reuses customer)
+#
+# NOTE: The public guest checkout (Founding-50) lives in api_v1_billing.py at
+# POST /api/v1/billing/checkout.  This handler is for authenticated in-app
+# upgrades only; it is intentionally placed at a distinct path to avoid the
+# Flask blueprint registration collision that previously shadowed the founding
+# handler.
 # ---------------------------------------------------------------------------
 
 # Allowlisted price IDs — only these can be selected via the API.
 # Populated from environment at startup via _init_price_mapping().
 # STRIPE_PRICE_TO_TIER already contains the allowlist.
 
-@bp.route("/checkout", methods=["POST"])
+@bp.route("/checkout/upgrade", methods=["POST"])
 @rate_limit(tier="write")
 @idempotent
 def create_checkout_session():

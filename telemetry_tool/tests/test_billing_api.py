@@ -277,3 +277,106 @@ class TestUsageEntitlements:
         ents = get_user_entitlements(conn, 1, 1)
         assert ents["analyses_used"] == 7
         assert ents["analyses_remaining"] == 3
+
+
+# ---------------------------------------------------------------------------
+# Regression tests: /checkout route collision fix
+#
+# Prior to the fix, billing_bp (billing.py) was registered BEFORE
+# api_v1_billing_bp (api_v1_billing.py) in app.py, and both blueprints used
+# url_prefix="/api/v1/billing".  Flask/Werkzeug therefore routed
+# POST /api/v1/billing/checkout to the OLD auth-required handler in billing.py,
+# which immediately returned 403 "Authentication required" for guest callers.
+# The Founding-50 handler in api_v1_billing.py was unreachable dead code.
+#
+# Fix applied: billing.py's handler was moved to POST /checkout/upgrade so the
+# two blueprints no longer collide.  These tests assert:
+#   (a) The URL map assigns POST /api/v1/billing/checkout to the founding-aware
+#       view function (create_checkout, not create_checkout_session).
+#   (b) A guest request (no JWT) to POST /api/v1/billing/checkout does NOT
+#       receive 403 "Authentication required" — it reaches the founding handler
+#       and gets back either a checkout_url (200) or a clean config-missing
+#       error (503), never the auth guard.
+# ---------------------------------------------------------------------------
+
+def _build_test_app():
+    """Build a minimal Flask app that mirrors the production blueprint
+    registration order from app.py (billing_bp first, then api_v1_billing_bp).
+    """
+    from flask import Flask
+    from web.routes.billing import bp as billing_bp
+    from web.routes.api_v1_billing import bp as api_v1_billing_bp
+
+    app = Flask(__name__)
+    app.config["TESTING"] = True
+    # Register in the same order as production to prove the collision is gone.
+    app.register_blueprint(billing_bp)
+    app.register_blueprint(api_v1_billing_bp)
+    return app
+
+
+class TestCheckoutRouteCollision:
+    """Regression suite for the /checkout blueprint collision (feat/founding-50-offer)."""
+
+    def test_checkout_url_maps_to_founding_handler(self):
+        """app.url_map must route POST /api/v1/billing/checkout to create_checkout
+        (the founding-aware handler in api_v1_billing.py), not
+        create_checkout_session (the old auth-required handler in billing.py).
+        """
+        app = _build_test_app()
+        # Resolve the view function name for the POST checkout rule.
+        adapter = app.url_map.bind("localhost")
+        endpoint, _ = adapter.match("/api/v1/billing/checkout", method="POST")
+        # Flask endpoint format is "<blueprint_name>.<view_function_name>"
+        assert endpoint == "api_v1_billing.create_checkout", (
+            f"Expected 'api_v1_billing.create_checkout', got '{endpoint}'. "
+            "The billing.py /checkout handler is still shadowing the founding handler."
+        )
+
+    def test_guest_checkout_does_not_return_403(self):
+        """A guest POST to /api/v1/billing/checkout must NOT return 403.
+
+        The founding handler returns 503 when Stripe env vars are absent (no
+        STRIPE_SECRET_KEY / price IDs configured in test env).  That is the
+        correct behaviour — 'payments not configured' — not 'auth required'.
+        Any 2xx or 5xx other than 403 proves the founding handler is reached.
+        """
+        app = _build_test_app()
+        # Patch the module-level STRIPE_SECRET_KEY so _get_stripe() returns None
+        # → the founding handler hits the "Payments are not configured" 503 path.
+        # We deliberately do NOT mock Stripe or the DB; we only need to confirm
+        # we are NOT hitting the auth guard (403).
+        with patch("web.routes.api_v1_billing.STRIPE_SECRET_KEY", ""):
+            with app.test_client() as client:
+                resp = client.post(
+                    "/api/v1/billing/checkout",
+                    json={"email": "guest@example.com"},
+                    content_type="application/json",
+                )
+        assert resp.status_code != 403, (
+            f"Got 403 — the old billing.py auth-guard handler is still being "
+            f"served at /api/v1/billing/checkout (collision not fixed)."
+        )
+        # Must be the founding handler's "not configured" response, not an
+        # unexpected crash — accept any non-403 status as proof of routing fix.
+        assert resp.status_code in (200, 400, 502, 503), (
+            f"Unexpected status {resp.status_code}; expected 503 (unconfigured Stripe)."
+        )
+
+    def test_upgrade_route_exists_and_requires_auth(self):
+        """The old in-app upgrade handler must still be reachable at the NEW
+        path /checkout/upgrade, and must still enforce auth (returns 403 for
+        unauthenticated callers) — confirming it was moved, not deleted.
+        """
+        app = _build_test_app()
+        with app.test_client() as client:
+            resp = client.post(
+                "/api/v1/billing/checkout/upgrade",
+                json={"plan": "world-class", "billing_cycle": "monthly"},
+                content_type="application/json",
+            )
+        # The upgrade handler checks current_user_id and returns 403 when absent.
+        assert resp.status_code == 403, (
+            f"Expected 403 (auth required) at /checkout/upgrade, got {resp.status_code}. "
+            "The upgrade handler may have been removed rather than moved."
+        )
