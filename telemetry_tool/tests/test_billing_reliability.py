@@ -204,7 +204,7 @@ class TestWebhookRetryTask:
 class TestGracePeriodEnforcement:
     """Tests for tasks.billing_tasks._enforce_grace_periods_impl."""
 
-    @patch("tasks.billing_tasks.get_pg_connection")
+    @patch("tasks.billing_tasks.get_maint_connection")
     def test_canceled_past_grace_downgrades(self, mock_db):
         """Users with expired grace period get locked (no active subscription)."""
         conn = _mock_conn()
@@ -254,7 +254,7 @@ class TestGracePeriodEnforcement:
 
         assert result["downgraded"] == 1
 
-    @patch("tasks.billing_tasks.get_pg_connection")
+    @patch("tasks.billing_tasks.get_maint_connection")
     def test_no_expired_users_noop(self, mock_db):
         conn = _mock_conn()
         mock_db.return_value = conn
@@ -415,7 +415,7 @@ class TestGraceEnforcementB5:
     # (a) unpaid user past grace → demoted to locked/expired +
     #     stripe_subscription_id cleared
     # ------------------------------------------------------------------
-    @patch("tasks.billing_tasks.get_pg_connection")
+    @patch("tasks.billing_tasks.get_maint_connection")
     def test_unpaid_user_demoted_to_expired(self, mock_db):
         """Unpaid user is immediately demoted to expired/locked; Stripe ID cleared."""
         conn = _mock_conn()
@@ -463,7 +463,7 @@ class TestGraceEnforcementB5:
     # ------------------------------------------------------------------
     # (b) past_due user past their 7-day grace → demoted
     # ------------------------------------------------------------------
-    @patch("tasks.billing_tasks.get_pg_connection")
+    @patch("tasks.billing_tasks.get_maint_connection")
     def test_past_due_past_grace_demoted(self, mock_db):
         """past_due user whose grace_period_end has passed is locked."""
         from datetime import datetime, timedelta, timezone
@@ -513,7 +513,7 @@ class TestGraceEnforcementB5:
     # ------------------------------------------------------------------
     # (c) active / trialing user → NOT demoted
     # ------------------------------------------------------------------
-    @patch("tasks.billing_tasks.get_pg_connection")
+    @patch("tasks.billing_tasks.get_maint_connection")
     def test_active_trialing_users_never_demoted(self, mock_db):
         """Active and trialing users are not touched by the grace task."""
         conn = _mock_conn()
@@ -533,7 +533,7 @@ class TestGraceEnforcementB5:
     # (d) canceled within 7-day grace → still has access (no downgrade);
     #     past 7 days → locked
     # ------------------------------------------------------------------
-    @patch("tasks.billing_tasks.get_pg_connection")
+    @patch("tasks.billing_tasks.get_maint_connection")
     def test_canceled_within_grace_not_demoted(self, mock_db):
         """canceled user still within 7-day grace window is NOT downgraded."""
         conn = _mock_conn()
@@ -553,7 +553,7 @@ class TestGraceEnforcementB5:
 
         assert result["downgraded"] == 0
 
-    @patch("tasks.billing_tasks.get_pg_connection")
+    @patch("tasks.billing_tasks.get_maint_connection")
     def test_canceled_past_7_day_grace_locked(self, mock_db):
         """canceled user past 7-day grace is locked/expired."""
         conn = _mock_conn()

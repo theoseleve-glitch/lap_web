@@ -36,14 +36,26 @@ except ImportError:
 
 
 # ---------------------------------------------------------------------------
-# PG connection helper
+# PG connection helpers
 # ---------------------------------------------------------------------------
 
 
 def get_pg_connection():
-    """Get a PostgreSQL connection. Tests patch this."""
+    """Get a PostgreSQL connection (app DSN, telemetry_app). Tests patch this."""
     from web.db_pg import get_pg_connection as _get_pg
     return _get_pg()
+
+
+def get_maint_connection():
+    """Get a maintenance connection (telemetry_maint, BYPASSRLS). Tests patch this."""
+    from web.db_pg import get_maint_connection as _get_maint
+    return _get_maint()
+
+
+def return_pg_connection(conn) -> None:
+    """Release a standalone connection. Tests patch this."""
+    from web.db_pg import return_pg_connection as _return
+    _return(conn)
 
 
 # ---------------------------------------------------------------------------
@@ -136,86 +148,150 @@ def _enforce_grace_periods_impl() -> dict[str, Any]:
            dunning period itself acts as the grace window.)
         - stripe_subscription_id is cleared on terminal downgrade.
 
+    Connection: uses the MAINT (BYPASSRLS) connection so that the audit_log
+    INSERT succeeds without ``app.current_workspace_id`` being set (no Flask
+    request context in a Celery worker).  This mirrors the weekly_recap and
+    other cross-tenant beat tasks.  The status UPDATE, plan_tier UPDATE, and
+    audit INSERT all execute on the same maint connection and commit together,
+    preventing the RLS-policy exception from rolling back the status write.
+
     Returns:
         Dict with ``{"checked": N, "downgraded": N, "warned": N}``
     """
     from datetime import datetime, timezone
 
-    conn = get_pg_connection()
+    # Use the maint (BYPASSRLS) connection — this is a cross-tenant beat task
+    # with NO Flask request context and NO app.current_workspace_id GUC set.
+    # The app DSN (telemetry_app) is NOBYPASSRLS; migration 019's RLS policy
+    # on audit_log uses current_setting('app.current_workspace_id') without
+    # missing_ok, which raises "unrecognized configuration parameter" when the
+    # GUC is absent, aborting the transaction and rolling back the status update.
+    conn = get_maint_connection()
     now = datetime.now(timezone.utc)
     downgraded = 0
     warned = 0
+    try:
+        # ------------------------------------------------------------------
+        # 1. Canceled users past their 7-day grace period → expired/locked
+        # ------------------------------------------------------------------
+        rows = conn.execute(
+            "SELECT id, email, plan_tier FROM users "
+            "WHERE subscription_status = 'canceled' "
+            "AND grace_period_end IS NOT NULL "
+            "AND grace_period_end < %(now)s",
+            {"now": now},
+        ).fetchall()
+        canceled_users = [dict(r) if not isinstance(r, dict) else r for r in rows]
 
-    # ------------------------------------------------------------------
-    # 1. Canceled users past their 7-day grace period → expired/locked
-    # ------------------------------------------------------------------
-    rows = conn.execute(
-        "SELECT id, email, plan_tier FROM users "
-        "WHERE subscription_status = 'canceled' "
-        "AND grace_period_end IS NOT NULL "
-        "AND grace_period_end < %(now)s",
-        {"now": now},
-    ).fetchall()
-    canceled_users = [dict(r) if not isinstance(r, dict) else r for r in rows]
-
-    for user in canceled_users:
-        ok = transition_subscription(
-            conn, user["id"], "expired",
-            metadata={"source": "grace_enforcement", "previous_tier": user.get("plan_tier")},
-        )
-        if ok:
-            # Reset tier and clear Stripe subscription (terminal downgrade)
-            conn.execute(
-                "UPDATE users SET plan_tier = 'locked', "
-                "stripe_subscription_id = NULL "
-                "WHERE id = %(uid)s",
-                {"uid": user["id"]},
-            )
-            conn.commit()
-            downgraded += 1
-            logger.info(
-                "Grace period expired (canceled): user %s locked, previous tier %s",
-                user["id"], user.get("plan_tier"),
-            )
-        if user.get("email"):
-            try:
-                from auth.email import FRONTEND_URL, _send
-                _send(
-                    user["email"],
-                    "Your LAP access has paused",
-                    f'<div style="font-family: -apple-system, sans-serif; max-width: 480px; margin: 0 auto;">'
-                    f'<h2 style="color: #F3F0E8;">Your LAP access has paused</h2>'
-                    f'<p style="color: #8A8F98;">Your subscription grace period has ended, so access to LAP has paused. '
-                    f'Your data is kept safe — resubscribe anytime to restore full access and pick up where you left off.</p>'
-                    f'<a href="{FRONTEND_URL}/pricing" '
-                    f'style="display: inline-block; background: #B6FF2E; color: #0B0C0F; '
-                    f'padding: 12px 24px; border-radius: 6px; text-decoration: none; '
-                    f'font-weight: 600; margin: 16px 0;">Resubscribe</a></div>',
-                )
-            except Exception:
-                logger.exception("Failed to send downgrade email to %s", user["email"])
-
-    # ------------------------------------------------------------------
-    # 2. Past-due users past grace window → expired/locked (B5/B11)
-    #    Warn users still within the window.
-    # ------------------------------------------------------------------
-    past_due_rows = conn.execute(
-        "SELECT id, email, plan_tier, grace_period_end FROM users "
-        "WHERE subscription_status = 'past_due' "
-        "AND grace_period_end IS NOT NULL",
-    ).fetchall()
-    past_due_users = [dict(r) if not isinstance(r, dict) else r for r in past_due_rows]
-
-    for user in past_due_users:
-        grace_end = user["grace_period_end"]
-        if hasattr(grace_end, "replace"):
-            grace_end = grace_end.replace(tzinfo=timezone.utc) if grace_end.tzinfo is None else grace_end
-
-        if now > grace_end:
-            # Grace window has passed → hard downgrade via state machine
+        for user in canceled_users:
             ok = transition_subscription(
                 conn, user["id"], "expired",
-                metadata={"source": "grace_enforcement_past_due", "previous_tier": user.get("plan_tier")},
+                metadata={"source": "grace_enforcement", "previous_tier": user.get("plan_tier")},
+            )
+            if ok:
+                # Reset tier and clear Stripe subscription (terminal downgrade)
+                conn.execute(
+                    "UPDATE users SET plan_tier = 'locked', "
+                    "stripe_subscription_id = NULL "
+                    "WHERE id = %(uid)s",
+                    {"uid": user["id"]},
+                )
+                conn.commit()
+                downgraded += 1
+                logger.info(
+                    "Grace period expired (canceled): user %s locked, previous tier %s",
+                    user["id"], user.get("plan_tier"),
+                )
+            if user.get("email"):
+                try:
+                    from auth.email import FRONTEND_URL, _send
+                    _send(
+                        user["email"],
+                        "Your LAP access has paused",
+                        f'<div style="font-family: -apple-system, sans-serif; max-width: 480px; margin: 0 auto;">'
+                        f'<h2 style="color: #F3F0E8;">Your LAP access has paused</h2>'
+                        f'<p style="color: #8A8F98;">Your subscription grace period has ended, so access to LAP has paused. '
+                        f'Your data is kept safe — resubscribe anytime to restore full access and pick up where you left off.</p>'
+                        f'<a href="{FRONTEND_URL}/pricing" '
+                        f'style="display: inline-block; background: #B6FF2E; color: #0B0C0F; '
+                        f'padding: 12px 24px; border-radius: 6px; text-decoration: none; '
+                        f'font-weight: 600; margin: 16px 0;">Resubscribe</a></div>',
+                    )
+                except Exception:
+                    logger.exception("Failed to send downgrade email to %s", user["email"])
+
+        # ------------------------------------------------------------------
+        # 2. Past-due users past grace window → expired/locked (B5/B11)
+        #    Warn users still within the window.
+        # ------------------------------------------------------------------
+        past_due_rows = conn.execute(
+            "SELECT id, email, plan_tier, grace_period_end FROM users "
+            "WHERE subscription_status = 'past_due' "
+            "AND grace_period_end IS NOT NULL",
+        ).fetchall()
+        past_due_users = [dict(r) if not isinstance(r, dict) else r for r in past_due_rows]
+
+        for user in past_due_users:
+            grace_end = user["grace_period_end"]
+            if hasattr(grace_end, "replace"):
+                grace_end = grace_end.replace(tzinfo=timezone.utc) if grace_end.tzinfo is None else grace_end
+
+            if now > grace_end:
+                # Grace window has passed → hard downgrade via state machine
+                ok = transition_subscription(
+                    conn, user["id"], "expired",
+                    metadata={"source": "grace_enforcement_past_due", "previous_tier": user.get("plan_tier")},
+                )
+                if ok:
+                    conn.execute(
+                        "UPDATE users SET plan_tier = 'locked', "
+                        "stripe_subscription_id = NULL "
+                        "WHERE id = %(uid)s",
+                        {"uid": user["id"]},
+                    )
+                    conn.commit()
+                    downgraded += 1
+                    logger.info(
+                        "Grace period expired (past_due): user %s locked, previous tier %s",
+                        user["id"], user.get("plan_tier"),
+                    )
+            else:
+                # Still within grace window → send/re-send payment warning
+                if user.get("email"):
+                    try:
+                        from auth.email import FRONTEND_URL, _send
+                        _send(
+                            user["email"],
+                            "Action required: update your payment method",
+                            f'<div style="font-family: -apple-system, sans-serif; max-width: 480px; margin: 0 auto;">'
+                            f'<h2 style="color: #F3F0E8;">Payment overdue — action required</h2>'
+                            f'<p style="color: #8A8F98;">Your payment is overdue. Please update your payment method '
+                            f'to avoid losing access to your plan features.</p>'
+                            f'<a href="{FRONTEND_URL}/app/settings/billing" '
+                            f'style="display: inline-block; background: #FF6A00; color: #0B0C0F; '
+                            f'padding: 12px 24px; border-radius: 6px; text-decoration: none; '
+                            f'font-weight: 600; margin: 16px 0;">Update Payment</a></div>',
+                        )
+                        warned += 1
+                    except Exception:
+                        logger.exception("Failed to send past-due warning to %s", user["email"])
+
+        # ------------------------------------------------------------------
+        # 3. Unpaid users → expired/locked immediately (B5)
+        #    Stripe only sets 'unpaid' after all dunning retries have failed,
+        #    so there is no separate grace window — demote right away.
+        #    SAFETY: the WHERE clause explicitly excludes active/trialing.
+        # ------------------------------------------------------------------
+        unpaid_rows = conn.execute(
+            "SELECT id, email, plan_tier FROM users "
+            "WHERE subscription_status = 'unpaid'",
+        ).fetchall()
+        unpaid_users = [dict(r) if not isinstance(r, dict) else r for r in unpaid_rows]
+
+        for user in unpaid_users:
+            ok = transition_subscription(
+                conn, user["id"], "expired",
+                metadata={"source": "grace_enforcement_unpaid", "previous_tier": user.get("plan_tier")},
             )
             if ok:
                 conn.execute(
@@ -227,85 +303,36 @@ def _enforce_grace_periods_impl() -> dict[str, Any]:
                 conn.commit()
                 downgraded += 1
                 logger.info(
-                    "Grace period expired (past_due): user %s locked, previous tier %s",
+                    "Unpaid subscription demoted: user %s locked, previous tier %s",
                     user["id"], user.get("plan_tier"),
                 )
-        else:
-            # Still within grace window → send/re-send payment warning
             if user.get("email"):
                 try:
                     from auth.email import FRONTEND_URL, _send
                     _send(
                         user["email"],
-                        "Action required: update your payment method",
+                        "Your LAP access has paused",
                         f'<div style="font-family: -apple-system, sans-serif; max-width: 480px; margin: 0 auto;">'
-                        f'<h2 style="color: #F3F0E8;">Payment overdue — action required</h2>'
-                        f'<p style="color: #8A8F98;">Your payment is overdue. Please update your payment method '
-                        f'to avoid losing access to your plan features.</p>'
-                        f'<a href="{FRONTEND_URL}/app/settings/billing" '
-                        f'style="display: inline-block; background: #FF6A00; color: #0B0C0F; '
+                        f'<h2 style="color: #F3F0E8;">Your LAP access has paused</h2>'
+                        f'<p style="color: #8A8F98;">We were unable to collect payment after multiple attempts, '
+                        f'so access to LAP has paused. Your data is kept safe — resubscribe anytime to restore '
+                        f'full access and pick up where you left off.</p>'
+                        f'<a href="{FRONTEND_URL}/pricing" '
+                        f'style="display: inline-block; background: #B6FF2E; color: #0B0C0F; '
                         f'padding: 12px 24px; border-radius: 6px; text-decoration: none; '
-                        f'font-weight: 600; margin: 16px 0;">Update Payment</a></div>',
+                        f'font-weight: 600; margin: 16px 0;">Resubscribe</a></div>',
                     )
-                    warned += 1
                 except Exception:
-                    logger.exception("Failed to send past-due warning to %s", user["email"])
+                    logger.exception("Failed to send unpaid downgrade email to %s", user["email"])
 
-    # ------------------------------------------------------------------
-    # 3. Unpaid users → expired/locked immediately (B5)
-    #    Stripe only sets 'unpaid' after all dunning retries have failed,
-    #    so there is no separate grace window — demote right away.
-    #    SAFETY: the WHERE clause explicitly excludes active/trialing.
-    # ------------------------------------------------------------------
-    unpaid_rows = conn.execute(
-        "SELECT id, email, plan_tier FROM users "
-        "WHERE subscription_status = 'unpaid'",
-    ).fetchall()
-    unpaid_users = [dict(r) if not isinstance(r, dict) else r for r in unpaid_rows]
-
-    for user in unpaid_users:
-        ok = transition_subscription(
-            conn, user["id"], "expired",
-            metadata={"source": "grace_enforcement_unpaid", "previous_tier": user.get("plan_tier")},
+        total = len(canceled_users) + len(past_due_users) + len(unpaid_users)
+        logger.info(
+            "Grace period enforcement: checked=%d, downgraded=%d, warned=%d",
+            total, downgraded, warned,
         )
-        if ok:
-            conn.execute(
-                "UPDATE users SET plan_tier = 'locked', "
-                "stripe_subscription_id = NULL "
-                "WHERE id = %(uid)s",
-                {"uid": user["id"]},
-            )
-            conn.commit()
-            downgraded += 1
-            logger.info(
-                "Unpaid subscription demoted: user %s locked, previous tier %s",
-                user["id"], user.get("plan_tier"),
-            )
-        if user.get("email"):
-            try:
-                from auth.email import FRONTEND_URL, _send
-                _send(
-                    user["email"],
-                    "Your LAP access has paused",
-                    f'<div style="font-family: -apple-system, sans-serif; max-width: 480px; margin: 0 auto;">'
-                    f'<h2 style="color: #F3F0E8;">Your LAP access has paused</h2>'
-                    f'<p style="color: #8A8F98;">We were unable to collect payment after multiple attempts, '
-                    f'so access to LAP has paused. Your data is kept safe — resubscribe anytime to restore '
-                    f'full access and pick up where you left off.</p>'
-                    f'<a href="{FRONTEND_URL}/pricing" '
-                    f'style="display: inline-block; background: #B6FF2E; color: #0B0C0F; '
-                    f'padding: 12px 24px; border-radius: 6px; text-decoration: none; '
-                    f'font-weight: 600; margin: 16px 0;">Resubscribe</a></div>',
-                )
-            except Exception:
-                logger.exception("Failed to send unpaid downgrade email to %s", user["email"])
-
-    total = len(canceled_users) + len(past_due_users) + len(unpaid_users)
-    logger.info(
-        "Grace period enforcement: checked=%d, downgraded=%d, warned=%d",
-        total, downgraded, warned,
-    )
-    return {"checked": total, "downgraded": downgraded, "warned": warned}
+        return {"checked": total, "downgraded": downgraded, "warned": warned}
+    finally:
+        return_pg_connection(conn)
 
 
 # ---------------------------------------------------------------------------
