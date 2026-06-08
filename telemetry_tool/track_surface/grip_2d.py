@@ -224,8 +224,12 @@ def build_grip_surface(
             if np.isfinite(mu_val) and 0.1 < mu_val < 3.0:
                 mu_sum[si, ni] += mu_val
                 mu_count[si, ni] += 1
-                buf = cell_samples.setdefault((int(si), int(ni)), [])
+                buf = cell_samples.setdefault((int(si), int(ni)), [])  # native int keys for clean serialization
                 if len(buf) < _PER_CELL_SAMPLE_CAP:
+                    # append-until-cap biases the limit toward early laps
+                    # (cold-tire = lower mu); acceptable — conservative direction
+                    # + cross-session MAX-merge recovers the high side. Switch to
+                    # reservoir sampling if cells routinely exceed the cap.
                     buf.append(float(mu_val))
 
     # Compute mean mu per cell
