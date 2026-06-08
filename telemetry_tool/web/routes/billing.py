@@ -576,6 +576,7 @@ def _handle_checkout_completed(session: dict):
             )
             conn.commit()
         except Exception:
+            conn.rollback()
             logger.error(
                 "Failed to record pending entitlement for customer=%s session=%s",
                 customer_id, session_id, exc_info=True,
