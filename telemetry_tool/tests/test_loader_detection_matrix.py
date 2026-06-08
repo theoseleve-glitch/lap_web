@@ -77,3 +77,10 @@ def test_fit_detection_routes(tmp_path):
     p.write_bytes(_FIT_HEADER)
     cls, conf = detect_format(str(p))
     assert cls is not None and cls.FORMAT_NAME == "fit" and conf >= 0.5
+
+
+def test_aim_detection_routes(tmp_path):
+    from telemetry_tool.adapters import detect_format
+    p = tmp_path / "s.xrk"; p.write_bytes(b"\x00" * 64)
+    cls, conf = detect_format(str(p))
+    assert cls is not None and cls.FORMAT_NAME == "aim_xrk" and conf >= 0.5

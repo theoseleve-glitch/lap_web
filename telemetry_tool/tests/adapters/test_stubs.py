@@ -8,6 +8,14 @@ from telemetry_tool.adapters.qstarz_binary_stub import QstarzBinaryStub
 
 
 class TestAiMStub:
+    """AiMAdapter is now a real libxrk-backed parser (not a stub).
+
+    Tests updated to reflect the real adapter contract:
+    - detect() returns 0.9 for .xrk/.xrz (was 0.3 stub)
+    - .drk dropped from EXTENSIONS (AiM SDK internal format, not supported by libxrk)
+    - parse() raises ValueError on corrupt data (not MissingDependency)
+    """
+
     def test_extensions(self):
         assert ".xrk" in AiMAdapter.EXTENSIONS
         assert ".xrz" in AiMAdapter.EXTENSIONS
@@ -15,20 +23,21 @@ class TestAiMStub:
     def test_detect_nonexistent(self):
         assert AiMAdapter.detect("/nonexistent.xrk") == 0.0
 
-    def test_detect_returns_nonzero_for_xrk(self, tmp_path):
+    def test_detect_returns_high_confidence_for_xrk(self, tmp_path):
         xrk = tmp_path / "session.xrk"
         xrk.write_bytes(b"\x00" * 100)
-        assert AiMAdapter.detect(str(xrk)) == 0.3
+        assert AiMAdapter.detect(str(xrk)) >= 0.8
 
-    def test_detect_returns_nonzero_for_xrz(self, tmp_path):
+    def test_detect_returns_high_confidence_for_xrz(self, tmp_path):
         xrz = tmp_path / "session.xrz"
         xrz.write_bytes(b"\x00" * 100)
-        assert AiMAdapter.detect(str(xrz)) == 0.3
+        assert AiMAdapter.detect(str(xrz)) >= 0.8
 
-    def test_detect_returns_nonzero_for_drk(self, tmp_path):
+    def test_detect_returns_zero_for_drk(self, tmp_path):
+        # .drk is an AiM SDK internal format not supported by libxrk
         drk = tmp_path / "session.drk"
         drk.write_bytes(b"\x00" * 100)
-        assert AiMAdapter.detect(str(drk)) == 0.3
+        assert AiMAdapter.detect(str(drk)) == 0.0
 
     def test_detect_returns_zero_for_empty_file(self, tmp_path):
         xrk = tmp_path / "empty.xrk"
@@ -40,26 +49,19 @@ class TestAiMStub:
         csv.write_bytes(b"data")
         assert AiMAdapter.detect(str(csv)) == 0.0
 
-    def test_parse_raises_missing_dependency(self, tmp_path):
+    def test_parse_raises_value_error_on_corrupt_data(self, tmp_path):
+        # Real adapter: corrupt/null bytes -> empty table -> ValueError
         xrk = tmp_path / "session.xrk"
         xrk.write_bytes(b"\x00" * 100)
         adapter = AiMAdapter()
-        with pytest.raises(MissingDependency, match="AiM SDK"):
+        with pytest.raises(ValueError):
             adapter.parse(str(xrk))
 
-    def test_parse_error_has_correct_format_name(self, tmp_path):
-        xrk = tmp_path / "session.xrk"
-        xrk.write_bytes(b"\x00" * 100)
-        adapter = AiMAdapter()
-        with pytest.raises(MissingDependency) as exc_info:
-            adapter.parse(str(xrk))
-        assert exc_info.value.format_name == "aim_xrk"
-
-    def test_metadata_returns_empty(self):
+    def test_metadata_returns_empty_before_parse(self):
         adapter = AiMAdapter()
         assert adapter.metadata() == {}
 
-    def test_available_channels_returns_empty(self):
+    def test_available_channels_returns_empty_before_parse(self):
         adapter = AiMAdapter()
         assert adapter.available_channels() == []
 
