@@ -76,10 +76,17 @@ class AiMAdapter(BaseAdapter):
 
             df = raw.rename(columns={k: v for k, v in _RENAME.items() if k in raw.columns})
 
+            # If a file carries both "Engine RPM" and "RPM", rename would create two
+            # "rpm" columns; keep the first to avoid a duplicate-column DataFrame.
+            df = df.loc[:, ~df.columns.duplicated(keep="first")]
+
             # Convert timecodes (ms int64) to elapsed seconds float.
             if _TIMECODES_COL in df.columns:
                 t = pd.to_numeric(df[_TIMECODES_COL], errors="coerce") * _MS_TO_S
-                df["time_s"] = t - t.iloc[0]
+                valid_t = t.dropna()
+                if valid_t.empty:
+                    raise ValueError("AiM .xrk: timecodes column has no valid values")
+                df["time_s"] = t - valid_t.iloc[0]
             elif "time_s" not in df.columns:
                 raise ValueError(
                     f"no timecodes column found (columns: {list(df.columns)[:20]})"

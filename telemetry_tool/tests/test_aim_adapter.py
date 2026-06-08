@@ -65,3 +65,7 @@ def test_parse_xrk_real():
     # speed_mps should be plausible racing values (0–120 m/s max)
     assert df["speed_mps"].max() <= 120.0
     assert df["speed_mps"].min() >= 0.0
+    # Spot-value guards against libxrk unit/format regressions:
+    # first GPS fix in the official AiM sample fixture (near Adria, Italy)
+    assert df["lat_deg"].iloc[0] == pytest.approx(45.0453, abs=0.01)
+    assert df["lon_deg"].iloc[0] == pytest.approx(12.1490, abs=0.01)
