@@ -399,3 +399,31 @@ def test_base_grip_leaves_unmeasured_cells_nan():
     gs.count_grid[1, 1] = 0          # truly unmeasured
     base = _base_grip_grid(gs)
     assert np.isnan(base[1, 1])      # stays NaN -> shrink's unmeasured path
+
+
+def test_double_count_warning_when_tyre_d_not_one(caplog):
+    pytest.importorskip("casadi")
+    import logging
+    from telemetry_tool.lap_oracle.config import VehicleParams, PacejkaParams
+    from track_surface.solver_bridge import solve_optimal_line_2d
+
+    surface = _synthetic_surface_with_grip()
+    vp = VehicleParams(tyre_lat=PacejkaParams(D=1.5))
+    with caplog.at_level(logging.WARNING):
+        solve_optimal_line_2d(surface, vehicle_params=vp, condition="dry",
+                              n_points=60, max_time_s=30.0)
+    assert any("double" in r.message.lower() or "tyre" in r.message.lower()
+               for r in caplog.records)
+
+
+def test_no_double_count_warning_at_unit_d(caplog):
+    pytest.importorskip("casadi")
+    import logging
+    from telemetry_tool.lap_oracle.config import VehicleParams
+    from track_surface.solver_bridge import solve_optimal_line_2d
+
+    surface = _synthetic_surface_with_grip()
+    with caplog.at_level(logging.WARNING):
+        solve_optimal_line_2d(surface, vehicle_params=VehicleParams(), condition="dry",
+                              n_points=60, max_time_s=30.0)
+    assert not any("double" in r.message.lower() for r in caplog.records)

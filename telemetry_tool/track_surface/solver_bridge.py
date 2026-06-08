@@ -432,6 +432,20 @@ def solve_optimal_line_2d(
         from lap_oracle.config import VehicleParams
         vehicle_params = VehicleParams()
 
+    # The 2D grid stores ABSOLUTE road mu; the OCP multiplies tyre_lat.D * grip.
+    # If D materially deviates from 1.0, grip is double-counted (D=1.5 * limit
+    # 1.4 -> 2.1, dangerously optimistic). Warn; some callers may scale on purpose.
+    try:
+        tyre_d = float(vehicle_params.tyre_lat.D)
+        if abs(tyre_d - 1.0) > 0.1:
+            logger.warning(
+                "solve_optimal_line_2d: tyre_lat.D=%.2f but the 2D grip grid "
+                "already encodes absolute road friction — D should be ~1.0 to "
+                "avoid double-counting grip.", tyre_d,
+            )
+    except (AttributeError, TypeError):
+        pass
+
     track_model = surface_to_track_model(surface)
 
     # Casadi-free warm start: QSS speed profile (centerline line).
