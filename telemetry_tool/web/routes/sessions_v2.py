@@ -406,7 +406,7 @@ def upload_session() -> tuple[Response, int]:
             failure = ImportFailure.from_code(
                 ImportErrorCode.UNSUPPORTED_FILE_EXTENSION,
                 support_ref=make_support_ref(),
-                message_override=f"File type '{ext}' is not supported. Accepted: CSV, TXT, IBT (iRacing), LD/LDX (MoTeC), VBO (VBOX), XRK/DRK (AiM).",
+                message_override=f"File type '{ext}' is not supported. Accepted: CSV, TXT, GPX, NMEA, FIT (Garmin), VBO (VBOX), XRK/XRZ (AiM), IBT (iRacing), LD/LDX (MoTeC).",
             )
             return api_error(
                 ErrorCode.UNSUPPORTED_FORMAT,
@@ -417,7 +417,7 @@ def upload_session() -> tuple[Response, int]:
         except ImportError:
             return api_error(
                 ErrorCode.UNSUPPORTED_FORMAT,
-                f"Unsupported file type '{ext}'. Accepted: CSV, IBT (iRacing), LD/LDX (MoTeC), VBO (VBOX), XRK/DRK.",
+                f"Unsupported file type '{ext}'. Accepted: CSV, TXT, GPX, NMEA, FIT, VBO, XRK/XRZ, IBT, LD/LDX.",
                 status=400,
             )
 

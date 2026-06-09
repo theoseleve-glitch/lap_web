@@ -63,7 +63,10 @@ const SESSION_TYPES = [
   { value: 'test', label: 'Test' },
 ];
 
-const ACCEPTED_EXTENSIONS = '.csv,.txt';
+const ACCEPTED_EXTENSION_LIST: readonly string[] = [
+  'csv', 'txt', 'gpx', 'nmea', 'fit', 'xrk', 'xrz',
+];
+const ACCEPTED_EXTENSIONS = ACCEPTED_EXTENSION_LIST.map((e) => `.${e}`).join(',');
 
 /** Human-readable stage names for the progress bar. */
 const STAGE_LABELS: Record<string, string> = {
@@ -889,10 +892,10 @@ function UploadPage() {
     const droppedFiles = Array.from(e.dataTransfer.files);
     const validFiles = droppedFiles.filter((f) => {
       const ext = f.name.split('.').pop()?.toLowerCase();
-      return ext === 'csv' || ext === 'txt';
+      return ext !== undefined && ACCEPTED_EXTENSION_LIST.includes(ext);
     });
     if (validFiles.length === 0) {
-      setErrorMessage('Only .csv and .txt files are accepted.');
+      setErrorMessage(`Unsupported file type. Accepted: ${ACCEPTED_EXTENSIONS}`);
       return;
     }
     setFile(validFiles[0]);
@@ -1260,7 +1263,7 @@ function UploadPage() {
                     Drag and drop your CSV files here
                   </p>
                   <p className="font-body text-steel text-xs">
-                    or click to browse. Accepts .csv and .txt files. Multiple files supported.
+                    or click to browse. Accepts .csv, .txt, .gpx, .nmea, .fit, .xrk, .xrz files. Multiple files supported.
                   </p>
                 </>
               )}
