@@ -146,6 +146,57 @@ class TestWebhookReliability:
     @patch("web.routes.billing._redis_event_mark_seen")
     @patch("web.routes.billing._get_conn")
     @patch("web.routes.billing.stripe")
+    def test_stripeobject_event_does_not_500(
+        self, mock_stripe, mock_get_conn, mock_mark_seen, mock_clear, mock_is_seen
+    ):
+        """Regression: real Stripe events are StripeObjects whose .get() raises.
+
+        construct_event returns a StripeObject (not a dict); calling .get() on it
+        raises AttributeError. The handler must re-parse the verified payload into
+        a dict instead of calling .get() — otherwise EVERY real webhook 500s.
+        """
+        conn = _mock_conn()
+        mock_get_conn.return_value = conn
+        conn.execute.return_value.fetchone.return_value = None
+
+        event_dict = {"id": "evt_so_1", "type": "ping", "created": 1,
+                      "data": {"object": {}}}
+
+        class _StripeObjectLike:  # mimics StripeObject: [] works, .get() raises
+            def __init__(self, d):
+                self._d = d
+
+            def __getitem__(self, k):
+                return self._d[k]
+
+            def get(self, *a, **k):
+                raise AttributeError("get")
+
+        mock_stripe.Webhook.construct_event.return_value = _StripeObjectLike(event_dict)
+        mock_stripe.error = MagicMock()
+        mock_stripe.error.SignatureVerificationError = Exception
+
+        app = self._build_app()
+        with app.test_client() as client:
+            resp = client.post(
+                "/api/v1/billing/webhook",
+                data=json.dumps(event_dict),
+                content_type="application/json",
+                headers={"Stripe-Signature": "t=1,v1=sig"},
+            )
+
+        assert resp.status_code != 500, (
+            f"StripeObject event must not 500 (got {resp.status_code}) — "
+            "handler must re-parse payload, not call .get() on the StripeObject"
+        )
+
+    @patch("web.routes.billing.STRIPE_SECRET_KEY", "sk_test_fake")
+    @patch("web.routes.billing.STRIPE_WEBHOOK_SECRET", "whsec_fake")
+    @patch("web.routes.billing._redis_event_is_seen", return_value=False)
+    @patch("web.routes.billing._redis_event_clear")
+    @patch("web.routes.billing._redis_event_mark_seen")
+    @patch("web.routes.billing._get_conn")
+    @patch("web.routes.billing.stripe")
     def test_successful_event_returns_200_and_marks_seen(
         self, mock_stripe, mock_get_conn, mock_mark_seen, mock_clear, mock_is_seen
     ):

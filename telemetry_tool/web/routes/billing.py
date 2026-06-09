@@ -340,6 +340,16 @@ def stripe_webhook():
         logger.exception("Stripe webhook construction failed")
         return api_error(ErrorCode.VALIDATION_ERROR, "Bad request", status=400)
 
+    # stripe.Webhook.construct_event returns a StripeObject whose .get() raises
+    # (StripeObject intercepts .get via __getattr__). Re-parse the SAME, already
+    # signature-verified payload into a plain dict so every downstream .get()/[]
+    # access — here and inside the _handle_* handlers (data = event[...][...]) —
+    # works. Without this, EVERY real webhook 500s on event.get("id").
+    # (isinstance guard leaves unit tests that mock construct_event->dict intact.)
+    if not isinstance(event, dict):
+        import json as _ev_json
+        event = _ev_json.loads(payload)
+
     event_type = event["type"]
     event_id = event.get("id", "")
     event_created = event.get("created", 0)
