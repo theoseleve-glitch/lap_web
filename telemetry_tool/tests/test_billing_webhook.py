@@ -391,3 +391,135 @@ class TestStrictPriceTier:
             )
             # Must emit a loud alert
             mock_logger.error.assert_called()
+
+
+# ===========================================================================
+# C1 — _to_dict: StripeObject coercion for retrieved subscriptions
+# ===========================================================================
+
+class _StripeObjectLike:
+    """Mimics a real StripeObject returned by stripe.Subscription.retrieve():
+    - __getitem__ works (obj["key"])
+    - .get() raises AttributeError (the prod crash)
+    - to_dict_recursive() returns the underlying dict
+    - attribute access works (obj.key)
+    """
+    def __init__(self, d: dict):
+        object.__setattr__(self, "_d", d)
+
+    def __getitem__(self, k):
+        return object.__getattribute__(self, "_d")[k]
+
+    def __getattr__(self, k):
+        d = object.__getattribute__(self, "_d")
+        if k in d:
+            return d[k]
+        raise AttributeError(f"StripeObject has no attribute {k!r}")
+
+    def get(self, *args, **kwargs):
+        raise AttributeError("get")
+
+    def to_dict_recursive(self):
+        return dict(object.__getattribute__(self, "_d"))
+
+
+class TestStripeObjectCoercion:
+    """C1: _to_dict coerces StripeObjects so .get() works without crashing."""
+
+    def test_to_dict_passthrough_for_dict(self):
+        """Plain dicts pass through unchanged."""
+        from web.routes.billing import _to_dict
+        d = {"a": 1, "b": "x"}
+        assert _to_dict(d) is d
+
+    def test_to_dict_passthrough_for_none(self):
+        """None passes through as None."""
+        from web.routes.billing import _to_dict
+        assert _to_dict(None) is None
+
+    def test_to_dict_coerces_stripeobjectlike(self):
+        """A StripeObject-like whose .get() raises is coerced to a plain dict."""
+        from web.routes.billing import _to_dict
+        inner = {"items": {"data": [{"price": {"id": "price_abc"}}]}}
+        obj = _StripeObjectLike(inner)
+        # Confirm the object itself raises on .get()
+        try:
+            obj.get("items")
+            assert False, "Expected AttributeError from .get()"
+        except AttributeError:
+            pass
+        # After coercion, .get() must work
+        result = _to_dict(obj)
+        assert isinstance(result, dict)
+        assert result.get("items") == {"data": [{"price": {"id": "price_abc"}}]}
+
+    def test_resolve_tier_from_checkout_stripeobject_retrieve(self):
+        """_resolve_tier_from_checkout: when subscription.retrieve returns a
+        StripeObject-like (real prod path), the handler must NOT crash and must
+        resolve the tier correctly from the items price ID.
+        """
+        import os
+        from unittest.mock import patch
+        from web.routes.billing import _resolve_tier_from_checkout
+
+        sub_obj = _StripeObjectLike({
+            "id": "sub_so_test",
+            "items": {
+                "data": [{"price": {"id": "price_standard_test"}}]
+            },
+        })
+
+        with patch("web.routes.billing.stripe") as mock_stripe, \
+             patch.dict("web.routes.billing.STRIPE_PRICE_TO_TIER",
+                        {"price_standard_test": "world-class"}, clear=False), \
+             patch("web.routes.billing.STRIPE_SECRET_KEY", "sk_test_fake"):
+            mock_stripe.Subscription.retrieve.return_value = sub_obj
+
+            session = {
+                "id": "cs_so_test",
+                "metadata": {},        # no plan_tier hint
+                "line_items": {"data": []},  # no line items
+                "subscription": "sub_so_test",
+            }
+            tier = _resolve_tier_from_checkout(session)
+
+        assert tier == "world-class", (
+            f"Expected 'world-class', got '{tier}' — "
+            "_to_dict must coerce the StripeObject before calling .get()"
+        )
+
+    def test_billing_status_stripeobject_retrieve_does_not_crash(self):
+        """The billing-status path calls stripe.Subscription.retrieve, then accesses
+        the result via .get().  When the result is a StripeObject-like (prod path),
+        _to_dict must coerce it so .get() doesn't raise AttributeError.
+
+        Test approach: call _to_dict directly on a StripeObject-like that mimics
+        the shape returned by stripe.Subscription.retrieve(expand=['default_payment_method'])
+        and assert the coerced dict has the expected keys so the billing_cycle /
+        current_period_end / cancel_at_period_end lookups would work.
+        """
+        from web.routes.billing import _to_dict
+
+        sub_obj = _StripeObjectLike({
+            "plan": {"interval": "month"},
+            "current_period_end": 1999999999,
+            "cancel_at_period_end": False,
+            "default_payment_method": None,
+        })
+
+        # Confirm the object itself raises on .get()
+        try:
+            sub_obj.get("plan")
+            assert False, "Expected AttributeError on raw StripeObject.get()"
+        except AttributeError:
+            pass
+
+        # After _to_dict, all .get() calls must succeed
+        coerced = _to_dict(sub_obj)
+        assert isinstance(coerced, dict), "_to_dict must return a plain dict"
+        assert coerced.get("plan", {}).get("interval") == "month", (
+            "billing_cycle lookup must work after _to_dict"
+        )
+        assert coerced.get("current_period_end") == 1999999999
+        assert coerced.get("cancel_at_period_end") is False
+        assert coerced.get("default_payment_method") is None

@@ -36,6 +36,29 @@ except ImportError:
 logger = logging.getLogger(__name__)
 
 
+def _to_dict(obj):
+    """Coerce a Stripe API result to a plain dict so .get()/[] work safely.
+
+    On the installed stripe lib, objects returned by the API are StripeObjects
+    whose ``__getattr__`` intercepts ``.get`` and raises ``AttributeError``.
+    Bracket access ``obj["x"]`` and attribute access ``obj.x`` work fine, but
+    ``obj.get("x")`` does NOT — causing 500s on every real webhook/API call.
+
+    This helper normalises the result so all downstream code can use .get()
+    freely.  Pass-through for plain dicts and None.
+    """
+    if obj is None or isinstance(obj, dict):
+        return obj
+    # stripe >= 5 exposes to_dict_recursive(); stripe 3/4 exposes to_dict()
+    to_dict_fn = getattr(obj, "to_dict_recursive", None) or getattr(obj, "to_dict", None)
+    if callable(to_dict_fn):
+        return to_dict_fn()
+    try:
+        return dict(obj)
+    except Exception:
+        return obj  # last resort: return as-is (attribute access will still work)
+
+
 def log_security_event(*args, **kwargs):
     """Lazy proxy to avoid circular imports."""
     try:
@@ -270,7 +293,7 @@ def _resolve_tier_from_checkout(session: dict) -> str:
     if sub_id and STRIPE_SECRET_KEY:
         try:
             stripe.api_key = STRIPE_SECRET_KEY
-            sub = stripe.Subscription.retrieve(sub_id, expand=["items.data.price"])
+            sub = _to_dict(stripe.Subscription.retrieve(sub_id, expand=["items.data.price"]))
             for item in sub.get("items", {}).get("data", []):
                 price_id = item.get("price", {}).get("id")
                 if price_id and price_id in STRIPE_PRICE_TO_TIER:
@@ -1124,10 +1147,10 @@ def billing_status():
     if sub_id and STRIPE_SECRET_KEY and stripe is not None:
         try:
             stripe.api_key = STRIPE_SECRET_KEY
-            sub = stripe.Subscription.retrieve(
+            sub = _to_dict(stripe.Subscription.retrieve(
                 sub_id,
                 expand=["default_payment_method"],
-            )
+            ))
             result["billing_cycle"] = sub.get("plan", {}).get("interval", "month")
             if sub.get("current_period_end"):
                 result["current_period_end"] = datetime.fromtimestamp(
@@ -1136,11 +1159,21 @@ def billing_status():
             result["cancel_at_period_end"] = bool(sub.get("cancel_at_period_end"))
 
             pm = sub.get("default_payment_method")
-            if pm and hasattr(pm, "card") and pm.card:
-                result["payment_method"] = {
-                    "brand": pm.card.brand,
-                    "last4": pm.card.last4,
-                }
+            if pm:
+                # pm may be a nested dict (after _to_dict) or a StripeObject
+                pm_dict = _to_dict(pm) if not isinstance(pm, dict) else pm
+                if isinstance(pm_dict, dict):
+                    card = pm_dict.get("card") or {}
+                    if card:
+                        result["payment_method"] = {
+                            "brand": card.get("brand") if isinstance(card, dict) else getattr(card, "brand", None),
+                            "last4": card.get("last4") if isinstance(card, dict) else getattr(card, "last4", None),
+                        }
+                elif hasattr(pm_dict, "card") and pm_dict.card:
+                    result["payment_method"] = {
+                        "brand": pm_dict.card.brand,
+                        "last4": pm_dict.card.last4,
+                    }
         except Exception:
             logger.warning("Failed to fetch Stripe subscription %s for billing status", sub_id)
 
