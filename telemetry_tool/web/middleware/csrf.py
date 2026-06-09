@@ -15,7 +15,13 @@ _CSRF_COOKIE = "csrf_token"
 _CSRF_HEADER = "X-CSRF-Token"
 # Public, anonymous, cross-origin POST endpoints with no session/cookie to
 # protect — CSRF (double-submit cookie) does not apply.
-_EXEMPT_PATHS = {"/api/v1/billing/webhook", "/api/v1/marketing-events"}
+_EXEMPT_PATHS = {
+    "/api/v1/billing/webhook",
+    "/api/v1/marketing-events",
+    # Guest Founding-50 checkout: public, no auth/session/cookie (the authed
+    # in-app upgrade lives at /checkout/upgrade and stays CSRF-protected).
+    "/api/v1/billing/checkout",
+}
 _MUTATING_METHODS = {"POST", "PUT", "DELETE", "PATCH"}
 
 
