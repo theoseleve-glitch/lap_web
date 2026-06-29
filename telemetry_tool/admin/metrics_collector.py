@@ -58,7 +58,7 @@ def _collect_db_metrics(conn) -> dict:
         # Job status aggregates (last 24h)
         rows = conn.execute(
             "SELECT status, COUNT(*) AS cnt FROM ingestion_jobs "
-            "WHERE created_at > NOW() - INTERVAL '24 hours' "
+            "WHERE started_at > NOW() - INTERVAL '24 hours' "
             "GROUP BY status"
         ).fetchall()
         jobs = {}
@@ -80,6 +80,10 @@ def _collect_db_metrics(conn) -> dict:
         }
     except Exception:
         logger.debug("DB metrics collection failed", exc_info=True)
+        try:
+            conn.rollback()
+        except Exception:
+            pass
         return {"error": "collection failed"}
 
 
@@ -98,6 +102,10 @@ def _collect_security_metrics(conn) -> dict:
         return result
     except Exception:
         logger.debug("Security metrics collection failed", exc_info=True)
+        try:
+            conn.rollback()
+        except Exception:
+            pass
         return {"error": "collection failed"}
 
 
@@ -108,7 +116,7 @@ def _collect_upload_metrics(conn) -> dict:
             "SELECT COUNT(*) AS total, "
             "COUNT(*) FILTER (WHERE status = 'failed') AS errors "
             "FROM ingestion_jobs "
-            "WHERE created_at >= CURRENT_DATE"
+            "WHERE started_at >= CURRENT_DATE"
         ).fetchone()
         r = dict(row) if not isinstance(row, dict) else row
         return {
@@ -117,6 +125,10 @@ def _collect_upload_metrics(conn) -> dict:
         }
     except Exception:
         logger.debug("Upload metrics collection failed", exc_info=True)
+        try:
+            conn.rollback()
+        except Exception:
+            pass
         return {"error": "collection failed"}
 
 

@@ -1,23 +1,18 @@
-"""Dashboard route — main landing page."""
+"""API service root.
 
+In the SaaS the UI is the Next.js webapp and this Flask app is the JSON API.
+The legacy server-rendered dashboard referenced stale url_for endpoints
+(analysis.analyze_form, sessions.session_list) and 500'd on every GET / hit
+(monitors flagged it as a 5xx spike). The root now returns a 200 status payload.
+"""
 from __future__ import annotations
 
-from flask import Blueprint, render_template
-
-from web.db import get_db_connection
-from web.models import get_dashboard_stats, get_sessions
+from flask import Blueprint, jsonify
 
 bp = Blueprint("dashboard", __name__)
 
 
 @bp.route("/")
 def index():
-    """Main dashboard: recent sessions, quick stats."""
-    conn = get_db_connection()
-    stats = get_dashboard_stats(conn)
-    recent = get_sessions(conn, limit=10)
-    return render_template(
-        "dashboard.html",
-        stats=stats,
-        recent_sessions=recent,
-    )
+    """Service root - 200 JSON, no template render."""
+    return jsonify({"service": "lap-api", "status": "ok"})

@@ -58,6 +58,7 @@ def make_celery(app=None) -> Celery:
             "tasks.ocp_tasks",
             "tasks.endurance_tasks",
             "tasks.recap_tasks",
+            "admin.metrics_collector",
         ],
     )
     celery.conf.update(
