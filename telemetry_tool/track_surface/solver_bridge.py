@@ -418,6 +418,24 @@ def solve_optimal_line_2d(
     if condition not in ("dry", "wet"):
         raise ValueError(f"condition must be 'dry' or 'wet', got {condition!r}")
 
+    # Guard degenerate geometry: some tracks carry a valid 2D grip field but a
+    # coincident / zero-length centerline (frenet has points yet ~0 m arc
+    # length), which yields a 0 m TrackModel. Building the OCP on it makes the
+    # curvature-rate constraint fabs(d2n) <= DKAPPA_MAX collapse to a constant,
+    # tripping casadi's "you passed a constant to subject_to" assertion (a hard
+    # crash, not a solve failure). Fail cleanly here so compute_racing_lines
+    # records status=failed with a legible reason instead of raising an
+    # unhandled RuntimeError. Real circuits are hundreds of metres.
+    _MIN_TRACK_LENGTH_M = 50.0
+    _tm_probe = surface_to_track_model(surface)
+    if _tm_probe.total_length_m < _MIN_TRACK_LENGTH_M:
+        raise ValueError(
+            "degenerate track geometry: centerline length "
+            f"{_tm_probe.total_length_m:.1f} m < {_MIN_TRACK_LENGTH_M:.0f} m minimum "
+            f"(frenet has {surface.frenet.n_points} points but ~zero arc length) — "
+            "cannot build a well-posed OCP"
+        )
+
     try:
         from track_surface.mu_field import build_dry_mu_field, build_wet_mu_field
         from track_surface.spatial_to_grid import resample_spatial_to_grid
