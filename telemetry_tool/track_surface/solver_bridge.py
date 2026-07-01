@@ -415,8 +415,10 @@ def solve_optimal_line_2d(
             f"got None (quality_tier={surface.quality_tier!r}, needs >= 10 laps "
             "for gold tier). Use solve_optimal_line for the 1D centerline-slice path."
         )
-    if condition not in ("dry", "wet"):
-        raise ValueError(f"condition must be 'dry' or 'wet', got {condition!r}")
+    if condition not in ("dry", "damp", "wet"):
+        raise ValueError(
+            f"condition must be 'dry', 'damp' or 'wet', got {condition!r}"
+        )
 
     # Guard degenerate geometry: some tracks carry a valid 2D grip field but a
     # coincident / zero-length centerline (frenet has points yet ~0 m arc
@@ -496,7 +498,11 @@ def solve_optimal_line_2d(
     if surface.camber_rad is not None:
         camber_s = np.abs(np.asarray(surface.camber_rad, dtype=float))
 
-    if condition == "dry":
+    if condition in ("dry", "damp"):
+        # 'damp' is a real tier, not a wet alias: the caller loads the measured
+        # damp-session grip sidecar and we solve it exactly like dry — real
+        # measured grip, no rubber-line inversion, no model. (Wet, by contrast,
+        # is derived from the dry sidecar because prod rarely has wet laps.)
         mu_field = build_dry_mu_field(surface.grip_2d, spatial=spatial)
     else:  # wet
         # Puddles enter as SOFT mu=0.2 penalties inside build_wet_mu_field. The

@@ -43,9 +43,14 @@ logger = logging.getLogger(__name__)
 SOLVER_VERSION = "ocp2d-stitched-v1"
 
 # Map each solved condition to the sidecar condition label used by load_track_model.
-# Wet loads the DRY sidecar: build_wet_mu_field inverts the dry grip map to derive
-# the wet field (rubber line = hydrophobic = slick in wet; clean asphalt preferred).
-_SIDECAR_FOR: dict[str, str] = {"dry": "dry", "wet": "dry"}
+# - dry  loads the dry sidecar (measured grip).
+# - damp loads the REAL damp sidecar (measured grip from damp-labelled sessions),
+#   solved like dry — a distinct tier, not a wet alias. Fails gracefully (status
+#   =failed) until damp sessions accumulate for a track.
+# - wet  loads the DRY sidecar: build_wet_mu_field inverts the dry grip map to
+#   derive the wet field (rubber line = hydrophobic = slick in wet; clean asphalt
+#   preferred), because prod rarely has enough real wet laps.
+_SIDECAR_FOR: dict[str, str] = {"dry": "dry", "damp": "damp", "wet": "dry"}
 
 
 def _grip_hash(grip) -> str:
