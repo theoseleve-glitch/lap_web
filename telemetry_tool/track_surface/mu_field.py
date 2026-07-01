@@ -74,6 +74,10 @@ def shrink_mu_grid(
 PUDDLE_MU: Final[float] = 0.2  # standing water — domain-judgment constant
 _WET_MU_FLOOR: Final[float] = 0.2
 _WET_MU_CEIL: Final[float] = 1.0
+# Wet peak grip as a fraction of the dry peak: a wet track offers less grip,
+# so the optimal wet lap must be SLOWER than dry. DOMAIN CONSTANT pending a
+# racing-physics review (Lane 1 grip-model note) — tune against real wet data.
+_WET_PEAK_FRACTION: Final[float] = 0.80
 
 
 def _base_grip_grid(grip_2d: GripSurface) -> np.ndarray:
@@ -154,6 +158,21 @@ def build_wet_mu_field(
     # Re-clip: shrinkage's unmeasured-cell path (row_prior * 0.95) can emit
     # values below 0.2 when the wet row prior already sits at the floor.
     wet_grid = np.clip(wet_grid, _WET_MU_FLOOR, _WET_MU_CEIL)
+
+    # Physical anchor: a wet track must offer LESS peak grip than dry so the
+    # optimal wet lap is SLOWER. invert_grip_for_wet builds an absolute field
+    # from a fixed clean-asphalt baseline (_CLEAN_ASPHALT_MU=0.85) that, against
+    # a confidence-shrunk dry field, can EXCEED dry grip per-track — a faster,
+    # physically-wrong wet lap (observed: wet p90 0.77 vs dry 0.73; wet lap
+    # 45.1 s < dry 49.9 s). Rescale so the wet high-percentile sits at
+    # _WET_PEAK_FRACTION of the DRY high-percentile — this preserves the
+    # off-line-vs-rubber-line redistribution SHAPE (proportional scale) while
+    # guaranteeing wet peak < dry peak.
+    dry_ref = float(np.percentile(build_dry_mu_field(grip_2d).mu_grid, 90))
+    wet_ref = float(np.percentile(wet_grid, 90))
+    if wet_ref > 1e-6 and wet_ref > _WET_PEAK_FRACTION * dry_ref:
+        wet_grid = wet_grid * (_WET_PEAK_FRACTION * dry_ref / wet_ref)
+        wet_grid = np.clip(wet_grid, _WET_MU_FLOOR, _WET_MU_CEIL)
 
     if puddles:
         ss, nn = np.meshgrid(grip_2d.s_bins, grip_2d.n_bins, indexing="ij")
