@@ -318,13 +318,15 @@ def get_weather_forecast(
     lat, lon : float
         Location coordinates.
     hours : int
-        Number of hours to forecast (max 48).
+        Number of hours to forecast (max 384 = 16 days, Open-Meteo's hourly
+        horizon). Race Brief windows a future race date on this span; the old
+        48 h cap made any race > 2 days out fall back to a blank forecast.
 
     Returns
     -------
     dict with hourly forecast data, rain probability, temp trend.
     """
-    hours = min(hours, 48)
+    hours = min(hours, 384)
     try:
         import urllib.request
         url = (
