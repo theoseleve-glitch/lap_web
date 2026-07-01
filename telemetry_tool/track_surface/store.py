@@ -233,12 +233,21 @@ def _load_grip_2d(path: Path) -> GripSurface | None:
         count_grid = count_flat[:M * K].reshape(M, K).astype(int)
         confidence = np.clip(count_grid / 50.0, 0.0, 1.0)
 
+        if "mu_limit_grid" in df.columns:
+            lim_flat = df["mu_limit_grid"].to_numpy()
+            mu_limit_grid = lim_flat[:M * K].reshape(M, K)
+            if np.isnan(mu_limit_grid).all():
+                mu_limit_grid = None     # a written-but-empty limit == no limit
+        else:
+            mu_limit_grid = None
+
         return GripSurface(
             s_bins=s_bins[:M],
             n_bins=n_bins[:K],
             mu_grid=mu_grid,
             count_grid=count_grid,
             confidence=confidence,
+            mu_limit_grid=mu_limit_grid,
         )
     except Exception as exc:
         logger.warning("Failed to load grip_2d: %s", exc)
@@ -432,7 +441,7 @@ def _merge_centerlines(
 
 
 def _merge_grip_2d(old: GripSurface, new: GripSurface) -> GripSurface:
-    """Merge two 2D grip grids by combining counts and sums."""
+    """Merge two 2D grip grids: mean by additive sum/count, LIMIT by NaN-aware MAX."""
     # Use the grid with more bins as the base
     if old.mu_grid.size >= new.mu_grid.size:
         base_s, base_n = old.s_bins, old.n_bins
@@ -440,19 +449,30 @@ def _merge_grip_2d(old: GripSurface, new: GripSurface) -> GripSurface:
         merged_sum = old.mu_grid * old.count_grid
         merged_count = old.count_grid.copy()
 
+        has_any_limit = old.mu_limit_grid is not None or new.mu_limit_grid is not None
+        merged_limit = (
+            old.mu_limit_grid.copy() if old.mu_limit_grid is not None
+            else np.full((M, K), np.nan)
+        )
+
         # Add new grid's data, interpolating to base grid
         for si in range(len(new.s_bins)):
             for ni in range(len(new.n_bins)):
-                if new.count_grid[si, ni] == 0:
-                    continue
                 # Find closest bin in base grid
                 s_idx = int(np.argmin(np.abs(base_s - new.s_bins[si])))
                 n_idx = int(np.argmin(np.abs(base_n - new.n_bins[ni])))
-                if s_idx < M and n_idx < K:
+                if s_idx >= M or n_idx >= K:
+                    continue
+                if new.count_grid[si, ni] > 0:
                     merged_sum[s_idx, n_idx] += new.mu_grid[si, ni] * new.count_grid[si, ni]
                     merged_count[s_idx, n_idx] += new.count_grid[si, ni]
+                if new.mu_limit_grid is not None:
+                    # NaN-aware MAX: a real new value beats whatever is there.
+                    merged_limit[s_idx, n_idx] = np.fmax(
+                        merged_limit[s_idx, n_idx], new.mu_limit_grid[si, ni]
+                    )
     else:
-        return _merge_grip_2d(new, old)  # swap so larger is base
+        return _merge_grip_2d(new, old)  # swap so larger is base (MAX is symmetric)
 
     has_data = merged_count > 0
     mu_grid = np.ones((M, K))
@@ -465,6 +485,7 @@ def _merge_grip_2d(old: GripSurface, new: GripSurface) -> GripSurface:
         mu_grid=mu_grid,
         count_grid=merged_count,
         confidence=confidence,
+        mu_limit_grid=(merged_limit if has_any_limit else None),
     )
 
 
@@ -528,6 +549,11 @@ def _save_grip_2d(path: Path, grip: GripSurface) -> None:
         "count_grid": grip.count_grid.flatten().astype(float),
         "grid_shape_m": np.full(max_len, M),
         "grid_shape_k": np.full(max_len, K),
+        "mu_limit_grid": (
+            grip.mu_limit_grid.flatten()
+            if grip.mu_limit_grid is not None
+            else np.full(max_len, np.nan)
+        ),
     }
     table = pa.table(data)
     pq.write_table(table, path, compression="snappy")

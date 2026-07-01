@@ -23,6 +23,9 @@ logger = logging.getLogger(__name__)
 _G: Final[float] = 9.80665
 _MIN_SPEED_MPS: Final[float] = 3.0  # ignore samples below this speed
 _MIN_LAPS: Final[int] = 10
+_MIN_LIMIT_SAMPLES: Final[int] = 8       # per-cell floor below which the limit is NaN
+_LIMIT_PERCENTILE: Final[float] = 90.0   # per-session upper quantile = cornering limit
+_PER_CELL_SAMPLE_CAP: Final[int] = 256   # bound per-cell buffer memory on long tracks
 
 
 @dataclass
@@ -33,6 +36,10 @@ class GripSurface:
     mu_grid: np.ndarray      # (M, K) friction coefficient
     count_grid: np.ndarray   # (M, K) number of samples per cell
     confidence: np.ndarray   # (M, K) confidence 0-1
+    # (M, K) per-cell cornering LIMIT (absolute mu, per-session p90, MAX-merged
+    # across sessions). NaN where < _MIN_LIMIT_SAMPLES samples or unmeasured.
+    # None when no limit data exists (old sidecars). Only the OCP path reads it.
+    mu_limit_grid: np.ndarray | None = None
 
     def mu_at(self, s: float, n: float) -> float:
         """Bilinear interpolation of grip at a single (s, n) point."""
@@ -118,6 +125,7 @@ def build_grip_surface(
 
     mu_sum = np.zeros((M, K))
     mu_count = np.zeros((M, K), dtype=int)
+    cell_samples: dict[tuple[int, int], list[float]] = {}   # per-cell limit buffer
 
     for lap_df in laps:
         # Extract required channels.
@@ -216,11 +224,26 @@ def build_grip_surface(
             if np.isfinite(mu_val) and 0.1 < mu_val < 3.0:
                 mu_sum[si, ni] += mu_val
                 mu_count[si, ni] += 1
+                buf = cell_samples.setdefault((int(si), int(ni)), [])  # native int keys for clean serialization
+                if len(buf) < _PER_CELL_SAMPLE_CAP:
+                    # append-until-cap biases the limit toward early laps
+                    # (cold-tire = lower mu); acceptable — conservative direction
+                    # + cross-session MAX-merge recovers the high side. Switch to
+                    # reservoir sampling if cells routinely exceed the cap.
+                    buf.append(float(mu_val))
 
     # Compute mean mu per cell
     mu_grid = np.ones((M, K))  # default 1.0
     has_data = mu_count > 0
     mu_grid[has_data] = mu_sum[has_data] / mu_count[has_data]
+
+    # Per-cell cornering LIMIT: p90 of in-cell samples (already gated 0.1<mu<3.0
+    # and speed>3). NaN below the sample floor so downstream shrinkage treats the
+    # cell as unmeasured rather than trusting a noisy few-sample percentile.
+    mu_limit_grid = np.full((M, K), np.nan)
+    for (si, ni), samples in cell_samples.items():
+        if len(samples) >= _MIN_LIMIT_SAMPLES:
+            mu_limit_grid[si, ni] = float(np.percentile(samples, _LIMIT_PERCENTILE))
 
     # Confidence: based on sample count (saturates at ~50 samples)
     confidence = np.clip(mu_count / 50.0, 0.0, 1.0)
@@ -250,4 +273,5 @@ def build_grip_surface(
         mu_grid=mu_grid,
         count_grid=mu_count,
         confidence=confidence,
+        mu_limit_grid=mu_limit_grid,
     )
