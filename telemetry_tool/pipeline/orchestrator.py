@@ -695,8 +695,28 @@ def run_full_analysis(
             _conditions_inputs = SessionInputs(
                 started_at_utc=_started_at_utc, user_condition=_user_condition
             )
+            # Session GPS centroid → the classifier's weather-query location.
+            # gt-geojson centroids only exist for curated circuits, so without
+            # this every real (user-uploaded) track resolved to safe-dry and
+            # weather never affected the condition — meaning wet/damp grip never
+            # accumulated. _first_lap is in scope (it set _started_at_utc above).
+            import functools as _functools
+            _coords = None
+            try:
+                _lat_col = next((c for c in ("Latitude (deg)", "lat_deg", "latitude") if c in _first_lap.columns), None)
+                _lon_col = next((c for c in ("Longitude (deg)", "lon_deg", "longitude") if c in _first_lap.columns), None)
+                if _lat_col and _lon_col:
+                    _clat = pd.to_numeric(_first_lap[_lat_col], errors="coerce").mean()
+                    _clon = pd.to_numeric(_first_lap[_lon_col], errors="coerce").mean()
+                    if (pd.notna(_clat) and pd.notna(_clon)
+                            and -90.0 <= _clat <= 90.0 and -180.0 <= _clon <= 180.0
+                            and not (abs(_clat) < 1e-6 and abs(_clon) < 1e-6)):
+                        _coords = (float(_clat), float(_clon))
+            except Exception:
+                _coords = None
             _conditions_result, _c_err = _safe_step(
-                "10f_conditions", classify_conditions,
+                "10f_conditions",
+                _functools.partial(classify_conditions, coords=_coords),
                 _conditions_inputs, track_id,
             )
             _record("10f_conditions", _conditions_result, _c_err)

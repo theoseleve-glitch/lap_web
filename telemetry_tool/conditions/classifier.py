@@ -70,12 +70,19 @@ def classify_conditions(
     session_inputs: SessionInputs,
     track_id: str,
     *,
+    coords: tuple[float, float] | None = None,
     cache_dir: Path | None = None,
 ) -> WeatherCondition:
     """Classify the track conditions for one session per spec §5 + §6.
 
     See module docstring for the full algorithm. Returns a frozen
     WeatherCondition with all 14 §8 fields populated.
+
+    ``coords`` (lat, lon): when given, used directly as the weather-query
+    location, bypassing gt-geojson centroid resolution. Real user-uploaded
+    tracks have no gt geojson, so without this every such session resolved to
+    safe-dry and weather never affected the condition (and wet grip never
+    accumulated). The pipeline passes the session's own GPS centroid here.
     """
     # 0. Validate user_condition if supplied.
     if session_inputs.user_condition is not None:
@@ -86,8 +93,13 @@ def classify_conditions(
             )
 
     # 1. Resolve track centroid + fetch weather. Either failure → safe-dry.
+    #    Prefer caller-supplied coords (session GPS centroid); fall back to the
+    #    gt-geojson centroid for curated tracks; only then safe-dry.
     try:
-        lat, lon = resolve_track_centroid(track_id)
+        if coords is not None:
+            lat, lon = coords
+        else:
+            lat, lon = resolve_track_centroid(track_id)
     except (FileNotFoundError, NotImplementedError) as e:
         return _safe_dry_fallback(reason=f"no gt centroid for {track_id!r}: {e}")
     try:
