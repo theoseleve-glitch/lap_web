@@ -58,6 +58,7 @@ def make_celery(app=None) -> Celery:
             "tasks.ocp_tasks",
             "tasks.endurance_tasks",
             "tasks.recap_tasks",
+            "tasks.racing_line_tasks",
             "admin.metrics_collector",
         ],
     )
@@ -72,6 +73,7 @@ def make_celery(app=None) -> Celery:
             "tasks.pipeline_tasks.*": {"queue": "pipeline"},
             "tasks.training_tasks.*": {"queue": "pipeline"},
             "tasks.ocp_tasks.*": {"queue": "pipeline"},
+            "tasks.racing_line_tasks.*": {"queue": "pipeline"},
             "tasks.batch_tasks.*": {"queue": "default"},
         },
         task_default_queue="default",
@@ -183,6 +185,11 @@ def make_celery(app=None) -> Celery:
                 "task": "tasks.recap_tasks.weekly_recap",
                 "schedule": crontab(hour=6, minute=0, day_of_week=1),  # Monday 06:00 UTC
                 "options": {"queue": "default"},
+            },
+            "nightly-racing-lines": {
+                "task": "tasks.racing_line_tasks.compute_all_racing_lines",
+                "schedule": crontab(hour=3, minute=30),  # Daily 03:30 UTC
+                "options": {"queue": "pipeline"},
             },
         },
     )
