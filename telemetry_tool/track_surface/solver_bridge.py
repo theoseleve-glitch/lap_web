@@ -440,9 +440,8 @@ def solve_optimal_line_2d(
         from track_surface.mu_field import build_dry_mu_field, build_wet_mu_field
         from track_surface.spatial_to_grid import resample_spatial_to_grid
         from lap_oracle.solver.fallback_qss import solve_qss
-        from lap_oracle.solver.ocp_2d import (
-            solve_minimum_time_2d,
-            spread_n_lat_starts,
+        from lap_oracle.solver.ocp_2d_stitched import (
+            solve_minimum_time_2d_stitched,
         )
     except ImportError as exc:
         raise ImportError(
@@ -499,22 +498,22 @@ def solve_optimal_line_2d(
 
     if condition == "dry":
         mu_field = build_dry_mu_field(surface.grip_2d, spatial=spatial)
-        n_lat_starts = (0.0,)
-        n_windows: list = []
     else:  # wet
+        # Puddles enter as SOFT mu=0.2 penalties inside build_wet_mu_field. The
+        # old single-shot path ALSO excluded puddle cells with hard n_windows
+        # corridors + a full-width multi-start sweep; the stitched solver takes
+        # neither, so wet puddle avoidance is soft-only here. Revisit if the
+        # spec's zero-puddle-crossing gate (§4 gate 3) needs hard in-sector
+        # exclusion — that would be a stitched-solver extension.
         puddle_list = puddles or []
         mu_field = build_wet_mu_field(surface.grip_2d, puddle_list)
-        n = surface.frenet.n_points
-        wl = surface.width_left if surface.width_left is not None else np.full(n, 3.0)
-        wr = surface.width_right if surface.width_right is not None else np.full(n, 3.0)
-        # Step 2: seeds spread across the full usable width (the old fixed
-        # ±2 m under-reached on wide tracks and missed dry-edge basins).
-        n_lat_starts = spread_n_lat_starts(wl, wr)
-        n_windows = puddles_to_n_windows(
-            puddle_list, surface.grip_2d, wl, wr, surface.frenet.s_grid,
-        )
 
-    return solve_minimum_time_2d(
+    # Stitched sub-sector solver: ~8-9x faster than the single-shot full-lap
+    # NLP AND reaches `optimal` within the Celery time budget, where the
+    # single-shot hit the CPU cap and returned suboptimal (measured on a 758 m
+    # track: 1595 s/suboptimal -> ~185 s/optimal). Sector decomposition also
+    # subsumes the single-shot's multi-start local-minimum escape.
+    return solve_minimum_time_2d_stitched(
         track_model,
         vehicle_params,
         mu_field,
@@ -522,8 +521,6 @@ def solve_optimal_line_2d(
         n_points=n_points,
         max_time_s=max_time_s,
         warm_start=warm,
-        n_lat_starts=n_lat_starts,
-        n_windows=n_windows,
         envelope_caps=envelope_caps,
         grade_s=grade_s,
         camber_s=camber_s,
