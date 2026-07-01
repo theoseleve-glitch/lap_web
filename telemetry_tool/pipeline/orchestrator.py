@@ -48,6 +48,8 @@ from provenance.run_context import build_provenance
 
 logger = logging.getLogger(__name__)
 
+_RACING_LINE_DEBOUNCE_S = 30  # seconds — debounce window for racing-line recompute
+
 # Column discovery imports (lazy, with fallback)
 try:
     from telemetry_tool.column_discovery import apply_discovery, discover_columns
@@ -992,6 +994,22 @@ def run_full_analysis(
                 )
             except Exception as _tsg_exc:
                 logger.debug("Global track surface upsert skipped: %s", _tsg_exc)
+            # Task 2.6: debounced racing-line recompute after grip changes
+            if _ts_updated > 0:
+                try:
+                    from tasks.racing_line_tasks import compute_racing_lines
+                    compute_racing_lines.apply_async(
+                        (_ts_track_id, _ts_vehicle_class),
+                        countdown=_RACING_LINE_DEBOUNCE_S,
+                    )
+                    logger.debug(
+                        "Enqueued compute_racing_lines(track=%s, vehicle=%s) in %ds",
+                        _ts_track_id, _ts_vehicle_class, _RACING_LINE_DEBOUNCE_S,
+                    )
+                except Exception as _rl_exc:
+                    logger.warning(
+                        "Racing-line recompute enqueue failed (non-fatal): %s", _rl_exc
+                    )
         except Exception as _ts_exc:
             logger.warning("Track surface aggregation skipped: %s", _ts_exc)
 
