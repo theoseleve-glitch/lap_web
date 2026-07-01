@@ -663,9 +663,14 @@ def _iter_workspace_tiers(conn) -> list[dict[str, Any]]:
     """Return workspace IDs with their effective normalized tier key."""
     from auth.entitlements import KNOWN_PLANS
 
+    # Workspace tier = its owner's plan_tier (fallback 'locked'). The
+    # workspaces table has no billing_plan column (migration 019 renamed the
+    # users.billing_plan → subscription_status and never added one to
+    # workspaces), so the old COALESCE(w.billing_plan, …) raised UndefinedColumn
+    # and the whole retention sweep aborted every run.
     rows = conn.execute(
         "SELECT w.id AS workspace_id, "
-        "COALESCE(w.billing_plan, owner.plan_tier, 'locked') AS tier "
+        "COALESCE(owner.plan_tier, 'locked') AS tier "
         "FROM workspaces w "
         "LEFT JOIN users owner ON owner.id = w.owner_user_id"
     ).fetchall()

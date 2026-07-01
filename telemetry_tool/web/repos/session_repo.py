@@ -494,11 +494,17 @@ def purge_deleted_sessions(conn: sqlite3.Connection, retention_days: int = 30) -
     """
     from web.repos.delete_cascade import delete_entity_cascade
 
+    # Compute the cutoff in Python (DB-agnostic) — the two-arg SQLite form
+    # datetime('now', '-N days') has no Postgres equivalent (raises
+    # UndefinedFunction: datetime(unknown, unknown)), which aborted the purge.
+    # Matches the :cutoff pattern used by purge_deleted_accounts.
+    from datetime import datetime as _dt, timedelta, timezone
+    cutoff = _dt.now(timezone.utc) - timedelta(days=retention_days)
     rows = conn.execute(
         "SELECT session_id FROM sessions "
         "WHERE deleted_at IS NOT NULL "
-        "AND deleted_at < datetime('now', :interval)",
-        {"interval": f"-{retention_days} days"},
+        "AND deleted_at < :cutoff",
+        {"cutoff": cutoff},
     ).fetchall()
 
     if not rows:
