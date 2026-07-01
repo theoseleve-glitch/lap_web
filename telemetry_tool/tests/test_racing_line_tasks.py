@@ -35,6 +35,8 @@ def _make_surface(has_grip: bool = True, mu_val: float = 0.9):
         surf.grip_2d = grip
     else:
         surf.grip_2d = None
+    # Explicitly None so the wet solve does not attempt compute_drainage on a Mock
+    surf.elevation_surface = None
     return surf
 
 

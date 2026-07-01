@@ -5,6 +5,15 @@ solver, converts the result to the racing-line DTO, and writes through the
 repo.  Degrades to ``status="failed"`` on insufficient laps or solver error —
 never raises into the pipeline.
 
+Wet-condition grip model (spec §4/§8):
+  The wet solve loads the DRY grip sidecar, not a separate wet sidecar.
+  build_wet_mu_field then INVERTS the dry grip map (high dry mu = rubber = slick
+  in wet) to derive a wet field.  Elevation-based puddle zones are computed here
+  via compute_drainage and passed to solve_optimal_line_2d, which applies them as
+  both soft mu=0.2 field penalties (build_wet_mu_field) and hard corridor
+  exclusions (puddles_to_n_windows).  When no 3D elevation surface is available
+  on the loaded TrackSurface, puddles defaults to [] (no exclusions).
+
 Registration idiom: ``from celery_app import celery`` (the working pattern;
 see archival_tasks.py).  Do NOT use the ``_get_celery()`` guard from
 ocp_tasks.py — that imports the nonexistent ``tasks.celery_app`` and silently
@@ -19,6 +28,7 @@ import numpy as np
 
 from celery_app import celery  # working idiom (archival_tasks.py)
 from web.db_pg import get_maint_connection, return_pg_connection
+from track_surface.drainage import compute_drainage
 from track_surface.store import load_track_model
 from track_surface.solver_bridge import solve_optimal_line_2d
 from track_surface.racing_line_dto import racing_line_from_solution
@@ -32,8 +42,10 @@ logger = logging.getLogger(__name__)
 
 SOLVER_VERSION = "ocp2d-stitched-v1"
 
-# Map each solved condition to the sidecar condition label used by load_track_model
-_SIDECAR_FOR: dict[str, str] = {"dry": "dry", "wet": "wet"}
+# Map each solved condition to the sidecar condition label used by load_track_model.
+# Wet loads the DRY sidecar: build_wet_mu_field inverts the dry grip map to derive
+# the wet field (rubber line = hydrophobic = slick in wet; clean asphalt preferred).
+_SIDECAR_FOR: dict[str, str] = {"dry": "dry", "wet": "dry"}
 
 
 def _grip_hash(grip) -> str:
@@ -86,8 +98,21 @@ def _compute_racing_lines_impl(
                 )
                 continue
 
+            # For wet condition, derive puddle zones from the 3D elevation surface
+            # (if present) so the solver can apply corridor exclusions.
+            puddles = None
+            if cond == "wet" and surface.elevation_surface is not None:
+                try:
+                    puddles = compute_drainage(surface.elevation_surface)
+                except Exception as exc:
+                    logger.warning(
+                        "racing-line: puddle derivation failed %s/%s/%s: %s — "
+                        "continuing without puddle exclusions",
+                        track_id, vehicle_class, cond, exc,
+                    )
+
             try:
-                sol = solve_optimal_line_2d(surface, condition=cond)
+                sol = solve_optimal_line_2d(surface, condition=cond, puddles=puddles)
             except Exception as exc:
                 # Solver failure must never error the pipeline
                 logger.warning(

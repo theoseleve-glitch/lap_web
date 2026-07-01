@@ -26,7 +26,7 @@ from track_surface.dense_grip import build_dense_grip_grid
 from track_surface.drainage import PuddleZone, puddle_footprint_radius
 from track_surface.grip_2d import GripSurface
 from track_surface.wet_model import invert_grip_for_wet
-from telemetry_tool.lap_oracle.solver.ocp_2d import MuField
+from lap_oracle.solver.ocp_2d import MuField
 
 # Domain-judgment constants — flagged in the plan as a tuning point.
 UNMEASURED_DISCOUNT: Final[float] = 0.95   # 5% pessimism on undriven asphalt
