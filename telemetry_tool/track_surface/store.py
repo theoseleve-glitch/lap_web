@@ -458,16 +458,15 @@ def _merge_grip_2d(old: GripSurface, new: GripSurface) -> GripSurface:
         # Add new grid's data, interpolating to base grid
         for si in range(len(new.s_bins)):
             for ni in range(len(new.n_bins)):
+                if new.count_grid[si, ni] == 0:
+                    continue
                 # Find closest bin in base grid
                 s_idx = int(np.argmin(np.abs(base_s - new.s_bins[si])))
                 n_idx = int(np.argmin(np.abs(base_n - new.n_bins[ni])))
-                if s_idx >= M or n_idx >= K:
-                    continue
-                if new.count_grid[si, ni] > 0:
+                if s_idx < M and n_idx < K:
                     merged_sum[s_idx, n_idx] += new.mu_grid[si, ni] * new.count_grid[si, ni]
                     merged_count[s_idx, n_idx] += new.count_grid[si, ni]
                 if new.mu_limit_grid is not None:
-                    # NaN-aware MAX: a real new value beats whatever is there.
                     merged_limit[s_idx, n_idx] = np.fmax(
                         merged_limit[s_idx, n_idx], new.mu_limit_grid[si, ni]
                     )
