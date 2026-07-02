@@ -55,8 +55,7 @@ python scripts/lap_track_to_draft.py --name <slug> --session-csv <file> --zoom 1
   `scripts/build_satellite_gt.py --track <slug> --build-dir web_build/<slug> --zoom 19 --backend auto`,
   which produces, under `data/satellite_gt/<slug>/`:
   - `gt_<slug>.geojson` — the boundary **draft** (`properties.source ==
-    "satellite_v1"`; roles `left_boundary_gt`/`right_boundary_gt` plus `_pred`
-    reference roles).
+    "satellite_v1"`; roles `left_boundary_gt`/`right_boundary_gt`).
   - `confidence_report.json` (`schema: satellite_gt_confidence_v1`) with a
     **verdict**: `accept` (proceed to Step 2) or `fallback_hand_tracing` (see
     Failure modes below).
@@ -145,8 +144,8 @@ ssh root@46.225.227.24 "cd /opt/lap-api && docker compose exec -T -w /app/teleme
 
 Run the SQL Step 3 printed, with the real `track_id` substituted:
 
-```sql
-UPDATE tracks SET canonical_id = '<slug>' WHERE track_id = '<TRACK_UUID>';
+```bash
+ssh root@46.225.227.24 "docker exec -i lap-api-postgres-1 psql -U telemetry -d telemetry -c \"UPDATE tracks SET canonical_id='<slug>' WHERE id='<TRACK_UUID>';\" "
 ```
 
 ### Step 7 — Verify end-to-end
@@ -154,7 +153,7 @@ UPDATE tracks SET canonical_id = '<slug>' WHERE track_id = '<TRACK_UUID>';
 Trigger a session upload (or reprocess an existing one) for that track and
 confirm:
 
-- The rebuilt surface's provenance shows `boundary_source=gt_<slug>` (real
+- The rebuilt surface's provenance shows `boundary_source=gt_anchored_native` (real
   GT, not a predicted/heuristic boundary).
 - The geometry gates pass at persistence (`merge_track_model` — arc ≥100 m,
   monotonic s, closure ≤5 m, no self-intersection, widths [0.5, 30] m,

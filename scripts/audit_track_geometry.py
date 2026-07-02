@@ -82,14 +82,15 @@ def audit_sidecars(sidecar_root: Path, quarantine: bool) -> dict:
             quarantined_path = model_path.with_name(f"track_model.parquet.quarantined-{today}")
             os.replace(str(model_path), str(quarantined_path))
             details["quarantined"] = True
-            gates = [f["gate"] for f in details["failures"]]
             track_id_esc = track_id.replace("'", "''")
-            gates_str = json.dumps(gates).replace("'", "''")
-            print(
-                "INSERT INTO track_geometry_audit "
-                "(track_id, passed, failed_gates, audited_at) VALUES "
-                f"('{track_id_esc}', FALSE, '{gates_str}', NOW());"
-            )
+            for failure in details["failures"]:
+                gate_name = failure["gate"].replace("'", "''")
+                details_json = json.dumps(failure).replace("'", "''")
+                print(
+                    "INSERT INTO track_geometry_audit "
+                    "(track_id, vehicle_class, condition, gate, details) VALUES "
+                    f"('{track_id_esc}', NULL, NULL, '{gate_name}', '{details_json}'::jsonb);"
+                )
 
         results[track_id] = details
 

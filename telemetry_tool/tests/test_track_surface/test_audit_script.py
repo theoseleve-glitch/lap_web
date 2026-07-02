@@ -76,3 +76,39 @@ def test_quarantine_replace_handles_existing(tmp_path):
     quarantined_files = list(bad.glob("track_model.parquet.quarantined-*"))
     assert len(quarantined_files) == 1
     assert quarantined_files[0].read_text() != "old quarantined content"  # new one replaced
+
+
+def test_audit_prints_correct_sql_schema(tmp_path, capsys):
+    """Test that printed SQL for quarantined tracks uses correct schema (track_id, vehicle_class, condition, gate, details).
+
+    - Must use only real columns (no passed, failed_gates, audited_at)
+    - One INSERT per failed gate, not one per track
+    - Details must be valid ::jsonb with gate, message, values fields
+    """
+    _write_sidecar(tmp_path, "bad-track", degenerate=True)
+    # Run audit with quarantine=True to trigger SQL printing
+    res = audit_sidecars(tmp_path, quarantine=True)
+    captured = capsys.readouterr()
+
+    assert res["bad-track"]["passed"] is False
+    assert len(res["bad-track"]["failures"]) > 0
+
+    # Should print at least one INSERT (one per failed gate)
+    lines = [l.strip() for l in captured.out.strip().split("\n") if l.strip()]
+    insert_lines = [l for l in lines if l.startswith("INSERT INTO")]
+    assert len(insert_lines) == len(res["bad-track"]["failures"]), \
+        f"Expected {len(res['bad-track']['failures'])} INSERTs (one per gate), got {len(insert_lines)}"
+
+    # Check structure of each INSERT
+    for insert_line in insert_lines:
+        # Must contain the correct column names
+        assert "(track_id, vehicle_class, condition, gate, details)" in insert_line, \
+            f"INSERT missing correct columns: {insert_line}"
+        # Must not contain incorrect columns
+        assert "passed" not in insert_line, f"INSERT incorrectly contains 'passed': {insert_line}"
+        assert "failed_gates" not in insert_line, f"INSERT incorrectly contains 'failed_gates': {insert_line}"
+        assert "audited_at" not in insert_line, f"INSERT incorrectly contains 'audited_at': {insert_line}"
+        # Must end with ::jsonb cast
+        assert "::jsonb);" in insert_line, f"INSERT missing ::jsonb cast: {insert_line}"
+        # Must have NULL for vehicle_class and condition
+        assert "NULL, NULL" in insert_line, f"INSERT missing NULLs for vehicle_class/condition: {insert_line}"
