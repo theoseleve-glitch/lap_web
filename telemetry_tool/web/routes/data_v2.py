@@ -7420,12 +7420,27 @@ def create_endurance_race(session_id: str) -> tuple[dict, int]:
             status=400,
         )
 
+    # Resolve the plan-based duration limit server-side — NEVER trust a
+    # client-supplied max_duration_s (that would let any tier bypass its cap).
+    # Mirrors api_v1_race_strategy.create_race_endpoint's resolution pattern.
+    max_dur = None
+    try:
+        from flask import g
+        user_id = getattr(g, "current_user_id", None)
+        ws_id = getattr(g, "workspace_id", None)
+        if user_id is not None:
+            from auth.entitlements import get_user_entitlements
+            ent = get_user_entitlements(conn, user_id, ws_id)
+            max_dur = ent.get("race_strategy_max_duration_s")
+    except Exception:
+        pass  # Fail open — don't block on entitlement resolution errors
+
     try:
         from services.race_strategy_bridge import create_race_from_session
 
         race_id = create_race_from_session(
             conn, session_id, race_meta, driver_map,
-            max_duration_s=data.get("max_duration_s"),
+            max_duration_s=max_dur,
         )
         return api_response({"race_id": race_id}, status=201)
     except ValueError as ve:
