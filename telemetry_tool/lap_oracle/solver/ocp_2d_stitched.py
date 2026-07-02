@@ -11,6 +11,7 @@ re-solves and parallel solving.
 from __future__ import annotations
 
 import logging
+from typing import TYPE_CHECKING
 
 import numpy as np
 
@@ -27,6 +28,11 @@ from telemetry_tool.lap_oracle.solver.ocp_2d import (
     RHO_AIR,
     _PATH_LEN_FLOOR,
 )
+
+# Type-only: same layering invariant as ocp_2d.py (TYPE_CHECKING is False at
+# runtime) — this module still imports nothing from track_surface at runtime.
+if TYPE_CHECKING:
+    from telemetry_tool.track_surface.geom_field import GeomField
 
 if HAS_CASADI:
     import casadi as ca
@@ -132,6 +138,7 @@ def _solve_sector(
     ax_brake_interp=None,
     grade_n=None,
     camber_n=None,
+    geom_luts: dict | None = None,
 ) -> tuple[str, np.ndarray, np.ndarray, np.ndarray]:
     """One open-window sector solve, boundary-pinned to the consensus.
 
@@ -144,6 +151,11 @@ def _solve_sector(
     consensus are V/n/n'-continuous by construction. d2n at the first segment
     uses ``n_ghost_prev`` (the consensus n just before the window) so seam
     curvature is priced exactly as the monolithic NLP would.
+
+    ``geom_luts`` (from :func:`ocp_2d._make_geom_interpolants`), when given,
+    mirrors ``_solve_once``'s quasi-3D branches exactly: kv/camber/grade are
+    sampled at the LINE's (s, N_lat[i]) instead of the frozen centerline
+    ``kv``/``camber_n``/``grade_n`` arrays.
 
     Returns ``(status, v_sol, n_sol, ax_sol)`` over the window nodes.
     """
@@ -193,7 +205,13 @@ def _solve_sector(
         opti.subject_to(ca.fabs(d2n_i) <= DKAPPA_MAX)
         smooth_pen = smooth_pen + d2n_i ** 2
 
-        g_eff_i = ca.fmax(G + V[i] ** 2 * kv[i], 1.0)
+        if geom_luts is not None:
+            # Quasi-3D: vertical curvature sampled at the LINE's (s, n), not
+            # the centerline kv[i] — mirrors ocp_2d._solve_once exactly.
+            kv_i = geom_luts["kv"](ca.vertcat(s_coords[i], N_lat[i]))
+            g_eff_i = ca.fmax(G + V[i] ** 2 * kv_i, 1.0)
+        else:
+            g_eff_i = ca.fmax(G + V[i] ** 2 * kv[i], 1.0)
         fz_total = m * g_eff_i + 0.5 * RHO_AIR * cla * V[i] ** 2
 
         grip_i = mu_lut(ca.vertcat(s_coords[i], N_lat[i]))
@@ -203,14 +221,25 @@ def _solve_sector(
         mu_long_i = mu_long_base * grip_i
         ax_lim = mu_long_i * fz_total / m
         ay_lim = mu_lat_i * fz_total / m
-        if camber_n is not None:
+        if geom_luts is not None:
+            # Quasi-3D: banking sampled at the LINE's (s, n) — camber_n
+            # (legacy 1D, below) only ever saw the centerline's camber.
+            camber_i = geom_luts["camber"](ca.vertcat(s_coords[i], N_lat[i]))
+            ay_lim = ay_lim * (1.0 + K_CAMBER * ca.fabs(camber_i))
+        elif camber_n is not None:
             ay_lim = ay_lim * (1.0 + K_CAMBER * abs(float(camber_n[i])))
         opti.subject_to((Ax[i] / ax_lim) ** 2 + (ay_i / ay_lim) ** 2 <= 1.0)
 
         drag = 0.5 * RHO_AIR * cda * V[i] ** 2 / m
         rr = 0.01 * g_eff_i
         v_safe = ca.fmax(V[i], 5.0)
-        g_sin = 0.0 if grade_n is None else G * float(np.sin(grade_n[i]))
+        if geom_luts is not None:
+            # Quasi-3D: grade sampled at the LINE's (s, n) — replaces the
+            # frozen centerline g_sin in BOTH bounds below (drive and brake).
+            grade_i = geom_luts["grade"](ca.vertcat(s_coords[i], N_lat[i]))
+            g_sin = G * ca.sin(grade_i)
+        else:
+            g_sin = 0.0 if grade_n is None else G * float(np.sin(grade_n[i]))
         opti.subject_to(Ax[i] <= p_max / (m * v_safe) - drag - rr - g_sin)
         opti.subject_to(Ax[i] >= -(a_brake_max * g_eff_i / G + drag + rr) - g_sin)
         if ax_drive_interp is not None:
@@ -422,6 +451,7 @@ def _solve_speed_on_line(
     ax_brake_interp=None,
     grade_n=None,
     camber_n=None,
+    geom_luts: dict | None = None,
 ) -> tuple[str, np.ndarray, np.ndarray]:
     """Global speed-only solve on a FIXED line (the stitch coordination pass).
 
@@ -431,6 +461,11 @@ def _solve_speed_on_line(
     globally consistent: the line comes from the sub-sector solves, the speed
     from one cheap whole-lap pass — V is continuous everywhere by
     construction and there are no boundary speed pins left to go infeasible.
+
+    ``geom_luts``, when given, is sampled at the FIXED line (same treatment
+    as ``mu_line`` below: precomputed once per node, not a symbolic lookup,
+    since ``n_line`` is a numpy constant here) and replaces the centerline
+    ``kv``/``camber_n``/``grade_n`` arrays in the per-node physics below.
     """
     from telemetry_tool.lap_oracle.solver.ocp_2d import (
         central_second_diff_periodic,
@@ -450,6 +485,26 @@ def _solve_speed_on_line(
         float(mu_lut(ca.DM([s_coords[i], n[i]]))) for i in range(N)
     ])
     mu_line = np.clip(mu_line, EPS_GRIP, mu_ceiling)
+    # Quasi-3D: same treatment as mu_line above — the LINE is fixed here (n
+    # is a numpy constant, not an opti variable), so kv/camber/grade are
+    # sampled ONCE per node up front rather than as symbolic lookups in the
+    # loop below. Falls back to the legacy centerline arrays (byte-compatible
+    # default) when no geom_luts is supplied.
+    kv_line = kv
+    camber_line = camber_n
+    grade_line = grade_n
+    if geom_luts is not None:
+        kv_line = np.array([
+            float(geom_luts["kv"](ca.DM([s_coords[i], n[i]]))) for i in range(N)
+        ])
+        camber_line = np.array([
+            float(geom_luts["camber"](ca.DM([s_coords[i], n[i]])))
+            for i in range(N)
+        ])
+        grade_line = np.array([
+            float(geom_luts["grade"](ca.DM([s_coords[i], n[i]])))
+            for i in range(N)
+        ])
 
     # Shape the initial guess to near-feasibility (lateral grip, steering
     # rate, reachability). With hairpin-grade flicks the crawl profile is
@@ -501,20 +556,20 @@ def _solve_speed_on_line(
         dts.append(ds_path_i / v_avg)
         ds_paths.append(ds_path_i)
 
-        g_eff_i = ca.fmax(G + V[i] ** 2 * kv[i], 1.0)
+        g_eff_i = ca.fmax(G + V[i] ** 2 * kv_line[i], 1.0)
         fz_total = m * g_eff_i + 0.5 * RHO_AIR * cla * V[i] ** 2
         mu_lat_i = mu_lat_base * mu_line[i]
         mu_long_i = mu_long_base * mu_line[i]
         ax_lim = mu_long_i * fz_total / m
         ay_lim = mu_lat_i * fz_total / m
-        if camber_n is not None:
-            ay_lim = ay_lim * (1.0 + K_CAMBER * abs(float(camber_n[i])))
+        if camber_line is not None:
+            ay_lim = ay_lim * (1.0 + K_CAMBER * abs(float(camber_line[i])))
         opti.subject_to((Ax[i] / ax_lim) ** 2 + (ay_i / ay_lim) ** 2 <= 1.0)
 
         drag = 0.5 * RHO_AIR * cda * V[i] ** 2 / m
         rr = 0.01 * g_eff_i
         v_safe = ca.fmax(V[i], 5.0)
-        g_sin = 0.0 if grade_n is None else G * float(np.sin(grade_n[i]))
+        g_sin = 0.0 if grade_line is None else G * float(np.sin(grade_line[i]))
         opti.subject_to(Ax[i] <= p_max / (m * v_safe) - drag - rr - g_sin)
         opti.subject_to(
             Ax[i] >= -(a_brake_max * g_eff_i / G + drag + rr) - g_sin)
@@ -599,6 +654,7 @@ def solve_minimum_time_2d_stitched(
     envelope_caps: dict | None = None,
     grade_s: np.ndarray | None = None,
     camber_s: np.ndarray | None = None,
+    geom_field: "GeomField | None" = None,
     warm_start=None,
     return_info: bool = False,
 ):
@@ -612,12 +668,26 @@ def solve_minimum_time_2d_stitched(
     per-node mean of the free (un-pinned) window values. Deterministic: fixed
     sector order, fixed blend rule, fixed sweep count with a tolerance-based
     early exit on unchanging metrics.
+
+    Quasi-3D geometry (``geom_field``)
+    -----------------------------------
+    When given, kv/camber/grade are looked up at the LINE's chosen (s, n) via
+    casadi bspline interpolants built ONCE here
+    (:func:`ocp_2d._make_geom_interpolants`) and threaded through every
+    sector solve, the global speed-on-line pass, AND the coarse anchor solve
+    (``solve_minimum_time_2d``) — the same treatment ``mu_field`` already
+    gets across this module. ``geom_field=None`` (the default) is
+    BYTE-COMPATIBLE with the pre-quasi-3D stitched solve. The per-point
+    N_lat bounds additionally intersect ``geom_field``'s n-domain (same
+    guard as ``solve_minimum_time_2d``) so no lookup extrapolates past the
+    geometry grid.
     """
     import time as _time
 
     from telemetry_tool.lap_oracle.solver.ocp import _build_solution
     from telemetry_tool.lap_oracle.solver.ocp_2d import (
         _candidate_lap_time,
+        _make_geom_interpolants,
         _make_mu_interpolant_smooth,
         central_second_diff_periodic,
     )
@@ -657,6 +727,12 @@ def solve_minimum_time_2d_stitched(
     camber_n = _to_n(camber_s)
 
     mu_lut = _make_mu_interpolant_smooth(mu_field)
+    # Quasi-3D: built ONCE and threaded through every sector solve, the
+    # speed-on-line pass, AND the coarse anchor below — same treatment
+    # mu_lut already gets. None when no geom_field is supplied — the sole
+    # gate that keeps the default stitched solve byte-compatible with the
+    # pre-quasi-3D behaviour.
+    geom_luts = _make_geom_interpolants(geom_field) if geom_field is not None else None
     ax_drive_interp = None
     ax_brake_interp = None
     if (envelope_caps and "v_grid" in envelope_caps
@@ -673,6 +749,12 @@ def solve_minimum_time_2d_stitched(
 
     n_lo_field = float(mu_field.n_bins[0])
     n_hi_field = float(mu_field.n_bins[-1])
+    # Geometry lookups must never extrapolate: cubic bspline is unbounded
+    # outside knots, so intersect with geom_field's n-domain when supplied —
+    # same guard solve_minimum_time_2d applies before building its n_bounds.
+    if geom_field is not None:
+        n_lo_field = max(n_lo_field, float(geom_field.n_bins[0]))
+        n_hi_field = min(n_hi_field, float(geom_field.n_bins[-1]))
     n_bounds: list[tuple[float, float]] = []
     for i in range(N):
         lo = max(-float(tk.width_right[i]) * 0.9, n_lo_field)
@@ -696,6 +778,7 @@ def solve_minimum_time_2d_stitched(
         n_points=coarse_n_points, max_time_s=max_time_s,
         warm_start=warm_start,
         envelope_caps=envelope_caps, grade_s=grade_s, camber_s=camber_s,
+        geom_field=geom_field,
     )
     cd = np.asarray(coarse.distance_m, dtype=np.float64)
     cons_v = np.interp(s_coords, cd, np.asarray(coarse.speed_mps))
@@ -781,7 +864,7 @@ def solve_minimum_time_2d_stitched(
             n_line=n_arr, v_guess=v_guess_arr, vehicle=vehicle,
             weather=weather, max_time_s=max_time_s, mu_ceiling=mu_ceiling,
             ax_drive_interp=ax_drive_interp, ax_brake_interp=ax_brake_interp,
-            grade_n=grade_n, camber_n=camber_n,
+            grade_n=grade_n, camber_n=camber_n, geom_luts=geom_luts,
         )
         if sp_st == "suboptimal":
             return "suboptimal", _repair_speed(v_guess_arr.copy(), n_arr)
@@ -839,6 +922,7 @@ def solve_minimum_time_2d_stitched(
                 ax_brake_interp=ax_brake_interp,
                 grade_n=None if grade_n is None else grade_n[idx],
                 camber_n=None if camber_n is None else camber_n[idx],
+                geom_luts=geom_luts,
             )
             if status == "suboptimal":
                 # deterministic fallback: this window contributes the OLD

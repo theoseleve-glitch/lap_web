@@ -122,3 +122,15 @@ def test_geom_narrow_n_domain_clamps_line():
     max_lateral_offset = np.max(np.abs(solution.lateral_offset_m))
     assert max_lateral_offset <= 1.5 + 1e-6, \
         f"Line exceeded geom_field n-domain: max |n| = {max_lateral_offset}, limit = 1.5"
+
+
+def test_stitched_zero_geom_matches_legacy():
+    from lap_oracle.solver.ocp_2d_stitched import solve_minimum_time_2d_stitched
+    track = _track(); mu = _mu(track)
+    legacy = solve_minimum_time_2d_stitched(
+        track, VehicleParams(), mu, n_points=140, max_time_s=120.0)
+    zeroed = solve_minimum_time_2d_stitched(
+        track, VehicleParams(), mu, n_points=140, max_time_s=120.0,
+        geom_field=_geom(0.0))
+    assert zeroed.optimal_lap_time_s == pytest.approx(
+        legacy.optimal_lap_time_s, abs=1e-3)
