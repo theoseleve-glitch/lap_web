@@ -22,7 +22,7 @@ needs_casadi = pytest.importorskip("casadi")  # skips when casadi absent
 import casadi as ca
 
 from lap_oracle.config import OCPSolution, TrackModel, VehicleParams
-from lap_oracle.solver.ocp_2d import DKAPPA_MAX, K_CAMBER, G, MuField, _PATH_LEN_FLOOR
+from lap_oracle.solver.ocp_2d import DKAPPA_MAX, K_CAMBER, G, RHO_AIR, MuField, _PATH_LEN_FLOOR
 from track_surface.geom_field import GeomField
 from track_surface.solution_validator import (
     ValidationReport,
@@ -30,6 +30,7 @@ from track_surface.solution_validator import (
     _offset_curvature,
     _reconstruct,
     _solver_a_lon,
+    _solver_camber_n,
     _solver_grid,
     validate_solution,
 )
@@ -355,6 +356,126 @@ def test_legacy_camber_boost_mirrored():
     # With the boost, we expect the test to pass (residual <= 1.02).
     assert _by_name(report_boosted, "friction_ellipse").passed, (
         f"friction_ellipse should pass with camber_s boost (residual={boosted_residual:.4f})"
+    )
+
+
+# ---------------------------------------------------------------------------
+# (g2) legacy camber_s resample must be INDEX-FRACTION, not arc-length (round 4)
+# ---------------------------------------------------------------------------
+
+def test_solver_camber_n_matches_index_fraction_ground_truth():
+    """_solver_camber_n must mirror ocp_2d._to_n / ocp_2d_stitched._to_n's
+    EXACT recipe -- np.interp(linspace(0,1,N), linspace(0,1,M), arr) -- never
+    an arc-length interpolation. Non-constant camber_s with N != M (a
+    constant array, or N==M hitting the solver's own same-length
+    short-circuit, would read identically under either formula and mask the
+    round-4 bug -- see b1-task-6d-debug4-report.md)."""
+    camber_s = np.array([0.0, 0.0, 0.0, 0.4, 0.1, 0.0])  # M=6, sharp feature
+    N = 4
+
+    result = _solver_camber_n(camber_s, N)
+
+    expected = np.interp(np.linspace(0, 1, N), np.linspace(0, 1, len(camber_s)), camber_s)
+    np.testing.assert_allclose(result, expected, rtol=0, atol=1e-15)
+    assert not np.allclose(result, camber_s[:N]), "must not be a naive positional slice"
+
+    # Solver's own short-circuit: identical length -> returned unchanged, no
+    # interpolation at all (mirrors ocp_2d._to_n's `if len(a) == N: return a`).
+    same_len = np.array([0.1, 0.2, 0.3])
+    np.testing.assert_array_equal(_solver_camber_n(same_len, 3), same_len)
+
+    # Degenerate-input guard (not a real code path -- see docstring): empty
+    # camber_s must not raise, and gracefully means "no boost".
+    np.testing.assert_array_equal(_solver_camber_n(np.array([]), 5), np.zeros(5))
+
+
+def test_legacy_camber_boost_diverges_from_arc_length_when_grid_span_shortfalls():
+    """End-to-end regression for the round-4 bug: lap_oracle.track.model.
+    resample_track's ``np.arange(0, total, ds_target)`` always stops before
+    reaching the track's true total length (confirmed ~2m/0.27% shortfall on
+    a real 758m track) -- so the solver's own per-node
+    ``camber_n = _to_n(camber_s)`` (index-fraction) samples camber_s at a
+    slightly different (LATER-along-the-lap) native position than an
+    arc-length interpolation of camber_s onto the solution's own distance_m
+    would, at the SAME query node. Reproduced here with an exaggerated 5%
+    shortfall (well outside floating-point noise) mirroring the real track's
+    ~0.27% one, where this was found (see b1-task-6d-debug4-report.md).
+
+    Fixture: camber_s is a HIGH constant baseline (0.35 rad) with a narrow
+    notch to 0.0 at native indices 31-33 (of 41). At query node i=17 (the
+    last node this check's own _EDGE_EXCLUDE=3 slice includes, for N=21):
+    arc-length's query lands INSIDE the notch (continuous native index
+    ~32.3, camber=0, no boost) while index-fraction's query lands EXACTLY on
+    native index 34 (back at the 0.35 baseline, full boost) -- so the two
+    methods disagree sharply at exactly the node this test isolates. This
+    mirrors the real bug's own direction: the arc-length (pre-round-4, buggy)
+    formula misses a boost the solver's index-fraction resample actually
+    applied, so it reports a HIGHER (falsely elevated) friction_ellipse
+    residual than the solver's own physics ever enforced. Constant speed ->
+    a_lon=0 identically (same trick
+    test_consistent_straight_solution_passes_all_checks uses) and constant
+    curvature (circular arc) -> a_lat is ~uniform across nodes, isolating a
+    clean, camber-driven r_lat divergence rather than a geometry-driven one."""
+    M = 41
+    track = _curved_track(n_points=M, radius=200.0, arc_rad=0.5)
+    total_native = track.total_length_m
+
+    camber_s = np.full(M, 0.35)
+    camber_s[31:34] = 0.0  # narrow notch arc-length's node-17 query lands in
+
+    N = 21
+    d = np.linspace(0.0, 0.95 * total_native, N)  # solver-grid-like shortfall
+    n_arr = np.zeros(N)
+    speed = 25.0
+    mu_field = _uniform_mu_field(track, mu=1.0)
+    vehicle = _vehicle()
+
+    sol = OCPSolution(
+        distance_m=d,
+        speed_mps=np.full(N, speed),
+        throttle=np.full(N, 0.5),
+        brake=np.zeros(N),
+        lateral_offset_m=n_arr,
+        solver_status="optimal",
+    )
+    sol.optimal_lap_time_s = _lap_time_for(track, sol)
+
+    report = validate_solution(sol, track, mu_field, vehicle, camber_s=camber_s, eps=0.02)
+    worst = _by_name(report, "friction_ellipse").worst
+
+    # Reuse the already-locked kinematics (a_lat/a_lon formulas are covered by
+    # rounds 1-2's own tests) to hand-derive the residual under EACH
+    # candidate camber resample, without re-deriving them independently.
+    kin = _reconstruct(sol, track)
+    assert np.allclose(kin.a_lon, 0.0), "constant speed must give a_lon==0 (isolates r_lat)"
+
+    grip = 1.0  # _uniform_mu_field's flat value; a constant field's bspline is exact
+    ay_lim_base = vehicle.tyre_lat.D * grip * (
+        vehicle.mass_kg * G + 0.5 * RHO_AIR * vehicle.cla * speed ** 2
+    ) / vehicle.mass_kg
+
+    s_track = np.concatenate(([0.0], np.cumsum(track.ds)))
+    camber_index_fraction = np.interp(np.linspace(0, 1, N), np.linspace(0, 1, M), camber_s)
+    camber_arc_length = np.interp(d, s_track, camber_s)
+    assert not np.allclose(camber_index_fraction, camber_arc_length), (
+        "fixture must make the two candidate resamples diverge"
+    )
+
+    def worst_r_lat(camber_arr):
+        ay_lim = ay_lim_base * (1.0 + K_CAMBER * np.abs(camber_arr))
+        r_lat = (kin.a_lat / ay_lim) ** 2
+        return float(np.max(r_lat[3:-3]))
+
+    expected_index = worst_r_lat(camber_index_fraction)
+    expected_arclength = worst_r_lat(camber_arc_length)
+    assert expected_index != pytest.approx(expected_arclength, rel=1e-6), (
+        "fixture didn't distinguish the two candidate formulas"
+    )
+    assert worst == pytest.approx(expected_index, rel=1e-6), (
+        f"friction_ellipse must resample camber_s by INDEX FRACTION "
+        f"(_solver_camber_n), not arc-length: got {worst:.6f}, "
+        f"expected(index-fraction)={expected_index:.6f}, "
+        f"expected(arc-length, the pre-round-4 formula)={expected_arclength:.6f}"
     )
 
 

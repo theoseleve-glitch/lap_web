@@ -77,6 +77,28 @@ averages two adjacent segments into one node, which at a sharp mu step
 smears a high-grip segment's kinematics into a low-grip neighbour's own
 (tiny) limit -- confirmed root cause of a 24.7x friction_ellipse
 false-positive on a real track.
+
+Legacy camber_s resample (round 4): the legacy 1D ``camber_s`` boost (used
+when ``geom_field`` is ``None``) is resampled via ``_solver_camber_n`` --
+INDEX FRACTION, mirroring ``ocp_2d._to_n``/``ocp_2d_stitched._to_n`` exactly
+-- not an arc-length interpolation onto the track's native ``_track_s`` grid
+(the prior formula here, which looks more "correct" but is not what the
+solver actually applies). The two differ because ``resample_track``'s
+``np.arange(0, total, ds_target)`` excludes the endpoint, so the solver's own
+resampled grid's arc-length span is measurably shorter than the native
+track's true total length (~2 m / 0.27% on a real 758 m track) -- confirmed
+root cause of an r_lat-dominant friction_ellipse residual cluster at nodes
+322-387 (s ~610-733 m), where ``camber_s`` itself swings quickly (a banking
+transition) so the ~2 m index-vs-arc-length drift becomes a large VALUE
+error. See ``_solver_camber_n`` and b1-task-6d-debug4-report.md (round 4,
+this fix). A distinct, much smaller residual (~1.03, node 281, not
+camber_s-driven -- confirmed by inspection) remains after this fix; per
+round 4's evidence this is consistent with the stitched solver's own
+non-monolithic blended-consensus architecture (partition-of-unity blending
+of overlapping sector solves, whose result is not independently
+KKT-re-verified against the pointwise ellipse) rather than a further
+validator reconstruction bug, and is reported as a documented, bounded,
+non-gating finding rather than chased into a fourth mechanism.
 """
 from __future__ import annotations
 
@@ -441,6 +463,60 @@ def _solver_a_lon(track: TrackModel, d: np.ndarray, n: np.ndarray, v: np.ndarray
     return np.concatenate([ax_forward, ax_forward[-1:]])
 
 
+def _solver_camber_n(camber_s: np.ndarray, N: int) -> np.ndarray:
+    """Resample the legacy 1D ``camber_s`` array onto *N* nodes EXACTLY the
+    way the solver's own ``ocp_2d._to_n`` / ``ocp_2d_stitched._to_n`` do: by
+    INDEX FRACTION --
+    ``np.interp(np.linspace(0, 1, N), np.linspace(0, 1, len(camber_s)),
+    camber_s)`` -- never by arc length (round-4 fix; see
+    b1-task-6d-debug4-report.md).
+
+    This is NOT the same as an arc-length resample (``np.interp(d,
+    _track_s(track), camber_s)``, this function's predecessor here), even
+    though the two look interchangeable and even though the real track's
+    native points ARE evenly arc-length-spaced (measured ds std ~0). The
+    reason: ``ocp_2d.py``/``ocp_2d_stitched.py`` build their per-node grid via
+    ``lap_oracle.track.model.resample_track``, whose
+    ``np.arange(0, total, ds_target)`` construction EXCLUDES the endpoint --
+    so the solver's own resampled grid's actual arc-length span
+    (``sol.distance_m[-1]``) is measurably SHORTER than the native track's
+    true total length (measured on the real 758 m track: 755.9 m vs. 758.0 m,
+    a ~2 m / 0.27% shortfall). ``_to_n``'s index-fraction map implicitly
+    assumes the two spans are equal, so by the END of the lap it silently
+    samples ``camber_s`` about 2 m further along the track than each node's
+    own true arc-length position -- invisible on a slowly-varying camber
+    signal, but large wherever ``camber_s`` itself changes quickly over a few
+    metres (a banking transition). Confirmed root cause of the r_lat-dominant
+    residual cluster at nodes 322-387 (s ~610-733 m) on the real track: node
+    387's TRUE camber (arc-length, at its own d=733.2 m) is 0.0086 rad, but
+    the ~2 m-ahead value the solver's OWN ``_to_n`` actually applied there is
+    0.0653 rad (``camber_s`` swings from ~0.31 down to ~0 across exactly this
+    stretch) -- a 7.5x difference that alone drove r_lat from ~1.0 to 1.0647.
+
+    This is a real (if minor) INCONSISTENCY inside the solver itself (its
+    ``resample_track``-based grid and its ``_to_n``-based 1D-array resample
+    do not share the same arc-length domain) -- not a deliberate design
+    choice. But per this module's stated design principle (see module
+    docstring, "Grid choice"): the validator's job is to audit what the
+    solver ACTUALLY enforced on its own discretization, not to silently
+    "correct" a quirk the solver itself never applied -- so this mirrors
+    ``_to_n`` exactly, quirk included, rather than using a more-accurate
+    arc-length interpolation the solver never used.
+
+    Degenerate-input guard (not a real code path -- ``camber_s`` is only ever
+    non-None with real per-point data, always sized to match the track's own
+    native point count elsewhere): an empty ``camber_s`` returns zeros (no
+    boost) rather than raising, mirroring the predecessor formula's own
+    graceful no-op when the track had too few points to interpolate against.
+    """
+    a = np.asarray(camber_s, dtype=np.float64)
+    if len(a) == 0:
+        return np.zeros(N)
+    if len(a) == N:
+        return a
+    return np.interp(np.linspace(0, 1, N), np.linspace(0, 1, len(a)), a)
+
+
 @dataclass
 class _Kinematics:
     """Reconstructed-from-outputs bundle shared by friction_ellipse and
@@ -634,11 +710,12 @@ def _check_friction_ellipse(
     if geom_field is not None:
         ay_lim = ay_lim * (1.0 + K_CAMBER * np.abs(camber))
     elif camber_s is not None:
-        # Resample camber_s (track-space) to solution's distance_m grid via interpolation.
-        s_track_grid = _track_s(track)
-        if len(s_track_grid) >= 2:
-            camber_resampled = np.interp(d, s_track_grid, camber_s)
-            ay_lim = ay_lim * (1.0 + K_CAMBER * np.abs(camber_resampled))
+        # Index-fraction resample (_solver_camber_n), NOT arc-length -- this
+        # is how ocp_2d._to_n/ocp_2d_stitched._to_n actually feed camber_s to
+        # the solver's ay_lim boost (round-4 fix; see _solver_camber_n's
+        # docstring and b1-task-6d-debug4-report.md).
+        camber_resampled = _solver_camber_n(camber_s, N)
+        ay_lim = ay_lim * (1.0 + K_CAMBER * np.abs(camber_resampled))
 
     with np.errstate(divide="ignore", invalid="ignore"):
         r = (kin.a_lon / ax_lim) ** 2 + (kin.a_lat / ay_lim) ** 2
@@ -683,8 +760,9 @@ def validate_solution(
 
     Legacy 1D camber boost: if camber_s is provided (and geom_field is None),
     the ay_lim friction limit is boosted by (1 + K_CAMBER * |camber|) where
-    camber is resampled from the track's arclength grid to the solution's
-    distance_m grid.
+    camber is resampled onto the solution's node count by INDEX FRACTION
+    (see _solver_camber_n), mirroring the solver's own ocp_2d._to_n /
+    ocp_2d_stitched._to_n -- not an arc-length interpolation.
     """
     weather = getattr(sol, "weather", None)
     grip_multiplier = float(weather.grip_multiplier) if weather is not None else 1.0
