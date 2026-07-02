@@ -30,6 +30,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import shutil
 import sys
 from pathlib import Path
@@ -88,9 +89,11 @@ def _save_aliases_registry(path: Path, registry: dict) -> None:
     # No sort_keys — preserve the registry's existing (non-alphabetical,
     # chronological) key order; json.dump keeps insertion order by default,
     # so pre-existing entries never move and new ones land at the end.
-    with open(path, "w", encoding="utf-8") as fh:
+    tmp = path.with_suffix(".json.tmp")
+    with open(tmp, "w", encoding="utf-8") as fh:
         json.dump(registry, fh, indent=2)
         fh.write("\n")
+    os.replace(tmp, path)
 
 
 def bless_gt(

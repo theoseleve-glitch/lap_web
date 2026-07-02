@@ -153,3 +153,49 @@ def test_bless_cli_help_exits_zero():
     with pytest.raises(SystemExit) as exc_info:
         main(["--help"])
     assert exc_info.value.code == 0
+
+
+# ---------------------------------------------------------------------------
+# Crossing boundaries validator test
+# ---------------------------------------------------------------------------
+
+def test_crossing_boundaries_fail(tmp_path):
+    """Test that left/right boundaries intersecting fails validation.
+
+    Creates a GT file where the left and right boundary polylines deliberately
+    cross by swapping half of the coordinates between them.
+    """
+    lat0, lon0 = 47.388, 0.789
+    mx, my = 111_320 * np.cos(np.radians(lat0)), 110_540
+    n = 60
+
+    def ring(r):
+        th = np.linspace(0, 2 * np.pi, n, endpoint=False)
+        pts = [[lon0 + r * np.cos(t) / mx, lat0 + r * np.sin(t) / my] for t in th]
+        pts.append(pts[0])  # close the ring
+        return pts
+
+    left_ring = ring(60.0)
+    right_ring = ring(52.0)
+
+    # Swap the middle half of coordinates between left and right to make them cross
+    swap_start = n // 4
+    swap_end = n // 2
+    for i in range(swap_start, swap_end):
+        left_ring[i], right_ring[i] = right_ring[i], left_ring[i]
+
+    feats = [
+        {"type": "Feature", "properties": {"role": "left_boundary_gt"},
+         "geometry": {"type": "LineString", "coordinates": left_ring}},
+        {"type": "Feature", "properties": {"role": "right_boundary_gt"},
+         "geometry": {"type": "LineString", "coordinates": right_ring}},
+    ]
+    props = {"schema": "trackreco_ground_truth_v1", "track_name": "t",
+             "reviewed_by": "theo"}
+    p = tmp_path / "gt_crossing.geojson"
+    p.write_text(json.dumps({"type": "FeatureCollection", "properties": props,
+                             "features": feats}), encoding="utf-8")
+
+    msgs = validate_gt_geojson(p)
+    assert any("intersect" in m.lower() for m in msgs), \
+        f"Expected 'intersect' in validation messages, got: {msgs}"
