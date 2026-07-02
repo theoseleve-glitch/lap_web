@@ -15,12 +15,13 @@ import logging
 import os
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable
 
 import numpy as np
 
 from track_surface.centerline import extract_centerline
 from track_surface.frenet import FrenetFrame
+from track_surface.geometry_gates import GateReport, run_geometry_gates
 from track_surface.grip_2d import GripSurface
 from track_surface.model import TrackSurface
 
@@ -263,6 +264,7 @@ def merge_track_model(
     sidecar_root: str | None = None,
     vehicle_class: str = "generic",
     condition: str = "dry",
+    on_geometry_rejected: Callable[[GateReport], None] | None = None,
 ) -> bool:
     """Merge a session's TrackSurface into the accumulated sidecar.
 
@@ -271,6 +273,14 @@ def merge_track_model(
 
     Creates the sidecar from scratch if none exists (bootstrap).
     Returns True on success, False if rejected or failed.
+
+    Before the geometry parquet is written (either the bootstrap path or the
+    merged path), the surface actually being written runs through
+    ``run_geometry_gates`` (spec A3). A failing surface withholds ONLY that
+    parquet write — grip/global persistence and the return value are
+    unaffected — and, if given, ``on_geometry_rejected`` is invoked exactly
+    once with the ``GateReport``. Callback exceptions are swallowed+logged so
+    a broken caller can never break persistence.
     """
     try:
         import pyarrow as pa
@@ -287,7 +297,11 @@ def merge_track_model(
 
     if existing is None:
         # Bootstrap: save geometry to shared dir, grip to keyed dir
-        _save_surface_parquet(model_path, new_surface)
+        report = run_geometry_gates(new_surface)
+        if report.passed:
+            _save_surface_parquet(model_path, new_surface)
+        else:
+            _reject_geometry(track_id, report, on_geometry_rejected)
         if new_surface.grip_2d is not None:
             _save_grip_2d(grip_dir / "grip_2d.parquet", new_surface.grip_2d)
         logger.info("Bootstrapped track model: track=%s, class=%s, cond=%s, laps=%d",
@@ -374,13 +388,38 @@ def merge_track_model(
         merged.grip_2d = existing.grip_2d
 
     # Save
-    _save_surface_parquet(model_path, merged)
+    report = run_geometry_gates(merged)
+    if report.passed:
+        _save_surface_parquet(model_path, merged)
+    else:
+        _reject_geometry(track_id, report, on_geometry_rejected)
     if merged.grip_2d is not None:
         _save_grip_2d(grip_dir / "grip_2d.parquet", merged.grip_2d)
 
     logger.info("Merged track model: track=%s, laps=%d→%d, tier=%s",
                 track_id, existing.n_laps, n_merged, merged.quality_tier)
     return True
+
+
+def _reject_geometry(
+    track_id: str,
+    report: GateReport,
+    on_geometry_rejected: Callable[[GateReport], None] | None,
+) -> None:
+    """Log a gate rejection and fire the callback at most once.
+
+    The callback is user/caller-supplied (e.g. pipeline audit recording) and
+    must never be allowed to break persistence — exceptions are swallowed
+    and logged, never propagated.
+    """
+    logger.warning("geometry gates rejected %s: %s", track_id,
+                    [f.gate for f in report.failures])
+    if on_geometry_rejected is None:
+        return
+    try:
+        on_geometry_rejected(report)
+    except Exception as exc:
+        logger.warning("on_geometry_rejected callback raised for %s: %s", track_id, exc)
 
 
 def _validate_merge(existing: TrackSurface, new: TrackSurface) -> bool:

@@ -76,7 +76,11 @@ def run_surface_build(
     session_surface = build_track_surface(resampled_laps, track_id, adapter_format)
 
     # Merge into accumulated model (keyed by class+condition)
-    merged = merge_track_model(track_id, session_surface, vehicle_class=v_class, condition=t_condition)
+    merged = merge_track_model(
+        track_id, session_surface, vehicle_class=v_class, condition=t_condition,
+        on_geometry_rejected=lambda report: _record_geometry_rejection(
+            track_id, v_class, t_condition, report),
+    )
     if merged:
         logger.info("Track model accumulated: track=%s, class=%s, cond=%s",
                      track_id, v_class, t_condition)
@@ -92,6 +96,55 @@ def run_surface_build(
         "vehicle_class": v_class,
         "track_condition": t_condition,
     }
+
+
+def _record_geometry_rejection(track_id: str, v_class: str, t_condition: str, report: Any) -> None:
+    """Insert one ``track_geometry_audit`` row per failed gate (spec A3).
+
+    Connection pattern mirrors ``tasks/racing_line_tasks.py`` — the other
+    Celery-adjacent writer of a global, RLS-free ``track_*`` table (migration
+    078) — using the maintenance DSN (``get_maint_connection`` /
+    ``return_pg_connection``), not the per-request/workspace-scoped
+    connection ``pipeline.orchestrator._open_ws_conn`` opens for
+    ``upsert_global_surface`` (that one pins an RLS GUC via SQLAlchemy
+    ``:name`` params, which doesn't apply to this RLS-free table).
+
+    Audit recording must never break the pipeline: every failure mode here
+    (import, connect, insert, commit) is caught and logged, never raised.
+    """
+    import json
+
+    try:
+        from web.db_pg import get_maint_connection, return_pg_connection
+    except Exception as exc:
+        logger.warning("geometry-audit: db module unavailable, skipping audit for %s: %s",
+                        track_id, exc)
+        return
+
+    try:
+        conn = get_maint_connection()
+    except Exception as exc:
+        logger.warning("geometry-audit: could not open maint connection for %s: %s",
+                        track_id, exc)
+        return
+
+    try:
+        for failure in report.to_details()["failures"]:
+            cur = conn.cursor()
+            try:
+                cur.execute(
+                    "INSERT INTO track_geometry_audit "
+                    "(track_id, vehicle_class, condition, gate, details) "
+                    "VALUES (%s,%s,%s,%s,%s::jsonb)",
+                    (track_id, v_class, t_condition, failure["gate"], json.dumps(failure)),
+                )
+            finally:
+                cur.close()
+        conn.commit()
+    except Exception as exc:
+        logger.warning("geometry-audit: failed to record rejection for %s: %s", track_id, exc)
+    finally:
+        return_pg_connection(conn)
 
 
 def run_optimal_line(
