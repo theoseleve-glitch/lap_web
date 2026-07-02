@@ -681,6 +681,12 @@ def solve_minimum_time_2d(
     # known-hazard prohibition and guess seeding stay consistent.
     n_lo_field = float(mu_field.n_bins[0])
     n_hi_field = float(mu_field.n_bins[-1])
+    # Geometry lookups must never extrapolate: cubic bspline is unbounded
+    # outside knots, so additionally intersect with geom_field's n-domain when
+    # geom_field is provided (same pattern as mu_field intersection).
+    if geom_field is not None:
+        n_lo_field = max(n_lo_field, float(geom_field.n_bins[0]))
+        n_hi_field = min(n_hi_field, float(geom_field.n_bins[-1]))
     n_bounds: list[tuple[float, float]] = []
     lo_arr = np.empty(N)
     hi_arr = np.empty(N)

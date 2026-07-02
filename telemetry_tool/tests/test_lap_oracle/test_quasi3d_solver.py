@@ -91,3 +91,34 @@ def test_banked_corners_beat_flat():
     banked = _solve(track, mu, _geom(0.08))   # up to ~0.32 rad at |n|=4
     assert banked.solver_status in ("optimal", "suboptimal")
     assert banked.optimal_lap_time_s < flat.optimal_lap_time_s - 0.05
+
+
+def test_geom_narrow_n_domain_clamps_line():
+    """Verify N_lat bounds intersect geom_field n-domain — no bspline extrapolation.
+
+    When geom_field has a narrower n-domain than the track width or mu_field,
+    the optimizer must be constrained to stay within the geometry domain to avoid
+    cubic bspline extrapolation.
+    """
+    track = _track(); mu = _mu(track)
+
+    # Build a geom_field with narrow n-domain [-1.5, +1.5] m
+    # (track width is ±4 m, mu_field is ±4 m, so this is the limiting constraint)
+    s_bins = np.linspace(0.0, 400.0, 81)
+    n_bins = np.linspace(-1.5, 1.5, 7)
+    camber = np.zeros((81, 7))
+    grade = np.zeros((81, 7))
+    kv = np.zeros((81, 7))
+    narrow_geom = GeomField(
+        s_bins=s_bins, n_bins=n_bins,
+        kv_grid=kv, camber_grid=camber, grade_grid=grade
+    )
+
+    solution = _solve(track, mu, narrow_geom)
+
+    # Solver must complete without error, and the line must stay within bounds
+    # (with small numerical tolerance for cubic spline evaluation)
+    assert solution.solver_status in ("optimal", "suboptimal")
+    max_lateral_offset = np.max(np.abs(solution.lateral_offset_m))
+    assert max_lateral_offset <= 1.5 + 1e-6, \
+        f"Line exceeded geom_field n-domain: max |n| = {max_lateral_offset}, limit = 1.5"
