@@ -14,6 +14,7 @@ import logging
 import numpy as np
 
 from track_surface.drainage import puddle_footprint_radius
+from track_surface.geom_field import build_geom_field
 from track_surface.model import TrackSurface
 
 logger = logging.getLogger(__name__)
@@ -388,6 +389,7 @@ def solve_optimal_line_2d(
     n_points: int = 400,
     max_time_s: float = 120.0,
     envelope_caps: dict | None = None,
+    force_no_geom: bool = False,
 ):
     """Compute the optimal racing line with the TRUE 2D grip field in the NLP.
 
@@ -405,6 +407,11 @@ def solve_optimal_line_2d(
     envelope_caps: optional demonstrated longitudinal limits (from
     vehicle_profile.resolve_vehicle_params) — bounds drive/brake per speed;
     None uses the vehicle's power/brake scalars.
+
+    force_no_geom: when True, skip quasi-3D geom_field construction entirely
+    and solve with the legacy centerline-only geometry modifiers, even if
+    surface.elevation_surface is present. For the A/B harness comparing
+    quasi-3D against the 2D baseline on the same surface.
 
     Raises ValueError if surface.grip_2d is None (needs >= 10 laps),
     ImportError if casadi/lap_oracle unavailable.
@@ -498,6 +505,34 @@ def solve_optimal_line_2d(
     if surface.camber_rad is not None:
         camber_s = np.abs(np.asarray(surface.camber_rad, dtype=float))
 
+    # Quasi-3D geometry field: (s, n) kv/camber/grade grids built from the
+    # surface's accumulated elevation data (build_geom_field, Task 1), so the
+    # stitched solver samples geometry at the LINE's actual lateral position
+    # instead of only the frozen centerline (grade_s/camber_s above).
+    # getattr-safe: elevation_surface may be absent entirely on older/stub
+    # surfaces, not just None. force_no_geom short-circuits construction for
+    # the A/B harness's forced-2D baseline. None either way is safe — the
+    # stitched solver's geom_field=None path is byte-compatible with the
+    # pre-quasi-3D solve.
+    if force_no_geom:
+        geom_field = None
+        logger.info(
+            "solve_optimal_line_2d: forced-2D — geom_field construction "
+            "skipped (force_no_geom=True); centerline geometry modifiers"
+        )
+    else:
+        geom_field = build_geom_field(getattr(surface, "elevation_surface", None))
+        if geom_field is not None:
+            logger.info(
+                "solve_optimal_line_2d: quasi-3D geometry field active (%dx%d)",
+                geom_field.kv_grid.shape[0], geom_field.kv_grid.shape[1],
+            )
+        else:
+            logger.info(
+                "solve_optimal_line_2d: no elevation surface — centerline "
+                "geometry modifiers"
+            )
+
     if condition in ("dry", "damp"):
         # 'damp' is a real tier, not a wet alias: the caller loads the measured
         # damp-session grip sidecar and we solve it exactly like dry — real
@@ -530,4 +565,5 @@ def solve_optimal_line_2d(
         envelope_caps=envelope_caps,
         grade_s=grade_s,
         camber_s=camber_s,
+        geom_field=geom_field,
     )

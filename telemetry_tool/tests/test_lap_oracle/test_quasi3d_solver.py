@@ -7,6 +7,8 @@ Physics probes on a synthetic 400 m oval-ish track with one corner:
 """
 from __future__ import annotations
 
+from types import SimpleNamespace
+
 import numpy as np
 import pytest
 
@@ -134,3 +136,97 @@ def test_stitched_zero_geom_matches_legacy():
         geom_field=_geom(0.0))
     assert zeroed.optimal_lap_time_s == pytest.approx(
         legacy.optimal_lap_time_s, abs=1e-3)
+
+
+# ---------------------------------------------------------------------------
+# Task 4: bridge wiring — solve_optimal_line_2d builds geom_field from the
+# surface's elevation data and threads it through to the stitched solver.
+# ---------------------------------------------------------------------------
+def _patch_bridge_internals(monkeypatch, captured):
+    """Stub every solver_bridge internal EXCEPT the geom_field wiring itself.
+
+    mu_field.py / fallback_qss.py have their own suites (real ones exercised
+    elsewhere) — this lets a minimal SimpleNamespace surface clear every
+    guard and reach the stitched call, where fake_stitched captures the
+    geom_field kwarg and stops (RuntimeError) before any real solve runs.
+    """
+    from track_surface import solver_bridge
+
+    def fake_stitched(track, vehicle, mu, **kw):
+        captured["geom_field"] = kw.get("geom_field")
+        raise RuntimeError("stop-after-capture")
+
+    monkeypatch.setattr(
+        "lap_oracle.solver.ocp_2d_stitched.solve_minimum_time_2d_stitched",
+        fake_stitched)
+    monkeypatch.setattr(
+        "track_surface.mu_field.build_dry_mu_field",
+        lambda grip_2d, spatial=None, condition_factor=1.0: object())
+    monkeypatch.setattr(
+        "lap_oracle.solver.fallback_qss.solve_qss",
+        lambda track, vehicle, weather=None: object())
+    monkeypatch.setattr(
+        solver_bridge, "surface_to_track_model",
+        lambda s: SimpleNamespace(total_length_m=756.0),
+    )
+
+
+def _bridge_surface(*, elevation_surface):
+    """Minimal surface clearing the guards — pattern from
+    test_degenerate_geometry_guard.py's passing case, plus the elevation
+    fields solve_optimal_line_2d reads directly (not getattr-safe)."""
+    return SimpleNamespace(
+        grip_2d=object(), quality_tier="gold",
+        frenet=SimpleNamespace(n_points=1517),
+        slope_pct=None, camber_rad=None,
+        elevation_surface=elevation_surface,
+    )
+
+
+def test_bridge_passes_geom_field(monkeypatch):
+    # NOTE: bare `tests.test_lap_oracle` is shadowed by an unrelated empty
+    # `tests/` package at the repo root (lap_web-wt-race-brief/tests/,
+    # also has __init__.py) — pytest's own rootdir walk for THIS file
+    # resolves it as telemetry_tool.tests.test_lap_oracle.test_quasi3d_solver,
+    # so the sibling import must match that same fully-qualified prefix.
+    from telemetry_tool.tests.test_lap_oracle.test_geom_field import _elev
+    from track_surface import solver_bridge
+
+    captured = {}
+    _patch_bridge_internals(monkeypatch, captured)
+
+    # elevation_surface present -> geom_field is a real GeomField.
+    surface = _bridge_surface(elevation_surface=_elev())
+    with pytest.raises(RuntimeError, match="stop-after-capture"):
+        solver_bridge.solve_optimal_line_2d(surface, condition="dry")
+    assert isinstance(captured["geom_field"], GeomField)
+
+    # No elevation surface (e.g. < 3 laps accumulated) -> geom_field is
+    # None, not an error: the stitched solver's geom_field=None path is
+    # byte-compatible with the pre-quasi-3D behaviour.
+    surface_no_elev = _bridge_surface(elevation_surface=None)
+    with pytest.raises(RuntimeError, match="stop-after-capture"):
+        solver_bridge.solve_optimal_line_2d(surface_no_elev, condition="dry")
+    assert captured["geom_field"] is None
+
+
+def test_bridge_force_no_geom_skips_geom_field(monkeypatch):
+    """force_no_geom=True skips geom_field construction entirely, even with
+    a usable elevation_surface present (Task 6's A/B harness forces the
+    legacy centerline-only baseline)."""
+    # NOTE: bare `tests.test_lap_oracle` is shadowed by an unrelated empty
+    # `tests/` package at the repo root (lap_web-wt-race-brief/tests/,
+    # also has __init__.py) — pytest's own rootdir walk for THIS file
+    # resolves it as telemetry_tool.tests.test_lap_oracle.test_quasi3d_solver,
+    # so the sibling import must match that same fully-qualified prefix.
+    from telemetry_tool.tests.test_lap_oracle.test_geom_field import _elev
+    from track_surface import solver_bridge
+
+    captured = {}
+    _patch_bridge_internals(monkeypatch, captured)
+
+    surface = _bridge_surface(elevation_surface=_elev())
+    with pytest.raises(RuntimeError, match="stop-after-capture"):
+        solver_bridge.solve_optimal_line_2d(
+            surface, condition="dry", force_no_geom=True)
+    assert captured["geom_field"] is None
