@@ -46,6 +46,11 @@ SMOOTHNESS_BOUND: float = 1.2 * DKAPPA_MAX
 # finite-difference curvature/dv-ds stencils are least accurate there.
 _EDGE_EXCLUDE: int = 3
 
+# NOTE on closure convention: smoothness check uses solver's periodic second-difference
+# (central_second_diff_periodic for closed track); heading/curvature for friction_ellipse
+# and lap_time_consistent use open-endpoint stencils + 3-node edge exclusion. Do not
+# unify these -- they reflect the distinct boundary semantics (closed path vs. interval).
+
 
 @dataclass
 class CheckResult:
@@ -306,7 +311,8 @@ def _check_lap_time_consistent(kin: _Kinematics, sol: OCPSolution, *, eps: float
 
 def _check_friction_ellipse(
     kin: _Kinematics, track: TrackModel, mu_field: MuField, vehicle: VehicleParams,
-    weather_grip_multiplier: float, *, geom_field: GeomField | None, eps: float,
+    weather_grip_multiplier: float, *, geom_field: GeomField | None,
+    camber_s: np.ndarray | None = None, eps: float,
 ) -> CheckResult:
     v, n, d = kin.v, kin.n, kin.d
     N = len(v)
@@ -347,8 +353,16 @@ def _check_friction_ellipse(
     mu_long = vehicle.tyre_long.D * weather_grip_multiplier * grip
     ax_lim = mu_long * fz_total / vehicle.mass_kg
     ay_lim = mu_lat * fz_total / vehicle.mass_kg
+    # Mirror solver's precedence: geom_field's camber boost takes precedence;
+    # if not available, use legacy camber_s 1D boost.
     if geom_field is not None:
         ay_lim = ay_lim * (1.0 + K_CAMBER * np.abs(camber))
+    elif camber_s is not None:
+        # Resample camber_s (track-space) to solution's distance_m grid via interpolation.
+        s_track_grid = _track_s(track)
+        if len(s_track_grid) >= 2:
+            camber_resampled = np.interp(d, s_track_grid, camber_s)
+            ay_lim = ay_lim * (1.0 + K_CAMBER * np.abs(camber_resampled))
 
     with np.errstate(divide="ignore", invalid="ignore"):
         r = (kin.a_lon / ax_lim) ** 2 + (kin.a_lat / ay_lim) ** 2
@@ -384,11 +398,18 @@ def validate_solution(
     vehicle: VehicleParams,
     *,
     geom_field: GeomField | None = None,
+    camber_s: np.ndarray | None = None,
     eps: float = 0.02,
 ) -> ValidationReport:
     """Audit ``sol`` from its outputs only. ``eps`` is the shared slack: the
     friction-ellipse residual tolerance (pass iff max(r) <= 1+eps) and the
-    lap-time relative tolerance both default to the same 2%."""
+    lap-time relative tolerance both default to the same 2%.
+
+    Legacy 1D camber boost: if camber_s is provided (and geom_field is None),
+    the ay_lim friction limit is boosted by (1 + K_CAMBER * |camber|) where
+    camber is resampled from the track's arclength grid to the solution's
+    distance_m grid.
+    """
     weather = getattr(sol, "weather", None)
     grip_multiplier = float(weather.grip_multiplier) if weather is not None else 1.0
 
@@ -399,7 +420,7 @@ def validate_solution(
         _check_track_limits(sol, track),
         _check_friction_ellipse(
             kin, track, mu_field, vehicle, grip_multiplier,
-            geom_field=geom_field, eps=eps,
+            geom_field=geom_field, camber_s=camber_s, eps=eps,
         ),
         _check_controls_bounded(sol),
         _check_lap_time_consistent(kin, sol, eps=eps),

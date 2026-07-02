@@ -20,7 +20,8 @@ import pytest
 needs_casadi = pytest.importorskip("casadi")  # skips when casadi absent
 
 from lap_oracle.config import OCPSolution, TrackModel, VehicleParams
-from lap_oracle.solver.ocp_2d import DKAPPA_MAX, MuField
+from lap_oracle.solver.ocp_2d import DKAPPA_MAX, K_CAMBER, G, MuField
+from track_surface.geom_field import GeomField
 from track_surface.solution_validator import (
     ValidationReport,
     _reconstruct,
@@ -287,3 +288,90 @@ def test_sawtooth_lateral_offset_fails_only_smoothness():
     assert not _by_name(report, "smoothness").passed
     assert _by_name(report, "smoothness").worst > 1.2 * DKAPPA_MAX
     _assert_only_this_check_fails(report, "smoothness")
+
+
+# ---------------------------------------------------------------------------
+# (g) legacy camber_s boost -> friction_ellipse fails without, passes with
+# ---------------------------------------------------------------------------
+
+def test_legacy_camber_boost_mirrored():
+    # Derive a speed such that friction_ellipse residual r sits between
+    # unboosted and boosted limits. Constant camber_s = 0.3 rad.
+    track = _curved_track(n_points=50, radius=100.0, arc_rad=1.0)
+    mu_field = _uniform_mu_field(track)
+    vehicle = _vehicle()
+
+    # Baseline without camber: choose speed such that residual r is just under
+    # friction limit (e.g. r ≈ 0.95), then add camber to boost ay_lim.
+    # Numerically derive v from: a_lat = v^2 * kappa, need a_lat ≈ ay_lim_unboosted * 0.95
+    # For straight or weakly-curved: kappa ≈ 1/radius_eff, so solve for v.
+    radius = 100.0
+    kappa = 1.0 / radius
+    # ay_lim_unboosted ≈ mu_lat * g, where mu_lat ≈ 1.0 * vehicle.tyre_lat.D (mu=1, no weather)
+    # For vehicle defaults: mu_lat.D ≈ 1.3, so ay_lim_unboosted ≈ 1.3 * 9.81 ≈ 12.75 m/s^2
+    # Set a_lat = 0.95 * 12.75 ≈ 12.11, solve v: v^2 * 0.01 = 12.11 -> v ≈ 34.7 m/s
+    v_speed = 34.7
+
+    # Build consistent solution at this speed (no offset).
+    sol_unboosted = _consistent_solution(track, speed=v_speed)
+
+    # Without camber_s, this should be at or below the friction limit.
+    report_unboosted = _report_for(sol_unboosted, track, mu_field, vehicle)
+    unboosted_residual = _by_name(report_unboosted, "friction_ellipse").worst
+    # The residual should be close to (but likely under) 1.0 given our derived v.
+
+    # Now test WITH camber_s: same solution, but pass camber_s with constant 0.3 rad.
+    # This should boost ay_lim by (1 + K_CAMBER*0.3), making the residual pass even more easily.
+    camber_s_arr = np.full(track.n_points, 0.3)
+    report_boosted = validate_solution(
+        sol_unboosted, track, mu_field, vehicle,
+        camber_s=camber_s_arr, eps=0.02,
+    )
+    boosted_residual = _by_name(report_boosted, "friction_ellipse").worst
+
+    # The residual MUST be lower with the boost (larger ay_lim -> smaller r).
+    assert boosted_residual < unboosted_residual, (
+        f"camber boost should reduce residual: unboosted={unboosted_residual:.4f}, "
+        f"boosted={boosted_residual:.4f}"
+    )
+    # With the boost, we expect the test to pass (residual <= 1.02).
+    assert _by_name(report_boosted, "friction_ellipse").passed, (
+        f"friction_ellipse should pass with camber_s boost (residual={boosted_residual:.4f})"
+    )
+
+
+# ---------------------------------------------------------------------------
+# (h) GeomField branch smoke test -> all six checks reported
+# ---------------------------------------------------------------------------
+
+def test_geom_field_branch_smoke():
+    # Smoke test: GeomField with zero kv and constant camber should run cleanly
+    # and report all six checks with no exceptions.
+    track = _curved_track(n_points=50, radius=100.0, arc_rad=1.0)
+    s_track = np.concatenate(([0.0], np.cumsum(track.ds))) if track.n_points > 1 else np.zeros(track.n_points)
+
+    # Build a minimal GeomField: constant kv=0, constant camber=0.1 rad, constant grade=0.
+    geom = GeomField(
+        s_bins=np.array([s_track[0], s_track[-1]]),
+        n_bins=np.array([-WIDTH, WIDTH]),
+        kv_grid=np.zeros((2, 2)),
+        camber_grid=np.full((2, 2), 0.1),
+        grade_grid=np.zeros((2, 2)),
+    )
+
+    sol = _consistent_solution(track, speed=25.0)
+    mu_field = _uniform_mu_field(track)
+    vehicle = _vehicle()
+
+    report = validate_solution(
+        sol, track, mu_field, vehicle,
+        geom_field=geom, eps=0.02,
+    )
+
+    # Must have all six checks and no exceptions.
+    assert len(report.checks) == 6
+    assert all(hasattr(c, "check") and hasattr(c, "passed") for c in report.checks)
+    check_names = {c.check for c in report.checks}
+    expected = {"finite_speed", "track_limits", "friction_ellipse",
+                "controls_bounded", "lap_time_consistent", "smoothness"}
+    assert check_names == expected, f"got {check_names}, expected {expected}"
