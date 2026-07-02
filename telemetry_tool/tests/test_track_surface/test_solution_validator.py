@@ -26,11 +26,11 @@ from lap_oracle.solver.ocp_2d import DKAPPA_MAX, K_CAMBER, G, MuField, _PATH_LEN
 from track_surface.geom_field import GeomField
 from track_surface.solution_validator import (
     ValidationReport,
-    _centerline_curvature,
     _make_mu_lut,
     _offset_curvature,
     _reconstruct,
     _solver_a_lon,
+    _solver_grid,
     validate_solution,
 )
 
@@ -511,8 +511,14 @@ def test_solver_a_lon_uses_frenet_path_length_and_is_not_node_centered():
 
     # (1) ground truth for segment i (nodes i, i+1), using the SAME kappa_c
     # recipe the implementation uses (not an analytic 1/R approximation).
-    s_track = np.concatenate(([0.0], np.cumsum(track.ds)))
-    kappa_c_i = np.interp(d[i], s_track, _centerline_curvature(track))
+    # b1-task-6d (round 3): kappa_c now comes from _solver_grid -- the
+    # track resampled (via the SAME resample_track ocp_2d/ocp_2d_stitched
+    # call) onto the solver's OWN grid, at the ds_target recovered from d's
+    # own spacing -- not a native-grid recompute, so the ground truth here
+    # must sample the SAME resampled grid (see b1-task-6d-debug3-report.md).
+    grid = _solver_grid(track, d)
+    s_grid = np.concatenate(([0.0], np.cumsum(grid.ds)))
+    kappa_c_i = np.interp(d[i], s_grid, grid.curvature)
     ds_i = d[i + 1] - d[i]
     ds_path_i = ds_i * max(1.0 - n_arr[i] * kappa_c_i, _PATH_LEN_FLOOR)
     expected_i = (v_step[i + 1] ** 2 - v_step[i] ** 2) / (2.0 * ds_path_i)
@@ -526,3 +532,78 @@ def test_solver_a_lon_uses_frenet_path_length_and_is_not_node_centered():
     # Sanity: the step DOES change segment i itself (else the test proves
     # nothing about isolation).
     assert a_lon_step[i] != pytest.approx(a_lon_flat[i], rel=1e-6)
+
+
+# ---------------------------------------------------------------------------
+# b1-task-6d (round 3) fix: kappa_c (and the other per-node track arrays
+# friction_ellipse/track_limits consume -- width_left/width_right,
+# vert_curvature for the no-geom kv path) are now sampled via _solver_grid,
+# which resamples the track onto the solver's OWN grid (the SAME public
+# resample_track ocp_2d/ocp_2d_stitched call, at the ds_target recovered
+# from the solution's own distance_m spacing), instead of interpolating
+# from the track's native point grid -- root-caused a real-track
+# friction_ellipse residual of 2.17 (node 75: native kappa_c=0.0526 vs.
+# solver-resampled kappa_c=0.0412, ~27% different) to this grid mismatch --
+# see b1-task-6c-debug2-report.md (found, round 2) and
+# b1-task-6d-debug3-report.md (fixed, round 3). These lock the mechanism
+# itself, independent of any solve.
+# ---------------------------------------------------------------------------
+
+def test_solver_grid_is_a_genuine_resample_not_the_native_track():
+    """_solver_grid must actually resample_track (producing a grid with
+    len(d) points, freshly recomputed curvature) rather than passing the
+    native track through unchanged -- the exact mechanism this round's fix
+    relies on. Native track deliberately has a MUCH finer grid (300 points)
+    than the solution's own grid (40 points, as a real stitched solve's
+    sol.distance_m would carry relative to the track's native resolution)."""
+    track = _curved_track(n_points=300, radius=50.0, arc_rad=1.5)
+    d = np.linspace(0.0, track.total_length_m * 0.99, 40)
+
+    grid = _solver_grid(track, d)
+
+    assert grid.n_points == len(d) == 40
+    assert grid.n_points != track.n_points
+    assert grid.curvature is not track.curvature
+
+
+def test_solver_grid_falls_back_below_min_resample_points_ignores_stale_curvature():
+    """Degenerate-input guard: fewer than 10 points on either side must not
+    raise (resample_track -> build_from_xy hard-requires >= 10 points) --
+    falls back to the native track with curvature freshly recomputed from
+    centerline_xy, NEVER trusting track.curvature directly (it may be stale
+    -- see module docstring). Not a real code path for any actual solve
+    (400+ nodes in practice)."""
+    track = _straight_track(n_points=5, ds=10.0)
+    track.curvature = np.full(5, 999.0)  # deliberately stale/wrong sentinel
+    d = np.concatenate(([0.0], np.cumsum(track.ds)))  # also 5 points
+
+    grid = _solver_grid(track, d)
+
+    assert grid.n_points == 5
+    # Straight track's TRUE curvature is 0 everywhere -- never the stale
+    # 999.0 sentinel above.
+    assert np.allclose(grid.curvature, 0.0)
+
+
+def test_offset_curvature_uses_solver_resampled_grid_not_native_interpolation():
+    """kappa_c for a CONSTANT-n offset must match the analytic
+    kappa_c/(1-n*kappa_c) ground truth using the SOLVER-RESAMPLED grid's own
+    curvature (round 3), confirming _offset_curvature no longer routes
+    through a native-grid interpolation. d intentionally carries FAR fewer
+    points (25) than the native track (250) -- a real resample, not a
+    same-resolution passthrough."""
+    R = 60.0
+    track = _curved_track(n_points=250, radius=R, arc_rad=1.0)
+    d = np.linspace(0.0, track.total_length_m * 0.99, 25)
+    n_const = 3.0
+    n_arr = np.full(len(d), n_const)
+
+    kappa_offset = _offset_curvature(track, d, n_arr)
+
+    grid = _solver_grid(track, d)
+    s_grid = np.concatenate(([0.0], np.cumsum(grid.ds)))
+    kappa_c = np.interp(d, s_grid, grid.curvature)
+    expected = kappa_c / np.maximum(1.0 - n_const * kappa_c, 0.1)
+    # Interior nodes only -- same one-sided-stencil-at-the-edges reasoning
+    # as test_offset_curvature_matches_circle_geometry_analytically.
+    np.testing.assert_allclose(kappa_offset[3:-3], expected[3:-3], rtol=1e-9)

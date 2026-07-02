@@ -6,7 +6,8 @@ internals. This is the program's honesty instrument: it never reads a
 solver's internal decision variables (there are none available on
 ``OCPSolution`` anyway) and never trusts the track's precomputed planar
 ``curvature`` array either -- centerline curvature is always re-derived
-from ``centerline_xy`` (see ``_centerline_curvature``). The offset path's
+from ``centerline_xy``, never read off a possibly-stale
+``TrackModel.curvature`` field. The offset path's
 arc length is reconstructed from the reported ``distance_m``/
 ``lateral_offset_m`` arrays by finite differences; its CURVATURE (used by
 ``friction_ellipse``) instead uses the analytic offset-curve formula
@@ -19,6 +20,31 @@ changing fastest (corner entry) at the same time -- confirmed root cause
 of a 9.8x false-positive friction_ellipse failure, see
 b1-task-6b-debug-report.md. A solver bug must not also corrupt the audit,
 but neither should the audit's OWN reconstruction manufacture a false one.
+
+Grid choice (round 3): ``kappa_c(s)`` and the other per-node TRACK arrays
+consumed here (``width_left``/``width_right``, ``vert_curvature`` for the
+no-geom kv path) are sampled via ``_solver_grid`` -- the SAME public
+``lap_oracle.track.model.resample_track`` call
+``ocp_2d.solve_minimum_time_2d`` / ``ocp_2d_stitched.solve_minimum_time_2d_stitched``
+make on the track BEFORE building their NLP (``resample_track(track,
+ds_target=...)``), not the track's native point grid; ``ds_target`` itself
+is recovered from the solution's OWN ``distance_m`` spacing rather than
+re-derived from ``track.total_length_m`` (see ``_solver_grid`` for why the
+latter does not reliably round-trip). This module's independence from the
+solver is about PHYSICS FORMULAS (never importing NLP internals, decision
+variables, or casadi Opti state) -- it is NOT about grid choice: the
+validator's job is to audit the solution against the physics the solver
+enforces ON ITS OWN DISCRETIZATION, and ``sol.distance_m`` IS that
+discretization. Interpolating a reference array from the track's native
+(generally much denser or sparser) grid instead measures the WRONG kappa_c
+at any node where curvature changes quickly between the two grids' spacings
+-- confirmed root cause of a real-track friction_ellipse residual of 2.17
+(node 75: native-grid kappa_c=0.0526 vs. the solver's own resampled
+kappa_c=0.0412, ~27% different, right at an inflection where n(s) also
+swings fastest) that dropped to 0.905 once the solver's own resampled
+kappa_c was substituted -- see b1-task-6c-debug2-report.md (round 2, which
+found and evidenced but deliberately did not fix this) and
+b1-task-6d-debug3-report.md (round 3, this fix).
 
 The friction-ellipse limits (fz, mu, camber boost) mirror
 ``lap_oracle.solver.ocp_2d._solve_once`` exactly -- module constants
@@ -54,7 +80,7 @@ false-positive on a real track.
 """
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 
 import casadi as ca
 import numpy as np
@@ -72,6 +98,7 @@ from lap_oracle.solver.ocp_2d import (
     _PATH_LEN_FLOOR,
     central_second_diff_periodic,
 )
+from lap_oracle.track.model import resample_track
 from track_surface.geom_field import GeomField
 
 # Task 6's smoothness rail check is 1.2x the solver's own hard cap on |d2n|
@@ -227,19 +254,25 @@ def _make_mu_lut(mu_field: MuField):
 
 
 def _centerline_curvature(track: TrackModel) -> np.ndarray:
-    """Reference (centerline) curvature at each of the track's OWN nodes.
+    """Reference (centerline) curvature at each of *track*'s OWN nodes.
 
     Mirrors ``lap_oracle.track.model.build_from_xy``'s finite-difference
     recipe exactly (np.gradient twice), but is NOT imported from there --
     same self-contained convention as ``_heading`` (this module reconstructs
     geometry from raw coordinates only, without pulling in track-construction
     machinery it doesn't otherwise need). Deliberately ignores
-    ``track.curvature`` even when populated: the solver's own reference
-    curvature (``ocp_2d.solve_minimum_time_2d``'s ``kappa``) always comes
-    from a fresh ``resample_track`` -> ``build_from_xy`` recompute too, never
-    from a source track's pre-existing ``curvature`` field, so re-deriving
-    here keeps the validator consistent with what the solver actually
-    enforces rather than trusting a possibly stale/differently-sourced input.
+    ``track.curvature`` even when populated -- never trust a possibly
+    stale/differently-sourced precomputed field; always re-derive from
+    ``centerline_xy``.
+
+    Round 3: this is now used ONLY as ``_solver_grid``'s degenerate-input
+    fallback (too few points to resample -- see there), not as the primary
+    kappa_c source. The solver's own reference curvature
+    (``ocp_2d.solve_minimum_time_2d``'s ``kappa``) always comes from a fresh
+    ``resample_track`` -> ``build_from_xy`` recompute on ITS OWN resampled
+    grid, not the track's native one -- ``_solver_grid`` mirrors that
+    resample; this function remains the native-grid recompute for when a
+    resample genuinely isn't possible.
     """
     xy = track.centerline_xy
     m = len(xy)
@@ -253,6 +286,83 @@ def _centerline_curvature(track: TrackModel) -> np.ndarray:
     return (dx * ddy - dy * ddx) / denom
 
 
+# A resample below this many points hits build_from_xy's own hard minimum
+# ("Need at least 10 centerline points") -- mirrors that constant so
+# _solver_grid can fall back BEFORE calling it, rather than catching its
+# exception. Not a real code path for any actual solve (400+ nodes in
+# practice); only reachable from a hand-built/degenerate track or solution.
+_MIN_RESAMPLE_POINTS: int = 10
+
+
+def _solver_grid(track: TrackModel, d: np.ndarray) -> TrackModel:
+    """Resample *track* onto the SAME per-node grid the solver's OWN NLP
+    construction used for *this* solution, instead of the track's native
+    point grid.
+
+    Mirrors ``ocp_2d.solve_minimum_time_2d`` /
+    ``ocp_2d_stitched.solve_minimum_time_2d_stitched``'s shared,
+    byte-identical discretization: both compute::
+
+        ds_target = track.total_length_m / n_points
+        tk = resample_track(track, ds_target=ds_target)
+
+    and then read ``tk.curvature`` / ``tk.width_left`` / ``tk.width_right`` /
+    ``tk.vert_curvature`` (the last three WIDTH_CAP_M-capped by
+    ``resample_track`` itself where applicable) to build the NLP's per-node
+    reference curvature, corridor (N_lat) bounds, and banking lookup.
+    ``n_points`` itself is not carried on ``OCPSolution``, and ``track's``
+    own ``total_length_m`` is the WRONG denominator to reconstruct it from
+    ``len(d)`` alone: ``ds_target = track.total_length_m / n_points`` fed
+    through ``resample_track``'s ``np.arange(0, total, ds_target)`` does not
+    reliably round-trip back to ``n_points`` output points (floating-point
+    rounding in the division can push the output count up by one -- measured
+    on the demo track: ``n_points=140`` requested yields ``tk.n_points=141``,
+    and naively retrying with ``total_length_m/141`` yields 142, a ratchet,
+    not a fixed point). Instead, ``ds_target`` is recovered from ``d``
+    itself: ``sol.distance_m`` (``d`` here) is built directly from the
+    solver's OWN ``tk`` (see ``ocp._build_solution``: ``distance_m =
+    concatenate(([0.0], cumsum(tk.ds)))``), so ``d``'s own average segment
+    length, ``np.mean(np.diff(d))``, is EXACTLY ``tk.ds.mean()`` -- the
+    solver's own realized spacing, independent of what integer ``n_points``
+    was originally requested or how ``arange`` rounded it. Verified on the
+    demo track: this recovers ``tk.n_points`` exactly (141) and matches the
+    solver's own internal curvature to 0.01%, vs. 4.3% error and the WRONG
+    point count (142) from the ``total_length_m``-based formula -- see
+    b1-task-6d-debug3-report.md.
+
+    Falls back to *track* itself, with ``curvature`` replaced by a fresh
+    finite-difference recompute (``_centerline_curvature`` -- never
+    ``track.curvature`` directly, it may be stale, see module docstring),
+    when a resample isn't possible: fewer than ``_MIN_RESAMPLE_POINTS`` on
+    either the track or the solution (``resample_track`` -> ``build_from_xy``
+    hard-requires >= 10). Not a real code path for any actual solve (140+
+    nodes in practice) -- a degenerate-input guard only, so the validator
+    degrades gracefully instead of raising.
+    """
+    n_points = len(d)
+    if track.n_points < _MIN_RESAMPLE_POINTS or n_points < _MIN_RESAMPLE_POINTS:
+        return replace(track, curvature=_centerline_curvature(track))
+    ds_target = float(np.mean(np.diff(np.asarray(d, dtype=np.float64))))
+    return resample_track(track, ds_target=ds_target)
+
+
+def _solver_kappa_c(track: TrackModel, d: np.ndarray) -> np.ndarray:
+    """Centerline curvature sampled the way the solver's OWN NLP construction
+    reads it -- on ITS resampled grid (``_solver_grid``), interpolated onto
+    ``d`` -- instead of the track's native point grid (see module docstring,
+    "Grid choice (round 3)").
+    """
+    N = len(d)
+    if N == 0:
+        return np.zeros(0)
+    grid = _solver_grid(track, d)
+    s_grid = _track_s(grid)
+    if len(s_grid) < 2:
+        return np.zeros(N)
+    d_c = np.clip(d, s_grid[0], s_grid[-1])
+    return np.interp(d_c, s_grid, grid.curvature)
+
+
 def _offset_curvature(track: TrackModel, d: np.ndarray, n: np.ndarray) -> np.ndarray:
     """Analytic offset-curve curvature from the SOLVED (s, n) arrays.
 
@@ -261,16 +371,18 @@ def _offset_curvature(track: TrackModel, d: np.ndarray, n: np.ndarray) -> np.nda
     at 0.1, same as the solver's constraint) -- this is the curvature the
     solver's friction-ellipse constraint actually enforces, so it is what the
     audit must reconstruct too. ``kappa_c(s)`` is TRACK geometry (an input,
-    not a solver output): computed once by ``_centerline_curvature`` and
-    interpolated onto ``d``. ``d2n/ds2`` uses the SAME periodic stencil as
-    the smoothness check (``central_second_diff_periodic``), applied to
-    n(s) alone -- n is smooth (the solver hard-bounds |d2n| <= DKAPPA_MAX) --
-    unlike a raw finite-difference of heading re-derived from reconstructed
-    (x, y), which compounds two finite differences (position -> heading ->
-    curvature) on a path that ALSO carries n(s)'s own excursions, and is
-    where the original friction_ellipse false-positive lived (see
-    b1-task-6b-debug-report.md: root-caused to this reconstruction, not a
-    real solver violation).
+    not a solver output): sampled by ``_solver_kappa_c`` on the solver's OWN
+    resampled grid (round 3 -- see module docstring; previously the track's
+    native grid, which measures a different kappa_c wherever curvature
+    changes quickly between the two grids' spacings) and interpolated onto
+    ``d``. ``d2n/ds2`` uses the SAME periodic stencil as the smoothness check
+    (``central_second_diff_periodic``), applied to n(s) alone -- n is smooth
+    (the solver hard-bounds |d2n| <= DKAPPA_MAX) -- unlike a raw
+    finite-difference of heading re-derived from reconstructed (x, y), which
+    compounds two finite differences (position -> heading -> curvature) on a
+    path that ALSO carries n(s)'s own excursions, and is where the original
+    friction_ellipse false-positive lived (see b1-task-6b-debug-report.md:
+    root-caused to this reconstruction, not a real solver violation).
     """
     N = len(d)
     if N == 0:
@@ -278,8 +390,7 @@ def _offset_curvature(track: TrackModel, d: np.ndarray, n: np.ndarray) -> np.nda
     s_track = _track_s(track)
     if len(s_track) < 2:
         return np.zeros(N)
-    d_c = np.clip(d, s_track[0], s_track[-1])
-    kappa_c = np.interp(d_c, s_track, _centerline_curvature(track))
+    kappa_c = _solver_kappa_c(track, d)
     d2n = central_second_diff_periodic(n, np.diff(d)) if N >= 3 else np.zeros(N)
     denom = np.maximum(1.0 - n * kappa_c, 0.1)
     return kappa_c / denom + d2n
@@ -294,10 +405,12 @@ def _solver_a_lon(track: TrackModel, d: np.ndarray, n: np.ndarray, v: np.ndarray
     SEGMENT forward difference of v^2 over the Frenet-adjusted path length
     ``ds_path_i = ds[i] * max(1 - n_mid_i*kappa_c_i, _PATH_LEN_FLOOR)`` (the
     SAME Jacobian ``_offset_curvature``/the solver's own ``ds_path_i`` use --
-    ``kappa_c`` is centerline curvature, interpolated the same way
-    ``_offset_curvature`` does). This is a DIFFERENT quantity from a
-    node-centered central difference of v over the reconstructed offset-path
-    chord length (this function's predecessor here): the solver never
+    ``kappa_c`` is centerline curvature, sampled the same way
+    ``_offset_curvature`` does: via ``_solver_kappa_c`` on the solver's OWN
+    resampled grid, round 3 -- see module docstring). This is a DIFFERENT
+    quantity from a node-centered central difference of v over the
+    reconstructed offset-path chord length (this function's predecessor
+    here): the solver never
     blends segment i with segment i-1 the way a central difference at node i
     does, and it Jacobian-scales by the offset path's own length, not the
     raw geometric chord -- both matter at a sharp mu/grip step, where
@@ -319,8 +432,7 @@ def _solver_a_lon(track: TrackModel, d: np.ndarray, n: np.ndarray, v: np.ndarray
     ds_safe = np.where(np.abs(ds) > 1e-9, ds, 1e-9)
     s_track = _track_s(track)
     if len(s_track) >= 2:
-        d_c = np.clip(d, s_track[0], s_track[-1])
-        kappa_c = np.interp(d_c, s_track, _centerline_curvature(track))
+        kappa_c = _solver_kappa_c(track, d)
         n_mid = 0.5 * (n[:-1] + n[1:])
         ds_path = ds_safe * np.maximum(1.0 - n_mid * kappa_c[:-1], _PATH_LEN_FLOOR)
     else:
@@ -383,14 +495,23 @@ def _check_finite_speed(sol: OCPSolution) -> CheckResult:
 
 
 def _check_track_limits(sol: OCPSolution, track: TrackModel) -> CheckResult:
+    # Widths sampled on the solver's OWN resampled grid (_solver_grid, round
+    # 3 -- see module docstring), not the track's native grid: the solver's
+    # own N_lat corridor bounds (ocp_2d.solve_minimum_time_2d /
+    # ocp_2d_stitched's shared `tk.width_left[i]`/`tk.width_right[i]`) are
+    # WIDTH_CAP_M-capped post-resample, so auditing against the (possibly
+    # wider, uncapped) native width could pass a line the solver's own
+    # corridor would never have allowed.
     n = np.asarray(sol.lateral_offset_m, dtype=float)
     d = np.asarray(sol.distance_m, dtype=float)
     s_track = _track_s(track)
     if track.n_points < 2 or n.size == 0 or len(s_track) < 2:
         return CheckResult("track_limits", True, 0.0, "insufficient track/solution data -- skipped")
-    d_c = np.clip(d, s_track[0], s_track[-1])
-    w_left = np.interp(d_c, s_track, track.width_left)
-    w_right = np.interp(d_c, s_track, track.width_right)
+    grid = _solver_grid(track, d)
+    s_grid = _track_s(grid)
+    d_c = np.clip(d, s_grid[0], s_grid[-1])
+    w_left = np.interp(d_c, s_grid, grid.width_left)
+    w_right = np.interp(d_c, s_grid, grid.width_right)
     hi = w_left + 0.05
     lo = -w_right - 0.05
     viol = np.maximum(np.maximum(n - hi, lo - n), 0.0)
@@ -472,12 +593,20 @@ def _check_friction_ellipse(
     # g_eff from vertical curvature: geom_field at (s, n) if given, else the
     # track's own vert_curvature interpolated to distance_m, else flat (kv=0
     # -> g_eff falls back to plain G). Mirrors _solve_once's kv_i/g_eff_i.
+    # No-geom vert_curvature is sampled on the solver's OWN resampled grid
+    # (_solver_grid, round 3 -- see module docstring), not the track's
+    # native grid, same reasoning as kappa_c/widths above. geom_field itself
+    # (the quasi-3D branch) is untouched: it is its own (s, n) grid, not
+    # derived from TrackModel resampling at all.
     if geom_field is not None:
         kv = _bilinear(geom_field.s_bins, geom_field.n_bins, geom_field.kv_grid, d_c, n)
         camber = _bilinear(geom_field.s_bins, geom_field.n_bins, geom_field.camber_grid, d_c, n)
     else:
-        if track.vert_curvature is not None and len(track.vert_curvature) == len(s_track) and len(s_track):
-            kv = np.interp(d_c, s_track, track.vert_curvature)
+        grid = _solver_grid(track, d)
+        s_grid = _track_s(grid)
+        if grid.vert_curvature is not None and len(grid.vert_curvature) == len(s_grid) and len(s_grid):
+            d_g = np.clip(d, s_grid[0], s_grid[-1])
+            kv = np.interp(d_g, s_grid, grid.vert_curvature)
         else:
             kv = np.zeros(N)
         camber = np.zeros(N)
