@@ -69,7 +69,7 @@ def test_non_monotonic_s_fails():
 def test_open_circuit_closure_fails_when_closed_expected():
     th = np.linspace(0.0, 1.5 * np.pi, 300)  # three-quarter circle: ends 141 m apart
     xy = np.column_stack([100 * np.cos(th), 100 * np.sin(th)])
-    seg = np.linalg.norm(np.diff(xy, axis=1 if False else 0), axis=1)
+    seg = np.linalg.norm(np.diff(xy, axis=0), axis=1)
     s = np.concatenate([[0.0], np.cumsum(seg)])
     frenet = SimpleNamespace(centerline_xy=xy, s_grid=s, total_length_m=float(s[-1]))
     surface = SimpleNamespace(frenet=frenet, width_left=None,
@@ -119,6 +119,87 @@ def test_non_finite_fails():
     surface.frenet.centerline_xy = surface.frenet.centerline_xy.copy()
     surface.frenet.centerline_xy[10, 0] = np.nan
     assert any(f.gate == "finite" for f in run_geometry_gates(surface).failures)
+
+
+def test_open_polyline_self_intersection():
+    """Open polyline where last segment crosses first segment (hook shape)."""
+    # Hook shape: (0,0) -> (100,0) -> (100,10) -> (50,10) -> (50,-5)
+    # Last segment (50,10)->(50,-5) crosses first segment (0,0)->(100,0)
+    xy = np.array([
+        [0.0, 0.0],
+        [100.0, 0.0],
+        [100.0, 10.0],
+        [50.0, 10.0],
+        [50.0, -5.0],
+    ])
+    seg = np.linalg.norm(np.diff(xy, axis=0), axis=1)
+    s = np.concatenate([[0.0], np.cumsum(seg)])
+    frenet = SimpleNamespace(centerline_xy=xy, s_grid=s, total_length_m=float(s[-1]))
+    surface = SimpleNamespace(frenet=frenet, width_left=None,
+                              width_right=None, elevation_m=None)
+    # With closed=False, should fail self_intersection (not closure).
+    report = run_geometry_gates(surface, closed=False)
+    assert any(f.gate == "self_intersection" for f in report.failures), \
+        f"Expected self_intersection failure but got: {[f.gate for f in report.failures]}"
+    # Verify closure gate is NOT triggered for open=False.
+    assert not any(f.gate == "closure" for f in report.failures)
+
+
+def test_width_boundary_values():
+    """Width at exact boundaries (0.5 and 30.0 m) must PASS."""
+    # Exactly 0.5 m on both sides should pass.
+    good_min = _circle_surface(
+        width_left=np.full(401, 0.5),
+        width_right=np.full(401, 0.5)
+    )
+    report = run_geometry_gates(good_min)
+    assert not any(f.gate == "width_bounds" for f in report.failures), \
+        f"Width=0.5 should pass but failed: {[f.message for f in report.failures if f.gate == 'width_bounds']}"
+
+    # Exactly 30.0 m on both sides should pass.
+    good_max = _circle_surface(
+        width_left=np.full(401, 30.0),
+        width_right=np.full(401, 30.0)
+    )
+    report = run_geometry_gates(good_max)
+    assert not any(f.gate == "width_bounds" for f in report.failures), \
+        f"Width=30.0 should pass but failed: {[f.message for f in report.failures if f.gate == 'width_bounds']}"
+
+
+def test_arc_length_boundary_values():
+    """Arc length at exactly 100.0 m must PASS."""
+    # Create circle with radius r such that circumference = 100.0 m.
+    # circumference = 2*pi*r => r = 100.0 / (2*pi)
+    r = 100.0 / (2.0 * np.pi)
+
+    # Exactly 100 m (or very close) should pass.
+    good_length = _circle_surface(radius_m=r)
+    report = run_geometry_gates(good_length)
+    assert not any(f.gate == "arc_length" for f in report.failures), \
+        f"Arc length ~100.0 m should pass but failed: {[f.message for f in report.failures if f.gate == 'arc_length']}"
+
+    # Slightly less (99 m) should fail.
+    bad_short = _circle_surface(radius_m=99.0 / (2.0 * np.pi))
+    report = run_geometry_gates(bad_short)
+    assert any(f.gate == "arc_length" for f in report.failures), \
+        "Arc length 99 m should fail arc_length gate"
+
+    # Slightly more (101 m) should pass.
+    good_long = _circle_surface(radius_m=101.0 / (2.0 * np.pi))
+    report = run_geometry_gates(good_long)
+    assert not any(f.gate == "arc_length" for f in report.failures), \
+        f"Arc length 101 m should pass but failed: {[f.message for f in report.failures if f.gate == 'arc_length']}"
+
+
+def test_missing_frenet_gate_label():
+    """Missing frenet frame should be labeled 'missing_frenet', not 'arc_length'."""
+    surface = SimpleNamespace(frenet=None, width_left=None,
+                              width_right=None, elevation_m=None)
+    report = run_geometry_gates(surface)
+    assert not report.passed
+    failures = [f for f in report.failures if f.gate == "missing_frenet"]
+    assert len(failures) == 1, f"Expected missing_frenet gate but got: {[f.gate for f in report.failures]}"
+    assert "no frenet frame on surface" in failures[0].message
 
 
 def test_report_details_serializable():

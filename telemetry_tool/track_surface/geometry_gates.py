@@ -46,16 +46,21 @@ def _fail(failures: list[GateFailure], gate: str, message: str, **values) -> Non
                                         for k, v in values.items()}))
 
 
+def _cross2(a, b) -> float:
+    """Scalar cross product of 2D vectors (avoids numpy>=2 deprecation)."""
+    return float(a[0] * b[1] - a[1] * b[0])
+
+
 def _segments_intersect(p1, p2, p3, p4) -> bool:
     """Proper intersection of segments p1p2 and p3p4 (shared endpoints excluded)."""
-    d1 = np.cross(p4 - p3, p1 - p3)
-    d2 = np.cross(p4 - p3, p2 - p3)
-    d3 = np.cross(p2 - p1, p3 - p1)
-    d4 = np.cross(p2 - p1, p4 - p1)
+    d1 = _cross2(p4 - p3, p1 - p3)
+    d2 = _cross2(p4 - p3, p2 - p3)
+    d3 = _cross2(p2 - p1, p3 - p1)
+    d4 = _cross2(p2 - p1, p4 - p1)
     return bool(((d1 > 0) != (d2 > 0)) and ((d3 > 0) != (d4 > 0)))
 
 
-def _has_self_intersection(xy: np.ndarray) -> bool:
+def _has_self_intersection(xy: np.ndarray, *, closed: bool) -> bool:
     """O(M^2 / cell) sweep on a coarse grid; M <= a few thousand in practice."""
     n = len(xy) - 1
     if n < 3:
@@ -76,8 +81,8 @@ def _has_self_intersection(xy: np.ndarray) -> bool:
                 i, j = idxs[a], idxs[b]
                 if abs(i - j) <= 1 or (i, j) in seen:
                     continue  # adjacent segments share a vertex
-                if {i, j} == {0, n - 1}:
-                    continue  # closing segment touches the first
+                if closed and {i, j} == {0, n - 1}:
+                    continue  # closing segment touches the first (only for closed)
                 seen.add((i, j))
                 if _segments_intersect(xy[i], xy[i + 1], xy[j], xy[j + 1]):
                     return True
@@ -88,7 +93,7 @@ def run_geometry_gates(surface, *, closed: bool = True) -> GateReport:
     failures: list[GateFailure] = []
     frenet = getattr(surface, "frenet", None)
     if frenet is None:
-        _fail(failures, "arc_length", "no frenet frame on surface")
+        _fail(failures, "missing_frenet", "no frenet frame on surface")
         return GateReport(passed=False, failures=failures)
 
     xy = np.asarray(frenet.centerline_xy, dtype=float)
@@ -125,7 +130,7 @@ def run_geometry_gates(surface, *, closed: bool = True) -> GateReport:
                   closure_error_m=closure)
 
     # Self-intersection only meaningful on non-degenerate geometry.
-    if total >= MIN_ARC_LENGTH_M and _has_self_intersection(xy):
+    if total >= MIN_ARC_LENGTH_M and _has_self_intersection(xy, closed=closed):
         _fail(failures, "self_intersection", "centerline crosses itself")
 
     for name in ("width_left", "width_right"):
