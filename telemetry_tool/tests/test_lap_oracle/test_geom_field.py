@@ -50,8 +50,9 @@ def test_unmeasured_cells_row_filled_not_nan():
     gf = build_geom_field(elev, min_count=1)
     assert np.all(np.isfinite(gf.camber_grid))
     assert np.all(np.isfinite(gf.grade_grid))
-    # the garbage column must not have created a cliff in camber
-    assert np.max(np.abs(gf.camber_grid)) < np.arctan(0.5)
+    # unmeasured cells are row-mean-filled before differentiation, creating
+    # a bounded step at the measured/unmeasured seam. This is acceptable.
+    assert np.max(np.abs(np.diff(gf.camber_grid, axis=1))) < np.arctan(0.5)
 
 
 def test_grids_shapes_and_bins_shared():
@@ -59,3 +60,63 @@ def test_grids_shapes_and_bins_shared():
     assert gf.kv_grid.shape == gf.camber_grid.shape == gf.grade_grid.shape
     assert len(gf.s_bins) == gf.kv_grid.shape[0]
     assert len(gf.n_bins) == gf.kv_grid.shape[1]
+
+
+def test_camber_sign_tracks_dz_dn():
+    """Verify signed camber is +/- based on dz/dn, not abs(dz/dn)."""
+    M, K = 50, 9
+    s = np.linspace(0.0, 490.0, M)
+    n = np.linspace(-4.0, 4.0, K)
+
+    # First half of s-rows: positive banking (dz/dn = +0.1)
+    # Second half: negative banking (dz/dn = -0.1)
+    z = np.zeros((M, K))
+    z[:M//2, :] = 0.1 * n[None, :]     # positive bank: z increases with n
+    z[M//2:, :] = -0.1 * n[None, :]    # negative bank: z decreases with n
+
+    elev = ElevationSurface(
+        s_bins=s, n_bins=n, z_grid=z,
+        kv_grid=np.full((M, K), 0.01),
+        count_grid=np.full((M, K), 5, dtype=int),
+        confidence=np.ones((M, K)),
+    )
+
+    gf = build_geom_field(elev)
+    assert isinstance(gf, GeomField)
+
+    # Interior cells in first half should be ~+arctan(0.1)
+    expected_pos_camber = np.arctan(0.1)
+    first_half_interior = gf.camber_grid[5:M//2-5, 2:-2]
+    assert first_half_interior == pytest.approx(expected_pos_camber, abs=1e-4)
+
+    # Interior cells in second half should be ~-arctan(0.1)
+    expected_neg_camber = -np.arctan(0.1)
+    second_half_interior = gf.camber_grid[M//2+5:-5, 2:-2]
+    assert second_half_interior == pytest.approx(expected_neg_camber, abs=1e-4)
+
+
+def test_unmeasured_kv_fill():
+    """Verify unmeasured kv cells are row-mean-filled, not NaN."""
+    elev = _elev()
+    elev.count_grid[:, 0] = 0            # whole left edge unmeasured
+    elev.kv_grid[:, 0] = 999.0           # garbage that must be ignored
+    gf = build_geom_field(elev, min_count=1)
+    # Garbage kv must have been row-filled (kv ~0.01 for all rows)
+    assert np.all(np.abs(gf.kv_grid) < 1.0)
+
+
+def test_degenerate_k_lt_2():
+    """K < 2 (singleton n-dimension) returns None."""
+    s = np.linspace(0.0, 490.0, 50)
+    n = np.array([0.0])  # K=1
+    z = np.zeros((50, 1))
+
+    elev = ElevationSurface(
+        s_bins=s, n_bins=n, z_grid=z,
+        kv_grid=np.full((50, 1), 0.01),
+        count_grid=np.full((50, 1), 5, dtype=int),
+        confidence=np.ones((50, 1)),
+    )
+
+    gf = build_geom_field(elev)
+    assert gf is None

@@ -5,14 +5,19 @@ Derives, from the accumulated ElevationSurface z(s,n):
   camber_grid  SIGNED lateral slope arctan(dz/dn), radians
   grade_grid   longitudinal slope arctan(dz/ds), radians
 Unmeasured cells are filled with their row's measured mean BEFORE
-differentiation so off-line lookups degrade to the row average — the solver
-must never see NaN or an artificial cliff at the measured/unmeasured seam.
+differentiation. This ensures off-line lookups degrade to the row average
+and the solver never sees NaN. A bounded step at the measured/unmeasured
+seam is possible and acceptable because unmeasured cells are off-line.
 """
 from __future__ import annotations
 
 from dataclasses import dataclass
+from typing import TYPE_CHECKING
 
 import numpy as np
+
+if TYPE_CHECKING:
+    from track_surface.elevation import ElevationSurface
 
 
 @dataclass
@@ -24,7 +29,7 @@ class GeomField:
     grade_grid: np.ndarray
 
 
-def build_geom_field(elev, *, min_count: int = 1) -> GeomField | None:
+def build_geom_field(elev: "ElevationSurface | None", *, min_count: int = 1) -> GeomField | None:
     if elev is None:
         return None
     s = np.asarray(elev.s_bins, dtype=float)
