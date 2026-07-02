@@ -27,7 +27,30 @@ The friction-ellipse limits (fz, mu, camber boost) mirror
 reads grip through, not the layout-locked linear variant -- measured up to
 0.1116 divergence from the smooth one on a real grip field, per
 ``--mu-divergence`` in scripts/validate_b1_quasi3d.py) are imported and
-reused, never re-hardcoded.
+reused, never re-hardcoded. The mu VALUE is additionally floored/capped at
+``[EPS_GRIP, max(mu_grid.max(), EPS_GRIP)]`` in ``_check_friction_ellipse``
+-- the SAME clamp ``_solve_once`` applies via ``ca.fmax``/``ca.fmin`` right
+after its own bspline lookup, so bspline undershoot/overshoot ringing near a
+sharp grip step is bounded identically on both sides (verified equal to the
+solver's own clamp to machine precision on a real grip field, round 2).
+
+``a_lon`` (used by ``friction_ellipse``) mirrors the solver's ``Ax`` decision
+variable EXACTLY (see ``_solver_a_lon``): the solver's speed ODE
+(``V[i+1]**2 == V[i]**2 + 2*Ax[i]*ds_path_i``) is an EQUALITY constraint with
+no drag/rolling-resistance/grade term in it, so ``Ax[i]`` IS the net
+kinematic accel, not a separate "tire demand" needing a drag/rr recovery --
+drag/rr/grade only narrow ``Ax``'s FEASIBLE range via separate inequality
+constraints, never its definition or the ellipse itself (round-2 hypothesis
+tested and REFUTED with evidence, see b1-task-6c-debug2-report.md). What the
+ellipse actually checks is a per-SEGMENT FORWARD difference of v^2 over the
+Frenet-adjusted path length (``ds_path_i``), evaluated at the segment's
+START node together with that SAME node's ax_lim/ay_lim -- never blended
+with a neighbouring segment. A node-centered central difference over the
+reconstructed offset-path chord length (the prior formula here) instead
+averages two adjacent segments into one node, which at a sharp mu step
+smears a high-grip segment's kinematics into a low-grip neighbour's own
+(tiny) limit -- confirmed root cause of a 24.7x friction_ellipse
+false-positive on a real track.
 """
 from __future__ import annotations
 
@@ -46,6 +69,7 @@ from lap_oracle.solver.ocp_2d import (
     MuField,
     _make_mu_interpolant,
     _make_mu_interpolant_smooth,
+    _PATH_LEN_FLOOR,
     central_second_diff_periodic,
 )
 from track_surface.geom_field import GeomField
@@ -134,27 +158,6 @@ def _heading(xy: np.ndarray) -> np.ndarray:
     dx[-1] = xy[-1, 0] - xy[-2, 0]
     dy[-1] = xy[-1, 1] - xy[-2, 1]
     return np.arctan2(dy, dx)
-
-
-def _central_diff_ds(y: np.ndarray, s: np.ndarray) -> np.ndarray:
-    """d(y)/ds via central differences at interior nodes, one-sided at ends."""
-    y = np.asarray(y, dtype=float)
-    s = np.asarray(s, dtype=float)
-    n = len(y)
-    out = np.zeros(n)
-    if n < 2:
-        return out
-    ds = np.diff(s)
-    ds_safe = np.where(np.abs(ds) > 1e-9, ds, 1e-9)
-    dy = np.diff(y)
-    mid = dy / ds_safe
-    if n == 2:
-        out[:] = mid[0]
-        return out
-    out[1:-1] = 0.5 * (mid[:-1] + mid[1:])
-    out[0] = mid[0]
-    out[-1] = mid[-1]
-    return out
 
 
 def _offset_path_xy(track: TrackModel, distance_m: np.ndarray, n: np.ndarray) -> np.ndarray:
@@ -282,6 +285,50 @@ def _offset_curvature(track: TrackModel, d: np.ndarray, n: np.ndarray) -> np.nda
     return kappa_c / denom + d2n
 
 
+def _solver_a_lon(track: TrackModel, d: np.ndarray, n: np.ndarray, v: np.ndarray) -> np.ndarray:
+    """Longitudinal accel from the SOLVED (s, n, v) arrays, mirroring
+    ``lap_oracle.solver.ocp_2d._solve_once``'s ``Ax`` EXACTLY.
+
+    The solver's speed ODE is the EQUALITY constraint
+    ``V[i+1]**2 == V[i]**2 + 2*Ax[i]*ds_path_i``, so ``Ax[i]`` is a per-
+    SEGMENT forward difference of v^2 over the Frenet-adjusted path length
+    ``ds_path_i = ds[i] * max(1 - n_mid_i*kappa_c_i, _PATH_LEN_FLOOR)`` (the
+    SAME Jacobian ``_offset_curvature``/the solver's own ``ds_path_i`` use --
+    ``kappa_c`` is centerline curvature, interpolated the same way
+    ``_offset_curvature`` does). This is a DIFFERENT quantity from a
+    node-centered central difference of v over the reconstructed offset-path
+    chord length (this function's predecessor here): the solver never
+    blends segment i with segment i-1 the way a central difference at node i
+    does, and it Jacobian-scales by the offset path's own length, not the
+    raw geometric chord -- both matter at a sharp mu/grip step, where
+    blending smears a high-grip neighbour's kinematics into a low-grip
+    segment's own (tiny) limit (see b1-task-6c-debug2-report.md).
+
+    Returns an N-length array: index i (0..N-2) is segment i's Ax, aligned
+    with that SAME index's ax_lim/ay_lim/a_lat in ``_check_friction_ellipse``
+    -- exactly how the solver pairs them. Index N-1 (the last node) has no
+    solver segment to mirror (``Ax`` has only N-1 entries; N_lat[0]==N_lat[N-1]
+    make it a periodic duplicate of node 0 anyway) -- repeats the last real
+    value; ``_EDGE_EXCLUDE`` always drops it from the residual, so its exact
+    value is inert.
+    """
+    N = len(v)
+    if N < 2:
+        return np.zeros(N)
+    ds = np.diff(d)
+    ds_safe = np.where(np.abs(ds) > 1e-9, ds, 1e-9)
+    s_track = _track_s(track)
+    if len(s_track) >= 2:
+        d_c = np.clip(d, s_track[0], s_track[-1])
+        kappa_c = np.interp(d_c, s_track, _centerline_curvature(track))
+        n_mid = 0.5 * (n[:-1] + n[1:])
+        ds_path = ds_safe * np.maximum(1.0 - n_mid * kappa_c[:-1], _PATH_LEN_FLOOR)
+    else:
+        ds_path = ds_safe
+    ax_forward = (v[1:] ** 2 - v[:-1] ** 2) / (2.0 * ds_path)
+    return np.concatenate([ax_forward, ax_forward[-1:]])
+
+
 @dataclass
 class _Kinematics:
     """Reconstructed-from-outputs bundle shared by friction_ellipse and
@@ -309,10 +356,9 @@ def _reconstruct(sol: OCPSolution, track: TrackModel) -> _Kinematics:
     else:
         seg_ds = np.zeros(0)
         s_off = np.zeros(len(xy))
-    dv_ds = _central_diff_ds(v, s_off)
     kappa_path = _offset_curvature(track, d, n)
     a_lat = v ** 2 * kappa_path
-    a_lon = v * dv_ds
+    a_lon = _solver_a_lon(track, d, n, v)
     return _Kinematics(d=d, n=n, v=v, xy=xy, seg_ds=seg_ds, s_off=s_off,
                         kappa_path=kappa_path, a_lat=a_lat, a_lon=a_lon)
 

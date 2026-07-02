@@ -22,13 +22,15 @@ needs_casadi = pytest.importorskip("casadi")  # skips when casadi absent
 import casadi as ca
 
 from lap_oracle.config import OCPSolution, TrackModel, VehicleParams
-from lap_oracle.solver.ocp_2d import DKAPPA_MAX, K_CAMBER, G, MuField
+from lap_oracle.solver.ocp_2d import DKAPPA_MAX, K_CAMBER, G, MuField, _PATH_LEN_FLOOR
 from track_surface.geom_field import GeomField
 from track_surface.solution_validator import (
     ValidationReport,
+    _centerline_curvature,
     _make_mu_lut,
     _offset_curvature,
     _reconstruct,
+    _solver_a_lon,
     validate_solution,
 )
 
@@ -450,3 +452,77 @@ def test_make_mu_lut_falls_back_to_linear_for_sparse_grid():
     )
     lut_dense = _make_mu_lut(dense)  # 6x6 grid -- uses the real bspline path
     assert float(lut_dense(ca.DM([10.0, 0.0]))) == pytest.approx(0.85, abs=1e-6)
+
+
+# ---------------------------------------------------------------------------
+# b1-task-6c (round 2) fix: a_lon now mirrors _solve_once's Ax EXACTLY (a
+# per-segment forward difference over the Frenet-adjusted path length,
+# evaluated at the segment's start node) instead of a node-centered central
+# difference over the reconstructed offset-path chord length -- root-caused
+# a 24.7x friction_ellipse false-positive at a sharp real-world grip step to
+# this discretization/alignment mismatch, not to mu clamping or a drag/rr
+# "tire demand" recovery (both hypotheses tested with evidence and refuted --
+# see b1-task-6c-debug2-report.md). These lock the replacement formula
+# against ground truth, independent of any solve.
+# ---------------------------------------------------------------------------
+
+def test_solver_a_lon_matches_forward_difference_ground_truth():
+    """v^2 growing LINEARLY in s at a constant rate `a` (v(s)^2 = v0^2 +
+    2*a*s) has an EXACT forward difference (v[i+1]^2-v[i]^2)/(2*ds[i]) == a
+    at every node -- ground truth for the solver's own Ax formula
+    (_solve_once's V[i+1]**2==V[i]**2+2*Ax[i]*ds_path_i). Straight track
+    (kappa_c=0) so ds_path_i reduces to the raw ds[i], isolating the
+    forward-difference behaviour from the Frenet-Jacobian scaling (covered
+    by the next test)."""
+    n_points = 20
+    track = _straight_track(n_points=n_points, ds=5.0)
+    d = np.concatenate(([0.0], np.cumsum(track.ds)))
+    a_true = 0.6
+    v0 = 10.0
+    v = np.sqrt(v0 ** 2 + 2 * a_true * d)
+    n_arr = np.zeros(n_points)
+
+    a_lon = _solver_a_lon(track, d, n_arr, v)
+
+    np.testing.assert_allclose(a_lon[:-1], a_true, rtol=1e-9)
+
+
+def test_solver_a_lon_uses_frenet_path_length_and_is_not_node_centered():
+    """Locks two properties the OLD central-diff-over-chord-length formula
+    got wrong (b1-task-6c-debug2-report.md): (1) the denominator is the
+    solver's OWN Frenet-adjusted ds_path_i = ds[i]*max(1-n_mid_i*kappa_c_i,
+    _PATH_LEN_FLOOR), not the raw chord length; (2) segment i's value comes
+    ONLY from nodes i and i+1 -- it must NOT change when v changes at node
+    i+2, unlike a node-centered central difference at node i-1, which would
+    blend segment i (nodes i, i+1) into node i-1's own reconstructed value.
+    """
+    R = 80.0
+    n_points = 40
+    track = _curved_track(n_points=n_points, radius=R, arc_rad=1.2)
+    d = np.concatenate(([0.0], np.cumsum(track.ds)))
+    n_arr = np.full(n_points, 1.5)  # constant nonzero offset -> kappa_c/ds_path both engage
+    v = np.linspace(20.0, 25.0, n_points)  # smooth ramp everywhere...
+    i = 20
+    v_step = v.copy()
+    v_step[i + 1] += 8.0  # ...except a sharp local step landing on node i+1
+
+    a_lon_step = _solver_a_lon(track, d, n_arr, v_step)
+    a_lon_flat = _solver_a_lon(track, d, n_arr, v)  # same, but without the step
+
+    # (1) ground truth for segment i (nodes i, i+1), using the SAME kappa_c
+    # recipe the implementation uses (not an analytic 1/R approximation).
+    s_track = np.concatenate(([0.0], np.cumsum(track.ds)))
+    kappa_c_i = np.interp(d[i], s_track, _centerline_curvature(track))
+    ds_i = d[i + 1] - d[i]
+    ds_path_i = ds_i * max(1.0 - n_arr[i] * kappa_c_i, _PATH_LEN_FLOOR)
+    expected_i = (v_step[i + 1] ** 2 - v_step[i] ** 2) / (2.0 * ds_path_i)
+    assert a_lon_step[i] == pytest.approx(expected_i, rel=1e-9)
+
+    # (2) segment i-1 (nodes i-1, i) must be IDENTICAL with or without the
+    # step at node i+1 -- it never reads node i+1. A node-centered central
+    # difference at node i-1 would instead change here (it reads node i+1
+    # indirectly via segment i's slope).
+    assert a_lon_step[i - 1] == pytest.approx(a_lon_flat[i - 1], rel=1e-9)
+    # Sanity: the step DOES change segment i itself (else the test proves
+    # nothing about isolation).
+    assert a_lon_step[i] != pytest.approx(a_lon_flat[i], rel=1e-6)
