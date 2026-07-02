@@ -5,16 +5,29 @@ speed, lateral offset, and track geometry -- independent of solver
 internals. This is the program's honesty instrument: it never reads a
 solver's internal decision variables (there are none available on
 ``OCPSolution`` anyway) and never trusts the track's precomputed planar
-``curvature`` array either; every geometric quantity (offset path, its
-curvature, its arc length) is reconstructed from the reported
-``distance_m``/``lateral_offset_m`` arrays by finite differences, so a
-solver bug that corrupts its own internal bookkeeping cannot also corrupt
-the audit.
+``curvature`` array either -- centerline curvature is always re-derived
+from ``centerline_xy`` (see ``_centerline_curvature``). The offset path's
+arc length is reconstructed from the reported ``distance_m``/
+``lateral_offset_m`` arrays by finite differences; its CURVATURE (used by
+``friction_ellipse``) instead uses the analytic offset-curve formula
+``kappa_c/(1 - n*kappa_c) + d2n/ds2`` -- the SAME formula
+``lap_oracle.solver.ocp_2d._solve_once`` enforces (see
+``_offset_curvature``). A raw finite-difference of heading reconstructed
+from offset (x, y) is itself an ill-conditioned measurement wherever
+kappa_c changes fastest (straight/arc transitions) while n(s) is also
+changing fastest (corner entry) at the same time -- confirmed root cause
+of a 9.8x false-positive friction_ellipse failure, see
+b1-task-6b-debug-report.md. A solver bug must not also corrupt the audit,
+but neither should the audit's OWN reconstruction manufacture a false one.
 
 The friction-ellipse limits (fz, mu, camber boost) mirror
 ``lap_oracle.solver.ocp_2d._solve_once`` exactly -- module constants
 (G, RHO_AIR, EPS_GRIP, K_CAMBER, DKAPPA_MAX) and the mu lookup
-(``_make_mu_interpolant``) are imported and reused, never re-hardcoded.
+(``_make_mu_interpolant_smooth``, the SAME C2 bspline the solver's NLP
+reads grip through, not the layout-locked linear variant -- measured up to
+0.1116 divergence from the smooth one on a real grip field, per
+``--mu-divergence`` in scripts/validate_b1_quasi3d.py) are imported and
+reused, never re-hardcoded.
 """
 from __future__ import annotations
 
@@ -32,6 +45,7 @@ from lap_oracle.solver.ocp_2d import (
     RHO_AIR,
     MuField,
     _make_mu_interpolant,
+    _make_mu_interpolant_smooth,
     central_second_diff_periodic,
 )
 from track_surface.geom_field import GeomField
@@ -45,6 +59,12 @@ SMOOTHNESS_BOUND: float = 1.2 * DKAPPA_MAX
 # Nodes excluded from the friction_ellipse residual at each end of the array:
 # finite-difference curvature/dv-ds stencils are least accurate there.
 _EDGE_EXCLUDE: int = 3
+
+# ca.interpolant(..., "bspline", ...) hard-errors ("Need more data points")
+# below this many knots per axis (empirically verified: 3 fails, 4 works) --
+# mirrors ocp_2d._make_geom_interpolants' identical >=4 bspline/linear
+# fallback threshold for the same reason.
+_MU_BSPLINE_MIN_KNOTS: int = 4
 
 # NOTE on closure convention: smoothness check uses solver's periodic second-difference
 # (central_second_diff_periodic for closed track); heading/curvature for friction_ellipse
@@ -182,6 +202,86 @@ def _bilinear(s_bins: np.ndarray, n_bins: np.ndarray, grid: np.ndarray,
     return v00 * (1 - ws) * (1 - wn) + v10 * ws * (1 - wn) + v01 * (1 - ws) * wn + v11 * ws * wn
 
 
+def _make_mu_lut(mu_field: MuField):
+    """mu(s, n) lookup for the friction-ellipse audit.
+
+    Prefers the SAME smooth C2 bspline interpolant the solver's NLP reads
+    grip through (``_make_mu_interpolant_smooth``), so the audit validates
+    against the mu surface the solver actually respected -- the
+    layout-locked LINEAR variant measured max|mu_linear - mu_bspline| =
+    0.1116 on a real grip field (``--mu-divergence``), i.e. a different mu
+    surface than the one the solver enforced limits against. Falls back to
+    the linear interpolant when the grid is too sparse for a cubic bspline
+    (< 4 knots per axis; CasADi hard-errors "Need more data points"
+    otherwise) -- mirrors ``ocp_2d._make_geom_interpolants``'s identical
+    >=4 fallback. Real grip fields are always dense enough for bspline in
+    practice; only minimal hand-built test fixtures hit this fallback.
+    """
+    if (len(mu_field.s_bins) >= _MU_BSPLINE_MIN_KNOTS
+            and len(mu_field.n_bins) >= _MU_BSPLINE_MIN_KNOTS):
+        return _make_mu_interpolant_smooth(mu_field)
+    return _make_mu_interpolant(mu_field)
+
+
+def _centerline_curvature(track: TrackModel) -> np.ndarray:
+    """Reference (centerline) curvature at each of the track's OWN nodes.
+
+    Mirrors ``lap_oracle.track.model.build_from_xy``'s finite-difference
+    recipe exactly (np.gradient twice), but is NOT imported from there --
+    same self-contained convention as ``_heading`` (this module reconstructs
+    geometry from raw coordinates only, without pulling in track-construction
+    machinery it doesn't otherwise need). Deliberately ignores
+    ``track.curvature`` even when populated: the solver's own reference
+    curvature (``ocp_2d.solve_minimum_time_2d``'s ``kappa``) always comes
+    from a fresh ``resample_track`` -> ``build_from_xy`` recompute too, never
+    from a source track's pre-existing ``curvature`` field, so re-deriving
+    here keeps the validator consistent with what the solver actually
+    enforces rather than trusting a possibly stale/differently-sourced input.
+    """
+    xy = track.centerline_xy
+    m = len(xy)
+    if m < 2:
+        return np.zeros(m)
+    x, y = xy[:, 0], xy[:, 1]
+    dx, dy = np.gradient(x), np.gradient(y)
+    ddx, ddy = np.gradient(dx), np.gradient(dy)
+    denom = (dx ** 2 + dy ** 2) ** 1.5
+    denom = np.where(denom < 1e-12, 1e-12, denom)
+    return (dx * ddy - dy * ddx) / denom
+
+
+def _offset_curvature(track: TrackModel, d: np.ndarray, n: np.ndarray) -> np.ndarray:
+    """Analytic offset-curve curvature from the SOLVED (s, n) arrays.
+
+    Mirrors ``lap_oracle.solver.ocp_2d._solve_once``'s own
+    ``kappa_line_i = kappa_i / denom_i + d2n_i`` EXACTLY (``denom_i`` floored
+    at 0.1, same as the solver's constraint) -- this is the curvature the
+    solver's friction-ellipse constraint actually enforces, so it is what the
+    audit must reconstruct too. ``kappa_c(s)`` is TRACK geometry (an input,
+    not a solver output): computed once by ``_centerline_curvature`` and
+    interpolated onto ``d``. ``d2n/ds2`` uses the SAME periodic stencil as
+    the smoothness check (``central_second_diff_periodic``), applied to
+    n(s) alone -- n is smooth (the solver hard-bounds |d2n| <= DKAPPA_MAX) --
+    unlike a raw finite-difference of heading re-derived from reconstructed
+    (x, y), which compounds two finite differences (position -> heading ->
+    curvature) on a path that ALSO carries n(s)'s own excursions, and is
+    where the original friction_ellipse false-positive lived (see
+    b1-task-6b-debug-report.md: root-caused to this reconstruction, not a
+    real solver violation).
+    """
+    N = len(d)
+    if N == 0:
+        return np.zeros(0)
+    s_track = _track_s(track)
+    if len(s_track) < 2:
+        return np.zeros(N)
+    d_c = np.clip(d, s_track[0], s_track[-1])
+    kappa_c = np.interp(d_c, s_track, _centerline_curvature(track))
+    d2n = central_second_diff_periodic(n, np.diff(d)) if N >= 3 else np.zeros(N)
+    denom = np.maximum(1.0 - n * kappa_c, 0.1)
+    return kappa_c / denom + d2n
+
+
 @dataclass
 class _Kinematics:
     """Reconstructed-from-outputs bundle shared by friction_ellipse and
@@ -209,9 +309,8 @@ def _reconstruct(sol: OCPSolution, track: TrackModel) -> _Kinematics:
     else:
         seg_ds = np.zeros(0)
         s_off = np.zeros(len(xy))
-    heading = np.unwrap(_heading(xy)) if len(xy) else np.zeros(0)
-    kappa_path = _central_diff_ds(heading, s_off)
     dv_ds = _central_diff_ds(v, s_off)
+    kappa_path = _offset_curvature(track, d, n)
     a_lat = v ** 2 * kappa_path
     a_lon = v * dv_ds
     return _Kinematics(d=d, n=n, v=v, xy=xy, seg_ds=seg_ds, s_off=s_off,
@@ -342,7 +441,9 @@ def _check_friction_ellipse(
 
     # mu(s, n): the solver's own numeric lookup, evaluated pointwise (not
     # inside an Opti) -- float(lut(ca.DM([s, n]))) is the documented pattern.
-    mu_lut = _make_mu_interpolant(mu_field)
+    # See _make_mu_lut: bspline (matches the solver's NLP) with a linear
+    # fallback for grids too sparse for a cubic bspline.
+    mu_lut = _make_mu_lut(mu_field)
     s_mu = np.clip(d, mu_field.s_bins[0], mu_field.s_bins[-1])
     n_mu = np.clip(n, mu_field.n_bins[0], mu_field.n_bins[-1])
     grip_raw = np.array([float(mu_lut(ca.DM([float(si), float(ni)]))) for si, ni in zip(s_mu, n_mu)])

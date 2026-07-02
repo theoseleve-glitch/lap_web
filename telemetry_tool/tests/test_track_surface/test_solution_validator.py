@@ -19,11 +19,15 @@ import pytest
 
 needs_casadi = pytest.importorskip("casadi")  # skips when casadi absent
 
+import casadi as ca
+
 from lap_oracle.config import OCPSolution, TrackModel, VehicleParams
 from lap_oracle.solver.ocp_2d import DKAPPA_MAX, K_CAMBER, G, MuField
 from track_surface.geom_field import GeomField
 from track_surface.solution_validator import (
     ValidationReport,
+    _make_mu_lut,
+    _offset_curvature,
     _reconstruct,
     validate_solution,
 )
@@ -270,17 +274,29 @@ def test_doubled_lap_time_field_fails_only_lap_time_consistent():
 def test_sawtooth_lateral_offset_fails_only_smoothness():
     # Fine node spacing (ds=1m) and a small amplitude (0.2m, well inside the
     # track width) so |d2n/ds2| clears the 1.2*DKAPPA_MAX bound from a
-    # high-frequency (period-2) alternation, which a heading/curvature-based
-    # reconstruction (2-node-step central difference) cannot see -- so
-    # friction_ellipse is unaffected. lap_time_consistent's target is
-    # recomputed from the SAME corrugated geometry, so the ~8% longer offset
-    # path it (correctly) implies doesn't register as an inconsistency.
+    # high-frequency (period-2) alternation.
+    #
+    # b1-task-6b fix note: friction_ellipse's a_lat now uses the SAME
+    # analytic d2n term the solver's own kappa_line formula does (see
+    # _offset_curvature), so -- correctly -- it is no longer numerically
+    # blind to this pattern the way the old raw-XY-reconstruction curvature
+    # was (that blindness was the ORIGINAL bug's mirror image: a real
+    # solver-side d2n spike this large, v=30 m/s, DOES imply a genuine
+    # friction violation; the old validator just couldn't see it). Since
+    # a_lat = v^2 * d2n scales with v^2, a low speed keeps this corruption's
+    # (still correct) lateral-acceleration implication under the friction
+    # limit while still tripping smoothness's own speed-independent
+    # |d2n/ds2| rail -- isolating the ONE check this test targets, same as
+    # every other corruption test in this file. lap_time_consistent's target
+    # is recomputed from the SAME corrugated geometry, so the ~8% longer
+    # offset path it (correctly) implies doesn't register as an
+    # inconsistency.
     n_points = 30
     ds = 1.0
     track = _straight_track(n_points=n_points, ds=ds)
     amplitude = 0.2
     n_arr = np.array([amplitude if i % 2 == 0 else -amplitude for i in range(n_points)])
-    sol = _consistent_solution(track, speed=30.0, n=n_arr)
+    sol = _consistent_solution(track, speed=2.0, n=n_arr)
 
     report = _report_for(sol, track)
 
@@ -375,3 +391,62 @@ def test_geom_field_branch_smoke():
     expected = {"finite_speed", "track_limits", "friction_ellipse",
                 "controls_bounded", "lap_time_consistent", "smoothness"}
     assert check_names == expected, f"got {check_names}, expected {expected}"
+
+
+# ---------------------------------------------------------------------------
+# b1-task-6b fix: analytic offset-curve curvature (root-caused a 9.8x
+# friction_ellipse false positive to the OLD raw-XY-reconstruction curvature
+# -- see b1-task-6b-debug-report.md). These lock the replacement formula
+# against ground-truth geometry and the new mu-interpolant fallback,
+# independent of any solve.
+# ---------------------------------------------------------------------------
+
+def test_offset_curvature_matches_circle_geometry_analytically():
+    """Ground truth: offsetting a circular arc (radius R, curvature 1/R) by
+    a CONSTANT n gives another circle of radius (R - n) -- i.e. curvature
+    1/(R-n), which is EXACTLY kappa_c/(1-n*kappa_c) algebraically. (Sign:
+    _curved_track's arc has its center on the +normal/"track-left" side at
+    theta=0, so positive n moves toward the center, shrinking the radius.)
+    d2n=0 for constant n, so this isolates the kappa_c/(1-n*kappa_c) term.
+    Locks _offset_curvature's formula against real geometry, independent of
+    any solve.
+    """
+    R = 100.0
+    track = _curved_track(n_points=200, radius=R, arc_rad=1.0)
+    d = np.concatenate(([0.0], np.cumsum(track.ds)))
+    for n_const in (-3.0, 0.0, 2.0, 5.0):
+        n_arr = np.full(track.n_points, n_const)
+        kappa_offset = _offset_curvature(track, d, n_arr)
+        expected = 1.0 / (R - n_const)
+        # Interior nodes only: np.gradient's one-sided edge stencil (same
+        # reasoning as _EDGE_EXCLUDE elsewhere) is less accurate there.
+        np.testing.assert_allclose(kappa_offset[5:-5], expected, rtol=2e-3)
+
+
+def test_offset_curvature_zero_on_straight_regardless_of_n():
+    """kappa_c=0 on a straight track -> kappa_offset reduces to d2n/ds2
+    exactly (the denom_i floor never engages when kappa_c is already 0)."""
+    track = _straight_track(n_points=30, ds=2.0)
+    d = np.concatenate(([0.0], np.cumsum(track.ds)))
+    n_arr = np.zeros(30)
+    assert np.allclose(_offset_curvature(track, d, n_arr), 0.0, atol=1e-9)
+
+
+def test_make_mu_lut_falls_back_to_linear_for_sparse_grid():
+    """Guards the _MU_BSPLINE_MIN_KNOTS fallback: ca.interpolant(...,
+    "bspline", ...) hard-errors ("Need more data points") below 4 knots per
+    axis (empirically verified: 3x3 fails, 4x4 works -- mirrors
+    ocp_2d._make_geom_interpolants' identical >=4 fallback). Every other
+    test in this file relies on _uniform_mu_field's 2x2 grid NOT raising."""
+    track = _straight_track(n_points=10, ds=5.0)
+    sparse = _uniform_mu_field(track)  # 2x2 grid -- must fall back to linear
+    lut_sparse = _make_mu_lut(sparse)
+    assert float(lut_sparse(ca.DM([0.0, 0.0]))) == pytest.approx(1.0)
+
+    dense = MuField(
+        s_bins=np.linspace(0.0, track.total_length_m, 6),
+        n_bins=np.linspace(-6.0, 6.0, 6),
+        mu_grid=np.full((6, 6), 0.85),
+    )
+    lut_dense = _make_mu_lut(dense)  # 6x6 grid -- uses the real bspline path
+    assert float(lut_dense(ca.DM([10.0, 0.0]))) == pytest.approx(0.85, abs=1e-6)
