@@ -75,7 +75,7 @@ def test_quarantine_replace_handles_existing(tmp_path):
     # Verify exactly one quarantined file exists (the new one)
     quarantined_files = list(bad.glob("track_model.parquet.quarantined-*"))
     assert len(quarantined_files) == 1
-    assert quarantined_files[0].read_text() != "old quarantined content"  # new one replaced
+    assert quarantined_files[0].read_bytes() != "old quarantined content"  # new one replaced
 
 
 def test_audit_prints_correct_sql_schema(tmp_path, capsys):
