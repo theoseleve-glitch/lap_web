@@ -136,7 +136,7 @@ def _record_geometry_rejection(track_id: str, v_class: str, t_condition: str, re
                     "INSERT INTO track_geometry_audit "
                     "(track_id, vehicle_class, condition, gate, details) "
                     "VALUES (%s,%s,%s,%s,%s::jsonb)",
-                    (track_id, v_class, t_condition, failure["gate"], json.dumps(failure)),
+                    (track_id, v_class, t_condition, failure["gate"], json.dumps(failure, default=str)),
                 )
             finally:
                 cur.close()
