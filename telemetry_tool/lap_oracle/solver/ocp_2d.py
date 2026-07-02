@@ -16,6 +16,7 @@ import logging
 import time
 from collections.abc import Sequence
 from dataclasses import dataclass
+from typing import TYPE_CHECKING
 
 import numpy as np
 
@@ -28,6 +29,12 @@ from telemetry_tool.lap_oracle.config import (
 from telemetry_tool.lap_oracle.physics.bicycle_model import corner_speed
 from telemetry_tool.lap_oracle.solver.ocp import HAS_CASADI, _build_solution
 from telemetry_tool.lap_oracle.track.model import resample_track
+
+# Type-only: keeps the "this module imports nothing from track_surface"
+# layering invariant at runtime (TYPE_CHECKING is False when executed) while
+# still giving IDEs/mypy a real type for the geom_field: GeomField param.
+if TYPE_CHECKING:
+    from telemetry_tool.track_surface.geom_field import GeomField
 
 logger = logging.getLogger(__name__)
 
@@ -170,6 +177,37 @@ def _make_mu_interpolant_smooth(field: MuField):
     )
 
 
+def _make_geom_interpolants(geom: "GeomField") -> dict:
+    """Quasi-3D lookups kv(s,n)/camber(s,n)/grade(s,n) for use INSIDE the NLP.
+
+    Mirrors :func:`_make_mu_interpolant_smooth` exactly: same C2 cubic-bspline
+    interpolant family, same Fortran-order flatten (CasADi's FIRST grid
+    dimension varies fastest). One interpolant per GeomField grid, returned
+    keyed "kv"/"camber"/"grade" for the per-node lookups in :func:`_solve_once`.
+
+    Falls back to "linear" when either axis has < 4 points: CasADi's cubic
+    bspline needs >= 4 knots per dimension, and geometry grids (built from
+    sparser elevation sampling than the mu grid) may not reach that density.
+    mu's interpolant has no such fallback (its grids are always dense enough
+    in practice), so this is new logic, not a mirror of mu's behaviour.
+    """
+    s_bins = geom.s_bins.tolist()
+    n_bins = geom.n_bins.tolist()
+    grids = [s_bins, n_bins]
+    kind = "bspline" if (len(s_bins) >= 4 and len(n_bins) >= 4) else "linear"
+    return {
+        "kv": ca.interpolant(
+            "kv_sn", kind, grids, geom.kv_grid.flatten(order="F").tolist(),
+        ),
+        "camber": ca.interpolant(
+            "camber_sn", kind, grids, geom.camber_grid.flatten(order="F").tolist(),
+        ),
+        "grade": ca.interpolant(
+            "grade_sn", kind, grids, geom.grade_grid.flatten(order="F").tolist(),
+        ),
+    }
+
+
 def _candidate_lap_time(
     v_sol: np.ndarray,
     ds: np.ndarray,
@@ -282,6 +320,7 @@ def _solve_once(
     ax_brake_interp=None,
     grade_n=None,
     camber_n=None,
+    geom_luts: dict | None = None,
 ) -> tuple[str, np.ndarray, np.ndarray, np.ndarray]:
     """Build a FRESH ca.Opti() and run one IPOPT solve from the given guess.
 
@@ -352,7 +391,14 @@ def _solve_once(
         opti.subject_to(ca.fabs(d2n_i) <= DKAPPA_MAX)
         smooth_pen = smooth_pen + d2n_i ** 2
 
-        g_eff_i = ca.fmax(G + V[i] ** 2 * kv[i], 1.0)
+        if geom_luts is not None:
+            # Quasi-3D: vertical curvature sampled at the LINE's (s, n), not
+            # the centerline kv[i] — a banked/cambered line's effective kv
+            # differs from the centerline's as the optimizer moves in n.
+            kv_i = geom_luts["kv"](ca.vertcat(s_coords[i], N_lat[i]))
+            g_eff_i = ca.fmax(G + V[i] ** 2 * kv_i, 1.0)
+        else:
+            g_eff_i = ca.fmax(G + V[i] ** 2 * kv[i], 1.0)
         fz_total = m * g_eff_i + 0.5 * RHO_AIR * cla * V[i] ** 2
 
         # ── THE 2D UPGRADE: grip evaluated at the chosen line ──
@@ -364,7 +410,14 @@ def _solve_once(
         mu_long_i = mu_long_base * grip_i
         ax_lim = mu_long_i * fz_total / m
         ay_lim = mu_lat_i * fz_total / m
-        if camber_n is not None:
+        if geom_luts is not None:
+            # Quasi-3D: banking sampled at the LINE's (s, n) — camber_n
+            # (legacy 1D, below) only ever saw the centerline's camber.
+            # geom_luts being present governs this branch; the legacy
+            # camber_n is not None condition applies only to the else path.
+            camber_i = geom_luts["camber"](ca.vertcat(s_coords[i], N_lat[i]))
+            ay_lim = ay_lim * (1.0 + K_CAMBER * ca.fabs(camber_i))
+        elif camber_n is not None:
             # banking adds effective lateral grip (see K_CAMBER); camber_n is
             # banking magnitude — adverse camber treated as favourable in v1.
             ay_lim = ay_lim * (1.0 + K_CAMBER * abs(float(camber_n[i])))
@@ -373,7 +426,13 @@ def _solve_once(
         drag = 0.5 * RHO_AIR * cda * V[i] ** 2 / m
         rr = 0.01 * g_eff_i
         v_safe = ca.fmax(V[i], 5.0)
-        g_sin = 0.0 if grade_n is None else G * float(np.sin(grade_n[i]))
+        if geom_luts is not None:
+            # Quasi-3D: grade sampled at the LINE's (s, n) — replaces the
+            # frozen centerline g_sin in BOTH bounds below (drive and brake).
+            grade_i = geom_luts["grade"](ca.vertcat(s_coords[i], N_lat[i]))
+            g_sin = G * ca.sin(grade_i)
+        else:
+            g_sin = 0.0 if grade_n is None else G * float(np.sin(grade_n[i]))
         opti.subject_to(Ax[i] <= p_max / (m * v_safe) - drag - rr - g_sin)
         opti.subject_to(Ax[i] >= -(a_brake_max * g_eff_i / G + drag + rr) - g_sin)
         if ax_drive_interp is not None:
@@ -459,6 +518,7 @@ def solve_minimum_time_2d(
     envelope_caps: dict | None = None,
     grade_s: np.ndarray | None = None,
     camber_s: np.ndarray | None = None,
+    geom_field: "GeomField | None" = None,
 ) -> OCPSolution:
     """Minimum-time OCP with a 2D friction field mu(s, n) inside the NLP.
 
@@ -470,6 +530,20 @@ def solve_minimum_time_2d(
     The per-point grip multiplier from TrackModel.grip_map is IGNORED here;
     mu_field is the single source of surface grip.  Vehicle tyre D and
     weather.grip_multiplier still scale globally as in ocp.py.
+
+    Quasi-3D geometry (``geom_field``)
+    -----------------------------------
+    When ``geom_field`` (a ``track_surface.geom_field.GeomField``) is given,
+    kv/camber/grade are looked up at the LINE's chosen (s, N_lat[i]) via
+    casadi bspline interpolants built once here (:func:`_make_geom_interpolants`)
+    and threaded through every multi-start candidate — the same treatment
+    mu_field already gets. This supersedes the legacy centerline-only
+    ``grade_s``/``camber_s`` 1D arrays and the resampled ``kv`` array for the
+    three terms they feed (g_eff, the camber ay_lim boost, g_sin) wherever
+    both are supplied. ``geom_field=None`` (the default) is BYTE-COMPATIBLE
+    with the pre-quasi-3D solve: every new code path is guarded behind
+    ``if geom_luts is not None`` with the prior lines preserved verbatim in
+    the else branch.
 
     Domain guards (CasADi linear interpolants EXTRAPOLATE outside the grid;
     see test_interpolant_extrapolates_outside_grid_documented): s coords are
@@ -570,6 +644,10 @@ def solve_minimum_time_2d(
     # interpolant remains the layout-locked data-sampling contract elsewhere.
     # Built ONCE here and reused across every multi-start solve.
     mu_lut = _make_mu_interpolant_smooth(mu_field)
+    # Quasi-3D: built ONCE and reused across every multi-start solve, same as
+    # mu_lut above. None when no geom_field is supplied — the sole gate that
+    # keeps the default solve byte-compatible with the pre-quasi-3D behaviour.
+    geom_luts = _make_geom_interpolants(geom_field) if geom_field is not None else None
     ax_drive_interp = None
     ax_brake_interp = None
     if (envelope_caps and "v_grid" in envelope_caps
@@ -636,7 +714,7 @@ def solve_minimum_time_2d(
             vehicle=vehicle, weather=weather, max_time_s=max_time_s,
             mu_ceiling=mu_ceiling,
             ax_drive_interp=ax_drive_interp, ax_brake_interp=ax_brake_interp,
-            grade_n=grade_n, camber_n=camber_n,
+            grade_n=grade_n, camber_n=camber_n, geom_luts=geom_luts,
         ))
 
     status, v_sol, n_lat_sol, ax_sol = _select_winner(candidates, ds, kappa)
