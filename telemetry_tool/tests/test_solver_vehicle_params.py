@@ -47,8 +47,52 @@ class TestOCPVehicleParams:
         assert p.mu_ref == pytest.approx(1.3, abs=0.01)
 
     def test_unknown_class_uses_car_defaults(self):
+        # No-information path (defaults-only factory): car remains the fallback.
         p = params_for_class("unknown")
         assert p.mass == 1200.0
+
+    def test_unknown_class_with_light_mass_uses_kart_scale(self):
+        # A kart the classifier could not name: measured mass 155 kg must NOT
+        # inherit 150 kW car power / 15 kN car braking (universality bug fix).
+        from vehicle_model import VehicleParameters, VehicleClass
+        vp = VehicleParameters(
+            vehicle_class=VehicleClass.UNKNOWN,
+            estimated_mass_kg=155.0,
+            peak_lateral_g=1.3, peak_braking_g=1.1, peak_traction_g=0.8,
+            has_downforce=False, has_abs=False,
+            rolling_resistance_est=0.013, aero_drag_factor_est=0.0,
+        )
+        p = OCPVehicleParams.from_vehicle_params(vp)
+        assert p.mass == 155.0
+        assert p.P_max == 18_000.0        # kart-scale, not 150_000 car
+        assert p.F_brake_max == 3_500.0   # kart-scale, not 15_000 car
+        assert p.Cl == 0.0                # no downforce
+
+    def test_unknown_class_with_heavy_mass_uses_car_scale(self):
+        from vehicle_model import VehicleParameters, VehicleClass
+        vp = VehicleParameters(
+            vehicle_class=VehicleClass.UNKNOWN,
+            estimated_mass_kg=1195.0,
+            peak_lateral_g=1.1, peak_braking_g=1.0, peak_traction_g=0.5,
+            has_downforce=False, has_abs=False,
+            rolling_resistance_est=0.012, aero_drag_factor_est=0.0,
+        )
+        p = OCPVehicleParams.from_vehicle_params(vp)
+        assert p.mass == 1195.0
+        assert p.P_max == 150_000.0       # car-scale for a ~1200 kg vehicle
+
+    def test_unknown_class_no_mass_still_car(self):
+        # No measured mass and unknown class → car fallback (unchanged, warned).
+        from vehicle_model import VehicleParameters, VehicleClass
+        vp = VehicleParameters(
+            vehicle_class=VehicleClass.UNKNOWN,
+            estimated_mass_kg=None,
+            peak_lateral_g=1.0, peak_braking_g=1.0, peak_traction_g=0.5,
+            has_downforce=False, has_abs=False,
+            rolling_resistance_est=0.012, aero_drag_factor_est=0.0,
+        )
+        p = OCPVehicleParams.from_vehicle_params(vp)
+        assert p.P_max == 150_000.0
 
 
 class TestLoadTransfer:

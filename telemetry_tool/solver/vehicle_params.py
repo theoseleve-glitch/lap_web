@@ -156,7 +156,26 @@ class OCPVehicleParams:
         the appropriate class-level defaults for fields not estimated.
         """
         class_str = _map_vehicle_class(vp.vehicle_class)
-        base = dict(_CLASS_MAP.get(class_str, _CAR_DEFAULTS))
+        if class_str in _CLASS_MAP:
+            base = dict(_CLASS_MAP[class_str])
+        elif vp.estimated_mass_kg is not None and float(vp.estimated_mass_kg) > 0.0:
+            # Unknown/unrecognised class BUT we have a measured mass: pick the
+            # class defaults whose reference mass is closest, so a light vehicle
+            # (e.g. a kart the classifier could not name) gets kart-scale power
+            # and braking instead of silently inheriting 150 kW car physics.
+            picked_key, picked = _nearest_class_by_mass(float(vp.estimated_mass_kg))
+            logger.warning(
+                "Unknown vehicle_class %r with measured mass %.0f kg — using "
+                "mass-nearest '%s' solver defaults (not car).",
+                class_str, float(vp.estimated_mass_kg), picked_key,
+            )
+            base = dict(picked)
+        else:
+            logger.warning(
+                "Unknown vehicle_class %r with no measured mass — falling back "
+                "to car solver defaults.", class_str,
+            )
+            base = dict(_CAR_DEFAULTS)
 
         # Override with measured values where available
         if vp.estimated_mass_kg is not None:
@@ -226,6 +245,32 @@ def _map_vehicle_class(vehicle_class: Any) -> str:
     if hasattr(vehicle_class, "value"):
         return vehicle_class.value.lower()
     return str(vehicle_class).lower()
+
+
+# Distinct class-default tables ordered light → heavy, for mass-nearest fallback.
+_MASS_NEAREST_CANDIDATES: tuple[tuple[str, dict[str, Any]], ...] = (
+    ("kart", _KART_DEFAULTS),
+    ("formula", _FORMULA_DEFAULTS),
+    ("touring", _TOURING_DEFAULTS),
+    ("gt", _GT_DEFAULTS),
+    ("car", _CAR_DEFAULTS),
+)
+
+
+def _nearest_class_by_mass(mass_kg: float) -> tuple[str, dict[str, Any]]:
+    """Pick the class-default table whose reference mass is closest to *mass_kg*.
+
+    Used when the vehicle class is UNKNOWN/unrecognised but a measured mass is
+    available, so power/braking/drive-force defaults are physically plausible
+    for the vehicle instead of always car-scale.
+    """
+    best_key, best_defaults = "car", _CAR_DEFAULTS
+    best_delta = float("inf")
+    for key, defaults in _MASS_NEAREST_CANDIDATES:
+        delta = abs(float(defaults["mass"]) - mass_kg)
+        if delta < best_delta:
+            best_key, best_defaults, best_delta = key, defaults, delta
+    return best_key, best_defaults
 
 
 def params_for_class(class_str: str) -> OCPVehicleParams:
