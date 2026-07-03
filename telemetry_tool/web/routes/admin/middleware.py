@@ -216,3 +216,51 @@ def require_admin_role(*allowed_roles: str):
         return decorated
 
     return decorator
+
+
+def authorize_admin_metrics():
+    """Self-contained admin gate for endpoints OUTSIDE the /api/v1 admin chain.
+
+    ``/admin/metrics`` is registered on its own blueprint at ``/admin`` (not
+    ``/api/v1/admin``), so neither ``auth_middleware`` (which only enforces
+    ``/api/v1/``) nor ``admin_before_request`` runs for it — leaving it
+    unauthenticated. This helper reproduces the admin gate inline: IP allowlist,
+    a valid Bearer JWT, ``is_superadmin``, and the hard email allowlist.
+
+    Returns an error response tuple to short-circuit the request, or ``None``
+    when the caller is an allowed admin.
+    """
+    from flask import current_app
+    from web.middleware.auth import _extract_token
+
+    if not _check_admin_ip():
+        return _error_response("FORBIDDEN", "Access denied", status=403)
+
+    token = _extract_token()
+    if not token:
+        return _error_response("UNAUTHORIZED", "Authentication required", status=401)
+
+    try:
+        from auth.service import decode_access_token
+        payload = decode_access_token(token, current_app.config["JWT_SECRET"])
+        user_id = payload["user_id"]
+    except Exception:
+        return _error_response("UNAUTHORIZED", "Invalid or expired token", status=401)
+
+    try:
+        conn = _get_admin_conn()
+        row = conn.execute(
+            "SELECT is_superadmin, email FROM users WHERE id = %(uid)s",
+            {"uid": user_id},
+        ).fetchone()
+    except Exception:
+        logger.exception("Admin metrics auth: user lookup failed")
+        return _error_response("FORBIDDEN", "Admin check failed", status=403)
+
+    user_data = dict(row) if row and not isinstance(row, dict) else (row or {})
+    email = (user_data.get("email") or "").lower()
+    if not user_data.get("is_superadmin") or email not in _ADMIN_ALLOWED_EMAILS:
+        logger.warning("Admin metrics access denied for user %s (email %s)", user_id, email)
+        return _error_response("FORBIDDEN", "Access denied", status=403)
+
+    return None

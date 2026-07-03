@@ -207,6 +207,12 @@ def init_metrics(app: Flask) -> None:
         This endpoint is intended for internal monitoring dashboards.
         In production, it should be protected by IP allowlist or admin auth.
         """
+        # This blueprint is outside the /api/v1 auth chain, so gate inline.
+        from web.routes.admin.middleware import authorize_admin_metrics
+        guard = authorize_admin_metrics()
+        if guard is not None:
+            return guard
+
         r = _get_redis(app)
         if r is None:
             return jsonify({"error": "Redis not available"}), 503
