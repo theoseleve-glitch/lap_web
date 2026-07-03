@@ -43,6 +43,9 @@ from scoring.phase_aware import score_session_phase_aware
 from scoring.racecraft import compute_racecraft_score
 from scoring.robustness import _score_robustness
 from scoring.scorer import _apply_adaptive_weights, _apply_session_weights, score_session
+from scoring.tiers import build_tiered_scores
+from scoring.contextual import apply_feeling_adjustments, RESULT_TAGS
+from scoring.competition import compute_competition_score
 
 __all__ = [
     # Public API
@@ -52,6 +55,10 @@ __all__ = [
     "compute_granular_execution",
     "enhance_execution_with_controls",
     "compute_racecraft_score",
+    "build_tiered_scores",
+    "apply_feeling_adjustments",
+    "compute_competition_score",
+    "RESULT_TAGS",
     "ScoringError",
     # Constants (re-exported via wildcard)
     "MAX_PACE",
