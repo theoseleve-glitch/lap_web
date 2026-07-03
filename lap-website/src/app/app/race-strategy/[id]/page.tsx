@@ -8,6 +8,7 @@ import { api } from '@/lib/api-client';
 import { SkeletonBox, SkeletonTableRows } from '@/components/app';
 import { PageIntro } from '@/components/ui/PageIntro';
 import { StintTimeline } from '@/components/app/race-strategy/StintTimeline';
+import { StrategyCompareList } from '@/components/app/race-strategy/StrategyCompareList';
 import { canUseFeature } from '@/lib/entitlements-store';
 import { useEntityDelete } from '@/hooks/useEntityDelete';
 import { DeleteConfirmPanel } from '@/components/app/DeleteConfirmPanel';
@@ -320,6 +321,9 @@ export default function RaceDetailPage() {
 
       {/* Delete confirmation panel */}
       <DeleteConfirmPanel {...del} entityName={race.race_name} entityType="race strategy" />
+
+      {/* Strategy comparison — draft/ready only */}
+      {editable && <StrategyCompareList raceId={Number(raceId)} />}
 
       {/* Config Cards */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
