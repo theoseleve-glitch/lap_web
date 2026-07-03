@@ -7342,11 +7342,17 @@ def get_endurance_report(session_id: str) -> tuple[dict, int]:
     laps = models.get_laps_for_session(conn, session_id)
     all_laps = [dict(l) for l in laps]
 
+    # Per-lap GPS for heading-derived yaw variance (robustness stability).
+    from web.repos.gps_repo import get_lap_latlon
+    gps_by_lap = get_lap_latlon(conn, session_id)
+
     # Score each stint
     stint_scores = {}
     for stint in stints:
         condition = stint.get("condition") or "dry"
-        stint_scores[stint["stint_number"]] = compute_stint_scores(all_laps, stint, condition)
+        stint_scores[stint["stint_number"]] = compute_stint_scores(
+            all_laps, stint, condition, gps_by_lap=gps_by_lap,
+        )
 
     # Group stints by driver
     driver_stints: dict[str, list] = {}

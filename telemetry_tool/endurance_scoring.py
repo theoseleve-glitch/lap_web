@@ -176,6 +176,8 @@ def compute_stint_scores(
     all_laps: list[dict[str, Any]],
     stint: dict[str, Any],
     condition: str = "dry",
+    *,
+    gps_by_lap: dict[int, tuple[list[float], list[float]]] | None = None,
 ) -> dict[str, Any]:
     """Score a single stint using only laps within its range.
 
@@ -207,6 +209,7 @@ def compute_stint_scores(
             "lap_count": 0,
             "consistency_cv_pct": None,
             "pace_fade_pct": None,
+            "yaw_basis": "insufficient_gps",
             "scores": {"pace": 0, "consistency": 0, "robustness": 0},
         }
 
@@ -224,6 +227,14 @@ def compute_stint_scores(
     late_mean = statistics.mean(times[-third:])
     fade_pct = ((late_mean - early_mean) / early_mean * 100) if early_mean > 0 else 0
 
+    # Real per-stint yaw variance (GPS-heading derived) — replaces the old
+    # hardcoded 0/0 that pinned robustness stability at a constant 0.5.
+    from scoring.yaw import stint_yaw_variances
+    stint_lap_numbers = [lap["lap_number"] for lap in stint_laps]
+    early_yaw, late_yaw, yaw_basis = stint_yaw_variances(
+        gps_by_lap or {}, stint_lap_numbers,
+    )
+
     # Score via existing scorer
     metrics = {
         "best_s": best,
@@ -234,8 +245,8 @@ def compute_stint_scores(
         "best_to_median_s": median - best,
         "early_mean_s": early_mean,
         "late_mean_s": late_mean,
-        "early_yaw_var": 0,
-        "late_yaw_var": 0,
+        "early_yaw_var": early_yaw if early_yaw is not None else 0,
+        "late_yaw_var": late_yaw if late_yaw is not None else 0,
     }
 
     try:
@@ -263,6 +274,7 @@ def compute_stint_scores(
         "lap_count": len(times),
         "consistency_cv_pct": round(cv, 2),
         "pace_fade_pct": round(fade_pct, 2),
+        "yaw_basis": yaw_basis,
         "traffic_losses": traffic_losses,
         "traffic_total_s": round(traffic_total_s, 3),
         "traffic_count": len(traffic_losses),

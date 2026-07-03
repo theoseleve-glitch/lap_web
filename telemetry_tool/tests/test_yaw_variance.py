@@ -54,3 +54,30 @@ def test_stint_variances_insufficient_gps():
     early, late, basis = stint_yaw_variances({}, [1, 2, 3])
     assert (early, late) == (None, None)
     assert basis == "insufficient_gps"
+
+
+# --- Task 2: yaw variance wired into stint scoring ---------------------------
+from endurance_scoring import compute_stint_scores
+
+
+def _laps(start, end):
+    return [
+        {"lap_number": i, "lap_time_s": 60.0 + (i % 3) * 0.1, "is_valid": True}
+        for i in range(start, end + 1)
+    ]
+
+
+def test_stint_scores_without_gps_flags_yaw_unavailable():
+    stint = {"stint_number": 1, "start_lap": 1, "end_lap": 9}
+    out = compute_stint_scores(_laps(1, 9), stint, "dry")
+    assert out["yaw_basis"] == "insufficient_gps"
+
+
+def test_stint_scores_with_gps_uses_measured_yaw():
+    stint = {"stint_number": 1, "start_lap": 1, "end_lap": 9}
+    # early laps wobbly, late laps straight -> stability improves, basis measured
+    gps = {}
+    for lap in range(1, 10):
+        gps[lap] = _wobbly_line() if lap <= 3 else _straight_line()
+    out = compute_stint_scores(_laps(1, 9), stint, "dry", gps_by_lap=gps)
+    assert out["yaw_basis"] == "gps_heading"
