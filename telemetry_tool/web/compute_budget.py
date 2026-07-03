@@ -94,3 +94,96 @@ def check_compute_budget(
         )
 
     return allowed, info
+
+
+# Heavy async-compute job sources counted toward the SHARED per-tier budget.
+# Each entry: (table, active_status_values). Table names are hardcoded
+# constants (no injection). ``analysis_runs`` may be absent on older lineages
+# (its original migration 056 was orphaned) — counting is SAVEPOINT-guarded so
+# a missing table contributes 0 without aborting the caller's transaction.
+_ACTIVE_JOB_SOURCES: tuple[tuple[str, tuple[str, ...]], ...] = (
+    ("ingestion_jobs", ("pending", "running", "processing")),
+    ("exports", ("pending", "processing", "running")),
+    ("analysis_runs", ("pending", "running", "processing")),
+)
+
+
+def _row_count(row) -> int:
+    d = dict(row) if row and not isinstance(row, dict) else (row or {})
+    return int(d.get("cnt", 0) or 0)
+
+
+def count_active_compute_jobs(conn, workspace_id, sources=_ACTIVE_JOB_SOURCES) -> int:
+    """Count active heavy-compute jobs for a workspace across ALL job tables.
+
+    Backs the shared per-tier concurrency budget so analysis, export, and
+    track-surface jobs draw from one pool. Each source is counted inside a
+    SAVEPOINT: a missing table or a query error contributes 0 without aborting
+    the caller's transaction (important — the caller is mid-request and will
+    still INSERT its own job row after this check).
+    """
+    total = 0
+    for table, statuses in sources:
+        params: dict = {"wsid": workspace_id}
+        for i, s in enumerate(statuses):
+            params[f"s{i}"] = s
+        placeholders = ", ".join(f"%(s{i})s" for i in range(len(statuses)))
+        sql = (
+            f"SELECT COUNT(*) AS cnt FROM {table} "
+            f"WHERE workspace_id = %(wsid)s AND status IN ({placeholders})"
+        )
+        try:
+            conn.execute("SAVEPOINT cb_count")
+            row = conn.execute(sql, params).fetchone()
+            conn.execute("RELEASE SAVEPOINT cb_count")
+            total += _row_count(row)
+        except Exception:
+            try:
+                conn.execute("ROLLBACK TO SAVEPOINT cb_count")
+            except Exception:
+                pass
+            logger.debug("Active-job count skipped for table %s", table, exc_info=True)
+    return total
+
+
+def check_shared_compute_budget(
+    conn,
+    user_id: int,
+    workspace_id: int,
+    plan_tier: str | None = None,
+) -> tuple[bool, dict]:
+    """Shared per-tier concurrency budget across ALL heavy async job types.
+
+    Mirrors :func:`check_compute_budget` but counts analysis + export +
+    track-surface jobs in ONE pool (see :func:`count_active_compute_jobs`), so a
+    single workspace cannot saturate the worker fleet by spreading load across
+    job types. Returns ``(allowed, info)`` with the same shape.
+    """
+    if plan_tier is None:
+        row = conn.execute(
+            "SELECT plan_tier FROM users WHERE id = %(uid)s",
+            {"uid": user_id},
+        ).fetchone()
+        plan_tier = (dict(row) if row and not isinstance(row, dict) else (row or {})).get(
+            "plan_tier", "locked"
+        )
+
+    budget = get_budget(plan_tier)
+    max_jobs = budget["max_concurrent_jobs"]
+    running = count_active_compute_jobs(conn, workspace_id)
+
+    info = {
+        "running_jobs": running,
+        "max_jobs": max_jobs,
+        "max_duration_minutes": budget["max_job_duration_minutes"],
+        "plan_tier": plan_tier,
+    }
+
+    allowed = running < max_jobs
+    if not allowed:
+        logger.info(
+            "Shared compute budget exceeded: user=%s workspace=%s running=%d max=%d tier=%s",
+            user_id, workspace_id, running, max_jobs, plan_tier,
+        )
+
+    return allowed, info

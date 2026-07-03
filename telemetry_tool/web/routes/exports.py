@@ -112,6 +112,22 @@ def generate_export():
     user_id = getattr(g, "current_user_id", None)
     workspace_id = getattr(g, "workspace_id", None)
 
+    # Shared per-tier compute budget across analysis + export + surface jobs.
+    # Fail-open: a metering error must never block a legitimate export.
+    try:
+        from web.compute_budget import check_shared_compute_budget
+        allowed, info = check_shared_compute_budget(
+            conn, user_id or 0, workspace_id, getattr(g, "plan_tier", None)
+        )
+        if not allowed:
+            return api_error(
+                ErrorCode.RATE_LIMITED,
+                f"Compute budget exceeded: {info['running_jobs']}/{info['max_jobs']} jobs running",
+                status=429,
+            )
+    except Exception:
+        logger.warning("Shared compute budget check failed — allowing export", exc_info=True)
+
     # Insert export record and get the auto-generated id atomically
     row = conn.execute(
         text(

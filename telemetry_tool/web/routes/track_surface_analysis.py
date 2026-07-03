@@ -149,6 +149,23 @@ def run_analysis(session_id: int):
         return api_error(ErrorCode.UNAUTHORIZED, message="missing workspace context",
                          status=401)
 
+    # Shared per-tier compute budget (analysis + export + surface pool).
+    # Fail-open: a metering error must never block a legitimate analysis run.
+    try:
+        from web.compute_budget import check_shared_compute_budget
+        allowed, info = check_shared_compute_budget(
+            _get_conn(), getattr(g, "current_user_id", 0) or 0, workspace_id,
+            getattr(g, "plan_tier", None),
+        )
+        if not allowed:
+            return api_error(
+                ErrorCode.RATE_LIMITED,
+                message=f"Compute budget exceeded: {info['running_jobs']}/{info['max_jobs']} jobs running",
+                status=429,
+            )
+    except Exception:
+        logger.warning("Shared compute budget check failed — allowing analysis", exc_info=True)
+
     # Build a minimal orchestrator for the enqueue step only; execute happens
     # in the Celery worker.
     orchestrator = AnalysisOrchestrator(

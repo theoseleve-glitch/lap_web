@@ -106,6 +106,25 @@ def process_stints():
             "stints": [{"stint_number": s.get("stint_number"), "driver_name": s.get("driver_name", ""), "status": "queued"} for s in stint_configs],
         }), ex=7200)
 
+        # Shared per-tier compute budget (analysis + export + surface pool).
+        # Fail-open: never block a legitimate endurance run on a metering error.
+        try:
+            from web.compute_budget import check_shared_compute_budget
+            from web.db import get_conn
+            _ws = int(meta.get("workspace_id") or 0)
+            _uid = getattr(g, "current_user_id", 0) or 0
+            allowed, info = check_shared_compute_budget(
+                get_conn(), _uid, _ws, getattr(g, "plan_tier", None)
+            )
+            if not allowed:
+                return api_error(
+                    ErrorCode.RATE_LIMITED,
+                    f"Compute budget exceeded: {info['running_jobs']}/{info['max_jobs']} jobs running",
+                    status=429,
+                )
+        except Exception:
+            logger.warning("Shared compute budget check failed — allowing endurance", exc_info=True)
+
         from tasks.endurance_tasks import process_endurance_session
         process_endurance_session.delay(job_id, meta, stint_configs)
 

@@ -78,6 +78,25 @@ class TestRun:
         assert body["data"]["status"] == "queued"
         dispatch.assert_called_once()
 
+    def test_post_run_over_budget_returns_429(self, app, client):
+        # Shared compute budget denies → route returns 429 and does not dispatch.
+        over = (False, {"running_jobs": 5, "max_jobs": 1,
+                        "max_duration_minutes": 10, "plan_tier": "locked"})
+        with patch("web.routes.track_surface_analysis.dispatch_celery_task") as dispatch, \
+             patch("web.compute_budget.check_shared_compute_budget", return_value=over):
+            resp = client.post("/api/v1/track-surface/sessions/42/run", json={})
+        assert resp.status_code == 429
+        assert resp.get_json()["error"]["code"] == "RATE_LIMITED"
+        dispatch.assert_not_called()
+
+    def test_post_run_budget_error_is_failopen_202(self, app, client):
+        # A metering error must NEVER block a legitimate run (fail-open).
+        with patch("web.routes.track_surface_analysis.dispatch_celery_task"), \
+             patch("web.compute_budget.check_shared_compute_budget",
+                   side_effect=RuntimeError("budget backend down")):
+            resp = client.post("/api/v1/track-surface/sessions/42/run", json={})
+        assert resp.status_code == 202
+
     def test_post_run_in_flight_409(self, app, client):
         conn = app.config["_test_conn"]
         repo = AnalysisRunRepository(conn)
