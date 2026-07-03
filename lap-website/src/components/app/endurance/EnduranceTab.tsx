@@ -9,6 +9,7 @@ import { SetupFlow } from './SetupFlow';
 import { TeamReport } from './TeamReport';
 import { DriverReport } from './DriverReport';
 import { StintReport } from './StintReport';
+import { EnduranceLivePanel } from './EnduranceLivePanel';
 import type { StintsResponse, EnduranceReportResponse, EnduranceTier, Stint } from './types';
 
 interface EnduranceTabProps {
@@ -66,11 +67,25 @@ function CreateRaceLink({ sessionId, stints }: { sessionId: string; stints: Stin
   );
 }
 
+/** Small collapsible toggle for the live-tracking panel below it. */
+function LiveTrackingToggle({ show, onToggle }: { show: boolean; onToggle: () => void }) {
+  return (
+    <button
+      type="button"
+      onClick={onToggle}
+      className="w-full flex items-center gap-2 text-steel font-telemetry text-xs uppercase tracking-wider hover:text-chalk transition-colors"
+    >
+      {show ? '▼' : '▶'} Live Tracking
+    </button>
+  );
+}
+
 export function EnduranceTab({ sessionId, trackName, kartName }: EnduranceTabProps) {
   const [tier, setTier] = useState<EnduranceTier>('team');
   const [selectedDriver, setSelectedDriver] = useState<string | null>(null);
   const [selectedStint, setSelectedStint] = useState<number | null>(null);
   const [reportReady, setReportReady] = useState(false);
+  const [showLive, setShowLive] = useState(false);
 
   // Try loading stored report from session's analysis_json
   const storedReportQuery = useQuery({
@@ -177,6 +192,10 @@ export function EnduranceTab({ sessionId, trackName, kartName }: EnduranceTabPro
     return (
       <div className="space-y-4">
         <CreateRaceLink sessionId={sessionId} stints={reportStints} />
+        <LiveTrackingToggle show={showLive} onToggle={() => setShowLive((v) => !v)} />
+        {showLive && (
+          <EnduranceLivePanel sessionId={sessionId} pitThreshold={pitThreshold} stints={reportStints} />
+        )}
         <TeamReport
           report={report.team}
           stints={reportStints}
@@ -193,6 +212,10 @@ export function EnduranceTab({ sessionId, trackName, kartName }: EnduranceTabPro
   return (
     <div className="space-y-4">
       <CreateRaceLink sessionId={sessionId} stints={stints} />
+      <LiveTrackingToggle show={showLive} onToggle={() => setShowLive((v) => !v)} />
+      {showLive && (
+        <EnduranceLivePanel sessionId={sessionId} pitThreshold={pitThreshold} stints={stints} />
+      )}
       <SetupFlow
         sessionId={sessionId}
         stints={stints}
