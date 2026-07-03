@@ -23,6 +23,8 @@ import { QuestCard } from '@/components/app/gamification/QuestCard';
 const AnalyticsTab = lazy(() => import('@/components/app/analytics').then(m => ({ default: m.AnalyticsTab })));
 const DrivingStyleSection = lazy(() => import('@/components/app/DrivingStyleSection').then(m => ({ default: m.DrivingStyleSection })));
 const SessionDebrief = lazy(() => import('@/components/app/SessionDebrief').then(m => ({ default: m.SessionDebrief })));
+const ScoreTiers = lazy(() => import('@/components/app/ScoreTiers').then(m => ({ default: m.ScoreTiers })));
+const SessionReflectionForm = lazy(() => import('@/components/app/SessionReflectionForm').then(m => ({ default: m.SessionReflectionForm })));
 const AchievementsBadges = lazy(() => import('@/components/app/AchievementsBadges').then(m => ({ default: m.AchievementsBadges })));
 const FocusMode = lazy(() => import('@/components/app/focus-mode/FocusMode').then(m => ({ default: m.FocusMode })));
 const EnduranceTab = lazy(() => import('@/components/app/endurance').then(m => ({ default: m.EnduranceTab })));
@@ -133,6 +135,10 @@ interface ScoreData {
   weaknesses: string[];
   badges?: BadgeData[];
   gamification?: GamificationResult;
+  // W3: tiered honest output (see GET /scores)
+  tiers?: import('@/components/app/ScoreTiers').ScoreTiersData;
+  reflection?: import('@/components/app/SessionReflectionForm').ReflectionInitial;
+  weather_on_record?: boolean;
 }
 
 // ── Helpers ──────────────────────────────────────────────────────
@@ -488,6 +494,13 @@ export default function SessionDetailPage() {
   }, [laps]);
 
   const gpsLaps = useMemo(() => laps.map((l) => l.lap_number), [laps]);
+
+  const refetchScores = useCallback(async () => {
+    try {
+      const fresh = await api.get<ScoreData>(`/sessions/${sessionId}/scores`);
+      setScores(fresh);
+    } catch { /* non-critical: keep prior scores */ }
+  }, [sessionId]);
 
   const handleTabChange = useCallback((tab: Tab) => {
     setActiveTab(tab);
@@ -1480,12 +1493,29 @@ function OverviewTab({
               cornerPositions={handlingBalance.corner_positions}
             />
           )}
+          {scores?.tiers && (
+            <Suspense fallback={null}>
+              <ScoreTiers tiers={scores.tiers} />
+            </Suspense>
+          )}
+          <Suspense fallback={null}>
+            <SessionReflectionForm
+              sessionId={sessionId}
+              initial={scores?.reflection ?? null}
+              onSaved={refetchScores}
+            />
+          </Suspense>
           <SessionDebrief
             totalScore={session.total_score}
             grade={session.grade}
             scores={scores}
             laps={laps}
             corners={corners}
+            contextNote={
+              scores?.tiers?.reflection_present && scores.tiers.contextualized.total_score != null
+                ? `In context your score is ${Math.round(scores.tiers.contextualized.total_score)}/100 (${scores.tiers.contextualized.grade}) after ${scores.tiers.contextualized.adjustments.length} labeled adjustment(s).`
+                : null
+            }
           />
           <AchievementsBadges badges={scores?.badges} />
         </Suspense>
