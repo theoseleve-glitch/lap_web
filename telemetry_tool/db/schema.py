@@ -86,7 +86,16 @@ CREATE TABLE IF NOT EXISTS sessions (
     is_favorite       INTEGER NOT NULL DEFAULT 0,
     archived          INTEGER NOT NULL DEFAULT 0,
     created_at        TEXT    NOT NULL DEFAULT (datetime('now')),
-    deleted_at        TEXT
+    deleted_at        TEXT,
+    result_tags                 TEXT,
+    driver_perceived_conditions TEXT,
+    felt_performance_rating     INTEGER,
+    race_position               INTEGER,
+    race_total_competitors      INTEGER,
+    race_gap_to_leader_s        REAL,
+    race_gap_to_nearest_s       REAL,
+    race_laps_completed         INTEGER,
+    race_is_dnf                 INTEGER
 );
 """
 
@@ -166,6 +175,19 @@ CREATE TABLE IF NOT EXISTS condition_phases (
 );
 """
 
+_SESSION_COMPETITORS_TABLE = """
+CREATE TABLE IF NOT EXISTS session_competitors (
+    id                   INTEGER PRIMARY KEY AUTOINCREMENT,
+    session_id           TEXT    NOT NULL REFERENCES sessions(session_id),
+    competitor_name      TEXT    NOT NULL,
+    final_position       INTEGER,
+    gap_to_this_driver_s REAL,
+    notes                TEXT,
+    workspace_id         INTEGER,
+    created_at           TEXT    NOT NULL DEFAULT (datetime('now'))
+);
+"""
+
 # Ordered list: tables must be created in dependency order.
 PHASE_1_TABLES: list[tuple[str, str]] = [
     ("schema_version",   _SCHEMA_VERSION_TABLE),
@@ -176,6 +198,7 @@ PHASE_1_TABLES: list[tuple[str, str]] = [
     ("gps_traces",       _GPS_TRACES_TABLE),
     ("score_details",    _SCORE_DETAILS_TABLE),
     ("condition_phases", _CONDITION_PHASES_TABLE),
+    ("session_competitors", _SESSION_COMPETITORS_TABLE),
 ]
 
 # ------------------------------------------------------------------
