@@ -2601,6 +2601,68 @@ def update_session(session_id: str) -> tuple[dict, int]:
 
 
 # ══════════════════════════════════════════════════════════════════
+# 12a2. POST /api/v1/sessions/<id>/reflection — driver feeling + competitors
+# ══════════════════════════════════════════════════════════════════
+
+
+@bp.route("/sessions/<session_id>/reflection", methods=["POST"])
+@_safe_api
+def save_reflection(session_id: str) -> tuple[dict, int]:
+    """Persist the driver's post-session reflection + self-reported competitors."""
+    from scoring import RESULT_TAGS
+    from web.repos.reflection_repo import upsert_reflection, replace_competitors
+
+    conn = get_db_connection()
+    session = models.get_session_by_id(conn, session_id)
+    if session is None:
+        return api_error(ErrorCode.NOT_FOUND, "Session not found", status=404)
+
+    body = request.get_json(silent=True) or {}
+
+    # ── Validate result tags ──
+    tags = body.get("result_tags") or []
+    if not isinstance(tags, list) or any(str(t).lower() not in RESULT_TAGS for t in tags):
+        return api_error(
+            ErrorCode.VALIDATION_ERROR,
+            f"result_tags must be a subset of {sorted(RESULT_TAGS)}",
+            status=400,
+        )
+    tags = [str(t).lower() for t in tags]
+
+    # ── Validate felt rating ──
+    rating = body.get("felt_performance_rating")
+    if rating is not None:
+        try:
+            rating = int(rating)
+        except (TypeError, ValueError):
+            return api_error(ErrorCode.VALIDATION_ERROR, "felt_performance_rating must be an integer", status=400)
+        if not (1 <= rating <= 10):
+            return api_error(ErrorCode.VALIDATION_ERROR, "felt_performance_rating must be 1-10", status=400)
+
+    # ── Validate competitors ──
+    competitors = body.get("competitors") or []
+    if not isinstance(competitors, list) or len(competitors) > 50:
+        return api_error(ErrorCode.VALIDATION_ERROR, "competitors must be a list of at most 50", status=400)
+
+    upsert_reflection(conn, session_id, {
+        "result_tags": tags,
+        "driver_perceived_conditions": (body.get("driver_perceived_conditions") or None),
+        "felt_performance_rating": rating,
+        "race_position": body.get("race_position"),
+        "race_total_competitors": body.get("race_total_competitors"),
+        "race_gap_to_leader_s": body.get("race_gap_to_leader_s"),
+        "race_gap_to_nearest_s": body.get("race_gap_to_nearest_s"),
+        "race_laps_completed": body.get("race_laps_completed"),
+        "race_is_dnf": ("dnf" in tags or "crashed" in tags) or body.get("race_is_dnf"),
+    })
+    n = replace_competitors(conn, session_id, competitors)
+    audit_log(conn, "session.reflection", {"session_id": session_id, "competitors": n})
+    conn.commit()
+
+    return api_response({"saved": True, "competitors": n})
+
+
+# ══════════════════════════════════════════════════════════════════
 # 12b. POST /api/v1/sessions/<id>/archive
 # ══════════════════════════════════════════════════════════════════
 
