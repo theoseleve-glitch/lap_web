@@ -407,3 +407,17 @@ _BASE_MAXES: dict[str, float] = {
 
 class ScoringError(ValueError):
     """Raised when required metrics keys are absent or values are invalid."""
+
+
+# =============================================================================
+# FEELING / CONTEXTUAL ADJUSTMENT CONSTANTS (W3)
+# =============================================================================
+# Bounded, provenance-tagged. Reliefs close only a fraction of a category's
+# deficit-to-max and are capped in absolute points so a tag can't be gamed for
+# a large boost. All adjustments are surfaced as labeled reasons — never silent.
+
+FEELING_TRAFFIC_RELIEF_FRAC:   Final[float] = 0.25   # close 25% of consistency deficit
+FEELING_TRAFFIC_RELIEF_CAP:    Final[float] = 3.0    # ... but at most +3.0 points
+FEELING_TYRE_RELIEF_FRAC:      Final[float] = 0.25   # close 25% of pace deficit
+FEELING_TYRE_RELIEF_CAP:       Final[float] = 3.0    # ... but at most +3.0 points
+FEELING_PERCEIVED_MISMATCH_CONF: Final[float] = 0.90 # perceived != track_state => x0.90 confidence
