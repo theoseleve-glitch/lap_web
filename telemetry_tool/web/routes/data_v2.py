@@ -949,6 +949,58 @@ def get_scores(session_id: str) -> tuple[dict, int]:
         scores["friction_envelope_available"] = False
         scores["optimal_v2_available"] = False
 
+    # ── Tiered honest output: absolute · contextualized · competition ──
+    try:
+        from scoring import build_tiered_scores, compute_competition_score
+        from web.repos.reflection_repo import get_reflection, get_competitors
+
+        # Reconstruct the base result shape build_tiered_scores expects.
+        _default_sub_max = {
+            "pace": 25.0, "consistency": 25.0, "execution": 20.0,
+            "robustness": 15.0, "adaptation": 15.0,
+        }
+        base_sub_scores = {}
+        for cat in ("pace", "consistency", "execution", "robustness", "adaptation"):
+            base_sub_scores[cat] = {
+                "score": float(scores.get(f"{cat}_score") or 0.0),
+                "max": float(scores.get(f"{cat}_max") or _default_sub_max[cat]),
+            }
+        base_result = {
+            "total_score": float(session.get("total_score") or 0.0),
+            "grade": session.get("grade"),
+            "sub_scores": base_sub_scores,
+        }
+
+        reflection = get_reflection(conn, session_id)
+        reflection["track_state"] = session.get("track_state") or "dry"
+        competitors = get_competitors(conn, session_id)
+
+        competition = compute_competition_score(reflection, competitors)
+        scores["tiers"] = build_tiered_scores(
+            base_result, feeling=reflection, competition=competition,
+        )
+        # Echo stored reflection so the UI form can prefill.
+        scores["reflection"] = reflection
+        scores["reflection"]["competitors"] = competitors
+        # Weather transparency: track_state is manual; note whether weather is on record.
+        scores["weather_on_record"] = bool(session.get("weather_json"))
+    except Exception:
+        logger.warning("Tier assembly failed for session %s", session_id, exc_info=True)
+        scores["tiers"] = {
+            "absolute": {
+                "total_score": session.get("total_score"),
+                "grade": session.get("grade"),
+                "sub_scores": {},
+            },
+            "contextualized": {
+                "total_score": session.get("total_score"),
+                "grade": session.get("grade"),
+                "adjustments": [], "provenance": [],
+            },
+            "competition": None,
+            "reflection_present": False,
+        }
+
     return api_response(scores)
 
 
