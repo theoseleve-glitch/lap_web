@@ -121,6 +121,31 @@ def _gaussian_smooth(signal: np.ndarray, half_window: int) -> np.ndarray:
     return out[: len(signal)]
 
 
+_MAX_ABS_LATITUDE_DEG = 85.0
+
+
+def _assert_valid_latitude(lat_ref_rad: float) -> None:
+    """Raise if the reference latitude is too close to a pole for the
+    equirectangular projection to be numerically sound.
+
+    cos(lat_ref) -> 0 as |lat| -> 90 deg, which makes the longitude<->metres
+    scale factor collapse toward zero in the forward transform and blow up
+    (division by near-zero) in the inverse -- tiny GPS jitter turns into
+    wildly wrong metre offsets. No real racetrack is within a few degrees of
+    a pole, so this is a genuine precondition violation, not something to
+    silently degrade: it's raised so the pipeline's existing per-stage
+    _safe_step wrapper records it as a stage error with a reason, instead of
+    this function producing numerically-garbage coordinates.
+    """
+    lat_deg = np.degrees(lat_ref_rad)
+    if abs(lat_deg) > _MAX_ABS_LATITUDE_DEG:
+        raise ValueError(
+            f"GPS latitude {lat_deg:.4f}° is outside the supported range "
+            f"(|lat| <= {_MAX_ABS_LATITUDE_DEG}°) for the equirectangular "
+            "projection used here; this session's location is not supported."
+        )
+
+
 def _latlon_to_local_xy(
     lat: np.ndarray,
     lon: np.ndarray,
@@ -130,12 +155,21 @@ def _latlon_to_local_xy(
     equirectangular projection centred on the mean position.
 
     Returns (x_m, y_m) arrays.
+
+    Raises
+    ------
+    ValueError
+        If the mean latitude is beyond +/-85 degrees (see
+        _assert_valid_latitude) -- the projection is not numerically sound
+        that close to a pole, and no real racetrack is there.
     """
     lat_r = np.radians(lat)
     lon_r = np.radians(lon)
 
     lat_ref = np.nanmean(lat_r)
     lon_ref = np.nanmean(lon_r)
+
+    _assert_valid_latitude(lat_ref)
 
     x_m = _EARTH_RADIUS_M * (lon_r - lon_ref) * np.cos(lat_ref)
     y_m = _EARTH_RADIUS_M * (lat_r - lat_ref)
@@ -148,7 +182,14 @@ def _local_xy_to_latlon(
     lat_ref_rad: float,
     lon_ref_rad: float,
 ) -> tuple[np.ndarray, np.ndarray]:
-    """Inverse of the equirectangular projection."""
+    """Inverse of the equirectangular projection.
+
+    Raises
+    ------
+    ValueError
+        If lat_ref_rad is beyond +/-85 degrees (see _assert_valid_latitude).
+    """
+    _assert_valid_latitude(lat_ref_rad)
     lat_r = y_m / _EARTH_RADIUS_M + lat_ref_rad
     lon_r = x_m / (_EARTH_RADIUS_M * np.cos(lat_ref_rad)) + lon_ref_rad
     return np.degrees(lat_r), np.degrees(lon_r)
