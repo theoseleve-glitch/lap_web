@@ -58,6 +58,7 @@ PLAN_ENTITLEMENTS: dict[str, dict] = {
         "device_sync": False,
         "auto_analyze_on_sync": False,
         "max_linked_devices": 0,
+        "resident_storage_cap_gb": 0,  # no active subscription -- cannot upload at all
     },
     "racer": {
         "analyses_per_month": 10,
@@ -84,6 +85,7 @@ PLAN_ENTITLEMENTS: dict[str, dict] = {
         "device_sync": True,
         "auto_analyze_on_sync": False,
         "max_linked_devices": 2,
+        "resident_storage_cap_gb": 50,  # 50 GB total resident storage, separate from the 2.5 GB/month upload-volume flow limit
     },
     "world_class": {
         "analyses_per_month": -1,  # unlimited
@@ -110,6 +112,7 @@ PLAN_ENTITLEMENTS: dict[str, dict] = {
         "device_sync": True,
         "auto_analyze_on_sync": True,
         "max_linked_devices": 3,
+        "resident_storage_cap_gb": -1,  # unlimited, matching this tier's other -1 sentinels
     },
 }
 

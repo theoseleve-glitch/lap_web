@@ -27,6 +27,7 @@ from flask import Blueprint, Response, g, request
 
 from web.api_utils import ErrorCode, api_error, api_response
 from web.db import get_db_connection
+from web.storage_quota import get_storage
 from web.models import (
     insert_analysis_json,
     insert_condition_phases,
@@ -95,6 +96,23 @@ def _check_tier_limits(f: BinaryIO, conn: sqlite3.Connection, workspace_id: str,
             f"File size ({file_size // (1024 * 1024)} MB) exceeds your plan limit "
             f"({max_mb} MB)."
         )
+    # Hard resident-storage cap (separate from the monthly upload-VOLUME flow
+    # limit below): total on-disk footprint for this workspace, regardless of
+    # when it accumulated. storage_quota.get_storage()'s allocation auto-grows
+    # and cannot itself serve as a cap; this uses the tier's fixed entitlement.
+    from auth.entitlements import PLAN_ENTITLEMENTS
+    resident_cap_gb = PLAN_ENTITLEMENTS.get(plan_tier, PLAN_ENTITLEMENTS["locked"]).get(
+        "resident_storage_cap_gb", 0
+    )
+    if resident_cap_gb != -1:
+        current = get_storage(conn, int(workspace_id))
+        cap_bytes = resident_cap_gb * 1024 * 1024 * 1024
+        if current["used_bytes"] + file_size > cap_bytes:
+            used_gb = round(current["used_bytes"] / (1024 ** 3), 2)
+            return (
+                f"Resident storage limit exceeded ({used_gb} GB used / {resident_cap_gb} GB cap). "
+                "Delete old sessions or upgrade your plan."
+            )
     # Monthly upload volume check (atomic — locks row to prevent race conditions)
     user_id = getattr(g, "current_user_id", None)
     if user_id is not None:
