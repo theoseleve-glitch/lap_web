@@ -37,10 +37,42 @@ from track_surface.racing_line_repo import (
     set_racing_line_status,
     get_racing_lines,
 )
+from track_surface.honesty import decide_tier, build_provenance
 
 logger = logging.getLogger(__name__)
 
 SOLVER_VERSION = "ocp2d-stitched-v1"
+GEOMETRY_GATES_VERSION = "a3-2026-07"
+
+
+def _validate_solution_safe(sol, surface) -> tuple[bool, dict]:
+    """Run the physics self-consistency validator (spec §5). Fail-SAFE: any
+    error -> (False, {...}), so an un-validatable line can never be labelled
+    optimal_line."""
+    try:
+        from track_surface.solution_validator import validate_solution
+        from track_surface.solver_bridge import surface_to_track_model
+        report = validate_solution(sol, surface_to_track_model(surface))
+        return bool(report.passed), report.to_dict()
+    except Exception as exc:  # noqa: BLE001 — fail-safe by design
+        logger.warning("racing-line validation could not run: %s", exc)
+        return False, {"error": str(exc)[:200]}
+
+
+def _grip_conf_summary(grip) -> dict:
+    """min/mean/p90 of the grip confidence grid, for provenance."""
+    try:
+        conf = getattr(grip, "confidence", None)
+        if conf is None or getattr(conf, "size", 0) == 0:
+            return {}
+        c = np.asarray(conf, dtype=float)
+        return {
+            "min": float(c.min()),
+            "mean": float(c.mean()),
+            "p90": float(np.percentile(c, 90)),
+        }
+    except Exception:  # noqa: BLE001
+        return {}
 
 # Map each solved condition to the sidecar condition label used by load_track_model.
 # - dry  loads the dry sidecar (measured grip).
@@ -90,7 +122,7 @@ def _compute_racing_lines_impl(
             if surface is None or surface.grip_2d is None:
                 set_racing_line_status(
                     conn, track_id, vehicle_class, cond,
-                    "failed", reason="insufficient_laps",
+                    "failed", reason="insufficient_laps", tier="refused",
                 )
                 written["failed"].append(cond)
                 continue
@@ -126,7 +158,7 @@ def _compute_racing_lines_impl(
                 )
                 set_racing_line_status(
                     conn, track_id, vehicle_class, cond,
-                    "failed", reason=str(exc)[:120],
+                    "failed", reason=str(exc)[:120], tier="refused",
                 )
                 written["failed"].append(cond)
                 continue
@@ -142,12 +174,41 @@ def _compute_racing_lines_impl(
                 if dto["solver_meta"]["status"] in ("solved", "optimal", "Solve_Succeeded")
                 else "failed"
             )
+
+            # Honesty layer (spec C §5): the tier a consumer may trust. Physics
+            # self-consistency is validated here (fail-safe); an optimal_line
+            # requires human-verified GT geometry AND grip>=gold AND validation
+            # green AND a solved status — else it degrades to speed_profile_only
+            # (never drawable as a line) or refused.
+            validation_ok, validation_report = _validate_solution_safe(sol, surface)
+            geometry_source = getattr(surface, "boundary_source", None)
+            tier, tier_reason = decide_tier(
+                boundary_source=geometry_source,
+                grip_tier=getattr(surface, "quality_tier", None),
+                validation_ok=validation_ok,
+                solve_status=solved_status,
+            )
+            provenance = build_provenance(
+                laps_used=n_laps,
+                grip_confidence_summary=_grip_conf_summary(surface.grip_2d),
+                geometry_gates_version=GEOMETRY_GATES_VERSION,
+                solver_name=SOLVER_VERSION,
+                solver_version=SOLVER_VERSION,
+                validation=validation_report,
+                warm_start_source=None,
+            )
+            if tier_reason:
+                provenance["tier_reason"] = tier_reason
+
             upsert_racing_line(
                 conn, track_id, vehicle_class, cond, dto,
                 solver_version=SOLVER_VERSION,
                 grip_snapshot_hash=snap,
                 n_laps_used=n_laps,
                 status=solved_status,
+                geometry_source=geometry_source,
+                tier=tier,
+                provenance=provenance,
             )
             written["ok"].append(cond)
 
