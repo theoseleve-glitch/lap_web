@@ -43,6 +43,9 @@ def upsert_racing_line(
     grip_snapshot_hash: str,
     n_laps_used: int,
     status: str = "ok",
+    geometry_source: str | None = None,
+    tier: str | None = None,
+    provenance: dict | None = None,
 ) -> None:
     """INSERT or UPDATE track_racing_lines for one (track, class, condition).
 
@@ -66,17 +69,20 @@ def upsert_racing_line(
     """
     points_json = json.dumps(dto["points"])
     lap_time_s = (dto.get("solver_meta") or {}).get("lap_time_s")
+    provenance_json = json.dumps(provenance) if provenance is not None else None
     now = datetime.now(timezone.utc)
 
     sql = """
         INSERT INTO track_racing_lines (
             track_id, vehicle_class, condition, line_kind,
             points, solver_version, grip_snapshot_hash,
-            n_laps_used, lap_time_s, status, computed_at
+            n_laps_used, lap_time_s, status, computed_at,
+            geometry_source, tier, provenance
         ) VALUES (
             %(track_id)s, %(vehicle_class)s, %(condition)s, %(line_kind)s,
             %(points)s::jsonb, %(solver_version)s, %(grip_snapshot_hash)s,
-            %(n_laps_used)s, %(lap_time_s)s, %(status)s, %(computed_at)s
+            %(n_laps_used)s, %(lap_time_s)s, %(status)s, %(computed_at)s,
+            %(geometry_source)s, %(tier)s, %(provenance)s::jsonb
         )
         ON CONFLICT (track_id, vehicle_class, condition, line_kind)
         DO UPDATE SET
@@ -86,7 +92,10 @@ def upsert_racing_line(
             n_laps_used        = EXCLUDED.n_laps_used,
             lap_time_s         = EXCLUDED.lap_time_s,
             status             = EXCLUDED.status,
-            computed_at        = EXCLUDED.computed_at
+            computed_at        = EXCLUDED.computed_at,
+            geometry_source    = EXCLUDED.geometry_source,
+            tier               = EXCLUDED.tier,
+            provenance         = EXCLUDED.provenance
     """
     params = {
         "track_id": track_id,
@@ -100,6 +109,9 @@ def upsert_racing_line(
         "lap_time_s": lap_time_s,
         "status": status,
         "computed_at": now,
+        "geometry_source": geometry_source,
+        "tier": tier,
+        "provenance": provenance_json,
     }
     cur = conn.cursor()
     try:
@@ -137,7 +149,8 @@ def get_racing_lines(
     """
     sql = """
         SELECT condition, status, grip_snapshot_hash, solver_version,
-               n_laps_used, lap_time_s, computed_at, points
+               n_laps_used, lap_time_s, computed_at, points,
+               tier, geometry_source, provenance
         FROM track_racing_lines
         WHERE track_id = %(track_id)s
           AND vehicle_class = %(vehicle_class)s
@@ -165,11 +178,14 @@ def get_racing_lines(
                 "lap_time_s":         row["lap_time_s"],
                 "computed_at":        row["computed_at"],
                 "points":             row["points"],
+                "tier":               row.get("tier"),
+                "geometry_source":    row.get("geometry_source"),
+                "provenance":         row.get("provenance"),
             }
         else:
             # Plain tuple cursor (PgConnectionWrapper.cursor() in production).
             # Column order must match the SELECT above exactly.
-            cond, stat, snap_hash, sv, nlaps, lt, cat, pts = row
+            cond, stat, snap_hash, sv, nlaps, lt, cat, pts, tier, geom_src, prov = row
             d = {
                 "condition":          cond,
                 "status":             stat,
@@ -179,6 +195,9 @@ def get_racing_lines(
                 "lap_time_s":         lt,
                 "computed_at":        cat,
                 "points":             pts,
+                "tier":               tier,
+                "geometry_source":    geom_src,
+                "provenance":         prov,
             }
 
         # Normalise JSONB: psycopg2 RealDictCursor auto-decodes to list/dict;
@@ -187,6 +206,9 @@ def get_racing_lines(
         if isinstance(pts, str):
             pts = json.loads(pts)
         d["points"] = pts
+        prov = d.get("provenance")
+        if isinstance(prov, str):
+            d["provenance"] = json.loads(prov)
         result.append(d)
     return result
 
@@ -199,6 +221,7 @@ def set_racing_line_status(
     status: str,
     *,
     reason: str | None = None,
+    tier: str | None = None,
 ) -> None:
     """Set the ``status`` column, inserting a placeholder row if none exists.
 
@@ -209,9 +232,11 @@ def set_racing_line_status(
 
     Parameters
     ----------
-    reason  Optional human-readable explanation.  Not stored (migration 078
-            has no ``reason`` column) but logged at DEBUG level for
-            traceability.
+    reason  Optional machine-readable refusal reason (honesty taxonomy). Now
+            persisted into ``provenance`` (migration 080) as ``{"reason": ...}``
+            in addition to being logged, so a refused line is self-describing.
+    tier    Optional honesty tier (typically ``"refused"`` on failure). NULL
+            leaves the column untouched-by-default on insert.
     """
     if reason is not None:
         logger.debug(
@@ -219,18 +244,22 @@ def set_racing_line_status(
             "status=%s reason=%s",
             track_id, vehicle_class, condition, status, reason,
         )
+    provenance_json = json.dumps({"reason": reason}) if reason is not None else None
     now = datetime.now(timezone.utc)
     sql = """
         INSERT INTO track_racing_lines (
             track_id, vehicle_class, condition, line_kind,
-            points, status, computed_at
+            points, status, computed_at, tier, provenance
         ) VALUES (
             %(track_id)s, %(vehicle_class)s, %(condition)s, %(line_kind)s,
-            '[]'::jsonb, %(status)s, %(computed_at)s
+            '[]'::jsonb, %(status)s, %(computed_at)s,
+            %(tier)s, %(provenance)s::jsonb
         )
         ON CONFLICT (track_id, vehicle_class, condition, line_kind)
         DO UPDATE SET
-            status = EXCLUDED.status
+            status     = EXCLUDED.status,
+            tier       = EXCLUDED.tier,
+            provenance = EXCLUDED.provenance
     """
     params = {
         "track_id": track_id,
@@ -239,6 +268,8 @@ def set_racing_line_status(
         "line_kind": _LINE_KIND,
         "status": status,
         "computed_at": now,
+        "tier": tier,
+        "provenance": provenance_json,
     }
     cur = conn.cursor()
     try:

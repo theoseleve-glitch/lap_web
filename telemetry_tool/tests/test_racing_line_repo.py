@@ -153,3 +153,66 @@ def test_set_status_inserts_placeholder_when_no_row_exists():
         except Exception:
             conn.rollback()
         conn.close()
+
+
+# --- Honesty-column wiring (spec C, Task 2) — verified WITHOUT PG via a
+#     capturing fake connection that records the SQL + params. -----------------
+import json as _json  # noqa: E402
+
+
+class _CapturingCursor:
+    def __init__(self, sink):
+        self._sink = sink
+
+    def execute(self, sql, params=None):
+        self._sink.append((sql, params))
+
+    def close(self):
+        pass
+
+
+class _CapturingConn:
+    def __init__(self):
+        self.calls = []
+
+    def cursor(self, *a, **k):
+        return _CapturingCursor(self.calls)
+
+
+def test_upsert_writes_honesty_columns_no_pg():
+    conn = _CapturingConn()
+    upsert_racing_line(
+        conn, "T", "generic", "dry", _DTO,
+        solver_version="v1", grip_snapshot_hash="h", n_laps_used=5,
+        geometry_source="gt_anchored_native", tier="optimal_line",
+        provenance={"laps_used": 5},
+    )
+    sql, params = conn.calls[-1]
+    assert "geometry_source" in sql and "tier" in sql and "provenance" in sql
+    assert params["geometry_source"] == "gt_anchored_native"
+    assert params["tier"] == "optimal_line"
+    assert _json.loads(params["provenance"]) == {"laps_used": 5}
+
+
+def test_upsert_provenance_none_is_null_no_pg():
+    conn = _CapturingConn()
+    upsert_racing_line(
+        conn, "T", "generic", "dry", _DTO,
+        solver_version="v1", grip_snapshot_hash="h", n_laps_used=0,
+    )
+    _, params = conn.calls[-1]
+    assert params["provenance"] is None
+    assert params["tier"] is None
+    assert params["geometry_source"] is None
+
+
+def test_set_status_persists_reason_as_provenance_no_pg():
+    conn = _CapturingConn()
+    set_racing_line_status(
+        conn, "T", "generic", "dry", "failed",
+        reason="solver_infeasible", tier="refused",
+    )
+    sql, params = conn.calls[-1]
+    assert "provenance" in sql and "tier" in sql
+    assert params["tier"] == "refused"
+    assert _json.loads(params["provenance"]) == {"reason": "solver_infeasible"}
