@@ -1,98 +1,64 @@
 import { NextResponse } from 'next/server';
-import { getStripeSecretKey, hasBillingAuth } from '@/lib/stripe-billing';
-import { getSiteUrl } from '@/lib/site-url';
+import { verifyBillingAuth } from '@/lib/stripe-billing';
+
+const BACKEND_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5000';
 
 interface PortalBody {
-  customerEmail?: string;
-  customerId?: string;
+  return_url?: string;
 }
 
 export async function POST(request: Request) {
-  const body = (await request.json().catch(() => null)) as PortalBody | null;
-
-  if (!hasBillingAuth(request)) {
+  const auth = await verifyBillingAuth(request);
+  if (!auth) {
     return NextResponse.json({ ok: false, message: 'Authentication required' }, { status: 401 });
   }
 
-  if (!body?.customerEmail && !body?.customerId) {
-    return NextResponse.json(
-      { ok: false, message: 'customerEmail or customerId is required' },
-      { status: 400 },
-    );
-  }
+  const body = (await request.json().catch(() => ({}))) as PortalBody;
+  const cookie = request.headers.get('cookie') ?? '';
 
-  const stripeKey = getStripeSecretKey();
-  const origin = getSiteUrl();
-  if (stripeKey) {
-    try {
-      let customerId = body.customerId;
-
-      if (!customerId && body.customerEmail) {
-        const lookup = await fetch(
-          `https://api.stripe.com/v1/customers?email=${encodeURIComponent(body.customerEmail)}&limit=1`,
-          {
-            headers: { Authorization: `Bearer ${stripeKey}` },
-          },
-        );
-        if (lookup.ok) {
-          const customerData = (await lookup.json()) as { data?: Array<{ id: string }> };
-          customerId = customerData.data?.[0]?.id;
-        }
-      }
-
-      if (customerId) {
-        const params = new URLSearchParams();
-        params.set('customer', customerId);
-        params.set('return_url', `${origin}/billing`);
-
-        const response = await fetch('https://api.stripe.com/v1/billing_portal/sessions', {
-          method: 'POST',
-          headers: {
-            Authorization: `Bearer ${stripeKey}`,
-            'Content-Type': 'application/x-www-form-urlencoded',
-          },
-          body: params.toString(),
-        });
-
-        if (response.ok) {
-          const data = (await response.json()) as { url?: string };
-          if (data.url) {
-            return NextResponse.json({ ok: true, portalUrl: data.url, mode: 'stripe' });
-          }
-        }
-      }
-    } catch {
-      // Fallback below.
+  // Proxy to the already-correct, authenticated backend endpoint, which looks
+  // up stripe_customer_id from the DB using the JWT-verified user -- never from
+  // client input. No customerId/customerEmail is forwarded. The backend lives
+  // under /api/v1/ and requires a Bearer access token (not the refresh cookie),
+  // so exchange the refresh cookie for an access token first.
+  let backendRes: Response;
+  try {
+    const refreshRes = await fetch(`${BACKEND_URL}/auth/refresh`, {
+      method: 'POST',
+      headers: { cookie },
+    });
+    if (!refreshRes.ok) {
+      return NextResponse.json({ ok: false, message: 'Authentication required' }, { status: 401 });
     }
-  }
-
-  const providerEndpoint = process.env.BILLING_PORTAL_WEBHOOK_URL;
-  if (providerEndpoint) {
-    try {
-      const response = await fetch(providerEndpoint, {
-        method: 'POST',
-        headers: {
-          'content-type': 'application/json',
-          ...(process.env.BILLING_WEBHOOK_BEARER
-            ? { authorization: `Bearer ${process.env.BILLING_WEBHOOK_BEARER}` }
-            : {}),
-        },
-        body: JSON.stringify(body),
-      });
-      if (response.ok) {
-        const data = (await response.json().catch(() => null)) as { portalUrl?: string } | null;
-        if (data?.portalUrl) {
-          return NextResponse.json({ ok: true, portalUrl: data.portalUrl });
-        }
-      }
-    } catch {
-      // Fallback below.
+    const refreshPayload = (await refreshRes.json()) as { data?: { access_token?: string } };
+    const accessToken = refreshPayload.data?.access_token;
+    if (!accessToken) {
+      return NextResponse.json({ ok: false, message: 'Authentication required' }, { status: 401 });
     }
+
+    backendRes = await fetch(`${BACKEND_URL}/api/v1/billing/portal`, {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json',
+        authorization: `Bearer ${accessToken}`,
+      },
+      body: JSON.stringify(body.return_url ? { return_url: body.return_url } : {}),
+    });
+  } catch {
+    return NextResponse.json({ ok: false, message: 'Billing service unavailable' }, { status: 502 });
   }
 
-  return NextResponse.json({
-    ok: true,
-    portalUrl: '/billing?portal=fallback',
-    mode: 'fallback',
-  });
+  if (!backendRes.ok) {
+    return NextResponse.json({ ok: false, message: 'Could not create portal session' }, { status: 502 });
+  }
+
+  const payload = (await backendRes.json().catch(() => null)) as {
+    data?: { portal_url?: string };
+  } | null;
+  const portalUrl = payload?.data?.portal_url;
+  if (!portalUrl) {
+    return NextResponse.json({ ok: false, message: 'Could not create portal session' }, { status: 502 });
+  }
+
+  return NextResponse.json({ ok: true, portalUrl, mode: 'stripe' });
 }

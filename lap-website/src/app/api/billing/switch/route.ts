@@ -2,8 +2,10 @@ import { NextResponse } from 'next/server';
 import {
   getStripePriceId,
   getStripeSecretKey,
-  hasBillingAuth,
+  verifyBillingAuth,
 } from '@/lib/stripe-billing';
+
+const BACKEND_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5000';
 
 interface SwitchBody {
   subscriptionId: string;
@@ -11,17 +13,56 @@ interface SwitchBody {
   billingCycle?: 'monthly' | 'annual';
 }
 
-export async function POST(request: Request) {
-  const body = (await request.json().catch(() => null)) as SwitchBody | null;
+/**
+ * Fetch the authenticated caller's OWN Stripe subscription id from the
+ * backend. There is no backend "execute switch" endpoint yet (only
+ * /validate-switch, which checks constraints but doesn't touch Stripe), so
+ * this proxy still calls Stripe directly below -- but only after confirming
+ * the client-supplied subscriptionId actually belongs to the caller,
+ * closing the IDOR without requiring new backend surface.
+ */
+async function fetchOwnSubscriptionId(cookie: string): Promise<string | null> {
+  const refreshRes = await fetch(`${BACKEND_URL}/auth/refresh`, { method: 'POST', headers: { cookie } });
+  if (!refreshRes.ok) return null;
+  const refreshPayload = (await refreshRes.json()) as { data?: { access_token?: string } };
+  const accessToken = refreshPayload.data?.access_token;
+  if (!accessToken) return null;
 
-  if (!hasBillingAuth(request)) {
+  const subRes = await fetch(`${BACKEND_URL}/api/v1/billing/subscription`, {
+    headers: { authorization: `Bearer ${accessToken}` },
+  });
+  if (!subRes.ok) return null;
+  const subPayload = (await subRes.json()) as { data?: { stripe_subscription_id?: string | null } };
+  return subPayload.data?.stripe_subscription_id ?? null;
+}
+
+export async function POST(request: Request) {
+  const auth = await verifyBillingAuth(request);
+  if (!auth) {
     return NextResponse.json({ ok: false, message: 'Authentication required' }, { status: 401 });
   }
+
+  const body = (await request.json().catch(() => null)) as SwitchBody | null;
 
   if (!body?.subscriptionId || !body?.nextPlan) {
     return NextResponse.json(
       { ok: false, message: 'subscriptionId and nextPlan are required' },
       { status: 400 },
+    );
+  }
+
+  const cookie = request.headers.get('cookie') ?? '';
+  let ownSubscriptionId: string | null;
+  try {
+    ownSubscriptionId = await fetchOwnSubscriptionId(cookie);
+  } catch {
+    return NextResponse.json({ ok: false, message: 'Billing service unavailable' }, { status: 502 });
+  }
+
+  if (!ownSubscriptionId || ownSubscriptionId !== body.subscriptionId) {
+    return NextResponse.json(
+      { ok: false, message: 'You may only manage your own subscription' },
+      { status: 403 },
     );
   }
 
