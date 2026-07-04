@@ -12,6 +12,8 @@ from __future__ import annotations
 import logging
 import time
 
+from web.redis_health import alert_redis_failopen
+
 logger = logging.getLogger(__name__)
 
 MAX_ATTEMPTS = 5
@@ -66,8 +68,9 @@ def check_lockout(email: str) -> int | None:
             # Lockout expired — clear the set
             r.delete(key)
         return None
-    except Exception:
+    except Exception as exc:
         logger.exception("Lockout check failed (failing open)")
+        alert_redis_failopen("lockout", str(exc))
         return None
 
 

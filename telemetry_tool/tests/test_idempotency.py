@@ -327,3 +327,16 @@ class TestTTL:
                 call_kwargs = cache_calls[0]
                 assert call_kwargs.kwargs.get("ex") == 86400 or \
                     (len(call_kwargs.args) >= 3 if hasattr(call_kwargs, 'args') else False)
+
+
+class TestIdempotencyRedisFailopenAlert:
+    def test_alerts_when_get_redis_raises(self):
+        app = _make_app()
+        with (
+            patch("web.idempotency.get_redis", side_effect=ConnectionError("redis down")),
+            patch("web.idempotency.alert_redis_failopen") as mock_alert,
+        ):
+            client = app.test_client()
+            resp = client.post("/create", headers={"Idempotency-Key": "k1"})
+        assert resp.status_code == 201  # still passes through
+        mock_alert.assert_called_once_with("idempotency")

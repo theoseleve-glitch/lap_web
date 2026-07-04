@@ -24,6 +24,8 @@ from typing import Any
 
 from flask import g, jsonify, request
 
+from web.redis_health import alert_redis_failopen
+
 logger = logging.getLogger(__name__)
 
 # ---------------------------------------------------------------------------
@@ -85,6 +87,7 @@ def idempotent(fn):
             r = get_redis()
         except Exception:
             logger.warning("Redis unavailable for idempotency — passing through")
+            alert_redis_failopen("idempotency")
             return fn(*args, **kwargs)
 
         # --- 1. Check for cached response ---

@@ -35,6 +35,7 @@ from typing import Any
 from flask import g, request
 
 from .api_utils import ErrorCode, api_error
+from .redis_health import alert_redis_failopen
 
 logger = logging.getLogger(__name__)
 
@@ -203,11 +204,12 @@ def rate_limit(tier: str = "read"):
                     member,         # ARGV[3]
                     window_seconds, # ARGV[4]
                 ))
-            except Exception:
+            except Exception as exc:
                 logger.warning(
                     "Rate limit Redis error for tier=%s key=%s — failing open",
                     tier, redis_key, exc_info=True,
                 )
+                alert_redis_failopen("rate_limit", f"tier={tier}: {exc}")
                 return fn(*args, **kwargs)
 
             remaining = max(0, max_requests - count)

@@ -257,3 +257,19 @@ class TestRedisUnavailable:
             client = app.test_client()
             resp = client.get("/limited")
         assert resp.status_code == 200
+
+
+class TestRateLimitRedisFailopenAlert:
+    def test_alerts_on_redis_eval_error(self):
+        app = _make_app(tier="read")
+        r = MagicMock()
+        r.eval.side_effect = ConnectionError("redis down")
+        with (
+            patch("web.rate_limit.get_redis", return_value=r),
+            patch("web.rate_limit.alert_redis_failopen") as mock_alert,
+        ):
+            client = app.test_client()
+            resp = client.get("/limited")
+        assert resp.status_code == 200  # still fails open
+        mock_alert.assert_called_once()
+        assert mock_alert.call_args[0][0] == "rate_limit"
