@@ -138,6 +138,11 @@ class BoundingBox:
         return cls(**d)
 
 
+# Fewer than this many laps -> the fingerprint's lap_length_m median is noisier
+# and the fingerprint is flagged "low" confidence for track auto-matching.
+_MIN_LAPS_FOR_HIGH_CONFIDENCE = 3
+
+
 @dataclass
 class TrackFingerprint:
     lap_length_m:    float          # median lap distance across all complete laps
@@ -146,6 +151,11 @@ class TrackFingerprint:
     start_lon:       float          # mean longitude of start/finish line
     sample_count:    int            # total GPS samples used
     lap_count:       int            # number of complete laps analysed
+    # Quality/provenance signal (spec: low-lap-count sessions produce
+    # unreliable fingerprints with no confidence flag). Defaults to "high" so
+    # the other two TrackFingerprint constructors (cross_session_accumulator,
+    # validation/harness) stay backward compatible without setting it.
+    confidence:      str = "high"   # "high" | "low" -- see compute_track_fingerprint
 
     def to_dict(self) -> dict[str, Any]:
         d = asdict(self)
@@ -396,6 +406,13 @@ def compute_track_fingerprint(df: pd.DataFrame) -> TrackFingerprint:
     start_lat = float(sf_lat.mean()) if not sf_lat.empty else float(lat.mean())
     start_lon = float(sf_lon.mean()) if not sf_lon.empty else float(lon.mean())
 
+    # Low-lap-count fingerprints are less reliable for track auto-matching
+    # (match_track compares lap_length_m, which is noisier with fewer laps
+    # to median over). _MIN_LAPS_FOR_HIGH_CONFIDENCE=3 matches the general
+    # "need at least a few laps to trust a median" heuristic used elsewhere
+    # in this module.
+    confidence = "high" if lap_count >= _MIN_LAPS_FOR_HIGH_CONFIDENCE else "low"
+
     fp = TrackFingerprint(
         lap_length_m = round(lap_length_m, 1),
         bbox         = bbox,
@@ -403,10 +420,11 @@ def compute_track_fingerprint(df: pd.DataFrame) -> TrackFingerprint:
         start_lon    = round(start_lon, 6),
         sample_count = len(lat),
         lap_count    = lap_count,
+        confidence   = confidence,
     )
     logger.info(
-        "Fingerprint: lap_length=%.1f m  laps=%d  bbox=(%+.4f,%+.4f)--(%+.4f,%+.4f)",
-        fp.lap_length_m, fp.lap_count,
+        "Fingerprint: lap_length=%.1f m  laps=%d  confidence=%s  bbox=(%+.4f,%+.4f)--(%+.4f,%+.4f)",
+        fp.lap_length_m, fp.lap_count, fp.confidence,
         fp.bbox.lat_min, fp.bbox.lon_min,
         fp.bbox.lat_max, fp.bbox.lon_max,
     )
