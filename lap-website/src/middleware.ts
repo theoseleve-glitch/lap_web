@@ -48,7 +48,31 @@ function chooseVariant(cookieName: string, persona: string, attribution: Record<
 
 const CANONICAL_HOST = 'www.lap-coach.racing';
 
-export function middleware(request: NextRequest) {
+const BACKEND_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5000';
+
+/**
+ * Re-validate the httpOnly refresh-token cookie against the backend and
+ * check is_superadmin. Fails CLOSED (returns false) on any error, missing
+ * cookie, or non-2xx response -- an admin section is exactly the place
+ * where "deny by default" is correct, unlike rate-limit/lockout (Task 3).
+ */
+async function verifySuperadminSession(request: NextRequest): Promise<boolean> {
+  const cookie = request.headers.get('cookie');
+  if (!cookie) return false;
+  try {
+    const res = await fetch(`${BACKEND_URL}/auth/refresh`, {
+      method: 'POST',
+      headers: { cookie },
+    });
+    if (!res.ok) return false;
+    const payload = (await res.json()) as { data?: { user?: { is_superadmin?: boolean } } };
+    return payload.data?.user?.is_superadmin === true;
+  } catch {
+    return false;
+  }
+}
+
+export async function middleware(request: NextRequest) {
   const host = request.headers.get('host') ?? '';
   const isCanonicalHost = host === CANONICAL_HOST;
 
@@ -81,6 +105,24 @@ export function middleware(request: NextRequest) {
 
   // M-01: HSTS with 1-year max-age + includeSubDomains
   response.headers.set('Strict-Transport-Security', 'max-age=31536000; includeSubDomains');
+
+  // Server-side enforcement for superadmin-only sections. The client-side
+  // checks in admin/layout.tsx and race-control/layout.tsx (getUserProfile()
+  // from an in-memory store) only gate the JS shell -- the backend already
+  // enforces this properly for every real data call (admin_bp requires
+  // superadmin + TOTP + IP allowlist). This closes the "shell exposure"
+  // finding by verifying server-side, before any page code runs, using the
+  // same httpOnly refresh-token cookie the browser already sends.
+  const isAdminSection = pathname.startsWith('/admin') || pathname.startsWith('/app/race-control');
+  if (isAdminSection) {
+    const isSuperadmin = await verifySuperadminSession(request);
+    if (!isSuperadmin) {
+      const url = request.nextUrl.clone();
+      url.pathname = '/app/sessions';
+      url.search = '';
+      return NextResponse.redirect(url, 307);
+    }
+  }
 
   // Block search-engine indexing of any non-canonical host (workers.dev,
   // preview deploys, localhost). www.lap-coach.racing remains indexable.
