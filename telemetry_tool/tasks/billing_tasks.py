@@ -196,14 +196,24 @@ def _reconcile_pending_entitlements_impl() -> dict[str, Any]:
     For each unreconciled row (``reconciled_at IS NULL``):
         1. Case-insensitively match ``customer_email`` against ``users``.
         2. On a hit: attach the Stripe customer/subscription IDs to that
-           user and transition them to 'active' with the recorded
-           plan_tier — the SAME state-machine path
-           ``_handle_checkout_completed`` and ``_reconcile_stripe_impl``
+           user ONLY IF the user has no subscription attached yet
+           (``stripe_subscription_id IS NULL``), then transition them to
+           'active' with the recorded plan_tier — the SAME state-machine
+           path ``_handle_checkout_completed`` and ``_reconcile_stripe_impl``
            already use (``billing.state_machine.transition_subscription``),
            not a bespoke update.
+           CONFLICT: if the matched user already has a DIFFERENT
+           subscription attached, the row is a stale/duplicate entitlement
+           (e.g. a guest-checkout row from before the person signed up and
+           subscribed in-app under a different Stripe customer). Attaching
+           it unconditionally would clobber the real subscription id,
+           double-bill the customer, and make the active subscription
+           uncancelable from the app — so the attach is skipped, a loud
+           alert is raised, and the row is left for MANUAL reconciliation.
         3. Mark the row ``reconciled_at = NOW()`` so the sweep is
-           idempotent (a linked or genuinely-unmatched row is not
-           reprocessed by the next run).
+           idempotent — but ONLY when the attach actually succeeded. A
+           genuinely-unmatched or conflicting row must NOT be marked
+           reconciled, so it keeps being revisited by future sweeps.
         4. On no match: leave the row untouched for a future sweep.
 
     Per-row try/except: one bad row (bad data, a DB hiccup) can never abort
@@ -252,9 +262,20 @@ def _reconcile_pending_entitlements_impl() -> dict[str, Any]:
 
                 uid = (dict(user_row) if not isinstance(user_row, dict) else user_row)["id"]
 
-                conn.execute(
-                    "UPDATE users SET stripe_customer_id = %(cid)s, "
-                    "stripe_subscription_id = %(sid)s WHERE id = %(uid)s",
+                # Conditional attach: only bind these Stripe ids when the
+                # user has NO subscription yet. Never overwrite an existing
+                # stripe_subscription_id — a pending row matched by email
+                # can belong to a DIFFERENT Stripe customer than the one
+                # the user is already actively subscribed under (e.g. a
+                # guest-checkout row from before they signed up and
+                # subscribed in-app). Unconditional overwrite clobbers the
+                # real subscription id, double-bills the customer, and
+                # leaves sub_A uncancelable from the app.
+                attach_result = conn.execute(
+                    "UPDATE users SET "
+                    "stripe_customer_id = COALESCE(stripe_customer_id, %(cid)s), "
+                    "stripe_subscription_id = COALESCE(stripe_subscription_id, %(sid)s) "
+                    "WHERE id = %(uid)s AND stripe_subscription_id IS NULL",
                     {
                         "cid": row.get("stripe_customer_id"),
                         "sid": row.get("stripe_subscription_id"),
@@ -262,6 +283,31 @@ def _reconcile_pending_entitlements_impl() -> dict[str, Any]:
                     },
                 )
                 conn.commit()
+
+                if getattr(attach_result, "rowcount", 0) != 1:
+                    # CONFLICT: user already has a different subscription
+                    # attached. Do NOT overwrite it and do NOT mark this
+                    # row reconciled — surface it loudly instead of
+                    # silently clobbering an active subscription.
+                    reconciliation_errors += 1
+                    logger.error(
+                        "Pending entitlement %s: user %s already has a "
+                        "subscription attached — NOT overwriting with "
+                        "cus=%s sub=%s. Flagging for MANUAL reconciliation.",
+                        row_id, uid,
+                        row.get("stripe_customer_id"), row.get("stripe_subscription_id"),
+                    )
+                    try:
+                        import sentry_sdk
+                        sentry_sdk.capture_message(
+                            f"Pending entitlement conflict: pending_id={row_id} "
+                            f"user={uid} already has a subscription attached — "
+                            "manual reconciliation needed",
+                            level="error",
+                        )
+                    except Exception:
+                        pass
+                    continue
 
                 transitioned = transition_subscription(
                     conn, uid, "active",
@@ -272,7 +318,7 @@ def _reconcile_pending_entitlements_impl() -> dict[str, Any]:
                     },
                 )
                 if not transitioned:
-                    # Stripe IDs are attached regardless (that's the part that
+                    # The attach above already succeeded (that's the part that
                     # unlocks reconciliation) even if the state transition
                     # itself was a no-op/invalid (e.g. already active).
                     logger.warning(

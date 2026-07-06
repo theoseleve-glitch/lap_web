@@ -283,7 +283,8 @@ class TestCheckoutCustomerMatching:
                 # 2. stripe_customer_id lookup → HIT
                 MagicMock(**{"fetchone.return_value": {"id": 77, "email": "old@example.com"}}),
                 # 3. UPDATE users SET stripe_customer_id + stripe_subscription_id
-                MagicMock(**{"fetchone.return_value": None}),
+                # (guarded attach) — user has no subscription yet, guard matches.
+                MagicMock(**{"fetchone.return_value": None, "rowcount": 1}),
                 # 4. transition_subscription inner SELECT
                 MagicMock(**{"fetchone.return_value": None}),
             ])
@@ -330,7 +331,8 @@ class TestCheckoutCustomerMatching:
                 # 2. LOWER(email) = LOWER(...) lookup → HIT (lowercased user row)
                 MagicMock(**{"fetchone.return_value": {"id": 88, "email": "alex.martin@gmail.com"}}),
                 # 3. UPDATE users SET stripe_customer_id + stripe_subscription_id
-                MagicMock(**{"fetchone.return_value": None}),
+                # (guarded attach) — user has no subscription yet, guard matches.
+                MagicMock(**{"fetchone.return_value": None, "rowcount": 1}),
                 # 4. buffer (transition_subscription is mocked, no inner SELECT)
                 MagicMock(**{"fetchone.return_value": None}),
             ])
@@ -386,6 +388,54 @@ class TestCheckoutCustomerMatching:
             # Must attempt to insert a pending entitlement
             insert_calls = [str(c) for c in conn.execute.call_args_list]
             assert any("stripe_pending_entitlements" in s for s in insert_calls)
+
+    def test_matched_user_with_existing_subscription_is_not_overwritten(self):
+        """BLOCKER FIX: a checkout matched (e.g. via the customer_email
+        fallback) to a user who ALREADY has a DIFFERENT subscription
+        attached must NOT have their stripe_customer_id/stripe_subscription_id
+        clobbered — that would double-charge the customer and leave the
+        real subscription uncancelable from the app. The guarded UPDATE
+        must report 0 rows affected, and the handler must skip the state
+        transition and audit log entirely rather than pretend it activated
+        something.
+        """
+        from web.routes.billing import _handle_checkout_completed
+
+        with patch("web.routes.billing._get_conn") as mock_conn_fn, \
+             patch("web.routes.billing.audit_log") as mock_audit, \
+             patch("billing.state_machine.transition_subscription") as mock_transition:
+
+            conn = _mock_conn()
+            mock_conn_fn.return_value = conn
+
+            call_results = iter([
+                # 1. stripe_customer_id lookup → miss
+                MagicMock(**{"fetchone.return_value": None}),
+                # 2. LOWER(email) = LOWER(...) lookup → HIT, existing user
+                MagicMock(**{"fetchone.return_value": {"id": 200, "email": "already@example.com"}}),
+                # 3. guarded UPDATE ... WHERE stripe_subscription_id IS NULL
+                # -> 0 rows because the user already has a DIFFERENT subscription.
+                MagicMock(**{"fetchone.return_value": None, "rowcount": 0}),
+            ])
+            conn.execute.side_effect = lambda sql, params=None: next(call_results)
+
+            session = {
+                "id": "cs_conflict_1",
+                "customer_email": "already@example.com",
+                "customer": "cus_B",
+                "subscription": "sub_B",
+                "metadata": {"plan_tier": "world-class"},
+            }
+            with patch("web.routes.billing.logger") as mock_logger:
+                _handle_checkout_completed(session)
+
+            mock_transition.assert_not_called()
+            mock_audit.assert_not_called()
+            mock_logger.error.assert_called()
+
+            attach_sql = str(conn.execute.call_args_list[2][0][0])
+            assert "COALESCE" in attach_sql
+            assert "stripe_subscription_id IS NULL" in attach_sql
 
 
 # ===========================================================================

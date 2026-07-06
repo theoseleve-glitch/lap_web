@@ -113,6 +113,8 @@ class TestCheckoutActivatesSubscription:
             # First execute: UPDATE stripe IDs
             # Second execute: SELECT id
             conn.execute.return_value.fetchone.return_value = {"id": 1}
+            # Guarded attach: user has no subscription yet -> 1 row affected.
+            conn.execute.return_value.rowcount = 1
 
             session = {
                 "id": "cs_test_123",

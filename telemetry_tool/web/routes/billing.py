@@ -507,6 +507,12 @@ def _handle_checkout_completed(session: dict):
     On NO match: records a pending entitlement keyed by stripe_customer_id,
     emits logger.error + Sentry, and still confirms the founding-50 slot so
     the ≤50 cap stays accurate.
+
+    On a match whose user ALREADY has a different subscription attached:
+    the Stripe id attach is skipped (never overwritten) and the state
+    transition/audit is skipped too — emits logger.error + Sentry for
+    MANUAL reconciliation instead of silently clobbering the active
+    subscription.
     """
     customer_email = session.get("customer_email") or (session.get("customer_details") or {}).get("email")
     subscription_id = session.get("subscription")
@@ -625,13 +631,44 @@ def _handle_checkout_completed(session: dict):
     logger.info("Checkout matched user %s via %s", uid, match_method)
 
     # ── Persist Stripe IDs on the user row (so future events match by customer_id) ──
-    conn.execute(
-        "UPDATE users SET stripe_customer_id = %(cid)s, "
-        "stripe_subscription_id = %(sid)s "
-        "WHERE id = %(uid)s",
+    # Conditional attach: only bind these ids when the user has NO
+    # subscription yet. A user matched via the customer_email fallback can
+    # belong to a DIFFERENT Stripe customer/subscription than the one they
+    # are already actively subscribed under (e.g. a guest checkout with a
+    # case-drifted email after the user already subscribed in-app).
+    # Overwriting unconditionally would clobber the real subscription id,
+    # double-bill the customer, and make the existing subscription
+    # uncancelable from the app.
+    attach_result = conn.execute(
+        "UPDATE users SET "
+        "stripe_customer_id = COALESCE(stripe_customer_id, %(cid)s), "
+        "stripe_subscription_id = COALESCE(stripe_subscription_id, %(sid)s) "
+        "WHERE id = %(uid)s AND stripe_subscription_id IS NULL",
         {"cid": customer_id, "sid": subscription_id, "uid": uid},
     )
     conn.commit()
+
+    if getattr(attach_result, "rowcount", 0) != 1:
+        # CONFLICT: user already has a different subscription attached.
+        # Do NOT overwrite it and do NOT transition/audit as if this
+        # checkout activated anything — surface it loudly instead so it
+        # gets a MANUAL reconciliation rather than a silent double-charge.
+        logger.error(
+            "Checkout session %s: user %s already has a subscription "
+            "attached — NOT overwriting with customer=%s subscription=%s. "
+            "Flagging for MANUAL reconciliation.",
+            session_id, uid, customer_id, subscription_id,
+        )
+        try:
+            import sentry_sdk
+            sentry_sdk.capture_message(
+                f"Checkout attach conflict: session={session_id} user={uid} "
+                "already has a subscription attached — manual reconciliation needed",
+                level="error",
+            )
+        except Exception:
+            pass
+        return
 
     from billing.state_machine import transition_subscription
     transition_subscription(
