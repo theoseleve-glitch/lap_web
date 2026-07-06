@@ -117,9 +117,17 @@ def _run_draft_and_notify(request_id: str, conn: Any) -> dict:
     """Plain, Celery-free implementation of the draft-and-notify flow.
 
     See the module docstring for the two idempotency guards this relies on.
-    Never raises: every foreseeable failure mode (lost claim race, invalid
-    bbox, drafting error) is turned into a ``draft_failed`` status write and
-    a normal return, so a Celery worker never crashes on this task.
+    Best-effort against every *known* domain failure mode: a lost claim
+    race, an invalid bbox, a drafting error, a token-mint failure
+    (``tokens.TokenError``, e.g. ``ONBOARDING_TOKEN_SECRET`` unset), and a
+    missing ``ANNOTATOR_HOST``/``ONBOARDING_OPERATOR_EMAIL`` at the point the
+    notification email is built are all turned into a ``draft_failed``
+    status write plus a normal return, so a Celery worker never crashes (and
+    the request never gets stuck mid-flight in ``drafting``) for any of
+    these. This does NOT cover infrastructure-level failures outside this
+    function's control (e.g. an unexpected exception from ``repo.*``'s
+    database calls or ``save_draft``'s filesystem write) -- those can still
+    raise and fall through to Celery's normal retry handling.
     """
     if not repo.claim_for_drafting(conn, request_id):
         logger.info(
@@ -167,13 +175,33 @@ def _run_draft_and_notify(request_id: str, conn: Any) -> dict:
         draft_path=draft_path, draft_status=draft_kind,
     )
 
-    raw_token, jti = tokens.mint(request_id)
+    try:
+        raw_token, jti = tokens.mint(request_id)
+    except tokens.TokenError as exc:
+        logger.error(
+            "draft_and_notify: failed to mint annotator token for "
+            "request_id=%s: %s", request_id, exc,
+        )
+        repo.set_status(conn, request_id, "draft_failed", error=str(exc)[:500])
+        return {"ok": False, "error": "mint_failed"}
+
     repo.set_status(conn, request_id, drafted_status, token_jti=jti)
 
     row = repo.get(conn, request_id)
     if row is not None and row.get("emailed_at") is None:
-        annotator_host = os.environ["ANNOTATOR_HOST"]
-        operator_email = os.environ["ONBOARDING_OPERATOR_EMAIL"]
+        try:
+            annotator_host = os.environ["ANNOTATOR_HOST"]
+            operator_email = os.environ["ONBOARDING_OPERATOR_EMAIL"]
+        except KeyError as exc:
+            logger.error(
+                "draft_and_notify: missing required env %s for request_id=%s"
+                " -- cannot build/send the annotator email", exc, request_id,
+            )
+            repo.set_status(
+                conn, request_id, "draft_failed",
+                error=f"missing required env: {exc}"[:500],
+            )
+            return {"ok": False, "error": "missing_env"}
         # Token in the URL FRAGMENT (never the query string) so it never
         # lands in server access logs or Referer headers.
         annotator_url = f"{annotator_host}/?req={request_id}#token={raw_token}"

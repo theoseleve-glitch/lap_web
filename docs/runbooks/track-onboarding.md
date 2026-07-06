@@ -65,12 +65,11 @@ request reaches `blessed` — enforced by the partial unique index
 |---|---|---|
 | `ONBOARDING_TOKEN_SECRET` | HMAC-SHA256 secret signing the one-shot annotator token (`onboarding.tokens`). | **Fails closed**: `tokens.mint`/`tokens.verify` both raise `TokenError` immediately — no draft email can ever go out, and no `/save` can ever be authorized. Never falls back to a default secret. |
 | `ONBOARDING_TOKEN_TTL_HOURS` | Token lifetime in hours. | Falls back to a **default of 72 hours** (`tokens._DEFAULT_TTL_HOURS`); also falls back on an unparseable value. |
-| `ONBOARDING_OPERATOR_EMAIL` | Recipient of the draft-ready notification and the `reviewed_by` identity stamped by the web `/save` route (`onboarding:<email>`). | `KeyError` inside `draft_and_notify` / the `/save` route — read via `os.environ[...]` (no default), so drafting/blessing via the web path breaks hard if unset. |
-| `ANNOTATOR_HOST` | Base URL of the annotator webapp; the emailed link is `{ANNOTATOR_HOST}/?req=<id>#token=<raw_token>`. | Same as above — `KeyError` inside `draft_and_notify`, read with no default. |
+| `ONBOARDING_OPERATOR_EMAIL` | Recipient of the draft-ready notification and the `reviewed_by` identity stamped by the web `/save` route (`onboarding:<email>`). | Inside `_run_draft_and_notify`, missing/empty is caught right before the email is built and transitions the request to `draft_failed` (reclaimable, no raise, no worker retry/dead-letter) — see the module docstring. The `/save` route still reads it via bare `os.environ[...]` (no default) and raises `KeyError` if unset. |
+| `ANNOTATOR_HOST` | Base URL of the annotator webapp; the emailed link is `{ANNOTATOR_HOST}/?req=<id>#token=<raw_token>`. | Same `draft_failed`-not-raise handling in `_run_draft_and_notify` as `ONBOARDING_OPERATOR_EMAIL` above. |
 | `GT_RUNTIME_DIR` | Durable, writable directory for blessed runtime GT (see §4). | `bless_geometry` explicitly refuses and returns a `gt_runtime_dir_unset` rejection ("refusing to install (fail-closed)") — no install happens. |
 | `ONBOARDING_DRAFT_DIR` | Where auto-drafted (pre-bless) geojson files are written/read (`draft.save_draft`/`load_draft`). | Falls back to `{GT_RUNTIME_DIR}/../onboarding_drafts` if `GT_RUNTIME_DIR` is set, else the OS temp dir (`lap_onboarding_drafts`) — i.e. drafts land somewhere non-durable unless one of the two is set. |
 | `ONBOARDING_TRACKRECO_DIR` | Path override for the sibling `trackreco-main` checkout (SAM2 draft script location). | Falls back to a hardcoded local path (`C:\Users\Admin\Documents\Telemetry\Analysis\trackreco-main`) that only exists on the dev machine; on any other host, `sam2_draft` logs "trackreco-main checkout not found" and returns `None`, so drafting degrades to GPS-only (never raises). |
-| `ONBOARDING_OPERATOR_RUN` | Fallback operator signal for `PipelineContext.create` when its `is_operator_run` kwarg isn't threaded through explicitly (ad-hoc ops scripts/CLIs). `"1"` → `True`. | Defaults to unset → `False`; a normal end-user upload never resolves to operator-run on its own (see §6). |
 
 None of these have secret values documented here — reference names only;
 set actual values via the deploy environment / secrets manager.
@@ -176,8 +175,14 @@ order:
 
 Onboarding only ever triggers when `is_operator_run=True` is threaded down
 to `pipeline/stages/s10d_surface.py`'s GT-miss hook
-(`PipelineContext.is_operator_run`, default `False`). The only call sites
-that set it `True` are:
+(`PipelineContext.is_operator_run`, default `False`). `PipelineContext.create`
+takes `is_operator_run` **only** as an explicit constructor/`create` argument
+— there is deliberately no environment-variable fallback (a prior
+`ONBOARDING_OPERATOR_RUN=1` fallback was removed: on a shared Celery worker
+that also processes end-user uploads, that env var being set would have
+silently turned EVERY upload into an operator run, defeating the
+operator-only invariant by config). The only call sites that pass it `True`
+are:
 
 - `POST /admin/jobs/<job_id>/retry` (`web/routes/admin/jobs.py`), gated by
   `@require_superadmin` + `@require_admin_role("root_admin", "sre_admin")`
@@ -191,8 +196,9 @@ that set it `True` are:
 Ordinary end-user session uploads never set it, so ordinary uploads never
 trigger onboarding, even if their track has no GT. **To onboard a track
 that genuinely lacks GT**, an operator/admin must retry an affected
-session via the superadmin admin-retry route above (or run an ad-hoc script
-with `ONBOARDING_OPERATOR_RUN=1`, §2) so the hook has a chance to fire.
+session via the superadmin admin-retry route above — that (or the internal
+bless-reprocess dispatcher) is the ONLY way to make a run operator-flagged;
+there is no ad-hoc env-var opt-in anymore.
 
 ## 7. Reprocessing / racing lines after a bless
 

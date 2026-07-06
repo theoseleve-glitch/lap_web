@@ -256,6 +256,68 @@ class TestUnexpectedDraftingFailure:
         _mock_send_email.delay.assert_not_called()
 
 
+class TestMissingRequiredEnvAtEmailTimeMarksDraftFailed:
+    """M2: a missing ANNOTATOR_HOST/ONBOARDING_OPERATOR_EMAIL at the point
+    the email is built must NOT raise (KeyError) into Celery -- it must
+    transition the request to draft_failed and return cleanly instead."""
+
+    def test_missing_operator_email_marks_draft_failed_no_send(
+        self, _mock_repo, _mock_tokens, _mock_validate_bbox, _mock_sam2_draft,
+        _mock_gps_only_draft, _mock_save_draft, _mock_send_email, conn, monkeypatch,
+    ):
+        monkeypatch.delenv("ONBOARDING_OPERATOR_EMAIL", raising=False)
+        row_after_claim = _row()
+        row_before_email = _row(token_jti="jti-1", emailed_at=None)
+        _mock_repo.get.side_effect = [row_after_claim, row_before_email]
+        _mock_sam2_draft.return_value = {"type": "FeatureCollection"}
+
+        result = onboarding_tasks._run_draft_and_notify(_REQUEST_ID, conn)
+
+        assert result == {"ok": False, "error": "missing_env"}
+        _mock_send_email.delay.assert_not_called()
+        statuses = [c.args[2] for c in _mock_repo.set_status.call_args_list]
+        assert statuses[-1] == "draft_failed"
+
+    def test_missing_annotator_host_marks_draft_failed_no_send(
+        self, _mock_repo, _mock_tokens, _mock_validate_bbox, _mock_sam2_draft,
+        _mock_gps_only_draft, _mock_save_draft, _mock_send_email, conn, monkeypatch,
+    ):
+        monkeypatch.delenv("ANNOTATOR_HOST", raising=False)
+        row_after_claim = _row()
+        row_before_email = _row(token_jti="jti-1", emailed_at=None)
+        _mock_repo.get.side_effect = [row_after_claim, row_before_email]
+        _mock_sam2_draft.return_value = {"type": "FeatureCollection"}
+
+        result = onboarding_tasks._run_draft_and_notify(_REQUEST_ID, conn)
+
+        assert result == {"ok": False, "error": "missing_env"}
+        _mock_send_email.delay.assert_not_called()
+        statuses = [c.args[2] for c in _mock_repo.set_status.call_args_list]
+        assert statuses[-1] == "draft_failed"
+
+
+class TestMintFailureMarksDraftFailed:
+    """M2: tokens.mint raising TokenError (e.g. unset ONBOARDING_TOKEN_SECRET)
+    must not raise into Celery either -- same draft_failed treatment."""
+
+    def test_missing_token_secret_marks_draft_failed_no_email(
+        self, _mock_repo, _mock_validate_bbox, _mock_sam2_draft,
+        _mock_gps_only_draft, _mock_save_draft, _mock_send_email, conn, monkeypatch,
+    ):
+        # Deliberately NOT using the _mock_tokens fixture -- exercise the
+        # real onboarding.tokens.mint so a real TokenError is raised.
+        monkeypatch.delenv("ONBOARDING_TOKEN_SECRET", raising=False)
+        _mock_repo.get.return_value = _row()
+        _mock_sam2_draft.return_value = {"type": "FeatureCollection"}
+
+        result = onboarding_tasks._run_draft_and_notify(_REQUEST_ID, conn)
+
+        assert result == {"ok": False, "error": "mint_failed"}
+        _mock_send_email.delay.assert_not_called()
+        statuses = [c.args[2] for c in _mock_repo.set_status.call_args_list]
+        assert statuses[-1] == "draft_failed"
+
+
 class TestEmailedOnceGuard:
     def test_already_emailed_row_is_not_resent(
         self, _mock_repo, _mock_tokens, _mock_validate_bbox, _mock_sam2_draft,

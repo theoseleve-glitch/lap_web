@@ -55,14 +55,17 @@ import copy
 import json
 import logging
 import os
-import re
-import shutil
 import tempfile
 from dataclasses import dataclass, field
 from pathlib import Path
 
 import numpy as np
 
+from onboarding.gt_install import (
+    InstallError,
+    _check_canonical_id_format,
+    install_gt_geojson,
+)
 from track_surface.frenet import FrenetFrame
 from track_surface.geometry_gates import run_geometry_gates
 from track_surface.gt_loader import (
@@ -97,124 +100,15 @@ class BlessResult:
 
 
 # ---------------------------------------------------------------------------
-# Shared install core -- extracted from scripts/bless_gt.py (Task 8) so the
-# CLI and the web bless path call the SAME validate -> copy -> register-alias
-# code. scripts/bless_gt.py's own `bless_gt()` is now a thin wrapper around
-# this function; its signature/behavior (and BlessError name, re-exported
-# there as an alias of InstallError) are unchanged.
+# Shared install core -- originally extracted from scripts/bless_gt.py
+# (Task 8) so the CLI and the web bless path call the SAME
+# validate -> copy -> register-alias code; moved again (final-review finding
+# M3) into onboarding/gt_install.py, both to fix a non-atomic alias-registry
+# read-modify-write race (see that module's docstring) and to keep this file
+# under its 500-line budget. Imported back in above so nothing that already
+# imports ``InstallError``/``install_gt_geojson`` from this module (e.g.
+# ``scripts/bless_gt.py``) needs to change.
 # ---------------------------------------------------------------------------
-
-
-class InstallError(RuntimeError):
-    """Raised when a GT install (validate->copy->register-alias) is refused."""
-
-
-# Allow-list: canonical_id is interpolated into a filesystem path and an
-# aliases-registry key, so path separators/".." must never reach either.
-_CANONICAL_ID_RE = re.compile(r"^[a-z0-9][a-z0-9_-]{0,63}$")
-
-
-def _check_canonical_id_format(canonical_id: str) -> None:
-    if not isinstance(canonical_id, str) or not _CANONICAL_ID_RE.fullmatch(canonical_id):
-        raise InstallError(
-            f"Refusing to bless: canonical_id {canonical_id!r} does not match "
-            f"required format {_CANONICAL_ID_RE.pattern!r}"
-        )
-
-
-def _reviewed_by_missing(messages: list[str]) -> bool:
-    return any("reviewed_by" in m for m in messages)
-
-
-def _load_aliases_registry(path: Path) -> dict:
-    if not path.exists():
-        return {"schema_version": "1", "description": "Canonical track-id registry.",
-                "tracks": {}}
-    with open(path, encoding="utf-8") as fh:
-        return json.load(fh)
-
-
-def _save_aliases_registry(path: Path, registry: dict) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    # No sort_keys -- preserve the registry's existing (non-alphabetical,
-    # chronological) key order; json.dump keeps insertion order by default,
-    # so pre-existing entries never move and new ones land at the end.
-    tmp = path.with_suffix(".json.tmp")
-    with open(tmp, "w", encoding="utf-8") as fh:
-        json.dump(registry, fh, indent=2)
-        fh.write("\n")
-    os.replace(tmp, path)
-
-
-def install_gt_geojson(
-    geojson_path: Path,
-    canonical_id: str,
-    *,
-    aliases: list[str] | None = None,
-    force: bool = False,
-    gt_dir: Path,
-    aliases_file: Path,
-) -> Path:
-    """Validate + admit ``geojson_path`` into a gt corpus as ``canonical_id``.
-
-    Returns the destination path on success. Raises :class:`InstallError` on
-    any refusal -- this function never calls ``sys.exit``; CLI/web callers
-    decide how to surface that.
-
-    Refusals (mirrors the original ``scripts/bless_gt.py`` CLI behavior
-    verbatim -- this IS that logic, moved here):
-      - missing/empty ``reviewed_by`` -- ABSOLUTE, ``force`` cannot override.
-      - any other validator message, unless ``force``.
-      - ``canonical_id`` already registered in ``aliases_file``, unless
-        ``force`` (in which case the existing entry is merged into, not
-        replaced -- its other keys such as country/notes are preserved).
-    """
-    geojson_path = Path(geojson_path)
-    gt_dir = Path(gt_dir)
-    aliases_file = Path(aliases_file)
-    aliases = list(aliases or [])
-
-    _check_canonical_id_format(canonical_id)
-
-    messages = validate_gt_geojson(geojson_path)
-    if _reviewed_by_missing(messages):
-        raise InstallError(
-            "Refusing to bless " + str(geojson_path) + ": reviewed_by is missing "
-            "(absolute -- force does not override this). Validator messages:\n  "
-            + "\n  ".join(messages)
-        )
-    if messages and not force:
-        raise InstallError(
-            "Refusing to bless " + str(geojson_path) + ": validator reported issues "
-            "(force=True bypasses this). Validator messages:\n  "
-            + "\n  ".join(messages)
-        )
-
-    registry = _load_aliases_registry(aliases_file)
-    tracks = registry.setdefault("tracks", {})
-    if canonical_id in tracks and not force:
-        raise InstallError(
-            f"Refusing to bless: canonical_id '{canonical_id}' already exists in "
-            f"{aliases_file} (force=True bypasses this)"
-        )
-
-    gt_dir.mkdir(parents=True, exist_ok=True)
-    dest = gt_dir / f"gt_{canonical_id}.geojson"
-    shutil.copy2(geojson_path, dest)
-
-    existing = tracks.get(canonical_id)
-    entry = existing if isinstance(existing, dict) else {}
-    entry_aliases = list(entry.get("aliases", []))
-    for a in (canonical_id, *aliases):  # id self-alias always included, first
-        if a not in entry_aliases:
-            entry_aliases.append(a)
-    entry["canonical_id"] = canonical_id
-    entry["aliases"] = entry_aliases
-    tracks[canonical_id] = entry
-
-    _save_aliases_registry(aliases_file, registry)
-
-    return dest
 
 
 # ---------------------------------------------------------------------------

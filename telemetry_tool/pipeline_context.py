@@ -22,7 +22,6 @@ Usage::
 from __future__ import annotations
 
 import json
-import os
 import shutil
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -104,7 +103,7 @@ class PipelineContext:
         session_id: str,
         file_path: str,
         temp_root: str = _DEFAULT_TEMP_ROOT,
-        is_operator_run: Optional[bool] = None,
+        is_operator_run: bool = False,
     ) -> "PipelineContext":
         """Create a new pipeline context, persist to Redis, and set up temp dir.
 
@@ -118,15 +117,18 @@ class PipelineContext:
             Job metadata.
         temp_root : str
             Root directory under which ``pipeline/{job_id}/`` will be created.
-        is_operator_run : bool | None
+        is_operator_run : bool
             Pass ``True`` explicitly from a known operator/admin entrypoint
             to allow this run to trigger the track-onboarding GT-miss hook.
-            Ordinary end-user upload call sites should leave this ``None``
-            (the default) -- it then falls back to the ``ONBOARDING_OPERATOR_RUN``
-            env var (``"1"`` -> True) so ad-hoc ops scripts/CLIs that build a
-            context without threading this kwarg through can still opt in;
-            unset -> ``False``. Never resolves to ``True`` on its own for a
-            normal upload.
+            Defaults to ``False`` and has NO environment-variable fallback
+            (there used to be one, ``ONBOARDING_OPERATOR_RUN=1`` -- removed:
+            a shared Celery worker that also processes end-user uploads would
+            have had that env var silently turn EVERY upload into an operator
+            run, defeating the operator-only invariant by config). The only
+            legitimate callers that pass ``True`` are the superadmin
+            admin-retry route (``web/routes/admin/jobs.py``) and the internal
+            bless-reprocess dispatcher (``onboarding/reprocess.py``). Ordinary
+            end-user upload call sites must leave this at the default.
 
         Returns
         -------
@@ -134,9 +136,6 @@ class PipelineContext:
         """
         temp_dir = Path(temp_root) / "pipeline" / job_id
         temp_dir.mkdir(parents=True, exist_ok=True)
-
-        if is_operator_run is None:
-            is_operator_run = os.environ.get("ONBOARDING_OPERATOR_RUN") == "1"
 
         ctx = cls(
             job_id=job_id,
