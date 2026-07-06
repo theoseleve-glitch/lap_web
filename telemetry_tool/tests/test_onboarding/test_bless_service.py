@@ -21,6 +21,7 @@ if str(_PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(_PROJECT_ROOT))
 
 from telemetry_tool.onboarding import bless_service  # noqa: E402
+from track_surface.gt_validate import validate_gt_geojson  # noqa: E402
 
 _SCHEMA = "trackreco_ground_truth_v1"
 _LAT0, _LON0 = 47.388, 0.789
@@ -227,6 +228,49 @@ class TestUnreviewedDraft:
         assert result.failures == ["unreviewed_draft"]
         assert not (_gt_runtime_dir / "gt_zz.geojson").exists()
 
+    def test_boundary_features_reordered_still_rejected_as_unreviewed(
+        self, tmp_path, conn, _gt_runtime_dir,
+    ):
+        """CRITICAL 1 regression: ``json.dumps(list, sort_keys=True)`` does
+        NOT sort list element order, so a naive list-based signature let
+        byte-identical geometry evade the unreviewed_draft gate by simply
+        submitting the two boundary features in swapped order. The
+        signature must be invariant to feature order (keyed by role).
+        """
+        draft = _oval_geojson(reviewed_by="auto_draft:gps_only")
+        submitted = _oval_geojson(reviewed_by="auto_draft:gps_only")
+        submitted["features"] = list(reversed(submitted["features"]))  # only reordered
+        src = _write(tmp_path, "submitted.geojson", submitted)
+
+        result = bless_service.bless_geometry(
+            geojson_path=src, canonical_id="zz", reviewed_by="theo",
+            auto_draft_geojson=draft, conn=conn,
+        )
+
+        assert result.ok is False
+        assert result.failures == ["unreviewed_draft"]
+        assert not (_gt_runtime_dir / "gt_zz.geojson").exists()
+
+    def test_reordered_but_genuinely_changed_geometry_still_accepted(
+        self, tmp_path, conn, _gt_runtime_dir,
+    ):
+        """The order-invariance fix must not become a false-positive trap:
+        reordered features whose coordinates actually differ from the draft
+        are still a real edit and must pass the unreviewed_draft gate.
+        """
+        draft = _oval_geojson(reviewed_by="auto_draft:gps_only", left_r=60.0, right_r=52.0)
+        submitted = _oval_geojson(reviewed_by="operator", left_r=61.0, right_r=53.0)
+        submitted["features"] = list(reversed(submitted["features"]))
+        src = _write(tmp_path, "submitted.geojson", submitted)
+
+        result = bless_service.bless_geometry(
+            geojson_path=src, canonical_id="zz", reviewed_by="theo",
+            auto_draft_geojson=draft, conn=conn,
+        )
+
+        assert result.ok is True
+        assert (_gt_runtime_dir / "gt_zz.geojson").exists()
+
 
 # ---------------------------------------------------------------------------
 # Invalid reviewer
@@ -234,7 +278,10 @@ class TestUnreviewedDraft:
 
 
 class TestInvalidReviewer:
-    @pytest.mark.parametrize("bad_reviewer", ["", "   ", "auto_draft:gps_only"])
+    @pytest.mark.parametrize(
+        "bad_reviewer",
+        ["", "   ", "auto_draft:gps_only", "Auto_Draft:gps_only", "  AUTO_DRAFT:x  "],
+    )
     def test_rejected_no_install(self, tmp_path, conn, _gt_runtime_dir, bad_reviewer):
         submitted = _oval_geojson(reviewed_by="theo")
         src = _write(tmp_path, "submitted.geojson", submitted)
@@ -287,6 +334,42 @@ class TestDegenerateGeometry:
 
 
 # ---------------------------------------------------------------------------
+# Geometry gates REJECT branch -- passes validate_gt_geojson, fails
+# run_geometry_gates (IMPORTANT 3: this branch was previously untested).
+# ---------------------------------------------------------------------------
+
+
+class TestGeometryGatesReject:
+    def test_width_below_minimum_rejected_by_geometry_gates_not_validator(
+        self, tmp_path, conn, _gt_runtime_dir,
+    ):
+        """A closed annulus, valid schema, >=20 pts/boundary, non-crossing,
+        valid reviewed_by -- validate_gt_geojson has no opinion on track
+        width, so this passes it. But the boundaries are only ~0.2-0.45 m
+        apart, under geometry_gates.WIDTH_MIN_M (0.5 m), so run_geometry_
+        gates must reject it -- proving that gate is actually reachable and
+        wired into bless_geometry's reject path, not just validate_gt_geojson
+        catching every degenerate fixture first.
+        """
+        submitted = _oval_geojson(reviewed_by="theo", left_r=52.6, right_r=52.0)
+        src = _write(tmp_path, "submitted.geojson", submitted)
+
+        assert validate_gt_geojson(src) == []  # confirms validator alone lets this through
+
+        result = bless_service.bless_geometry(
+            geojson_path=src, canonical_id="zz", reviewed_by="theo",
+            auto_draft_geojson=None, conn=conn,
+        )
+
+        assert result.ok is False
+        assert any("width" in m.lower() for m in result.failures)
+        gates = [row[1][3] for row in conn.executed]
+        assert "bless_reject:geometry_gates" in gates
+        assert not (_gt_runtime_dir / "gt_zz.geojson").exists()
+        assert not _gt_runtime_dir.exists() or not any(_gt_runtime_dir.iterdir())
+
+
+# ---------------------------------------------------------------------------
 # Malformed / empty input -- fail-closed, never crashes
 # ---------------------------------------------------------------------------
 
@@ -332,6 +415,31 @@ class TestMalformedInput:
         )
 
         assert result.ok is False
+
+
+# ---------------------------------------------------------------------------
+# canonical_id format allow-list (IMPORTANT 2: defense-in-depth before the
+# install path/alias-registry key are built).
+# ---------------------------------------------------------------------------
+
+
+class TestCanonicalIdFormat:
+    @pytest.mark.parametrize(
+        "bad_id", ["../etc", "zz/../../x", "UPPER", "has space", "", "-leading-dash"],
+    )
+    def test_malformed_canonical_id_rejected_installs_nothing(
+        self, tmp_path, conn, _gt_runtime_dir, bad_id,
+    ):
+        submitted = _oval_geojson(reviewed_by="theo")
+        src = _write(tmp_path, "submitted.geojson", submitted)
+
+        result = bless_service.bless_geometry(
+            geojson_path=src, canonical_id=bad_id, reviewed_by="theo",
+            auto_draft_geojson=None, conn=conn,
+        )
+
+        assert result.ok is False
+        assert not _gt_runtime_dir.exists() or not any(_gt_runtime_dir.rglob("*"))
 
 
 # ---------------------------------------------------------------------------

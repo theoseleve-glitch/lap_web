@@ -43,8 +43,8 @@ unexpected exception anywhere is caught and treated the same way):
      Constraint) -- re-blessing an id that already has GT under this loop
      is refused; only a human operator running the CLI with ``--force``
      can do that.
-  7. ``track_surface.gt_loader.invalidate_gt_cache(canonical_id)``.
-  8. Write an ACCEPT audit row. Return ``BlessResult(ok=True, failures=[])``.
+  7. Write an ACCEPT audit row, then invalidate_gt_cache (logged not raised
+     on failure). Return ``BlessResult(ok=True, failures=[])``.
 
 ``tracks.canonical_id`` is intentionally NOT set here -- that is
 ``onboarding/reprocess.py``'s job (a later task), not this one's.
@@ -55,6 +55,7 @@ import copy
 import json
 import logging
 import os
+import re
 import shutil
 import tempfile
 from dataclasses import dataclass, field
@@ -108,6 +109,19 @@ class InstallError(RuntimeError):
     """Raised when a GT install (validate->copy->register-alias) is refused."""
 
 
+# Allow-list: canonical_id is interpolated into a filesystem path and an
+# aliases-registry key, so path separators/".." must never reach either.
+_CANONICAL_ID_RE = re.compile(r"^[a-z0-9][a-z0-9_-]{0,63}$")
+
+
+def _check_canonical_id_format(canonical_id: str) -> None:
+    if not isinstance(canonical_id, str) or not _CANONICAL_ID_RE.fullmatch(canonical_id):
+        raise InstallError(
+            f"Refusing to bless: canonical_id {canonical_id!r} does not match "
+            f"required format {_CANONICAL_ID_RE.pattern!r}"
+        )
+
+
 def _reviewed_by_missing(messages: list[str]) -> bool:
     return any("reviewed_by" in m for m in messages)
 
@@ -159,6 +173,8 @@ def install_gt_geojson(
     gt_dir = Path(gt_dir)
     aliases_file = Path(aliases_file)
     aliases = list(aliases or [])
+
+    _check_canonical_id_format(canonical_id)
 
     messages = validate_gt_geojson(geojson_path)
     if _reviewed_by_missing(messages):
@@ -216,15 +232,23 @@ def _geometry_signature(geojson: dict) -> str:
     ``reviewed_by``), so comparing full documents would make the
     unreviewed-draft gate never fire. Only a change to the actual boundary
     geometry counts as "reviewed".
+
+    Keyed by role (``left_boundary_gt``/``right_boundary_gt``, each unique)
+    rather than a list -- ``sort_keys=True`` only sorts dict keys, never
+    list order, so a list-based signature would let byte-identical geometry
+    evade this gate by resubmitting the two boundary features swapped. A
+    role-keyed dict (role coerced to ``str`` so a missing/None role still
+    serializes) is invariant to feature order and still changes whenever
+    the coordinates actually change.
     """
     features = geojson.get("features") if isinstance(geojson, dict) else None
-    sig = []
+    sig: dict[str, object] = {}
     for feat in (features or []):
         if not isinstance(feat, dict):
             continue
         role = (feat.get("properties") or {}).get("role")
         coords = (feat.get("geometry") or {}).get("coordinates")
-        sig.append({"role": role, "coordinates": coords})
+        sig[str(role)] = coords
     return json.dumps(sig, sort_keys=True)
 
 
@@ -384,6 +408,11 @@ def bless_geometry(
     reject (fail-closed); nothing is ever installed on a reject.
     """
     try:
+        _check_canonical_id_format(canonical_id)
+    except InstallError as exc:
+        return _reject(conn, canonical_id, "invalid_canonical_id", [str(exc)])
+
+    try:
         submitted = _load_geojson(geojson_path)
     except Exception as exc:
         return _reject(
@@ -400,7 +429,7 @@ def bless_geometry(
         if (
             not reviewed_by
             or not str(reviewed_by).strip()
-            or str(reviewed_by).startswith("auto_draft:")
+            or str(reviewed_by).strip().lower().startswith("auto_draft:")
         ):
             return _reject(conn, canonical_id, "invalid_reviewer", ["invalid_reviewer"])
 
@@ -443,11 +472,24 @@ def bless_geometry(
                 force=False, gt_dir=gt_dir, aliases_file=aliases_file,
             )
 
-        invalidate_gt_cache(canonical_id)
-        _write_audit(
-            conn, canonical_id, "bless_accept",
-            {"reviewed_by": reviewed_by, "dest": str(dest)},
-        )
+            # ACCEPT audit written right after the durable install, BEFORE
+            # invalidate_gt_cache -- so a later raise there can't make the
+            # outer `except Exception` record a REJECT for an install that
+            # already succeeded.
+            _write_audit(
+                conn, canonical_id, "bless_accept",
+                {"reviewed_by": reviewed_by, "dest": str(dest)},
+            )
+
+        try:
+            invalidate_gt_cache(canonical_id)
+        except Exception:
+            # Must not flip an already-audited successful install to reject.
+            logger.exception(
+                "bless_geometry: invalidate_gt_cache failed after successful "
+                "install canonical_id=%s", canonical_id,
+            )
+
         return BlessResult(ok=True, failures=[])
 
     except InstallError as exc:
