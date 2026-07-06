@@ -97,3 +97,57 @@ def test_gt_runtime_dir_unset_behaves_as_before(monkeypatch):
     gt_loader.invalidate_gt_cache()
     assert gt_loader.load_gt("unit_track_never_blessed") is None
     gt_loader.invalidate_gt_cache()
+
+
+def test_cross_process_staleness_fixed_by_entry_hook(tmp_path, monkeypatch):
+    """Final-review finding I1: a bless in one process must not leave a
+    stale ``None`` miss cached in ANOTHER process (e.g. a Celery pipeline
+    worker) that never called ``invalidate_gt_cache`` itself.
+
+    Simulates the cross-process scenario in a single process: prime the
+    cache with the miss the ORIGINAL trigger run would have cached, then
+    write the freshly-blessed GT the way ``bless_service.install_gt_geojson``
+    does (gt_<id>.geojson + track_aliases.json in GT_RUNTIME_DIR) WITHOUT
+    calling ``invalidate_gt_cache`` directly (that call lives only in the web
+    process's ``bless_geometry``). Instead, invoke
+    ``track_surface.gt_loader.refresh_runtime_gt_if_configured`` -- the
+    helper ``track_surface.builder.build_track_surface`` now calls at its
+    own entry, before ``load_gt`` -- and assert the GT is found instead of
+    the stale cached miss.
+    """
+    monkeypatch.setenv("GT_RUNTIME_DIR", str(tmp_path))
+    gt_loader.invalidate_gt_cache()  # start each test from a clean cache
+
+    cid = "unit_track_xproc"
+    assert gt_loader.resolve_track_id(cid) is None
+    assert gt_loader.load_gt(cid) is None  # caches the miss (== the trigger's own lookup)
+
+    # A DIFFERENT process just blessed this track: GT + alias appear on disk,
+    # but nothing in THIS process's caches has been told about it yet.
+    (tmp_path / f"gt_{cid}.geojson").write_text(_sample_gt_geojson(cid), encoding="utf-8")
+    _write_alias(tmp_path, cid)
+
+    assert gt_loader.load_gt(cid) is None  # still the stale cached miss
+
+    # This is the entry-of-build guard, not a direct invalidate_gt_cache call.
+    gt_loader.refresh_runtime_gt_if_configured()
+
+    found = gt_loader.load_gt(cid)
+    assert found is not None
+    assert found.canonical_track_id == cid
+    assert found.source_filename == f"gt_{cid}.geojson"
+
+    gt_loader.invalidate_gt_cache()
+
+
+def test_refresh_runtime_gt_is_noop_when_unset(monkeypatch):
+    """No GT_RUNTIME_DIR => refresh_runtime_gt_if_configured must not touch
+    the cache (verified indirectly: a cached miss for a track that is later
+    "discoverable" only via a runtime dir stays cached, since there's no
+    runtime dir to notice)."""
+    monkeypatch.delenv("GT_RUNTIME_DIR", raising=False)
+    gt_loader.invalidate_gt_cache()
+    assert gt_loader.load_gt("unit_track_no_runtime_dir") is None
+    gt_loader.refresh_runtime_gt_if_configured()  # should not raise or reset anything
+    assert gt_loader.load_gt("unit_track_no_runtime_dir") is None
+    gt_loader.invalidate_gt_cache()

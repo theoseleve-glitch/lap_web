@@ -78,6 +78,7 @@ def test_upsert_open_request_sql_shape_no_pg():
         bbox={"min_lat": 1.0},
         session_ref="sess-1",
         draft_centerline=[[5.0, 45.0], [5.001, 45.0]],
+        vehicle_classes=["gt3"],
     )
     assert request_id == "fake-id-1"
     assert created is True
@@ -93,6 +94,11 @@ def test_upsert_open_request_sql_shape_no_pg():
     # jsonb dedup guard: don't duplicate a repeated session_ref.
     assert "session_refs @> to_jsonb(%(session_ref)s::text)" in sql
     assert "jsonb_array_length(track_onboarding_requests.session_refs) >= 50" in sql
+    # vehicle_classes: dedup-append union (final-review finding I2), same
+    # spirit as session_refs but merges whole arrays rather than one value.
+    assert "vehicle_classes" in sql
+    assert "jsonb_array_elements_text(" in sql
+    assert "array_agg(DISTINCT v)" in sql
     # xmax=0 distinguishes insert from update.
     assert "(xmax = 0) AS created" in sql
     assert "RETURNING id, (xmax = 0) AS created" in sql
@@ -101,6 +107,7 @@ def test_upsert_open_request_sql_shape_no_pg():
     assert json.loads(params["fingerprint"]) == {"a": 1}
     assert json.loads(params["bbox"]) == {"min_lat": 1.0}
     assert json.loads(params["draft_centerline"]) == [[5.0, 45.0], [5.001, 45.0]]
+    assert json.loads(params["vehicle_classes"]) == ["gt3"]
 
 
 def test_upsert_open_request_created_false_on_attach_no_pg():
@@ -119,6 +126,7 @@ def test_upsert_open_request_created_false_on_attach_no_pg():
     assert params["fingerprint"] is None
     assert params["bbox"] is None
     assert params["draft_centerline"] is None
+    assert params["vehicle_classes"] is None
 
 
 def test_set_status_sql_shape_no_pg():
@@ -185,6 +193,7 @@ def test_get_decodes_jsonb_columns_no_pg():
         "draft_centerline": json.dumps([[5.0, 45.0], [5.001, 45.0]]),
         "first_session_ref": "sess-1",
         "session_refs": json.dumps(["sess-1"]), "session_count": 1,
+        "vehicle_classes": json.dumps(["gt3"]),
         "draft_status": None, "draft_path": None, "token_jti": None,
         "error": None, "created_at": None, "updated_at": None,
         "emailed_at": None, "blessed_at": None,
@@ -195,6 +204,7 @@ def test_get_decodes_jsonb_columns_no_pg():
     assert result["bbox"] == {"min_lat": 1.0}
     assert result["draft_centerline"] == [[5.0, 45.0], [5.001, 45.0]]
     assert result["session_refs"] == ["sess-1"]
+    assert result["vehicle_classes"] == ["gt3"]
 
 
 def test_find_stale_unemailed_sql_shape_no_pg():
@@ -321,6 +331,46 @@ def test_pg_second_upsert_same_open_track_attaches_no_dup_refs():
         row = repo.get(conn, req_id2)
         assert sorted(row["session_refs"]) == ["sess-1", "sess-2"]
         assert row["session_count"] == 3
+    finally:
+        _cleanup(conn)
+        conn.close()
+
+
+@_skip_no_pg
+def test_pg_vehicle_classes_dedup_union_across_upserts():
+    """Final-review finding I2: vehicle_classes accumulates as a deduped
+    union across attaching sessions, mirroring session_refs but merging
+    whole arrays instead of one value at a time."""
+    conn = _make_pg_conn()
+    try:
+        _cleanup(conn)
+        req_id1, created1 = repo.upsert_open_request(
+            conn, track_key=_TEST_TRACK_KEY, track_label="Test",
+            fingerprint=None, bbox=None, session_ref="sess-1",
+            vehicle_classes=["gt3"],
+        )
+        conn.commit()
+        req_id2, created2 = repo.upsert_open_request(
+            conn, track_key=_TEST_TRACK_KEY, track_label="Test",
+            fingerprint=None, bbox=None, session_ref="sess-2",
+            vehicle_classes=["gt4"],
+        )
+        conn.commit()
+        # repeat class "gt3" via a third session -- must not duplicate.
+        req_id3, created3 = repo.upsert_open_request(
+            conn, track_key=_TEST_TRACK_KEY, track_label="Test",
+            fingerprint=None, bbox=None, session_ref="sess-3",
+            vehicle_classes=["gt3"],
+        )
+        conn.commit()
+
+        assert created1 is True
+        assert created2 is False
+        assert created3 is False
+        assert req_id1 == req_id2 == req_id3
+
+        row = repo.get(conn, req_id1)
+        assert sorted(row["vehicle_classes"]) == ["gt3", "gt4"]
     finally:
         _cleanup(conn)
         conn.close()

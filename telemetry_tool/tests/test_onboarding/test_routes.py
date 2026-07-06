@@ -63,6 +63,7 @@ def _row(**overrides) -> dict:
         id="req-1", track_key="kct_onb", track_label="KCT", fingerprint=None,
         status="emailed", bbox=None, first_session_ref="sess-1",
         session_refs=["sess-1", "sess-2"], session_count=2,
+        vehicle_classes=[],
         draft_status="gps_only", draft_path="/tmp/req-1.geojson",
         token_jti=None, error=None, created_at=None, updated_at=None,
         emailed_at=None, blessed_at=None,
@@ -246,6 +247,56 @@ class TestPostSave:
         assert rkwargs["track_key"] == "kct_onb"
         assert rkwargs["canonical_id"] == "kct_onb"
         assert rkwargs["session_refs"] == ["s1", "s2"]
+
+    def test_vehicle_classes_row_derived_reach_reprocess_after_bless(
+        self, fake_repo, fake_draft, fake_bless, fake_reprocess,
+    ):
+        """Final-review finding I2: the row's vehicle_classes (now that
+        migration 081 has the column and s10d_surface's trigger populates
+        it) must actually flow into reprocess_after_bless, or the 30-min
+        fast-path compute_racing_lines enqueue never fires for a non-generic
+        class."""
+        tok, jti = mint("req-1")
+        fake_repo.get.return_value = _row(
+            token_jti=jti, track_key="kct_onb", vehicle_classes=["gt3", "gt4"],
+        )
+        app = _make_app()
+        resp = app.test_client().post(
+            "/api/v1/onboarding/save",
+            json={
+                "request_id": "req-1",
+                "geometry": {"type": "FeatureCollection", "features": []},
+            },
+            headers={"Authorization": f"Bearer {tok}"},
+        )
+        assert resp.status_code == 200
+
+        fake_reprocess.assert_called_once()
+        _, rkwargs = fake_reprocess.call_args
+        assert rkwargs["vehicle_classes"] == ["gt3", "gt4"]
+
+    def test_missing_vehicle_classes_forwards_empty_list(
+        self, fake_repo, fake_draft, fake_bless, fake_reprocess,
+    ):
+        """A row predating the vehicle_classes column (or a NULL value)
+        must forward [] rather than raising."""
+        tok, jti = mint("req-1")
+        row = _row(token_jti=jti, track_key="kct_onb")
+        del row["vehicle_classes"]
+        fake_repo.get.return_value = row
+        app = _make_app()
+        resp = app.test_client().post(
+            "/api/v1/onboarding/save",
+            json={
+                "request_id": "req-1",
+                "geometry": {"type": "FeatureCollection", "features": []},
+            },
+            headers={"Authorization": f"Bearer {tok}"},
+        )
+        assert resp.status_code == 200
+
+        _, rkwargs = fake_reprocess.call_args
+        assert rkwargs["vehicle_classes"] == []
 
     def test_bless_not_ok_returns_422_and_does_not_revoke_token(
         self, fake_repo, fake_draft, fake_bless, fake_reprocess,

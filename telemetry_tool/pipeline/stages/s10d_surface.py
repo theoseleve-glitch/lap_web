@@ -105,6 +105,7 @@ def run_surface_build(
         fingerprint=fingerprint,
         track_label=track_label,
         resampled_laps=resampled_laps,
+        vehicle_class=v_class,
     )
 
     # Merge into accumulated model (keyed by class+condition)
@@ -139,6 +140,7 @@ def _maybe_trigger_onboarding(
     fingerprint: dict | None,
     track_label: str | None,
     resampled_laps: dict[int, pd.DataFrame],
+    vehicle_class: str | None = None,
 ) -> None:
     """Detection trigger for the Track Onboarding Loop.
 
@@ -161,6 +163,15 @@ def _maybe_trigger_onboarding(
     3. ``track_id`` missing/sentinel -- can't onboard an unrecognised
        track.
     4. No ``job_id`` -- nothing usable as ``session_ref``.
+
+    ``vehicle_class`` (final-review finding I2 -- the ``v_class`` already in
+    scope at ``run_surface_build``'s call site, from
+    ``track_surface.store.detect_vehicle_class``) is forwarded to
+    ``record_missing_geometry`` as a one-element ``vehicle_classes`` list
+    (empty when unknown/falsy) so ``onboarding/reprocess.py::
+    reprocess_after_bless`` can later enqueue the fast-path racing-line
+    recompute for the class actually driven, not just ``"generic"`` (the
+    only class the nightly ``compute_all_racing_lines`` beat covers).
 
     Entirely best-effort: the ``try`` below wraps canonical-id resolution,
     bbox/centerline derivation, and the ``record_missing_geometry`` call
@@ -222,6 +233,7 @@ def _maybe_trigger_onboarding(
             session_ref=job_id,
             draft_centerline=centerline,
             is_operator_run=True,
+            vehicle_classes=[vehicle_class] if vehicle_class else [],
         )
     except Exception:
         logger.exception(

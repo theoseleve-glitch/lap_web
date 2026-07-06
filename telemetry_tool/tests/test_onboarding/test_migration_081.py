@@ -70,8 +70,9 @@ def test_081_creates_table_with_expected_columns():
     for col in (
         '"id"', '"track_key"', '"track_label"', '"fingerprint"', '"status"',
         '"bbox"', '"draft_centerline"', '"first_session_ref"', '"session_refs"',
-        '"session_count"', '"draft_status"', '"draft_path"', '"token_jti"',
-        '"error"', '"created_at"', '"updated_at"', '"emailed_at"', '"blessed_at"',
+        '"session_count"', '"vehicle_classes"', '"draft_status"', '"draft_path"',
+        '"token_jti"', '"error"', '"created_at"', '"updated_at"', '"emailed_at"',
+        '"blessed_at"',
     ):
         assert col in upgrade_src, f"missing column {col} in upgrade()"
 
@@ -117,8 +118,9 @@ def test_081_table_and_indexes_exist_in_pg():
             expected = {
                 "id", "track_key", "track_label", "fingerprint", "status",
                 "bbox", "draft_centerline", "first_session_ref", "session_refs",
-                "session_count", "draft_status", "draft_path", "token_jti",
-                "error", "created_at", "updated_at", "emailed_at", "blessed_at",
+                "session_count", "vehicle_classes", "draft_status", "draft_path",
+                "token_jti", "error", "created_at", "updated_at", "emailed_at",
+                "blessed_at",
             }
             assert expected <= cols, f"missing columns; found: {cols}"
             assert "workspace_id" not in cols

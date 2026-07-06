@@ -100,11 +100,37 @@ class TestOperatorMissNewTrack:
             bbox={"min_lat": 1, "max_lat": 2, "min_lon": 3, "max_lon": 4},
             session_ref="sess-001",
             draft_centerline=_DRAFT_CENTERLINE,
+            vehicle_classes=None,
         )
         _mock_connection.commit.assert_called_once()
         _mock_draft_and_notify.delay.assert_called_once_with("req-1")
         # created=True -> no need to re-check existing row status
         _mock_repo.get.assert_not_called()
+
+    def test_vehicle_classes_forwarded_to_upsert(
+        self, _mock_repo, _mock_load_gt, _mock_draft_and_notify, _mock_connection
+    ):
+        """Final-review finding I2: the vehicle class in scope at the
+        trigger call site must reach ``repo.upsert_open_request`` so
+        ``reprocess_after_bless`` can later enqueue the fast-path
+        racing-line recompute for that class, not just "generic"."""
+        _mock_repo.upsert_open_request.return_value = ("req-1", True)
+
+        result = service.record_missing_geometry(
+            **_kwargs(vehicle_classes=["gt3"])
+        )
+
+        assert result == "req-1"
+        _mock_repo.upsert_open_request.assert_called_once_with(
+            _mock_connection,
+            track_key=_TRACK_KEY,
+            track_label="Solokart FP",
+            fingerprint={"n_sessions": 1},
+            bbox={"min_lat": 1, "max_lat": 2, "min_lon": 3, "max_lon": 4},
+            session_ref="sess-001",
+            draft_centerline=_DRAFT_CENTERLINE,
+            vehicle_classes=["gt3"],
+        )
 
 
 class TestSecondSessionSameTrack:

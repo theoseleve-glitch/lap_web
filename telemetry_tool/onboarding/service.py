@@ -49,6 +49,7 @@ def record_missing_geometry(
     session_ref: str,
     is_operator_run: bool,
     draft_centerline: list | None = None,
+    vehicle_classes: list | None = None,
 ) -> str | None:
     """Dedup + enqueue an onboarding draft for a real GT gap.
 
@@ -64,6 +65,13 @@ def record_missing_geometry(
     migration 081) is forwarded as-is to ``repo.upsert_open_request``, which
     applies first-non-null-wins semantics on conflict -- this function does
     not otherwise inspect or validate it.
+
+    ``vehicle_classes`` (final-review finding I2) is forwarded as-is to
+    ``repo.upsert_open_request``, which merges it into the request's
+    deduped ``vehicle_classes`` union on conflict. This is what lets
+    ``onboarding/reprocess.py::reprocess_after_bless`` enqueue the 30-min
+    fast-path ``compute_racing_lines`` for every vehicle class actually
+    seen while the track was unmapped, not just ``"generic"``.
 
     Otherwise, atomically upserts the single open request for
     ``track_key`` (``repo.upsert_open_request``). The async draft job is
@@ -103,6 +111,7 @@ def record_missing_geometry(
             bbox=bbox,
             session_ref=session_ref,
             draft_centerline=draft_centerline,
+            vehicle_classes=vehicle_classes,
         )
         conn.commit()
 

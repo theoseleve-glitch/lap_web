@@ -41,6 +41,7 @@ def upgrade() -> None:
         sa.Column("first_session_ref", sa.Text, nullable=True),
         sa.Column("session_refs", JSONB, nullable=False, server_default=sa.text("'[]'")),
         sa.Column("session_count", sa.Integer, nullable=False, server_default="0"),
+        sa.Column("vehicle_classes", JSONB, nullable=True, server_default=sa.text("'[]'")),
         sa.Column("draft_status", sa.Text, nullable=True),
         sa.Column("draft_path", sa.Text, nullable=True),
         sa.Column("token_jti", sa.Text, nullable=True),

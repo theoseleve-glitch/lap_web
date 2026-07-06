@@ -46,11 +46,13 @@ _SETTABLE_FIELDS: dict[str, str] = {
 _ALL_COLUMNS = (
     "id", "track_key", "track_label", "fingerprint", "status", "bbox",
     "draft_centerline", "first_session_ref", "session_refs", "session_count",
-    "draft_status", "draft_path", "token_jti", "error", "created_at",
-    "updated_at", "emailed_at", "blessed_at",
+    "vehicle_classes", "draft_status", "draft_path", "token_jti", "error",
+    "created_at", "updated_at", "emailed_at", "blessed_at",
 )
 
-_JSONB_COLUMNS = {"fingerprint", "bbox", "draft_centerline", "session_refs"}
+_JSONB_COLUMNS = {
+    "fingerprint", "bbox", "draft_centerline", "session_refs", "vehicle_classes",
+}
 
 
 def _row_to_dict(row: Any) -> dict:
@@ -80,6 +82,7 @@ def upsert_open_request(
     bbox: dict | None,
     session_ref: str,
     draft_centerline: list | None = None,
+    vehicle_classes: list | None = None,
 ) -> tuple[str, bool]:
     """Atomically create-or-attach-to the single open request for a track.
 
@@ -98,6 +101,14 @@ def upsert_open_request(
     representative geometry, not an accumulating log like ``session_refs``,
     so a later attaching session must never clobber the one already stored.
 
+    ``vehicle_classes`` (final-review finding I2 -- migration 081 follow-up)
+    is a small accumulating SET, same intent as ``session_refs`` but merged
+    as a union rather than a single-value append (a track can be onboarded
+    by sessions across several vehicle classes): on conflict, existing and
+    incoming arrays are combined via ``jsonb_array_elements_text`` +
+    ``array_agg(DISTINCT ...)`` so the result never contains duplicates.
+    ``None``/absent is treated as an empty list on both insert and conflict.
+
     Returns ``(request_id, created)`` where ``created=False`` means this
     call attached to a pre-existing open row rather than inserting one.
     """
@@ -106,14 +117,19 @@ def upsert_open_request(
     draft_centerline_json = (
         json.dumps(draft_centerline) if draft_centerline is not None else None
     )
+    vehicle_classes_json = (
+        json.dumps(vehicle_classes) if vehicle_classes is not None else None
+    )
 
     sql = """
         INSERT INTO track_onboarding_requests
             (id, track_key, track_label, fingerprint, status, bbox, draft_centerline,
-             first_session_ref, session_refs, session_count, created_at, updated_at)
+             first_session_ref, session_refs, session_count, vehicle_classes,
+             created_at, updated_at)
         VALUES
             (gen_random_uuid(), %(track_key)s, %(track_label)s, %(fingerprint)s::jsonb, 'requested', %(bbox)s::jsonb,
-             %(draft_centerline)s::jsonb, %(session_ref)s, to_jsonb(ARRAY[%(session_ref)s]::text[]), 1, now(), now())
+             %(draft_centerline)s::jsonb, %(session_ref)s, to_jsonb(ARRAY[%(session_ref)s]::text[]), 1,
+             COALESCE(%(vehicle_classes)s::jsonb, '[]'::jsonb), now(), now())
         ON CONFLICT (track_key) WHERE status <> 'blessed'
         DO UPDATE SET
             draft_centerline = COALESCE(
@@ -126,6 +142,13 @@ def upsert_open_request(
                 ELSE track_onboarding_requests.session_refs || to_jsonb(ARRAY[%(session_ref)s]::text[])
             END,
             session_count = LEAST(track_onboarding_requests.session_count + 1, 999999),
+            vehicle_classes = (
+                SELECT COALESCE(to_jsonb(array_agg(DISTINCT v)), '[]'::jsonb)
+                FROM jsonb_array_elements_text(
+                    COALESCE(track_onboarding_requests.vehicle_classes, '[]'::jsonb)
+                    || COALESCE(EXCLUDED.vehicle_classes, '[]'::jsonb)
+                ) AS v
+            ),
             updated_at = now()
         RETURNING id, (xmax = 0) AS created
     """
@@ -136,6 +159,7 @@ def upsert_open_request(
         "bbox": bbox_json,
         "draft_centerline": draft_centerline_json,
         "session_ref": session_ref,
+        "vehicle_classes": vehicle_classes_json,
     }
     cur = conn.cursor()
     try:

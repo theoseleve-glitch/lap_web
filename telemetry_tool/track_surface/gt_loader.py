@@ -28,6 +28,17 @@ Public API
     cleared (a bless can also touch the shared alias registry, which isn't
     keyed by canonical_id).
 
+``refresh_runtime_gt_if_configured()``
+    Cross-process staleness guard (final-review finding I1): ``invalidate_
+    gt_cache`` only clears the caller's own process. A bless in the web
+    process cannot reach the Celery worker process that later runs the
+    reprocess build, so that worker's cache can still hold a stale ``None``
+    miss from before the bless. ``track_surface.builder.build_track_surface``
+    calls this at its own entry, before ``load_gt``, so EVERY build re-reads
+    the runtime GT store when ``GT_RUNTIME_DIR`` is set — regardless of
+    which process performed the bless. No-op when ``GT_RUNTIME_DIR`` is
+    unset.
+
 Runtime GT directory
 ~~~~~~~~~~~~~~~~~~~~~
 
@@ -1105,6 +1116,41 @@ def load_gt(track_input: str | None) -> GroundTruth | None:
         logger.debug("Unknown track input: %r", track_input)
         return None
     return _load_gt_canonical(canonical_id)
+
+
+def refresh_runtime_gt_if_configured() -> None:
+    """Invalidate gt caches whenever a runtime GT store is configured.
+
+    Cross-process staleness guard (final-review finding I1): ``bless_geometry``
+    (``onboarding/bless_service.py``, runs in the WEB process) already calls
+    ``invalidate_gt_cache`` right after installing a freshly-blessed GT into
+    ``GT_RUNTIME_DIR`` -- but that only clears THAT process's ``lru_cache``.
+    The reprocess build that re-anchors the waiting sessions
+    (``onboarding/reprocess.py``'s ``_dispatch_build_reprocess`` ->
+    ``tasks.pipeline_tasks.build_pipeline_chain(...).apply_async()``) runs in
+    a separate Celery ``pipeline`` worker process, whose own
+    ``_load_gt_canonical`` cache can still hold the ``None`` miss the
+    ORIGINAL trigger run cached (the trigger only fires because ``load_gt``
+    returned ``None`` in the first place) -- so the reprocess build would
+    silently see the stale miss and never pick up the just-installed GT.
+
+    Call this at the ENTRY of every track-surface build
+    (``track_surface.builder.build_track_surface``, before it calls
+    ``load_gt``) so each build re-reads the runtime GT store regardless of
+    which process performed the bless. This is the robust, low-risk fix:
+    builds are heavy-compute (seconds), so unconditionally re-parsing one
+    small geojson (and re-reading the alias registry) whenever
+    ``GT_RUNTIME_DIR`` is set is negligible overhead -- preferred over a more
+    surgical "don't cache a None miss + watch track_aliases.json's mtime"
+    alternative, which would need extra state (a tracked mtime) to detect a
+    write from a DIFFERENT process and is more moving parts for the same
+    outcome.
+
+    No-op when ``GT_RUNTIME_DIR`` is unset -- baked-corpus-only deployments
+    (and every existing caller) keep today's behavior unchanged.
+    """
+    if os.environ.get("GT_RUNTIME_DIR"):
+        invalidate_gt_cache()
 
 
 def invalidate_gt_cache(canonical_id: str | None = None) -> None:

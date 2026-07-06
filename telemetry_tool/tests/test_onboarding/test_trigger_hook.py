@@ -100,6 +100,7 @@ def _call(**overrides):
         fingerprint={"length_m": 1234.5},
         track_label="KCT Test Track",
         resampled_laps=_resampled_laps(),
+        vehicle_class="gt3",
     )
     kwargs.update(overrides)
     return s10d_surface._maybe_trigger_onboarding(**kwargs)
@@ -151,6 +152,19 @@ class TestGtMissOperatorConfidentTrack:
         _, kwargs = mock_record.call_args
         assert kwargs["fingerprint"] == {"length_m": 1234.5}
         assert kwargs["track_label"] == "KCT Test Track"
+
+    def test_vehicle_class_forwarded_as_one_element_list(self, mock_record, mock_resolver):
+        """Final-review finding I2: the v_class in scope at the
+        run_surface_build call site must reach record_missing_geometry as
+        vehicle_classes, or the 30-min racing-line fast path stays dead."""
+        _call(vehicle_class="gt3")
+        _, kwargs = mock_record.call_args
+        assert kwargs["vehicle_classes"] == ["gt3"]
+
+    def test_no_vehicle_class_forwards_empty_list(self, mock_record, mock_resolver):
+        _call(vehicle_class=None)
+        _, kwargs = mock_record.call_args
+        assert kwargs["vehicle_classes"] == []
 
 
 class TestRefusals:
