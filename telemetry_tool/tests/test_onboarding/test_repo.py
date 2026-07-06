@@ -258,6 +258,65 @@ def test_reset_for_retry_zero_rowcount_returns_false_no_pg():
 
 
 # ---------------------------------------------------------------------------
+# find_expired_emailed / claim_resend -- bounded auto-resend (migration 082).
+# ---------------------------------------------------------------------------
+def test_find_expired_emailed_sql_shape_no_pg():
+    conn = _CapturingConn(fetchall_result=[{"id": "req-1"}, {"id": "req-2"}])
+    ids = repo.find_expired_emailed(conn, ttl_hours=72, max_emails=4)
+    assert ids == ["req-1", "req-2"]
+    sql, params = conn.calls[-1]
+    assert "status <> 'blessed'" in sql
+    assert "emailed_at IS NOT NULL" in sql
+    assert "emailed_at < now() - (%(h)s || ' hours')::interval" in sql
+    assert "email_count < %(max)s" in sql
+    assert params["h"] == 72
+    assert params["max"] == 4
+
+
+def test_find_expired_emailed_tuple_rows_no_pg():
+    conn = _CapturingConn(fetchall_result=[("req-1",)])
+    ids = repo.find_expired_emailed(conn, ttl_hours=72, max_emails=4)
+    assert ids == ["req-1"]
+
+
+def test_find_expired_emailed_empty_no_pg():
+    conn = _CapturingConn(fetchall_result=[])
+    assert repo.find_expired_emailed(conn, ttl_hours=72, max_emails=4) == []
+
+
+def test_claim_resend_sql_shape_true_no_pg():
+    conn = _CapturingConn(fetchone_result={"id": "req-1"})
+    claimed = repo.claim_resend(conn, "req-1", "jti-new", 72, 4)
+    assert claimed is True
+    sql, params = conn.calls[-1]
+    # Atomic claim + record: token_jti, email_count, and emailed_at are all
+    # set in the SAME UPDATE as the eligibility check, so two concurrent
+    # claims can never both win.
+    assert "SET token_jti = %(jti)s" in sql
+    assert "email_count = email_count + 1" in sql
+    assert "emailed_at = now()" in sql
+    assert "updated_at = now()" in sql
+    # Guard predicate restates find_expired_emailed's eligibility exactly.
+    assert "status <> 'blessed'" in sql
+    assert "emailed_at IS NOT NULL" in sql
+    assert "emailed_at < now() - (%(h)s || ' hours')::interval" in sql
+    assert "email_count < %(max)s" in sql
+    assert "RETURNING id" in sql
+    assert params["id"] == "req-1"
+    assert params["jti"] == "jti-new"
+    assert params["h"] == 72
+    assert params["max"] == 4
+
+
+def test_claim_resend_false_when_no_row_no_pg():
+    """No row back means: another beat already won the claim, the row is no
+    longer expired, it's over the resend cap, or it's since been blessed --
+    caller must not send an email in any of those cases."""
+    conn = _CapturingConn(fetchone_result=None)
+    assert repo.claim_resend(conn, "req-1", "jti-new", 72, 4) is False
+
+
+# ---------------------------------------------------------------------------
 # Real-PG tests (skip when TELEMETRY_PG_URL unset).
 # ---------------------------------------------------------------------------
 def _make_pg_conn():

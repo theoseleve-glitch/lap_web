@@ -50,10 +50,16 @@ requested → drafting → drafted / drafted_gps_only → emailed → blessed
 - `blessed` — terminal. `repo.set_status`/`claim_for_drafting`/
   `reset_for_retry` all refuse to touch a row once `status = 'blessed'`
   (`WHERE status <> 'blessed'` on every write).
-- **Reconcile path**: `reconcile_onboarding` (§3) resets a stale,
-  never-emailed row (`emailed_at IS NULL`, untouched 60+ minutes) back to
-  `requested` and re-enqueues `draft_and_notify` — the only place
-  `draft_failed`/stuck-`drafting` rows get auto-retried.
+- **Reconcile path**: `reconcile_onboarding` (§3) runs two phases on every
+  tick. Phase 1 resets a stale, never-emailed row (`emailed_at IS NULL`,
+  untouched 60+ minutes) back to `requested` and re-enqueues
+  `draft_and_notify` — the only place `draft_failed`/stuck-`drafting` rows
+  get auto-retried. Phase 2 (migration `082_onboarding_email_count`, the
+  bounded auto-resend fast-follow) covers the complementary gap: an
+  already-emailed, unblessed request whose token has expired (the operator
+  never acted before the `ONBOARDING_TOKEN_TTL_HOURS` window closed) gets a
+  fresh token minted and re-emailed, up to `MAX_EMAILS` total sends (see
+  §8). Neither phase ever touches a `blessed` row.
 
 A track can only be re-onboarded (a fresh `requested` row) once its prior
 request reaches `blessed` — enforced by the partial unique index
@@ -97,10 +103,12 @@ set actual values via the deploy environment / secrets manager.
   clearing `draft_status`/`draft_path`/`token_jti`) then re-enqueues
   `draft_and_notify`. Per-id failures are caught and logged so one bad row
   never blocks the batch.
-  - **Scope note**: this backstop only covers requests stuck *before* the
-    first email goes out (worker crash between the `drafted`/`token_jti`
-    write and the `emailed` write). It does **not** cover an
-    already-emailed request whose token later expires — see §8.
+  - **Scope note**: Phase 1 (`find_stale_unemailed`/`reset_for_retry`) only
+    covers requests stuck *before* the first email goes out (worker crash
+    between the `drafted`/`token_jti` write and the `emailed` write). Phase
+    2 (`_resend_expired_links`, same beat tick, same connection) is what
+    covers an already-emailed request whose token later expires — see §8
+    for the bounded-resend behavior and cap.
 - **SAM2 worker runtime contract**: `onboarding.draft.sam2_draft` shells out
   to `Analysis/trackreco-main/scripts/lap_track_to_draft.py` in a
   subprocess (`sys.executable`, so it must be runnable from the worker's own
@@ -147,9 +155,9 @@ The dev environment for this feature had **no Postgres** — the checklist
 below is where DB behavior gets validated for the first time. Do these in
 order:
 
-1. Apply migration `081_track_onboarding_requests` on prod: `alembic
-   upgrade head`; confirm `alembic current` reaches
-   `081_track_onboarding_requests (head)`.
+1. Apply migrations `081_track_onboarding_requests` and
+   `082_onboarding_email_count` on prod: `alembic upgrade head`; confirm
+   `alembic current` reaches `082_onboarding_email_count (head)`.
 2. Set `TELEMETRY_PG_URL` and run the PG-gated onboarding tests:
    ```bash
    cd telemetry_tool
@@ -234,6 +242,6 @@ behavior, not a bug.
 | Operator never received the draft-ready email | Request's `status`/`draft_status`/`emailed_at`: `SELECT status, draft_status, error, emailed_at, updated_at FROM track_onboarding_requests WHERE id = '<request_id>';` (or filter by `track_key`) | If stuck pre-email (`emailed_at IS NULL`) and `updated_at` is 60+ minutes old, the next `reconcile_onboarding` beat tick (≤30 min) auto-resets and re-drives it — confirm the `onboarding` queue actually has a consuming worker (§3), since reconcile's re-enqueue is also a message on that queue. |
 | Row stuck in `draft_failed` | Check the `error` column for the exception message. | Common cause: invalid `bbox`. Once the underlying issue is fixed, either wait for reconcile (only fires if also `emailed_at IS NULL` and stale) or manually re-drive: `repo.claim_for_drafting` requires status in `('requested','draft_failed')`, so calling `tasks.onboarding_tasks.draft_and_notify.delay(request_id)` again is safe and idempotent. |
 | Row stuck in `drafting` indefinitely (worker died mid-task) | `updated_at` age vs the 60-minute reconcile threshold. | Same reconcile path as above once it crosses the threshold; `emailed_at` must still be `NULL` (it always is at this stage) for `reset_for_retry` to touch it. |
-| Annotator link returns "Invalid or expired onboarding link" (generic 401 by design — never reveals which check failed) | Token TTL (`ONBOARDING_TOKEN_TTL_HOURS`, default 72h) vs `emailed_at`; whether the link was already used (`/save` revokes the `jti` on success, one-shot). | **There is no built-in resend/rotate endpoint for an already-emailed request** — `reconcile_onboarding`/`reset_for_retry` only ever touch rows where `emailed_at IS NULL`, so a request that was already emailed is never auto-reset just because its token later expired. To manually issue a fresh link: in a DB/python shell, clear `emailed_at` (`UPDATE track_onboarding_requests SET emailed_at = NULL, token_jti = NULL WHERE id = '<request_id>' AND status <> 'blessed';`) so the row is eligible for `repo.reset_for_retry`, then call `reset_for_retry` + `tasks.onboarding_tasks.draft_and_notify.delay(request_id)` (or wait for the next reconcile tick to pick it up). This is a manual DB operation today, not a self-service admin action — flagged as a gap, not a documented feature. |
+| Annotator link returns "Invalid or expired onboarding link" (generic 401 by design — never reveals which check failed) | Token TTL (`ONBOARDING_TOKEN_TTL_HOURS`, default 72h) vs `emailed_at`; whether the link was already used (`/save` revokes the `jti` on success, one-shot); `email_count` vs `MAX_EMAILS`. | `reconcile_onboarding`'s Phase 2 (`_resend_expired_links`, migration `082_onboarding_email_count`) auto-resends: once an emailed, unblessed request's `emailed_at` crosses the `ONBOARDING_TOKEN_TTL_HOURS` window, the next beat tick (≤30 min) mints a fresh token, atomically claims the resend (`repo.claim_resend` — a compare-and-set `UPDATE` that sets `token_jti`, increments `email_count`, and resets `emailed_at = now()` all in one guarded statement, so two concurrent beat ticks can never both send), and re-emails the operator. This repeats **up to `MAX_EMAILS = 4` total sends** (`tasks.onboarding_tasks.MAX_EMAILS`: 1 initial + 3 resends — the initial send already stamps `email_count = 1`). Once a request hits the cap it is deliberately left alone (`repo.find_expired_emailed`'s `email_count < max_emails` guard excludes it) — an ignored track must not be nagged forever. **Past the cap, recovery is manual**: in a DB/python shell, `UPDATE track_onboarding_requests SET email_count = 0 WHERE id = '<request_id>' AND status <> 'blessed';` re-arms the budget, then wait for the next reconcile tick (or call `tasks.onboarding_tasks.draft_and_notify.delay(request_id)` if `emailed_at IS NULL` still holds, which it won't once emailed — prefer resetting `email_count` and letting the beat's Phase 2 pick it up). Check `SELECT email_count, emailed_at, token_jti FROM track_onboarding_requests WHERE id = '<request_id>';` first to confirm which side of the cap the row is on. |
 | Bless succeeds but the correction "disappears" after a later deploy | `GT_RUNTIME_DIR` volume was not persistent, or the manual reconcile-to-git step (§4) was never done. | Re-bless from the operator's last-known-good export (if retained), or re-run the loop for that track; going forward, do the §4 reconcile-to-git step regularly so blessed corrections survive a redeploy. |
 | `optimal_line` missing right after a bless | Reprocessing timeline (§7): builds take time, racing-line solve is delayed 30 min and may still race a slow build; full backstop is the next 03:30 UTC nightly `compute_all_racing_lines` run. | Not a bug by itself — check `track_geometry_audit` / the session's rebuilt sidecar `boundary_source` first to confirm the rebuild actually landed before assuming the solver is broken. |

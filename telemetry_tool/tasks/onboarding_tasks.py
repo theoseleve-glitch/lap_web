@@ -215,7 +215,8 @@ def _run_draft_and_notify(request_id: str, conn: Any) -> dict:
             },
         )
         repo.set_status(
-            conn, request_id, "emailed", emailed_at=datetime.now(timezone.utc)
+            conn, request_id, "emailed",
+            emailed_at=datetime.now(timezone.utc), email_count=1,
         )
     else:
         logger.info(
@@ -273,6 +274,89 @@ else:
 
 _STALE_AFTER_MINUTES = 60
 
+# ---------------------------------------------------------------------------
+# _resend_expired_links -- bounded auto-resend fast-follow (migration 082).
+#
+# Gap this closes: reconcile_onboarding's original backstop
+# (find_stale_unemailed/reset_for_retry, above) only ever re-drives rows
+# with emailed_at IS NULL -- an operator who was emailed but never acted
+# before the token expired had nothing recover their request. This phase
+# covers exactly that: an already-emailed, unblessed request whose most
+# recent email is older than the token TTL gets a fresh token minted and
+# re-emailed, up to MAX_EMAILS total sends (initial send counts as 1, see
+# the email_count=1 write in _run_draft_and_notify above). Once a request
+# hits MAX_EMAILS it is deliberately left alone -- an ignored track must not
+# be nagged forever; recovering it past that point is a manual op (see
+# docs/runbooks/track-onboarding.md).
+# ---------------------------------------------------------------------------
+
+MAX_EMAILS = 4  # 1 initial send + 3 resends, then left for manual recovery
+
+
+def _resend_expired_links(conn: Any) -> int:
+    """Mint + send a fresh annotator link for each expired-but-unblessed,
+    under-the-cap request. Best-effort per id (mirrors
+    _run_reconcile_onboarding's loop below): one id's failure must never
+    abort the batch.
+
+    Token is minted BEFORE the claim so the jti passed to repo.claim_resend
+    (and therefore stored in the row) always matches the jti embedded in the
+    token actually emailed -- claiming first and minting after would risk
+    emailing a token whose jti never got persisted if minting failed after
+    the claim already "spent" the row's resend budget.
+    """
+    ttl_hours = int(os.environ.get("ONBOARDING_TOKEN_TTL_HOURS", "72"))
+    resent_count = 0
+    try:
+        annotator_host = os.environ["ANNOTATOR_HOST"]
+        operator_email = os.environ["ONBOARDING_OPERATOR_EMAIL"]
+    except KeyError as exc:
+        logger.error(
+            "_resend_expired_links: missing required env %s -- skipping "
+            "auto-resend pass entirely (deny-safe)", exc,
+        )
+        return 0
+
+    expired_ids = repo.find_expired_emailed(conn, ttl_hours=ttl_hours, max_emails=MAX_EMAILS)
+    for request_id in expired_ids:
+        try:
+            raw_token, jti = tokens.mint(request_id)
+            if not repo.claim_resend(conn, request_id, jti, ttl_hours, MAX_EMAILS):
+                logger.info(
+                    "_resend_expired_links: request_id=%s lost the resend "
+                    "claim (already resent/blessed/over cap) -- skipping",
+                    request_id,
+                )
+                continue
+
+            row = repo.get(conn, request_id)
+            if row is None:
+                logger.error(
+                    "_resend_expired_links: request_id=%s claimed but row "
+                    "missing", request_id,
+                )
+                continue
+
+            # Token in the URL FRAGMENT (never the query string), same as
+            # the initial send in _run_draft_and_notify.
+            annotator_url = f"{annotator_host}/?req={request_id}#token={raw_token}"
+            send_email_async.delay(
+                _EMAIL_TEMPLATE,
+                operator_email,
+                {
+                    "track_label": row.get("track_label"),
+                    "track_key": row.get("track_key"),
+                    "annotator_url": annotator_url,
+                },
+            )
+            resent_count += 1
+        except Exception:  # noqa: BLE001 -- one bad id must not sink the batch
+            logger.exception(
+                "_resend_expired_links: failed to resend for request_id=%s",
+                request_id,
+            )
+    return resent_count
+
 
 def _run_reconcile_onboarding(conn: Any, older_than_minutes: int = _STALE_AFTER_MINUTES) -> dict:
     """Plain, Celery-free implementation so tests can call it directly."""
@@ -294,7 +378,15 @@ def _run_reconcile_onboarding(conn: Any, older_than_minutes: int = _STALE_AFTER_
                 "reconcile_onboarding: failed to reset/re-drive request_id=%s",
                 request_id,
             )
-    return {"ok": True, "found": len(stale_ids), "reset": reset_count}
+
+    resent_count = _resend_expired_links(conn)
+
+    return {
+        "ok": True,
+        "found": len(stale_ids),
+        "reset": reset_count,
+        "resent": resent_count,
+    }
 
 
 def _dispatch_reconcile() -> dict:

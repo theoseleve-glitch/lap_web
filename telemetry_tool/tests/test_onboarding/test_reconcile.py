@@ -55,7 +55,7 @@ class TestReconcileHappyPath:
 
         result = onboarding_tasks._run_reconcile_onboarding(conn)
 
-        assert result == {"ok": True, "found": 2, "reset": 2}
+        assert result == {"ok": True, "found": 2, "reset": 2, "resent": 0}
         _mock_repo.find_stale_unemailed.assert_called_once_with(
             conn, older_than_minutes=60
         )
@@ -78,7 +78,7 @@ class TestReconcileHappyPath:
 
         result = onboarding_tasks._run_reconcile_onboarding(conn)
 
-        assert result == {"ok": True, "found": 0, "reset": 0}
+        assert result == {"ok": True, "found": 0, "reset": 0, "resent": 0}
         _mock_repo.reset_for_retry.assert_not_called()
         _mock_draft_and_notify.delay.assert_not_called()
 
@@ -95,7 +95,7 @@ class TestResetForRetryFalseSkipsEnqueue:
 
         result = onboarding_tasks._run_reconcile_onboarding(conn)
 
-        assert result == {"ok": True, "found": 2, "reset": 1}
+        assert result == {"ok": True, "found": 2, "reset": 1, "resent": 0}
         _mock_draft_and_notify.delay.assert_called_once_with("req-2")
 
 
@@ -114,7 +114,7 @@ class TestOneFailureDoesNotAbortBatch:
 
         result = onboarding_tasks._run_reconcile_onboarding(conn)
 
-        assert result == {"ok": True, "found": 3, "reset": 2}
+        assert result == {"ok": True, "found": 3, "reset": 2, "resent": 0}
         assert _mock_draft_and_notify.delay.call_args_list == [
             (("req-1",),), (("req-3",),),
         ]
@@ -135,7 +135,7 @@ class TestOneFailureDoesNotAbortBatch:
 
         # Both were reset (reset happens before .delay), but only req-1's
         # enqueue blew up -- req-2 must still be processed.
-        assert result == {"ok": True, "found": 2, "reset": 2}
+        assert result == {"ok": True, "found": 2, "reset": 2, "resent": 0}
         assert _mock_draft_and_notify.delay.call_args_list == [
             (("req-1",),), (("req-2",),),
         ]

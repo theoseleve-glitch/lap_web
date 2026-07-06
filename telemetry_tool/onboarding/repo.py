@@ -41,13 +41,14 @@ _SETTABLE_FIELDS: dict[str, str] = {
     "error": "text",
     "emailed_at": "timestamp",
     "blessed_at": "timestamp",
+    "email_count": "int",
 }
 
 _ALL_COLUMNS = (
     "id", "track_key", "track_label", "fingerprint", "status", "bbox",
     "draft_centerline", "first_session_ref", "session_refs", "session_count",
     "vehicle_classes", "draft_status", "draft_path", "token_jti", "error",
-    "created_at", "updated_at", "emailed_at", "blessed_at",
+    "created_at", "updated_at", "emailed_at", "blessed_at", "email_count",
 )
 
 _JSONB_COLUMNS = {
@@ -329,3 +330,90 @@ def reset_for_retry(conn: Any, request_id: str) -> bool:
     finally:
         cur.close()
     return bool(rowcount and rowcount > 0)
+
+
+def find_expired_emailed(conn: Any, ttl_hours: int, max_emails: int) -> list[str]:
+    """IDs of requests whose emailed annotator token has expired and are
+    still within their resend budget: not blessed, already emailed at least
+    once, the most recent email is older than ``ttl_hours`` (the token TTL,
+    so the link the operator has is guaranteed dead), and ``email_count``
+    hasn't hit ``max_emails`` yet.
+
+    Used by the bounded auto-resend backstop
+    (``tasks.onboarding_tasks._resend_expired_links``) -- the fast-follow to
+    ``find_stale_unemailed``, which only ever covers rows that were NEVER
+    emailed. A row that hit ``max_emails`` is deliberately excluded here so
+    it is left for manual recovery instead of being nagged forever.
+    """
+    sql = """
+        SELECT id
+        FROM track_onboarding_requests
+        WHERE status <> 'blessed'
+          AND emailed_at IS NOT NULL
+          AND emailed_at < now() - (%(h)s || ' hours')::interval
+          AND email_count < %(max)s
+    """
+    cur = conn.cursor()
+    try:
+        cur.execute(sql, {"h": ttl_hours, "max": max_emails})
+        rows = cur.fetchall()
+    finally:
+        cur.close()
+    ids = []
+    for row in rows:
+        if isinstance(row, dict):
+            ids.append(str(row["id"]))
+        else:
+            ids.append(str(row[0]))
+    return ids
+
+
+def claim_resend(
+    conn: Any, request_id: str, new_jti: str, ttl_hours: int, max_emails: int
+) -> bool:
+    """Compare-and-set claim + record for a resend, atomically.
+
+    Restates the exact same guard predicate as ``find_expired_emailed`` in
+    the ``WHERE`` clause (``status <> 'blessed'``, expired ``emailed_at``,
+    ``email_count < max_emails``) so the claim and the eligibility check are
+    a single atomic statement -- two concurrent beat ticks racing on the
+    same id can never both win: Postgres serializes the two ``UPDATE``s, the
+    first commits, and the second's ``WHERE`` no longer matches (its own
+    ``email_count < max_emails``/``emailed_at`` condition is now stale) and
+    it sees zero rows.
+
+    On a win, ``token_jti``, ``email_count`` (+1), and ``emailed_at`` (reset
+    to ``now()``, restarting this row's expiry clock for the next resend
+    check) are all set in the SAME ``UPDATE`` as the claim -- there is no
+    window where the claim is recorded without the resend already being
+    "spent", so a crash between claiming and actually sending the email can
+    at worst under-count (never double-send).
+
+    Returns True iff a row came back (this caller won the claim and must
+    now send the email for ``new_jti``); False means another beat already
+    claimed it, it's no longer expired, it's over the cap, or it's since
+    been blessed.
+    """
+    sql = """
+        UPDATE track_onboarding_requests
+        SET token_jti = %(jti)s,
+            email_count = email_count + 1,
+            emailed_at = now(),
+            updated_at = now()
+        WHERE id = %(id)s
+          AND status <> 'blessed'
+          AND emailed_at IS NOT NULL
+          AND emailed_at < now() - (%(h)s || ' hours')::interval
+          AND email_count < %(max)s
+        RETURNING id
+    """
+    cur = conn.cursor()
+    try:
+        cur.execute(
+            sql,
+            {"id": request_id, "jti": new_jti, "h": ttl_hours, "max": max_emails},
+        )
+        row = cur.fetchone()
+    finally:
+        cur.close()
+    return row is not None
