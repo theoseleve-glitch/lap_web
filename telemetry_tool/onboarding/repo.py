@@ -242,3 +242,66 @@ def get(conn: Any, request_id: str) -> dict | None:
     if row is None:
         return None
     return _row_to_dict(row)
+
+
+def find_stale_unemailed(conn: Any, older_than_minutes: int = 60) -> list[str]:
+    """IDs of requests stuck mid-flight: not blessed, never emailed, and not
+    touched for ``older_than_minutes`` minutes.
+
+    Backstop for a worker crash between drafting and emailing (e.g. between
+    the ``drafted``/``token_jti`` write and the final ``emailed`` write in
+    ``tasks.onboarding_tasks._run_draft_and_notify``) that would otherwise
+    leave the request un-emailable forever. Used by the ``reconcile_onboarding``
+    beat task.
+    """
+    sql = """
+        SELECT id
+        FROM track_onboarding_requests
+        WHERE status <> 'blessed'
+          AND emailed_at IS NULL
+          AND updated_at < now() - (%(mins)s || ' minutes')::interval
+    """
+    cur = conn.cursor()
+    try:
+        cur.execute(sql, {"mins": older_than_minutes})
+        rows = cur.fetchall()
+    finally:
+        cur.close()
+    ids = []
+    for row in rows:
+        if isinstance(row, dict):
+            ids.append(str(row["id"]))
+        else:
+            ids.append(str(row[0]))
+    return ids
+
+
+def reset_for_retry(conn: Any, request_id: str) -> bool:
+    """Reset a stale request back to ``requested`` so it can be re-drafted.
+
+    Idempotent and guarded exactly like ``set_status``: the
+    ``WHERE id = %(id)s AND status <> 'blessed' AND emailed_at IS NULL``
+    clause means a request that has already been blessed or already emailed
+    is never touched, even if this is called on it by mistake (e.g. a race
+    where the original task finished between ``find_stale_unemailed`` and
+    this call). Clears the drafting artifacts (``draft_status``,
+    ``draft_path``, ``token_jti``) so ``draft_and_notify`` starts clean.
+
+    Returns True iff a row was actually reset (rowcount > 0).
+    """
+    sql = """
+        UPDATE track_onboarding_requests
+        SET status = 'requested',
+            draft_status = NULL,
+            draft_path = NULL,
+            token_jti = NULL,
+            updated_at = now()
+        WHERE id = %(id)s AND status <> 'blessed' AND emailed_at IS NULL
+    """
+    cur = conn.cursor()
+    try:
+        cur.execute(sql, {"id": request_id})
+        rowcount = cur.rowcount
+    finally:
+        cur.close()
+    return bool(rowcount and rowcount > 0)

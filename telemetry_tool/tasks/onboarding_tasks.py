@@ -41,18 +41,21 @@ without a broker:
 
 Dedicated queue: this task is registered directly with ``queue="onboarding"``
 in the decorator -- the same mechanism ``tasks/racing_line_tasks.py`` uses
-for its ``"pipeline"`` queue (a queue set on the task itself, independent of
-``celery_app.py``'s ``task_routes`` dict). ``celery_app.py`` is NOT modified
-by this task: it is not added to that module's ``include=[...]`` list,
-mirroring how Task 9's ``onboarding/reprocess.py`` (a plain function, not a
-Celery task) also left ``celery_app.py`` untouched. Wiring this task's module
-into the worker's ``include`` list (so a real worker process discovers it)
-is worker-deployment plumbing, not part of this task's scope, and is called
-out in the task report.
+for its ``"pipeline"`` queue. As of Task 13c, ``celery_app.py`` ALSO lists
+``"tasks.onboarding_tasks"`` in its ``include=[...]`` (so a real worker
+process discovers/registers this module at all) and mirrors the queue in
+``task_routes`` (``"tasks.onboarding_tasks.*": {"queue": "onboarding"}``),
+matching the belt-and-braces double registration ``tasks.racing_line_tasks``
+already had. A worker still needs to be started with ``-Q onboarding,...``
+to actually consume from that queue.
 
 The real logic lives in :func:`_run_draft_and_notify`, a plain function
 taking an already-open connection, so tests can call it directly without a
-Celery broker or a live Postgres connection.
+Celery broker or a live Postgres connection. ``reconcile_onboarding`` (Task
+13c) follows the identical registration idiom and is registered in
+``celery_app.py``'s ``beat_schedule`` to run every 30 minutes as a backstop
+for requests stuck mid-flight (see the dedicated docstring above its
+implementation, below).
 """
 from __future__ import annotations
 
@@ -73,7 +76,7 @@ from tasks.email_tasks import send_email_async
 
 logger = logging.getLogger(__name__)
 
-__all__ = ["draft_and_notify"]
+__all__ = ["draft_and_notify", "reconcile_onboarding"]
 
 _MAX_RETRIES = 3
 _EMAIL_TEMPLATE = "onboarding_task"
@@ -220,3 +223,72 @@ if _USE_CELERY and _celery_app is not None:
 else:
     def draft_and_notify(request_id: str) -> dict:  # type: ignore[misc]
         return _dispatch(request_id)
+
+
+# ---------------------------------------------------------------------------
+# reconcile_onboarding -- Task 13c beat backstop.
+#
+# A worker crash (or a redelivery race lost to at-least-once semantics)
+# between the ``drafted``/``token_jti`` write and the final ``emailed``
+# write in ``_run_draft_and_notify`` would otherwise leave a request stuck
+# forever: not blessed, never emailed, and no task in flight to retry it.
+# ``reconcile_onboarding`` finds those stale rows (``repo.find_stale_unemailed``,
+# default: untouched for 60+ minutes), resets each back to ``requested`` via
+# ``repo.reset_for_retry`` (a no-op guarded by the same ``status <> 'blessed'
+# AND emailed_at IS NULL`` predicate ``set_status``/``claim_for_drafting``
+# use), and re-enqueues ``draft_and_notify`` for the ones actually reset.
+# Best-effort per id: one id's failure (bad connection state, unexpected
+# repo error, ...) must never abort the rest of the batch -- mirrors the
+# "never raises into the pipeline" contract the module docstring describes
+# for ``_run_draft_and_notify`` itself.
+# ---------------------------------------------------------------------------
+
+_STALE_AFTER_MINUTES = 60
+
+
+def _run_reconcile_onboarding(conn: Any, older_than_minutes: int = _STALE_AFTER_MINUTES) -> dict:
+    """Plain, Celery-free implementation so tests can call it directly."""
+    stale_ids = repo.find_stale_unemailed(conn, older_than_minutes=older_than_minutes)
+    reset_count = 0
+    for request_id in stale_ids:
+        try:
+            if repo.reset_for_retry(conn, request_id):
+                reset_count += 1
+                draft_and_notify.delay(request_id)
+            else:
+                logger.info(
+                    "reconcile_onboarding: request_id=%s no longer resettable "
+                    "(already progressed) -- skipping",
+                    request_id,
+                )
+        except Exception:  # noqa: BLE001 -- one bad id must not sink the batch
+            logger.exception(
+                "reconcile_onboarding: failed to reset/re-drive request_id=%s",
+                request_id,
+            )
+    return {"ok": True, "found": len(stale_ids), "reset": reset_count}
+
+
+def _dispatch_reconcile() -> dict:
+    from web.db_pg import get_maint_connection, return_pg_connection
+
+    conn = get_maint_connection()
+    try:
+        result = _run_reconcile_onboarding(conn)
+        conn.commit()
+        return result
+    finally:
+        return_pg_connection(conn)
+
+
+if _USE_CELERY and _celery_app is not None:
+    @_celery_app.task(
+        name="tasks.onboarding_tasks.reconcile_onboarding",
+        queue="onboarding",
+        acks_late=True,
+    )
+    def reconcile_onboarding() -> dict:
+        return _dispatch_reconcile()
+else:
+    def reconcile_onboarding() -> dict:  # type: ignore[misc]
+        return _dispatch_reconcile()

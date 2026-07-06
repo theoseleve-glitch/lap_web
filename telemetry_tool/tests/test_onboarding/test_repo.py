@@ -36,10 +36,11 @@ _TEST_TRACK_KEY = "T1_onboarding_repo_test"
 # Capturing fake connection that records the SQL + params (no PG needed).
 # ---------------------------------------------------------------------------
 class _CapturingCursor:
-    def __init__(self, sink, fetchone_result=None, rowcount=1):
+    def __init__(self, sink, fetchone_result=None, rowcount=1, fetchall_result=None):
         self._sink = sink
         self._fetchone_result = fetchone_result
         self.rowcount = rowcount
+        self._fetchall_result = fetchall_result if fetchall_result is not None else []
 
     def execute(self, sql, params=None):
         self._sink.append((sql, params))
@@ -47,18 +48,24 @@ class _CapturingCursor:
     def fetchone(self):
         return self._fetchone_result
 
+    def fetchall(self):
+        return self._fetchall_result
+
     def close(self):
         pass
 
 
 class _CapturingConn:
-    def __init__(self, fetchone_result=None, rowcount=1):
+    def __init__(self, fetchone_result=None, rowcount=1, fetchall_result=None):
         self.calls = []
         self._fetchone_result = fetchone_result
         self._rowcount = rowcount
+        self._fetchall_result = fetchall_result
 
     def cursor(self, *a, **k):
-        return _CapturingCursor(self.calls, self._fetchone_result, self._rowcount)
+        return _CapturingCursor(
+            self.calls, self._fetchone_result, self._rowcount, self._fetchall_result
+        )
 
 
 def test_upsert_open_request_sql_shape_no_pg():
@@ -190,6 +197,56 @@ def test_get_decodes_jsonb_columns_no_pg():
     assert result["session_refs"] == ["sess-1"]
 
 
+def test_find_stale_unemailed_sql_shape_no_pg():
+    conn = _CapturingConn(fetchall_result=[{"id": "req-1"}, {"id": "req-2"}])
+    ids = repo.find_stale_unemailed(conn, older_than_minutes=60)
+    assert ids == ["req-1", "req-2"]
+    sql, params = conn.calls[-1]
+    assert "status <> 'blessed'" in sql
+    assert "emailed_at IS NULL" in sql
+    assert "updated_at < now() - (%(mins)s || ' minutes')::interval" in sql
+    assert params["mins"] == 60
+
+
+def test_find_stale_unemailed_default_older_than_60_no_pg():
+    conn = _CapturingConn(fetchall_result=[])
+    repo.find_stale_unemailed(conn)
+    _, params = conn.calls[-1]
+    assert params["mins"] == 60
+
+
+def test_find_stale_unemailed_tuple_rows_no_pg():
+    """Also handle plain tuple rows (PgConnectionWrapper.cursor() shape)."""
+    conn = _CapturingConn(fetchall_result=[("req-1",), ("req-2",)])
+    ids = repo.find_stale_unemailed(conn)
+    assert ids == ["req-1", "req-2"]
+
+
+def test_find_stale_unemailed_empty_no_pg():
+    conn = _CapturingConn(fetchall_result=[])
+    assert repo.find_stale_unemailed(conn) == []
+
+
+def test_reset_for_retry_sql_shape_true_no_pg():
+    conn = _CapturingConn(rowcount=1)
+    ok = repo.reset_for_retry(conn, "req-1")
+    assert ok is True
+    sql, params = conn.calls[-1]
+    assert "SET status = 'requested'" in sql
+    assert "draft_status = NULL" in sql
+    assert "draft_path = NULL" in sql
+    assert "token_jti = NULL" in sql
+    assert "WHERE id = %(id)s AND status <> 'blessed' AND emailed_at IS NULL" in sql
+    assert params["id"] == "req-1"
+
+
+def test_reset_for_retry_zero_rowcount_returns_false_no_pg():
+    """Never touches a blessed or already-emailed row -- the guard predicate
+    means Postgres itself matches zero rows, surfaced here as rowcount=0."""
+    conn = _CapturingConn(rowcount=0)
+    assert repo.reset_for_retry(conn, "req-1") is False
+
+
 # ---------------------------------------------------------------------------
 # Real-PG tests (skip when TELEMETRY_PG_URL unset).
 # ---------------------------------------------------------------------------
@@ -284,6 +341,50 @@ def test_pg_claim_for_drafting_true_once_then_false():
         conn.commit()
         assert repo.claim_for_drafting(conn, req_id) is False
         conn.commit()
+    finally:
+        _cleanup(conn)
+        conn.close()
+
+
+@_skip_no_pg
+def test_pg_find_stale_unemailed_and_reset_for_retry():
+    conn = _make_pg_conn()
+    try:
+        _cleanup(conn)
+        req_id, _ = repo.upsert_open_request(
+            conn, track_key=_TEST_TRACK_KEY, track_label="Test",
+            fingerprint=None, bbox=None, session_ref="sess-1",
+        )
+        conn.commit()
+        repo.set_status(conn, req_id, "drafted", draft_status="sam2", token_jti="jti-1")
+        conn.commit()
+
+        # Fresh row: not yet stale at 60 minutes.
+        assert req_id not in repo.find_stale_unemailed(conn, older_than_minutes=60)
+
+        # Backdate updated_at to simulate a request stuck mid-flight.
+        with conn.cursor() as cur:
+            cur.execute(
+                "UPDATE track_onboarding_requests "
+                "SET updated_at = now() - interval '2 hours' WHERE id = %s",
+                (req_id,),
+            )
+        conn.commit()
+
+        stale = repo.find_stale_unemailed(conn, older_than_minutes=60)
+        assert req_id in stale
+
+        assert repo.reset_for_retry(conn, req_id) is True
+        conn.commit()
+        row = repo.get(conn, req_id)
+        assert row["status"] == "requested"
+        assert row["draft_status"] is None
+        assert row["token_jti"] is None
+
+        # Bless it, then confirm reset_for_retry refuses to touch it.
+        repo.set_status(conn, req_id, "blessed")
+        conn.commit()
+        assert repo.reset_for_retry(conn, req_id) is False
     finally:
         _cleanup(conn)
         conn.close()
