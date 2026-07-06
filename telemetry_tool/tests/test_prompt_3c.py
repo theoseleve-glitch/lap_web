@@ -48,6 +48,7 @@ class TestEmailTemplateRegistry:
             "trial_ending", "payment_failed", "subscription_canceled",
             "payment_recovered", "new_login_location",
             "weekly_summary", "quota_warning", "verification_reminder",
+            "onboarding_task",
         }
         assert set(TEMPLATES.keys()) == expected
 
@@ -192,6 +193,8 @@ class TestEmailTemplateRegistry:
                 "sessions_count": 0, "best_score": 0, "improvement": "0",
                 "feature": "x", "used": 0, "limit": 0,
                 "sessions": [], "display_name": "X",
+                "track_label": "Kerpen", "track_key": "kerpen_ks",
+                "annotator_url": "https://x",
             })
             assert "Email preferences" in html, f"Template {name} missing footer"
 

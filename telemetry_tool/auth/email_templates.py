@@ -318,6 +318,22 @@ def _quota_warning(v: dict) -> tuple[str, str]:
     return f"Approaching your {feature} limit on LAP", _wrap(body)
 
 
+def _onboarding_task(v: dict) -> tuple[str, str]:
+    label = _esc(v["track_label"])
+    key = _esc(v["track_key"])
+    url = v["annotator_url"]
+    body = (
+        _h2("Draw limits for a new track")
+        + _p(f'<strong style="color: #F3F0E8;">{label}</strong> '
+              f'(<code style="color: #F3F0E8;">{key}</code>) is missing ground-truth '
+              f'track limits, so its optimal line can\'t be computed yet.')
+        + _btn(url, "Open annotator")
+        + _small(f'Or copy this link: <code style="color: #F3F0E8;">{_esc(url)}</code>')
+        + _small("If you received more than one link for this track, use the most recent one.")
+    )
+    return f"Draw limits — {v['track_label']}", _wrap(body)
+
+
 # ---------------------------------------------------------------------------
 # Registry
 # ---------------------------------------------------------------------------
@@ -340,6 +356,7 @@ TEMPLATES: dict[str, Callable[[dict], tuple[str, str]]] = {
     "new_login_location": _new_login_location,
     "weekly_summary": _weekly_summary,
     "quota_warning": _quota_warning,
+    "onboarding_task": _onboarding_task,
 }
 
 
