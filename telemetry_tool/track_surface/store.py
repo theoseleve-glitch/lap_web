@@ -175,11 +175,21 @@ def load_track_model(
         if isinstance(sim_sources, str):
             sim_sources = [s.strip() for s in sim_sources.split(",") if s.strip()]
 
+        boundary_source = df["boundary_source"].iloc[0] if "boundary_source" in df.columns else None
+        if not boundary_source:
+            boundary_source = None
+
+        proj_lat_ref = float(df["proj_lat_ref"].iloc[0]) if "proj_lat_ref" in df.columns else None
+        proj_lon_ref = float(df["proj_lon_ref"].iloc[0]) if "proj_lon_ref" in df.columns else None
+
         surface = TrackSurface(
             track_id=track_id,
             frenet=frenet,
             n_laps=n_laps,
             sim_sources=sim_sources,
+            boundary_source=boundary_source,
+            proj_lat_ref=proj_lat_ref,
+            proj_lon_ref=proj_lon_ref,
         )
 
         # Load optional 1D arrays if present
@@ -611,7 +621,11 @@ def _save_surface_parquet(path: Path, surface: TrackSurface) -> None:
         "curvature_1pm": surface.frenet.curvature_1pm,
         "n_laps_accumulated": np.full(n, surface.n_laps),
         "sim_sources": np.full(n, ",".join(surface.sim_sources), dtype=object),
+        "boundary_source": np.full(n, surface.boundary_source or "", dtype=object),
     }
+    if surface.proj_lat_ref is not None and surface.proj_lon_ref is not None:
+        data["proj_lat_ref"] = np.full(n, surface.proj_lat_ref)
+        data["proj_lon_ref"] = np.full(n, surface.proj_lon_ref)
 
     # Add optional 1D arrays
     for col, attr in [
