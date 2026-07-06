@@ -62,9 +62,11 @@ def _score_robustness(
             yaw_ratio, ROBUST_YAW_FULL, ROBUST_YAW_ZERO,
             higher_is_better=False,
         )
+        stability_basis = "measured"
     else:
         stability_r = 0.5
         yaw_ratio   = float("nan")
+        stability_basis = "neutral_no_yaw"
 
     composite = ROBUST_W_FADE * fade_r + ROBUST_W_STABILITY * stability_r
     score     = round(composite * MAX_ROBUSTNESS, 4)
@@ -74,5 +76,6 @@ def _score_robustness(
         "yaw_var_ratio":   round(yaw_ratio, 4) if not math.isnan(yaw_ratio)  else None,
         "fade_ratio":      round(fade_r,    4),
         "stability_ratio": round(stability_r, 4),
+        "stability_basis": stability_basis,
         "n_laps":          n_laps,
     }

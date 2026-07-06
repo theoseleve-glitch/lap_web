@@ -286,3 +286,29 @@ def get_channel_availability(
         "wheel_slip": row["wheel_slip_json"] is not None,
         "fuel": row["fuel_json"] is not None,
     }
+
+
+def get_lap_latlon(
+    conn: sqlite3.Connection,
+    session_id: str,
+) -> dict[int, tuple[list[float], list[float]]]:
+    """Per-lap (latitudes, longitudes) arrays for a session, keyed by lap_number.
+
+    Used by the endurance report to compute GPS-heading yaw variance. Rows with
+    unparseable JSON are skipped rather than failing the whole report.
+    """
+    rows = conn.execute(
+        "SELECT lap_number, latitudes_json, longitudes_json "
+        "FROM gps_traces WHERE session_id = :session_id ORDER BY lap_number;",
+        {"session_id": session_id},
+    ).fetchall()
+    out: dict[int, tuple[list[float], list[float]]] = {}
+    for row in rows:
+        try:
+            lats = _parse_json_or_list(row["latitudes_json"])
+            lons = _parse_json_or_list(row["longitudes_json"])
+        except (TypeError, ValueError):
+            continue
+        if lats and lons:
+            out[int(row["lap_number"])] = (lats, lons)
+    return out

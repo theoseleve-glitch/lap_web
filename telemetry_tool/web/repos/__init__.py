@@ -94,6 +94,14 @@ from web.repos.score_repo import (  # noqa: F401
     get_corner_metrics_summary,
 )
 
+# ── reflection / competitors (W3) ───────────────────────────────
+from web.repos.reflection_repo import (  # noqa: F401
+    upsert_reflection,
+    get_reflection,
+    replace_competitors,
+    get_competitors,
+)
+
 # ── theoretical / reference ─────────────────────────────────────
 from web.repos.theoretical_repo import (  # noqa: F401
     insert_theoretical_data,

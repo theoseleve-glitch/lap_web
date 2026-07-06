@@ -35,6 +35,7 @@ interface SessionDebriefProps {
   scores: ScoreData | null;
   laps: LapData[];
   corners: CornerData[];
+  contextNote?: string | null;
 }
 
 function fmtTime(s: number): string {
@@ -130,7 +131,7 @@ function buildDrills(scores: ScoreData | null): string[] {
   return drills;
 }
 
-export function SessionDebrief({ totalScore, grade, scores, laps, corners }: SessionDebriefProps) {
+export function SessionDebrief({ totalScore, grade, scores, laps, corners, contextNote }: SessionDebriefProps) {
   const summary = buildSummary(totalScore, grade, scores);
   const highlights = buildHighlights(laps);
   const focusAreas = buildFocusAreas(corners);
@@ -147,6 +148,13 @@ export function SessionDebrief({ totalScore, grade, scores, laps, corners }: Ses
         <h3 className="text-xs text-steel font-body uppercase tracking-wider mb-2">Performance Summary</h3>
         <p className="text-sm text-chalk/90 font-body leading-relaxed">{summary}</p>
       </div>
+
+      {contextNote && (
+        <div className="mb-4">
+          <h3 className="text-xs text-steel font-body uppercase tracking-wider mb-2">In context</h3>
+          <p className="text-sm text-chalk/90 font-body leading-relaxed">{contextNote}</p>
+        </div>
+      )}
 
       {/* Key Highlights */}
       {highlights.length > 0 && (

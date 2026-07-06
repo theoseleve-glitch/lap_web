@@ -267,6 +267,50 @@ ORDER BY phase_id;
 """
 
 # ------------------------------------------------------------------
+# Reflection + competitors (W3)
+# ------------------------------------------------------------------
+
+UPDATE_SESSION_REFLECTION = """
+UPDATE sessions SET
+    result_tags                 = :result_tags,
+    driver_perceived_conditions = :driver_perceived_conditions,
+    felt_performance_rating     = :felt_performance_rating,
+    race_position               = :race_position,
+    race_total_competitors      = :race_total_competitors,
+    race_gap_to_leader_s        = :race_gap_to_leader_s,
+    race_gap_to_nearest_s       = :race_gap_to_nearest_s,
+    race_laps_completed         = :race_laps_completed,
+    race_is_dnf                 = :race_is_dnf
+WHERE session_id = :session_id;
+"""
+
+SELECT_SESSION_REFLECTION = """
+SELECT result_tags, driver_perceived_conditions, felt_performance_rating,
+       race_position, race_total_competitors, race_gap_to_leader_s,
+       race_gap_to_nearest_s, race_laps_completed, race_is_dnf
+FROM sessions WHERE session_id = :session_id;
+"""
+
+INSERT_SESSION_COMPETITOR = """
+INSERT INTO session_competitors (
+    session_id, competitor_name, final_position, gap_to_this_driver_s, notes
+) VALUES (
+    :session_id, :competitor_name, :final_position, :gap_to_this_driver_s, :notes
+);
+"""
+
+SELECT_SESSION_COMPETITORS = """
+SELECT id, competitor_name, final_position, gap_to_this_driver_s, notes
+FROM session_competitors
+WHERE session_id = :session_id
+ORDER BY final_position IS NULL, final_position, id;
+"""
+
+DELETE_SESSION_COMPETITORS = """
+DELETE FROM session_competitors WHERE session_id = :session_id;
+"""
+
+# ------------------------------------------------------------------
 # Dashboard aggregates
 # ------------------------------------------------------------------
 

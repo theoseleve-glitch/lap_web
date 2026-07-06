@@ -949,6 +949,58 @@ def get_scores(session_id: str) -> tuple[dict, int]:
         scores["friction_envelope_available"] = False
         scores["optimal_v2_available"] = False
 
+    # ── Tiered honest output: absolute · contextualized · competition ──
+    try:
+        from scoring import build_tiered_scores, compute_competition_score
+        from web.repos.reflection_repo import get_reflection, get_competitors
+
+        # Reconstruct the base result shape build_tiered_scores expects.
+        _default_sub_max = {
+            "pace": 25.0, "consistency": 25.0, "execution": 20.0,
+            "robustness": 15.0, "adaptation": 15.0,
+        }
+        base_sub_scores = {}
+        for cat in ("pace", "consistency", "execution", "robustness", "adaptation"):
+            base_sub_scores[cat] = {
+                "score": float(scores.get(f"{cat}_score") or 0.0),
+                "max": float(scores.get(f"{cat}_max") or _default_sub_max[cat]),
+            }
+        base_result = {
+            "total_score": float(session.get("total_score") or 0.0),
+            "grade": session.get("grade"),
+            "sub_scores": base_sub_scores,
+        }
+
+        reflection = get_reflection(conn, session_id)
+        reflection["track_state"] = session.get("track_state") or "dry"
+        competitors = get_competitors(conn, session_id)
+
+        competition = compute_competition_score(reflection, competitors)
+        scores["tiers"] = build_tiered_scores(
+            base_result, feeling=reflection, competition=competition,
+        )
+        # Echo stored reflection so the UI form can prefill.
+        scores["reflection"] = reflection
+        scores["reflection"]["competitors"] = competitors
+        # Weather transparency: track_state is manual; note whether weather is on record.
+        scores["weather_on_record"] = bool(session.get("weather_json"))
+    except Exception:
+        logger.warning("Tier assembly failed for session %s", session_id, exc_info=True)
+        scores["tiers"] = {
+            "absolute": {
+                "total_score": session.get("total_score"),
+                "grade": session.get("grade"),
+                "sub_scores": {},
+            },
+            "contextualized": {
+                "total_score": session.get("total_score"),
+                "grade": session.get("grade"),
+                "adjustments": [], "provenance": [],
+            },
+            "competition": None,
+            "reflection_present": False,
+        }
+
     return api_response(scores)
 
 
@@ -2598,6 +2650,68 @@ def update_session(session_id: str) -> tuple[dict, int]:
     tname = (updated.get("track_name") or "").strip()
     updated["track_unnamed"] = bool(tid and (not tname or tname == tid))
     return api_response(updated)
+
+
+# ══════════════════════════════════════════════════════════════════
+# 12a2. POST /api/v1/sessions/<id>/reflection — driver feeling + competitors
+# ══════════════════════════════════════════════════════════════════
+
+
+@bp.route("/sessions/<session_id>/reflection", methods=["POST"])
+@_safe_api
+def save_reflection(session_id: str) -> tuple[dict, int]:
+    """Persist the driver's post-session reflection + self-reported competitors."""
+    from scoring import RESULT_TAGS
+    from web.repos.reflection_repo import upsert_reflection, replace_competitors
+
+    conn = get_db_connection()
+    session = models.get_session_by_id(conn, session_id)
+    if session is None:
+        return api_error(ErrorCode.NOT_FOUND, "Session not found", status=404)
+
+    body = request.get_json(silent=True) or {}
+
+    # ── Validate result tags ──
+    tags = body.get("result_tags") or []
+    if not isinstance(tags, list) or any(str(t).lower() not in RESULT_TAGS for t in tags):
+        return api_error(
+            ErrorCode.VALIDATION_ERROR,
+            f"result_tags must be a subset of {sorted(RESULT_TAGS)}",
+            status=400,
+        )
+    tags = [str(t).lower() for t in tags]
+
+    # ── Validate felt rating ──
+    rating = body.get("felt_performance_rating")
+    if rating is not None:
+        try:
+            rating = int(rating)
+        except (TypeError, ValueError):
+            return api_error(ErrorCode.VALIDATION_ERROR, "felt_performance_rating must be an integer", status=400)
+        if not (1 <= rating <= 10):
+            return api_error(ErrorCode.VALIDATION_ERROR, "felt_performance_rating must be 1-10", status=400)
+
+    # ── Validate competitors ──
+    competitors = body.get("competitors") or []
+    if not isinstance(competitors, list) or len(competitors) > 50:
+        return api_error(ErrorCode.VALIDATION_ERROR, "competitors must be a list of at most 50", status=400)
+
+    upsert_reflection(conn, session_id, {
+        "result_tags": tags,
+        "driver_perceived_conditions": (body.get("driver_perceived_conditions") or None),
+        "felt_performance_rating": rating,
+        "race_position": body.get("race_position"),
+        "race_total_competitors": body.get("race_total_competitors"),
+        "race_gap_to_leader_s": body.get("race_gap_to_leader_s"),
+        "race_gap_to_nearest_s": body.get("race_gap_to_nearest_s"),
+        "race_laps_completed": body.get("race_laps_completed"),
+        "race_is_dnf": ("dnf" in tags or "crashed" in tags) or body.get("race_is_dnf"),
+    })
+    n = replace_competitors(conn, session_id, competitors)
+    audit_log(conn, "session.reflection", {"session_id": session_id, "competitors": n})
+    conn.commit()
+
+    return api_response({"saved": True, "competitors": n})
 
 
 # ══════════════════════════════════════════════════════════════════
@@ -7342,11 +7456,17 @@ def get_endurance_report(session_id: str) -> tuple[dict, int]:
     laps = models.get_laps_for_session(conn, session_id)
     all_laps = [dict(l) for l in laps]
 
+    # Per-lap GPS for heading-derived yaw variance (robustness stability).
+    from web.repos.gps_repo import get_lap_latlon
+    gps_by_lap = get_lap_latlon(conn, session_id)
+
     # Score each stint
     stint_scores = {}
     for stint in stints:
         condition = stint.get("condition") or "dry"
-        stint_scores[stint["stint_number"]] = compute_stint_scores(all_laps, stint, condition)
+        stint_scores[stint["stint_number"]] = compute_stint_scores(
+            all_laps, stint, condition, gps_by_lap=gps_by_lap,
+        )
 
     # Group stints by driver
     driver_stints: dict[str, list] = {}
