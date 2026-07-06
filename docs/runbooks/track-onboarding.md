@@ -73,6 +73,7 @@ request reaches `blessed` — enforced by the partial unique index
 | `ONBOARDING_TOKEN_TTL_HOURS` | Token lifetime in hours. | Falls back to a **default of 72 hours** (`tokens._DEFAULT_TTL_HOURS`); also falls back on an unparseable value. |
 | `ONBOARDING_OPERATOR_EMAIL` | Recipient of the draft-ready notification and the `reviewed_by` identity stamped by the web `/save` route (`onboarding:<email>`). | Inside `_run_draft_and_notify`, missing/empty is caught right before the email is built and transitions the request to `draft_failed` (reclaimable, no raise, no worker retry/dead-letter) — see the module docstring. The `/save` route still reads it via bare `os.environ[...]` (no default) and raises `KeyError` if unset. |
 | `ANNOTATOR_HOST` | Base URL of the annotator webapp; the emailed link is `{ANNOTATOR_HOST}/?req=<id>#token=<raw_token>`. | Same `draft_failed`-not-raise handling in `_run_draft_and_notify` as `ONBOARDING_OPERATOR_EMAIL` above. |
+| `CORS_ALLOWED_ORIGINS` | Backend CORS allowlist; must include the annotator origin (same value as `ANNOTATOR_HOST`) or the annotator webapp's browser `fetch()` to `/api/v1/onboarding/save` (and other onboarding API calls) is blocked by CORS. | If the annotator origin is missing, the operator's browser silently fails the save with a CORS error — no server-side error or status change; only visible in the browser console/network tab. |
 | `GT_RUNTIME_DIR` | Durable, writable directory for blessed runtime GT (see §4). | `bless_geometry` explicitly refuses and returns a `gt_runtime_dir_unset` rejection ("refusing to install (fail-closed)") — no install happens. |
 | `ONBOARDING_DRAFT_DIR` | Where auto-drafted (pre-bless) geojson files are written/read (`draft.save_draft`/`load_draft`). | Falls back to `{GT_RUNTIME_DIR}/../onboarding_drafts` if `GT_RUNTIME_DIR` is set, else the OS temp dir (`lap_onboarding_drafts`) — i.e. drafts land somewhere non-durable unless one of the two is set. |
 | `ONBOARDING_TRACKRECO_DIR` | Path override for the sibling `trackreco-main` checkout (SAM2 draft script location). | Falls back to a hardcoded local path (`C:\Users\Admin\Documents\Telemetry\Analysis\trackreco-main`) that only exists on the dev machine; on any other host, `sam2_draft` logs "trackreco-main checkout not found" and returns `None`, so drafting degrades to GPS-only (never raises). |
@@ -177,7 +178,10 @@ order:
    — check worker startup logs/args, not just that *a* worker is running.
 4. Set every env var in §2 in the deploy environment.
 5. Confirm the `GT_RUNTIME_DIR` volume is mounted and persistent (survives
-   a container restart/redeploy) — see §4.
+   a container restart/redeploy) — see §4. Also confirm `ONBOARDING_DRAFT_DIR`
+   is mounted on a persistent volume (not ephemeral container storage) —
+   otherwise in-flight drafts are lost on redeploy before the operator has a
+   chance to correct and submit them.
 
 ## 6. Operator gating
 
