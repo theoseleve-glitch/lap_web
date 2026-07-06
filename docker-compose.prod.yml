@@ -155,6 +155,49 @@ services:
     networks:
       - internal
 
+  # Dedicated worker for endurance analysis jobs (fix: these used to run on
+  # `celery-pipeline` and could pin that shared queue for up to 35 min per
+  # job — SIGKILLed by the blanket --time-limit before their own 60-min soft
+  # limit could fire — stalling every other customer's ordinary uploads.
+  # Isolated onto its own queue + worker with bounded concurrency=1 so an
+  # endurance job can never starve the pipeline queue again. Limits mirror
+  # tasks/endurance_tasks.py ENDURANCE_SOFT_TIME_LIMIT_S / ENDURANCE_HARD_TIME_LIMIT_S.
+  celery-endurance:
+    build: .
+    command: >
+      celery -A telemetry_tool.celery_app worker
+      -Q endurance
+      --concurrency=1
+      --soft-time-limit=3600
+      --time-limit=3900
+      --max-tasks-per-child=20
+      -l info
+    env_file: .env.production
+    environment:
+      TELEMETRY_LOG_FORMAT: json
+      SENTRY_DSN_WORKER: ${SENTRY_DSN_WORKER}
+      SENTRY_ENVIRONMENT: production
+      SIDECAR_ROOT: /data/sidecars
+    volumes:
+      - upload_data:/data/uploads
+      - parquet_data:/data/parquet
+      - models_data:/data/models
+      - sidecar_data:/data/sidecars
+    healthcheck:
+      test: ["CMD-SHELL", "celery -A telemetry_tool.celery_app inspect ping --timeout 5"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 15s
+    depends_on:
+      redis:
+        condition: service_healthy
+      postgres:
+        condition: service_healthy
+    restart: unless-stopped
+    networks:
+      - internal
+
   celery-beat:
     build: .
     command: >

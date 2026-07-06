@@ -9,17 +9,57 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
+from celery.exceptions import SoftTimeLimitExceeded
+
 from celery_app import celery as celery_app
+from tasks.concurrency import _ACQUIRE_LOCK_LUA, _RELEASE_LOCK_LUA
 
 logger = logging.getLogger(__name__)
+
+# ── Per-task time limits (own `endurance` queue — routed in celery_app.py) ──
+# Root cause of the original starvation bug: this task used to declare only
+# soft_time_limit=3600 with no explicit hard time_limit. Celery then fell
+# back to the WORKER's blanket --time-limit for the hard kill, and on the
+# shared `pipeline` queue that was 2100s (35 min) — well under this task's
+# own 60-minute soft limit, so the hard SIGKILL always fired first and the
+# soft limit's graceful-failure path never got a chance to run. Both limits
+# are now explicit here (hard > soft) and mirrored by the dedicated
+# `celery-endurance` worker's --soft-time-limit/--time-limit flags in
+# docker-compose.prod.yml / docker-compose.staging.yml.
+ENDURANCE_SOFT_TIME_LIMIT_S = 3600  # 60 min — generous per-stint pipeline runs
+ENDURANCE_HARD_TIME_LIMIT_S = 3900  # 65 min — same 300s cleanup-margin
+                                     # convention as tasks.pipeline_tasks.HARD_LIMIT_MARGIN_S
+
+# Lock TTL must outlive the hard limit (plus headroom for the failure-path
+# publish to run) so a genuinely still-running job keeps its lock at least
+# as long as Celery would let it run anyway.
+_JOB_LOCK_TTL_S = ENDURANCE_HARD_TIME_LIMIT_S + 60
+
+
+def _acquire_job_lock(redis_client, job_id: str, owner: str, ttl: int = _JOB_LOCK_TTL_S) -> bool:
+    """Re-entrant per-job lock (same atomic Lua pattern as tasks.concurrency's
+    workspace lock, keyed by job_id instead of workspace_id).
+
+    Prevents a double /process submit or a broker redelivery of the same
+    endurance job from running two overlapping analyses concurrently.
+    """
+    key = f"endurance:runlock:{job_id}"
+    result = redis_client.eval(_ACQUIRE_LOCK_LUA, 1, key, owner, str(ttl))  # noqa: S307
+    return bool(result)
+
+
+def _release_job_lock(redis_client, job_id: str, owner: str) -> None:
+    """Atomically release the per-job lock only if `owner` still holds it."""
+    key = f"endurance:runlock:{job_id}"
+    redis_client.eval(_RELEASE_LOCK_LUA, 1, key, owner)  # noqa: S307
 
 
 @celery_app.task(
     name="tasks.endurance_tasks.process_endurance_session",
-    queue="pipeline",
     bind=True,
     max_retries=0,
-    soft_time_limit=3600,
+    soft_time_limit=ENDURANCE_SOFT_TIME_LIMIT_S,
+    time_limit=ENDURANCE_HARD_TIME_LIMIT_S,
 )
 def process_endurance_session(
     self,
@@ -27,12 +67,81 @@ def process_endurance_session(
     meta: dict[str, Any],
     stint_configs: list[dict[str, Any]],
 ) -> dict[str, Any]:
-    """Process each stint through the pipeline, then aggregate."""
+    """Process each stint through the pipeline, then aggregate.
+
+    Routed to the dedicated `endurance` queue (see celery_app.py task_routes)
+    so a long-running endurance analysis can never pin the shared `pipeline`
+    queue and stall ordinary customers' uploads.
+    """
     import redis as _redis
     from web.config import Config
 
     _r = _redis.Redis.from_url(Config.REDIS_URL)
+    lock_owner = self.request.id or job_id
 
+    # Idempotency guard — see _acquire_job_lock docstring.
+    if not _acquire_job_lock(_r, job_id, lock_owner):
+        logger.warning(
+            "Endurance job %s already running (lock held) — skipping duplicate dispatch",
+            job_id,
+        )
+        return {"job_id": job_id, "skipped": True, "reason": "duplicate_run"}
+
+    try:
+        # Also skip outright if a prior attempt already reached a terminal
+        # state — handles the rare case where a hard-killed task's message
+        # was redelivered after that attempt's lock had already expired.
+        existing_raw = _r.get(f"endurance:status:{job_id}")
+        existing_status = None
+        if existing_raw:
+            try:
+                existing_status = json.loads(existing_raw).get("status")
+            except (json.JSONDecodeError, TypeError, AttributeError):
+                existing_status = None
+        if existing_status in ("completed", "failed"):
+            logger.info(
+                "Endurance job %s already %s — skipping redelivered run",
+                job_id, existing_status,
+            )
+            return {"job_id": job_id, "skipped": True, "reason": f"already_{existing_status}"}
+
+        return _run_endurance_session(_r, job_id, meta, stint_configs)
+    except SoftTimeLimitExceeded:
+        logger.error(
+            "Endurance job %s exceeded its %ss soft time limit — marking failed",
+            job_id, ENDURANCE_SOFT_TIME_LIMIT_S,
+        )
+        _publish(_r, job_id, {
+            "status": "failed",
+            "job_id": job_id,
+            "error": (
+                "This endurance analysis took too long to process and was stopped. "
+                "Try splitting the session into fewer stints, or contact support "
+                "if this keeps happening."
+            ),
+            "error_class": "timeout",
+        })
+        # Deliberately swallowed: returning normally (not re-raising) lets
+        # Celery ack the message as done, so acks_late / task_reject_on_worker_lost
+        # never get a chance to redeliver a job we've already failed cleanly.
+        return {"job_id": job_id, "failed": True, "error_class": "timeout"}
+    finally:
+        _release_job_lock(_r, job_id, lock_owner)
+
+
+def _run_endurance_session(
+    _r,
+    job_id: str,
+    meta: dict[str, Any],
+    stint_configs: list[dict[str, Any]],
+) -> dict[str, Any]:
+    """The actual per-stint processing + aggregation body.
+
+    Split out from the task entry point so the idempotency lock and the
+    SoftTimeLimitExceeded handler wrap the whole thing from the outside, and
+    so tests can exercise this logic without going through Celery's task
+    binding machinery.
+    """
     file_path = meta["file_path"]
     session_meta = meta.get("session_meta", {})
     total_stints = len(stint_configs)
@@ -102,6 +211,14 @@ def process_endurance_session(
                 "lap_count": result.get("lap_count"),
             }
             _publish_full("stint_complete")
+        except SoftTimeLimitExceeded:
+            # Do NOT swallow this as a per-stint error — that used to let the
+            # loop continue to the next stint instead of stopping, so a
+            # timed-out job kept burning worker time until the HARD limit
+            # SIGKILLed the whole process with no job ever marked failed.
+            # Re-raise so the task-level handler in process_endurance_session
+            # marks the whole job failed and stops cleanly.
+            raise
         except Exception as exc:
             logger.exception("Failed to process stint %d", stint_num)
             stint_statuses[i] = {**stint_statuses[i], "status": "error", "error": str(exc)[:200]}

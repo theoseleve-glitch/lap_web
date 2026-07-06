@@ -14,6 +14,16 @@ from web.rate_limit import rate_limit
 logger = logging.getLogger(__name__)
 bp = Blueprint("endurance_upload", __name__, url_prefix="/api/v1/endurance")
 
+# Hard ceiling on a single endurance submission's compute footprint. Each
+# stint runs the FULL analysis pipeline (run_full_analysis), so a request
+# with an unbounded stint/lap count could alone consume the whole endurance
+# task's time budget (tasks.endurance_tasks.ENDURANCE_SOFT_TIME_LIMIT_S) and
+# starve the rest of that customer's own race. This is independent of the
+# shared per-tier compute budget below, which caps concurrent JOBS, not the
+# size of any single job.
+MAX_STINTS_PER_SUBMISSION = 60
+MAX_TOTAL_LAPS_PER_SUBMISSION = 3000
+
 
 @bp.route("/detect", methods=["POST"])
 @rate_limit(tier="write")
@@ -90,6 +100,34 @@ def process_stints():
         if not job_id or not stint_configs:
             return api_error(ErrorCode.VALIDATION_ERROR, "job_id and stints required", status=400)
 
+        # Hard cap on stint/lap count — bounds one job's worst-case compute
+        # regardless of plan tier (see MAX_STINTS_PER_SUBMISSION docstring).
+        if len(stint_configs) > MAX_STINTS_PER_SUBMISSION:
+            return api_error(
+                ErrorCode.VALIDATION_ERROR,
+                f"Too many stints requested ({len(stint_configs)} > "
+                f"{MAX_STINTS_PER_SUBMISSION} max per submission)",
+                status=400,
+            )
+
+        total_laps_requested = 0
+        for sc in stint_configs:
+            valid_laps = sc.get("valid_laps")
+            if valid_laps:
+                total_laps_requested += len(valid_laps)
+            else:
+                start_lap = sc.get("start_lap") or 0
+                end_lap = sc.get("end_lap") or 0
+                total_laps_requested += max(0, end_lap - start_lap + 1)
+
+        if total_laps_requested > MAX_TOTAL_LAPS_PER_SUBMISSION:
+            return api_error(
+                ErrorCode.VALIDATION_ERROR,
+                f"Too many total laps requested ({total_laps_requested} > "
+                f"{MAX_TOTAL_LAPS_PER_SUBMISSION} max per submission)",
+                status=400,
+            )
+
         import redis as _redis
         from web.config import Config
         _r = _redis.Redis.from_url(Config.REDIS_URL)
@@ -110,7 +148,12 @@ def process_stints():
         # Fail-open: never block a legitimate endurance run on a metering error.
         try:
             from web.compute_budget import check_shared_compute_budget
-            from web.db import get_conn
+            # NOTE: web.db exports `get_db_connection` (dual-mode: PG when
+            # USE_PG=1, else SQLite) — there is no `get_conn` symbol. The
+            # previous `from web.db import get_conn` raised ImportError on
+            # every call, silently swallowed by the except below, so this
+            # budget check has never actually run in production.
+            from web.db import get_db_connection as get_conn
             _ws = int(meta.get("workspace_id") or 0)
             _uid = getattr(g, "current_user_id", 0) or 0
             allowed, info = check_shared_compute_budget(

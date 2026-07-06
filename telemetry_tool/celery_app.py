@@ -68,11 +68,24 @@ def make_celery(app=None) -> Celery:
         task_acks_late=True,
         task_reject_on_worker_lost=True,
         result_expires=86400,  # 24 hours
+        # Redis broker visibility_timeout: must be >= the longest-running
+        # task's HARD time limit, or Redis will consider an unacked message
+        # "lost" and redeliver it to a second worker while the first one is
+        # still legitimately processing it — a second concurrent run purely
+        # from the broker side, independent of any crash. Endurance's hard
+        # limit is 3900s (see tasks.endurance_tasks.ENDURANCE_HARD_TIME_LIMIT_S,
+        # not imported here to avoid a celery_app <-> tasks.endurance_tasks
+        # circular import; kept in sync by
+        # tests/test_endurance_isolation.py::test_visibility_timeout_covers_endurance_hard_limit).
+        # Redis' own default is 3600s, which is BELOW that hard limit — part
+        # of the original queue-starvation bug.
+        broker_transport_options={"visibility_timeout": 4200},
         task_routes={
             "tasks.pipeline_tasks.*": {"queue": "pipeline"},
             "tasks.training_tasks.*": {"queue": "pipeline"},
             "tasks.ocp_tasks.*": {"queue": "pipeline"},
             "tasks.batch_tasks.*": {"queue": "default"},
+            "tasks.endurance_tasks.*": {"queue": "endurance"},
         },
         task_default_queue="default",
         # Beat schedule for periodic tasks
