@@ -64,12 +64,25 @@ _FEATURE_GATES: list[tuple] = [
     ("POST", "/api/data/what-if", "race_strategy"),
     ("POST", "/api/data/weight-simulation", "race_strategy"),
     ("POST", "/api/data/weight-scenarios", "race_strategy"),
+
+    # Track-surface analysis run — Racer+. Reuses "race_strategy" (no
+    # dedicated feature column exists for this newer app yet) — same class
+    # of expensive, paid solver compute as the Simulations gates above.
+    ("POST", "/api/v1/track-surface/sessions/", "race_strategy", "/run"),
+
+    # Per-corner OCP solver — Racer+. Runs solve_ocp_segment synchronously
+    # per corner x lap on the web worker; same gate class as Simulations.
+    ("POST", "/api/v1/sessions/", "race_strategy", "/ocp-corner"),
 ]
 
 # ── Route → Quota mapping ────────────────────────────────────────────
-# Each entry: (method, path_pattern, meter_key, cost)
+# Each entry: (method, path_pattern, meter_key, cost[, required_suffix])
+# The optional 5th element mirrors _FEATURE_GATES' suffix mechanism above —
+# needed so a broad prefix like "/api/v1/sessions/" can be scoped to one
+# sub-path (e.g. "/ocp-corner") without also matching unrelated POSTs under
+# the same prefix (upload, endurance-race, etc).
 
-_QUOTA_GATES: list[tuple[str, str, str, int]] = [
+_QUOTA_GATES: list[tuple] = [
     # Every upload runs the full pipeline inline — one unified "analyses" meter
     ("POST", "/api/v1/sessions/upload", "analyses", 1),
     ("POST", "/api/data/files/upload", "analyses", 1),
@@ -78,6 +91,12 @@ _QUOTA_GATES: list[tuple[str, str, str, int]] = [
     ("POST", "/analyze/api/start", "analyses", 1),
     ("POST", "/analyze/sync", "analyses", 1),
     ("POST", "/api/v1/batch-reanalyze", "analyses", 1),
+
+    # Track-surface analysis run + per-corner OCP solve — same "analyses"
+    # meter as the rest of the compute pipeline above (no distinct
+    # solver_compute meter exists in _METER_TO_QUOTA yet).
+    ("POST", "/api/v1/track-surface/sessions/", "analyses", 1, "/run"),
+    ("POST", "/api/v1/sessions/", "analyses", 1, "/ocp-corner"),
 ]
 
 # ── Paths explicitly excluded from gating ────────────────────────────
@@ -133,6 +152,15 @@ _ACTION_CATEGORY_OVERRIDES: list[tuple[str, str, str]] = [
     ("POST", "/api/v1/exports/", "EXPORT"),
     ("POST", "/api/data/export/", "EXPORT"),
     ("GET", "/api/v1/exports/", "EXPORT"),
+    # Track-surface analysis run is the only POST under this prefix, so a
+    # plain prefix match is safe here (no suffix support in this list).
+    # (The per-corner OCP solver at /api/v1/sessions/<id>/ocp-corner is left
+    # unclassified deliberately: _classify_action()'s default for POST is
+    # "API_WRITE", which has identical values to "COMPUTE" in every row of
+    # GRACE_POLICY today, and /api/v1/sessions/ is too broad a prefix to add
+    # here without a suffix mechanism — it would also swallow /upload and
+    # /endurance-race, which are already classified above/elsewhere.)
+    ("POST", "/api/v1/track-surface/sessions/", "COMPUTE"),
 ]
 
 
@@ -244,8 +272,12 @@ def entitlement_middleware():
     if workspace_id is None:
         return  # No workspace context — quota checks need workspace
 
-    for gate_method, gate_prefix, meter_key, cost in _QUOTA_GATES:
+    for gate_entry in _QUOTA_GATES:
+        gate_method, gate_prefix, meter_key, cost = gate_entry[0], gate_entry[1], gate_entry[2], gate_entry[3]
+        gate_suffix = gate_entry[4] if len(gate_entry) > 4 else None
         if method == gate_method and path.startswith(gate_prefix):
+            if gate_suffix and not path.endswith(gate_suffix):
+                continue
             from auth.entitlements import (
                 _get_conn,
                 _quota_exceeded_response,

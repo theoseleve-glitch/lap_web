@@ -2998,6 +2998,15 @@ def get_corner_positions(session_id: str) -> tuple[dict, int]:
 # 16b. POST /api/v1/sessions/<id>/ocp-corner — Per-corner OCP solve
 # ══════════════════════════════════════════════════════════════════
 
+# This runs synchronously on the web-worker thread (not dispatched to
+# Celery), so its worst-case cost is corners_requested x laps_in_session
+# boundary-value solves (solve_ocp_segment, max_iter=200 each). Both caps
+# are hard ceilings independent of plan tier — see
+# web/routes/endurance_upload.py's MAX_STINTS_PER_SUBMISSION for the same
+# pattern applied to the endurance pipeline.
+MAX_OCP_CORNER_IDS_PER_REQUEST = 20
+MAX_OCP_TOTAL_SOLVES_PER_REQUEST = 500  # corners_matched * laps_considered
+
 
 @bp.route("/sessions/<session_id>/ocp-corner", methods=["POST"])
 @_safe_api
@@ -3022,6 +3031,14 @@ def solve_ocp_corner(session_id: str) -> tuple[dict, int]:
         return api_error(ErrorCode.VALIDATION_ERROR,
                          "corner_ids is required (list of ints)", status=400)
 
+    if len(corner_ids) > MAX_OCP_CORNER_IDS_PER_REQUEST:
+        return api_error(
+            ErrorCode.VALIDATION_ERROR,
+            f"Too many corner_ids requested ({len(corner_ids)} > "
+            f"{MAX_OCP_CORNER_IDS_PER_REQUEST} max per request)",
+            status=400,
+        )
+
     conn = get_db_connection()
     session = models.get_session_by_id(conn, session_id)
     if session is None:
@@ -3033,6 +3050,8 @@ def solve_ocp_corner(session_id: str) -> tuple[dict, int]:
         logger.warning("OCP solver not available: %s", e)
         return api_error(ErrorCode.INTERNAL_ERROR,
                          "OCP solver dependencies not installed", status=503)
+    except ValueError as e:
+        return api_error(ErrorCode.VALIDATION_ERROR, str(e), status=400)
     except Exception:
         logger.exception("OCP corner solve failed for session %s", session_id)
         return api_error(ErrorCode.INTERNAL_ERROR,
@@ -3126,6 +3145,17 @@ def _run_corner_ocp(conn, session_id: str, corner_ids: list[int]) -> dict:
     laps = lap_repo.get_laps_for_session(conn, session_id)
     if not laps:
         return {"corner_results": [], "full_lap_ocp": None, "error": "No laps found"}
+
+    # Hard cap on total solver work (corners_matched x laps): an endurance
+    # session can have hundreds of laps, and each corner x lap pair is a
+    # boundary-value OCP solve run synchronously on this web-worker thread.
+    total_solves = len(corner_map) * len(laps)
+    if total_solves > MAX_OCP_TOTAL_SOLVES_PER_REQUEST:
+        raise ValueError(
+            f"OCP solve request too large: {len(corner_map)} corners x "
+            f"{len(laps)} laps = {total_solves} solves exceeds max "
+            f"{MAX_OCP_TOTAL_SOLVES_PER_REQUEST} per request"
+        )
 
     best_lap_num = None
     for lap in laps:

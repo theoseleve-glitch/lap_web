@@ -26,6 +26,7 @@ from web.api_utils import (
     api_error,
     api_response,
 )
+from web.rate_limit import rate_limit
 from web.schemas.track_surface import (
     ResolveSupportParams,
     RunAnalysisRequest,
@@ -56,8 +57,15 @@ def inject_support_matrix(matrix: SupportMatrix) -> None:
 def _get_conn():
     if _CONN_FACTORY is not None:
         return _CONN_FACTORY()
-    from web.db import get_conn
-    return get_conn()
+    # NOTE: web.db exports `get_db_connection` (dual-mode: PG when USE_PG=1,
+    # else SQLite) — there is no `get_conn` symbol. The previous
+    # `from web.db import get_conn` raised ImportError on every call,
+    # silently swallowed by the broad `except Exception` around the shared
+    # compute-budget check in run_analysis(), so that check has never
+    # actually run in production (see web/routes/endurance_upload.py for
+    # the same bug, fixed the same way).
+    from web.db import get_db_connection
+    return get_db_connection()
 
 
 def _get_matrix() -> SupportMatrix:
@@ -138,6 +146,7 @@ def _require_run(session_id: int):
 # ── POST /sessions/<sid>/run ────────────────────────────────
 
 @bp.route("/sessions/<int:session_id>/run", methods=["POST"])
+@rate_limit(tier="analyze")
 def run_analysis(session_id: int):
     try:
         req = RunAnalysisRequest.model_validate(request.get_json(silent=True) or {})
@@ -148,6 +157,30 @@ def run_analysis(session_id: int):
     if workspace_id is None:
         return api_error(ErrorCode.UNAUTHORIZED, message="missing workspace context",
                          status=401)
+
+    # force_rerun bypasses the "already in flight" conflict check (see
+    # AnalysisOrchestrator.enqueue), letting a caller queue another full
+    # solver run even while one is already running for this session. That
+    # forced-recompute path must require an active entitlement — a
+    # locked/lapsed account must not be able to force expensive recompute
+    # just because it can still reach this route. Fails CLOSED (unlike the
+    # compute-budget check below): an error here must not grant access.
+    if (req.force_rerun and current_app.config.get("USE_PG")
+            and current_app.config.get("AUTH_REQUIRED")):
+        from auth.entitlements import authorize_feature
+        allowed, ctx = authorize_feature(
+            _get_conn(), getattr(g, "current_user_id", None), "race_strategy",
+        )
+        if not allowed:
+            from web.api_utils import ReasonCode, billing_error
+            return billing_error(
+                reason_code=ReasonCode.FEATURE_LOCKED,
+                message=ctx.get("reason", "Forcing a re-analysis requires an active plan."),
+                current_plan=ctx.get("current_tier"),
+                required_plan=ctx.get("upgrade_tier"),
+                upgrade_url=ctx.get("upgrade_url"),
+                status=403,
+            )
 
     # Shared per-tier compute budget (analysis + export + surface pool).
     # Fail-open: a metering error must never block a legitimate analysis run.
