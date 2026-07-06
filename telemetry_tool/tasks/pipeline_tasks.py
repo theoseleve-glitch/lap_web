@@ -377,6 +377,29 @@ _FINALIZE_STAGES = [
 ]
 
 
+# ---------------------------------------------------------------------------
+# Per-tier processing grace — SINGLE SOURCE OF TRUTH, shared by:
+#   1. web/routes/sessions_v2.py, which picks the soft/hard limit for the
+#      uploading workspace's paid tier before dispatching the chain, and
+#   2. tasks/alerting_tasks.py's stuck-job reconciliation, which uses the
+#      same ceilings to decide whether a 'running' job has been hard-killed.
+# ---------------------------------------------------------------------------
+
+TIER_TIMEOUTS_S: dict[str, int] = {
+    "locked": 120,
+    "racer": 600,
+    "world-class": 1800, "world_class": 1800,
+    "b2b": 3600,
+}
+
+# Grace between the SOFT limit (raises SoftTimeLimitExceeded inside the running
+# task — already caught by each stage's `except Exception` handler below,
+# which marks the job 'failed') and the HARD limit (SIGKILL — no Python code
+# runs, so the job row is left 'running' forever unless something else
+# reconciles it; see tasks/alerting_tasks.py::_reconcile_stuck_jobs).
+HARD_LIMIT_MARGIN_S = 300  # 5 minutes
+
+
 def _build_session_meta(ctx: PipelineContext, conn=None) -> dict:
     """Build the session_meta dict expected by ``run_full_analysis()``.
 
@@ -1832,16 +1855,45 @@ def pipeline_finalize(self, job_id: Optional[str]) -> Optional[str]:
 # ---------------------------------------------------------------------------
 
 
-def build_pipeline_chain(job_id: str):
+def build_pipeline_chain(
+    job_id: str,
+    soft_time_limit: Optional[int] = None,
+    time_limit: Optional[int] = None,
+):
     """Return a Celery chain: ingest -> analyze -> finalize.
+
+    ``soft_time_limit``/``time_limit`` (when given — e.g. the uploading
+    workspace's per-tier processing grace from ``TIER_TIMEOUTS_S``) are set on
+    EVERY stage signature individually via ``Signature.set(...)``, not passed
+    as a chain-level ``apply_async(soft_time_limit=...)`` kwarg. Celery only
+    binds a chain-level ``apply_async`` execution option to the FIRST task in
+    the chain — ``pipeline_analyze``/``pipeline_finalize`` would silently fall
+    back to the worker's blanket ``--soft-time-limit``/``--time-limit``
+    (docker-compose.prod.yml), so a b2b customer's longer paid-for grace never
+    reached the heavy analyze/finalize stages that actually need it.
+
+    When ``time_limit`` is not given but ``soft_time_limit`` is, the hard
+    limit defaults to ``soft_time_limit + HARD_LIMIT_MARGIN_S`` so a stage
+    always gets an explicit hard kill instead of inheriting only the worker's
+    blanket cap.
+
+    When ``soft_time_limit`` is None (caller doesn't know the tier — e.g. the
+    retry/admin-retry/sync-upload paths), no per-signature options are set and
+    every stage falls back to the worker's blanket limits, unchanged from
+    prior behaviour.
 
     Usage::
 
-        chain = build_pipeline_chain("job-abc")
+        chain = build_pipeline_chain("job-abc", soft_time_limit=3600)
         chain.apply_async()
     """
-    return chain(
-        pipeline_ingest.s(job_id),
-        pipeline_analyze.s(),
-        pipeline_finalize.s(),
-    )
+    ingest_sig = pipeline_ingest.s(job_id)
+    analyze_sig = pipeline_analyze.s()
+    finalize_sig = pipeline_finalize.s()
+
+    if soft_time_limit is not None:
+        hard_limit = time_limit if time_limit is not None else soft_time_limit + HARD_LIMIT_MARGIN_S
+        for sig in (ingest_sig, analyze_sig, finalize_sig):
+            sig.set(soft_time_limit=soft_time_limit, time_limit=hard_limit)
+
+    return chain(ingest_sig, analyze_sig, finalize_sig)

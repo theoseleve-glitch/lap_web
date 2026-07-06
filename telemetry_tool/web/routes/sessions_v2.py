@@ -69,12 +69,6 @@ _TIER_LIMITS = {
     "world_class": {"max_bytes": -1,                  "max_sessions": None},
     "b2b":         {"max_bytes": -1,                  "max_sessions": None},
 }
-_TIER_TIMEOUTS = {
-    "locked": 120,
-    "racer": 600,
-    "world-class": 1800, "world_class": 1800,
-    "b2b": 3600,
-}
 
 
 def _get_conn() -> sqlite3.Connection:
@@ -656,7 +650,7 @@ def upload_session() -> tuple[Response, int]:
         import redis as _redis
 
         from pipeline_context import PipelineContext
-        from tasks.pipeline_tasks import build_pipeline_chain
+        from tasks.pipeline_tasks import TIER_TIMEOUTS_S, build_pipeline_chain
         from web.config import Config
 
         _r = _redis.Redis.from_url(Config.REDIS_URL)
@@ -675,8 +669,11 @@ def upload_session() -> tuple[Response, int]:
         )
 
         # ── 7. Dispatch Celery chain ──────────────────────────────
-        timeout = _TIER_TIMEOUTS.get(plan_tier, 120)
-        build_pipeline_chain(job_id).apply_async(soft_time_limit=timeout)
+        # Threaded onto EVERY stage signature inside build_pipeline_chain
+        # (not passed to apply_async) so the tier's grace reaches
+        # pipeline_analyze/pipeline_finalize too — see TIER_TIMEOUTS_S docs.
+        timeout = TIER_TIMEOUTS_S.get(plan_tier, TIER_TIMEOUTS_S["locked"])
+        build_pipeline_chain(job_id, soft_time_limit=timeout).apply_async()
 
         logger.info(
             "Upload accepted: job_id=%s workspace=%s file=%s tier=%s timeout=%ds",

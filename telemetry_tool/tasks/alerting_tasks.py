@@ -146,12 +146,99 @@ def _check_queue_depth() -> dict[str, Any]:
             return_pg_connection(conn)
 
 
+def _reconcile_stuck_jobs(conn) -> list[dict]:
+    """Flip 'running'/'processing' jobs past their tier's time budget to 'failed'.
+
+    A HARD Celery time limit (``--time-limit`` / per-signature ``time_limit``)
+    kills the worker child with SIGKILL — no Python exception is raised, so
+    nothing marks the job row as failed and it is left 'running' forever (the
+    SOFT limit, by contrast, raises ``SoftTimeLimitExceeded`` inside the task,
+    which is already caught by each pipeline stage's ``except Exception``
+    handler in tasks/pipeline_tasks.py and marks the job 'failed' — no change
+    needed there).
+
+    Resolves each job's plan tier via workspace owner (mirrors
+    ``_resolve_session_owner`` in pipeline_tasks.py) and compares elapsed time
+    against ``TIER_TIMEOUTS_S[tier] + HARD_LIMIT_MARGIN_S`` — the same ceiling
+    ``build_pipeline_chain`` applied when the job was dispatched. Jobs whose
+    tier can't be resolved (orphaned workspace, deleted owner) use the most
+    generous ceiling across all tiers so an unresolved lookup never fails a
+    job that might still be legitimately running.
+
+    Reuses the existing ``status``/``error_message``/``error_class`` columns
+    already written by the pipeline tasks — no new job-state machine.
+    """
+    from tasks.pipeline_tasks import HARD_LIMIT_MARGIN_S, TIER_TIMEOUTS_S
+
+    max_ceiling_s = max(TIER_TIMEOUTS_S.values()) + HARD_LIMIT_MARGIN_S
+
+    rows = conn.execute(
+        "SELECT ij.job_id, "
+        "EXTRACT(EPOCH FROM (NOW() - ij.started_at)) AS running_seconds, "
+        "u.plan_tier "
+        "FROM ingestion_jobs ij "
+        "LEFT JOIN workspaces w ON w.id = ij.workspace_id "
+        "LEFT JOIN users u ON u.id = w.owner_user_id "
+        "WHERE ij.status IN ('running', 'processing')"
+    ).fetchall()
+
+    reconciled: list[dict] = []
+    for r in rows:
+        row = dict(r) if not isinstance(r, dict) else r
+        tier = row.get("plan_tier")
+        ceiling_s = (
+            TIER_TIMEOUTS_S.get(tier, TIER_TIMEOUTS_S["racer"]) + HARD_LIMIT_MARGIN_S
+            if tier else max_ceiling_s
+        )
+        running_s = row.get("running_seconds") or 0
+        if running_s <= ceiling_s:
+            continue
+
+        job_id = row["job_id"]
+        conn.execute(
+            "UPDATE ingestion_jobs SET status = 'failed', "
+            "error_message = %(msg)s, error_class = 'timeout', updated_at = NOW() "
+            "WHERE job_id = %(jid)s AND status IN ('running', 'processing')",
+            {
+                "jid": job_id,
+                "msg": (
+                    f"Processing exceeded the {int(ceiling_s)}s tier ceiling "
+                    f"(ran {int(running_s)}s) — worker was likely hard-killed mid-stage"
+                ),
+            },
+        )
+        reconciled.append({
+            "job_id": job_id,
+            "running_seconds": int(running_s),
+            "ceiling_s": int(ceiling_s),
+        })
+
+    if reconciled:
+        conn.commit()
+        logger.error(
+            "Reconciled %d stuck job(s) past tier ceiling -> failed: %s",
+            len(reconciled),
+            [j["job_id"][:8] for j in reconciled],
+        )
+
+    return reconciled
+
+
 def _check_stuck_jobs() -> dict[str, Any]:
-    """Check for jobs that have been running longer than the threshold."""
+    """Check for jobs that have been running longer than the threshold.
+
+    Also runs :func:`_reconcile_stuck_jobs` first so jobs whose worker was
+    hard-killed mid-stage (no Python exception to catch — see that function's
+    docstring) get flipped to 'failed' instead of staying 'running' forever.
+    The informational stuck-job ALERT below then reports on whatever is
+    genuinely still running past the (blanket, tier-agnostic) alert window.
+    """
     from web.db_pg import return_pg_connection
     conn = None
     try:
         conn = _get_pg()
+        reconciled = _reconcile_stuck_jobs(conn)
+
         rows = conn.execute(
             "SELECT job_id, file_path, started_at, "
             "EXTRACT(EPOCH FROM (NOW() - started_at))/60 AS running_minutes "
@@ -173,6 +260,7 @@ def _check_stuck_jobs() -> dict[str, Any]:
             "status": "alert" if stuck else "ok",
             "stuck_count": len(stuck),
             "threshold_minutes": STUCK_JOB_MINUTES,
+            "reconciled_count": len(reconciled),
             "stuck_jobs": [
                 {"job_id": j["job_id"][:8], "minutes": round(j.get("running_minutes", 0))}
                 for j in stuck[:5]
