@@ -303,6 +303,59 @@ class TestCheckoutCustomerMatching:
         assert args[0][2] == "active"
         assert args[1]["plan_tier"] == "world-class"
 
+    def test_checkout_matched_by_case_insensitive_email(self):
+        """FIX 1: a mixed-case checkout email must match a lowercased user row.
+
+        Signup lowercases emails (web/schemas/auth.py RegisterSchema forces
+        .lower()), but Stripe guest checkout stores customer_email verbatim.
+        Without a case-insensitive match, "Alex.Martin@gmail.com" would never
+        find the stored "alex.martin@gmail.com" row and the paying customer
+        would be dropped into stripe_pending_entitlements instead of linked.
+        """
+        from web.routes.billing import _handle_checkout_completed
+
+        with patch("web.routes.billing._get_conn") as mock_conn_fn, \
+             patch("web.routes.billing.audit_log"), \
+             patch("billing.state_machine.transition_subscription", return_value=True) as mock_transition:
+
+            conn = _mock_conn()
+            mock_conn_fn.return_value = conn
+
+            # No client_reference_id / metadata.user_id and no stripe_customer_id
+            # match — falls through to the email fallback, which must be
+            # case-insensitive.
+            call_results = iter([
+                # 1. stripe_customer_id lookup → miss
+                MagicMock(**{"fetchone.return_value": None}),
+                # 2. LOWER(email) = LOWER(...) lookup → HIT (lowercased user row)
+                MagicMock(**{"fetchone.return_value": {"id": 88, "email": "alex.martin@gmail.com"}}),
+                # 3. UPDATE users SET stripe_customer_id + stripe_subscription_id
+                MagicMock(**{"fetchone.return_value": None}),
+                # 4. buffer (transition_subscription is mocked, no inner SELECT)
+                MagicMock(**{"fetchone.return_value": None}),
+            ])
+            conn.execute.side_effect = lambda sql, params=None: next(call_results)
+
+            session = {
+                "id": "cs_test_case_insensitive",
+                "customer_email": "Alex.Martin@gmail.com",  # mixed-case, verbatim from Stripe
+                "customer": "cus_new_case_test",
+                "subscription": "sub_case",
+                "metadata": {"plan_tier": "world-class"},
+            }
+            _handle_checkout_completed(session)
+
+        mock_transition.assert_called_once()
+        args = mock_transition.call_args
+        assert args[0][1] == 88, "Must resolve the lowercased user row despite case drift"
+        assert args[0][2] == "active"
+
+        # The email lookup itself must use a case-insensitive comparison.
+        email_lookup_sql = str(conn.execute.call_args_list[1][0][0])
+        assert "LOWER(email)" in email_lookup_sql, (
+            f"Expected a case-insensitive LOWER(email) match, got SQL: {email_lookup_sql}"
+        )
+
     def test_unmatched_checkout_records_pending_entitlement(self):
         """When no user row found at all, a pending entitlement is stored."""
         from web.routes.billing import _handle_checkout_completed

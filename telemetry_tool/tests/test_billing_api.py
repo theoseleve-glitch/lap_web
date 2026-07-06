@@ -389,3 +389,96 @@ class TestCheckoutRouteCollision:
             f"Expected 403 (auth required) at /checkout/upgrade, got {resp.status_code}. "
             "The upgrade handler may have been removed rather than moved."
         )
+
+
+# ---------------------------------------------------------------------------
+# FIX 2 — bind the authenticated user at /checkout so the webhook can
+# resolve them deterministically (client_reference_id / metadata.user_id)
+# instead of guessing by email.
+# ---------------------------------------------------------------------------
+
+class TestCheckoutBindsAuthenticatedUser:
+    """FIX 2: an authenticated /checkout call sets client_reference_id and
+    metadata.user_id on the Stripe Checkout Session."""
+
+    def test_authenticated_checkout_sets_client_reference_id_and_metadata_user_id(self):
+        """When g.current_user_id is set, the Stripe session must carry both
+        client_reference_id and metadata.user_id so _handle_checkout_completed
+        binds the paying customer via the explicit id, not an email guess.
+        """
+        app = _build_test_app()
+
+        @app.before_request
+        def _inject_authenticated_user():
+            from flask import g
+            g.current_user_id = 555
+
+        mock_session = MagicMock()
+        mock_session.id = "cs_test_authed"
+        mock_session.url = "https://checkout.stripe.com/pay/cs_test_authed"
+
+        mock_stripe = MagicMock()
+        mock_stripe.checkout.Session.create.return_value = mock_session
+
+        with patch("web.routes.api_v1_billing.STRIPE_SECRET_KEY", "sk_test_fake"), \
+             patch("web.routes.api_v1_billing._get_stripe", return_value=mock_stripe), \
+             patch("web.routes.api_v1_billing.get_pg_connection") as mock_get_conn, \
+             patch.dict(
+                 "os.environ",
+                 {"STRIPE_PRICE_STANDARD_MONTHLY": "price_std_123",
+                  "STRIPE_PRICE_FOUNDING_MONTHLY": ""},
+             ):
+            mock_get_conn.return_value = MagicMock()
+
+            with app.test_client() as client:
+                resp = client.post(
+                    "/api/v1/billing/checkout",
+                    json={"email": "authed@example.com"},
+                    content_type="application/json",
+                )
+
+        assert resp.status_code == 200, resp.get_data(as_text=True)
+        assert mock_stripe.checkout.Session.create.called
+        _, kwargs = mock_stripe.checkout.Session.create.call_args
+        assert kwargs.get("client_reference_id") == "555", (
+            f"Expected client_reference_id='555', got {kwargs.get('client_reference_id')!r}"
+        )
+        assert kwargs.get("metadata", {}).get("user_id") == "555", (
+            f"Expected metadata.user_id='555', got {kwargs.get('metadata')!r}"
+        )
+
+    def test_guest_checkout_has_no_user_binding(self):
+        """An unauthenticated (guest) checkout must NOT set client_reference_id
+        or metadata.user_id — there is no user to bind yet (guest-claim flow
+        is out of scope; see the TODO(guest-claim) comment in the handler).
+        """
+        app = _build_test_app()
+
+        mock_session = MagicMock()
+        mock_session.id = "cs_test_guest"
+        mock_session.url = "https://checkout.stripe.com/pay/cs_test_guest"
+
+        mock_stripe = MagicMock()
+        mock_stripe.checkout.Session.create.return_value = mock_session
+
+        with patch("web.routes.api_v1_billing.STRIPE_SECRET_KEY", "sk_test_fake"), \
+             patch("web.routes.api_v1_billing._get_stripe", return_value=mock_stripe), \
+             patch("web.routes.api_v1_billing.get_pg_connection") as mock_get_conn, \
+             patch.dict(
+                 "os.environ",
+                 {"STRIPE_PRICE_STANDARD_MONTHLY": "price_std_123",
+                  "STRIPE_PRICE_FOUNDING_MONTHLY": ""},
+             ):
+            mock_get_conn.return_value = MagicMock()
+
+            with app.test_client() as client:
+                resp = client.post(
+                    "/api/v1/billing/checkout",
+                    json={"email": "guest@example.com"},
+                    content_type="application/json",
+                )
+
+        assert resp.status_code == 200, resp.get_data(as_text=True)
+        _, kwargs = mock_stripe.checkout.Session.create.call_args
+        assert "client_reference_id" not in kwargs
+        assert "user_id" not in kwargs.get("metadata", {})

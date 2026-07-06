@@ -73,7 +73,17 @@ def _reconcile_stripe_impl() -> dict[str, Any]:
         4. If subscription not found in Stripe, mark as canceled
 
     Returns:
-        Dict with ``{"checked": N, "healed": N}``
+        Dict with ``{"checked": N, "healed": N, "errors": N}``
+
+    Error handling (B-fix4): only a definitive "subscription no longer
+    exists" response from Stripe (``InvalidRequestError`` with
+    ``code == 'resource_missing'`` / HTTP 404) is treated as evidence of
+    cancellation. ANY other exception — timeout, 5xx, rate limit, a rotated
+    ``STRIPE_SECRET_KEY``, network failure — must NOT be treated as
+    "canceled": a broad ``except Exception: ... canceled`` here would mass-
+    cancel (and email) the entire subscriber base on a single transient
+    Stripe API hiccup. Those users are skipped for this run and counted in
+    ``errors`` instead.
     """
     conn = get_pg_connection()
 
@@ -85,9 +95,10 @@ def _reconcile_stripe_impl() -> dict[str, Any]:
 
     if not users:
         logger.info("Stripe reconciliation: 0 subscribers to check")
-        return {"checked": 0, "healed": 0}
+        return {"checked": 0, "healed": 0, "errors": 0}
 
     healed = 0
+    reconciliation_errors = 0
     for user in users:
         uid = user["id"]
         sub_id = user["stripe_subscription_id"]
@@ -96,12 +107,33 @@ def _reconcile_stripe_impl() -> dict[str, Any]:
         try:
             stripe_sub = stripe.Subscription.retrieve(sub_id)
             stripe_status = stripe_sub.status
-        except Exception:
-            logger.warning(
-                "Subscription %s not found in Stripe for user %s — marking canceled",
-                sub_id, uid,
+        except stripe.error.InvalidRequestError as exc:
+            stripe_code = getattr(exc, "code", None)
+            http_status = getattr(exc, "http_status", None)
+            if stripe_code == "resource_missing" or http_status == 404:
+                logger.warning(
+                    "Subscription %s not found in Stripe for user %s — marking canceled",
+                    sub_id, uid,
+                )
+                stripe_status = "canceled"
+            else:
+                reconciliation_errors += 1
+                logger.error(
+                    "Stripe reconciliation: non-missing InvalidRequestError for "
+                    "user %s sub %s: %s — skipping this run (NOT cancelling)",
+                    uid, sub_id, exc,
+                )
+                continue
+        except Exception as exc:
+            # Transient/unexpected error (timeout, 5xx, rate limit, auth
+            # failure, network error, ...) — never grounds for cancellation.
+            reconciliation_errors += 1
+            logger.error(
+                "Stripe reconciliation: error retrieving subscription %s for "
+                "user %s: %s — skipping this run (NOT cancelling)",
+                sub_id, uid, exc,
             )
-            stripe_status = "canceled"
+            continue
 
         mapped_status = map_stripe_status(stripe_status)
         if local_status != mapped_status:
@@ -122,10 +154,167 @@ def _reconcile_stripe_impl() -> dict[str, Any]:
                 )
 
     logger.info(
-        "Stripe reconciliation complete: checked=%d, healed=%d",
-        len(users), healed,
+        "Stripe reconciliation complete: checked=%d, healed=%d, errors=%d",
+        len(users), healed, reconciliation_errors,
     )
-    return {"checked": len(users), "healed": healed}
+    if reconciliation_errors:
+        # Loud, Redis-independent alert (mirrors billing.py._unmapped_alert):
+        # a run with errors means SOME subscribers were NOT checked this hour,
+        # which is worth paging on if it persists (e.g. a rotated Stripe key).
+        logger.error(
+            "Stripe reconciliation run had %d error(s) — subscribers were "
+            "skipped, not cancelled. Check Stripe API health/credentials.",
+            reconciliation_errors,
+        )
+        try:
+            import sentry_sdk
+            sentry_sdk.capture_message(
+                f"Stripe reconciliation: {reconciliation_errors} error(s) this run "
+                f"(checked={len(users)}, healed={healed})",
+                level="error",
+            )
+        except Exception:
+            pass
+    return {"checked": len(users), "healed": healed, "errors": reconciliation_errors}
+
+
+# ---------------------------------------------------------------------------
+# Task: reconcile_pending_entitlements
+# ---------------------------------------------------------------------------
+
+
+def _reconcile_pending_entitlements_impl() -> dict[str, Any]:
+    """Sweep ``stripe_pending_entitlements`` for orphaned paying customers.
+
+    ``_handle_checkout_completed`` (web/routes/billing.py) writes a row here
+    whenever a Stripe ``checkout.session.completed`` webhook fires but NO
+    user could be matched (case-insensitive email drift, account deleted
+    between checkout and webhook, etc.). Until now nothing ever read this
+    table back — those customers stayed locked forever. This task closes
+    that loop.
+
+    For each unreconciled row (``reconciled_at IS NULL``):
+        1. Case-insensitively match ``customer_email`` against ``users``.
+        2. On a hit: attach the Stripe customer/subscription IDs to that
+           user and transition them to 'active' with the recorded
+           plan_tier — the SAME state-machine path
+           ``_handle_checkout_completed`` and ``_reconcile_stripe_impl``
+           already use (``billing.state_machine.transition_subscription``),
+           not a bespoke update.
+        3. Mark the row ``reconciled_at = NOW()`` so the sweep is
+           idempotent (a linked or genuinely-unmatched row is not
+           reprocessed by the next run).
+        4. On no match: leave the row untouched for a future sweep.
+
+    Per-row try/except: one bad row (bad data, a DB hiccup) can never abort
+    the whole sweep.
+
+    Connection: uses the maint (BYPASSRLS) connection — this is a
+    cross-tenant, no-Flask-request-context beat task touching two global
+    tables with no ``workspace_id``, mirroring
+    ``_enforce_grace_periods_impl``.
+
+    Returns:
+        Dict with ``{"checked": N, "linked": N, "unmatched": N, "errors": N}``
+    """
+    conn = get_maint_connection()
+    try:
+        rows = conn.execute(
+            "SELECT id, stripe_customer_id, stripe_subscription_id, "
+            "customer_email, plan_tier FROM stripe_pending_entitlements "
+            "WHERE reconciled_at IS NULL",
+        ).fetchall()
+        pending = [dict(r) if not isinstance(r, dict) else r for r in rows]
+
+        if not pending:
+            logger.info("Pending entitlement sweep: 0 unreconciled rows")
+            return {"checked": 0, "linked": 0, "unmatched": 0, "errors": 0}
+
+        linked = 0
+        unmatched = 0
+        reconciliation_errors = 0
+
+        for row in pending:
+            row_id = row["id"]
+            email = row.get("customer_email")
+            try:
+                if not email:
+                    unmatched += 1
+                    continue
+
+                user_row = conn.execute(
+                    "SELECT id FROM users WHERE LOWER(email) = LOWER(%(email)s)",
+                    {"email": email},
+                ).fetchone()
+                if user_row is None:
+                    unmatched += 1
+                    continue
+
+                uid = (dict(user_row) if not isinstance(user_row, dict) else user_row)["id"]
+
+                conn.execute(
+                    "UPDATE users SET stripe_customer_id = %(cid)s, "
+                    "stripe_subscription_id = %(sid)s WHERE id = %(uid)s",
+                    {
+                        "cid": row.get("stripe_customer_id"),
+                        "sid": row.get("stripe_subscription_id"),
+                        "uid": uid,
+                    },
+                )
+                conn.commit()
+
+                transitioned = transition_subscription(
+                    conn, uid, "active",
+                    plan_tier=row.get("plan_tier"),
+                    metadata={
+                        "source": "pending_entitlement_reconciliation",
+                        "pending_id": row_id,
+                    },
+                )
+                if not transitioned:
+                    # Stripe IDs are attached regardless (that's the part that
+                    # unlocks reconciliation) even if the state transition
+                    # itself was a no-op/invalid (e.g. already active).
+                    logger.warning(
+                        "Pending entitlement %s: linked user %s but tier "
+                        "transition was a no-op/invalid — IDs attached anyway",
+                        row_id, uid,
+                    )
+
+                conn.execute(
+                    "UPDATE stripe_pending_entitlements SET reconciled_at = NOW() "
+                    "WHERE id = %(id)s",
+                    {"id": row_id},
+                )
+                conn.commit()
+                linked += 1
+                logger.info(
+                    "Pending entitlement %s linked to user %s via email match",
+                    row_id, uid,
+                )
+            except Exception:
+                reconciliation_errors += 1
+                logger.exception(
+                    "Failed to reconcile pending entitlement %s — skipping", row_id,
+                )
+                try:
+                    conn.rollback()
+                except Exception:
+                    pass
+
+        logger.info(
+            "Pending entitlement sweep complete: checked=%d linked=%d "
+            "unmatched=%d errors=%d",
+            len(pending), linked, unmatched, reconciliation_errors,
+        )
+        return {
+            "checked": len(pending),
+            "linked": linked,
+            "unmatched": unmatched,
+            "errors": reconciliation_errors,
+        }
+    finally:
+        return_pg_connection(conn)
 
 
 # ---------------------------------------------------------------------------
@@ -493,6 +682,10 @@ if _USE_CELERY and _celery_app is not None:
     def reconcile_stripe() -> dict[str, Any]:
         return _reconcile_stripe_impl()
 
+    @_celery_app.task(name="tasks.billing_tasks.reconcile_pending_entitlements")
+    def reconcile_pending_entitlements() -> dict[str, Any]:
+        return _reconcile_pending_entitlements_impl()
+
     @_celery_app.task(name="tasks.billing_tasks.enforce_subscription_grace_periods")
     def enforce_subscription_grace_periods() -> dict[str, Any]:
         return _enforce_grace_periods_impl()
@@ -503,6 +696,9 @@ if _USE_CELERY and _celery_app is not None:
 else:
     def reconcile_stripe() -> dict[str, Any]:  # type: ignore[misc]
         return _reconcile_stripe_impl()
+
+    def reconcile_pending_entitlements() -> dict[str, Any]:  # type: ignore[misc]
+        return _reconcile_pending_entitlements_impl()
 
     def enforce_subscription_grace_periods() -> dict[str, Any]:  # type: ignore[misc]
         return _enforce_grace_periods_impl()

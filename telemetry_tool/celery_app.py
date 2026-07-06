@@ -117,6 +117,11 @@ def make_celery(app=None) -> Celery:
                 "schedule": 3600,  # Hourly
                 "options": {"queue": "default"},
             },
+            "reconcile-pending-entitlements": {
+                "task": "tasks.billing_tasks.reconcile_pending_entitlements",
+                "schedule": 900,  # Every 15 min — sweep unmatched-checkout rows so
+                "options": {"queue": "default"},  # paying customers aren't locked out for long
+            },
             "enforce-grace-periods": {
                 "task": "tasks.billing_tasks.enforce_subscription_grace_periods",
                 "schedule": 86400,  # Daily

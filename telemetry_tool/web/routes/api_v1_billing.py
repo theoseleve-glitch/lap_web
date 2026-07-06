@@ -387,21 +387,38 @@ def create_checkout():
     price_id = founding_price if slot_no is not None else standard_price
     offer = "founding" if slot_no is not None else "standard"
 
+    session_params: dict = {
+        "mode": "subscription",
+        "line_items": [{"price": price_id, "quantity": 1}],
+        "success_url": f"{FRONTEND_URL}/thank-you/book",
+        "cancel_url": f"{FRONTEND_URL}/pricing?checkout=cancelled",
+        "customer_email": email,
+        "allow_promotion_codes": True,
+        "subscription_data": {"trial_period_days": TRIAL_DAYS},
+        "metadata": {
+            "plan_tier": "world-class",
+            "offer": offer,
+            "founding_slot_no": str(slot_no) if slot_no is not None else "",
+        },
+    }
+
+    # When the caller is authenticated, bind the checkout session to their
+    # user id explicitly so the webhook (_handle_checkout_completed) resolves
+    # the user deterministically via client_reference_id/metadata.user_id
+    # instead of falling back to a (possibly case-mismatched or absent)
+    # email lookup. Genuinely unauthenticated guest checkout is unaffected.
+    user_id = getattr(g, "current_user_id", None)
+    if user_id is not None:
+        session_params["client_reference_id"] = str(user_id)
+        session_params["metadata"]["user_id"] = str(user_id)
+    # TODO(guest-claim): unauthenticated guest checkout has no user to bind
+    # at session-creation time. A signed-claim-token flow (mint a token tied
+    # to this checkout session, redeem it on later signup/login to attach
+    # the subscription) would close that gap but touches the frontend —
+    # out of scope for this fix.
+
     try:
-        session = stripe.checkout.Session.create(
-            mode="subscription",
-            line_items=[{"price": price_id, "quantity": 1}],
-            success_url=f"{FRONTEND_URL}/thank-you/book",
-            cancel_url=f"{FRONTEND_URL}/pricing?checkout=cancelled",
-            customer_email=email,
-            allow_promotion_codes=True,
-            subscription_data={"trial_period_days": TRIAL_DAYS},
-            metadata={
-                "plan_tier": "world-class",
-                "offer": offer,
-                "founding_slot_no": str(slot_no) if slot_no is not None else "",
-            },
-        )
+        session = stripe.checkout.Session.create(**session_params)
     except Exception:
         logger.exception("Stripe checkout session creation failed (offer=%s)", offer)
         if slot_no is not None:

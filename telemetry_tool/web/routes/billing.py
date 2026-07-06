@@ -547,10 +547,14 @@ def _handle_checkout_completed(session: dict):
         if user_row:
             match_method = "stripe_customer_id"
 
-    # 3. customer_email fallback
+    # 3. customer_email fallback — case-insensitive: signup lowercases emails
+    # (web/schemas/auth.py RegisterSchema), but Stripe guest checkout stores
+    # customer_email verbatim, so a case drift (e.g. "Alex.Martin@gmail.com"
+    # vs stored "alex.martin@gmail.com") would otherwise never match and the
+    # paying customer would be silently dropped into stripe_pending_entitlements.
     if user_row is None and customer_email:
         cur = conn.execute(
-            "SELECT id, email FROM users WHERE email = %(email)s",
+            "SELECT id, email FROM users WHERE LOWER(email) = LOWER(%(email)s)",
             {"email": customer_email},
         )
         user_row = cur.fetchone()
