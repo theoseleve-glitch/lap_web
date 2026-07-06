@@ -5,7 +5,12 @@ Usage:
     python scripts/bless_gt.py <geojson> --canonical-id <id> \
         [--alias <name> ...] [--force]
 
-Pipeline:
+Pipeline (Task 8 extraction: the validate -> copy -> register-alias core
+now lives in ``telemetry_tool.onboarding.bless_service.install_gt_geojson``
+so this CLI and the web bless path (``bless_service.bless_geometry``,
+always ``force=False``) share ONE code path for the actual corpus install.
+This module's ``bless_gt()`` is now a thin wrapper with an unchanged
+signature/behavior):
     1. Run track_surface.gt_validate.validate_gt_geojson() on the input file.
        Any message refuses the bless unless --force is passed — EXCEPT a
        missing/empty `reviewed_by`, which is refused unconditionally (only
@@ -29,9 +34,6 @@ the real repo paths when omitted.
 from __future__ import annotations
 
 import argparse
-import json
-import os
-import shutil
 import sys
 from pathlib import Path
 
@@ -41,14 +43,11 @@ for _p in (_REPO_ROOT, _TELEMETRY_PKG):
     if str(_p) not in sys.path:
         sys.path.insert(0, str(_p))
 
-from track_surface.gt_validate import validate_gt_geojson  # noqa: E402
+from onboarding.bless_service import InstallError as BlessError  # noqa: E402
+from onboarding.bless_service import install_gt_geojson  # noqa: E402
 
 DEFAULT_GT_DIR = _REPO_ROOT / "data" / "ground_truth"
 DEFAULT_ALIASES_FILE = _TELEMETRY_PKG / "track_surface" / "track_aliases.json"
-
-
-class BlessError(RuntimeError):
-    """Raised when a bless operation is refused (never a bare exception/traceback)."""
 
 
 def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
@@ -72,30 +71,6 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     return p.parse_args(argv)
 
 
-def _reviewed_by_missing(messages: list[str]) -> bool:
-    return any("reviewed_by" in m for m in messages)
-
-
-def _load_aliases_registry(path: Path) -> dict:
-    if not path.exists():
-        return {"schema_version": "1", "description": "Canonical track-id registry.",
-                "tracks": {}}
-    with open(path, encoding="utf-8") as fh:
-        return json.load(fh)
-
-
-def _save_aliases_registry(path: Path, registry: dict) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    # No sort_keys — preserve the registry's existing (non-alphabetical,
-    # chronological) key order; json.dump keeps insertion order by default,
-    # so pre-existing entries never move and new ones land at the end.
-    tmp = path.with_suffix(".json.tmp")
-    with open(tmp, "w", encoding="utf-8") as fh:
-        json.dump(registry, fh, indent=2)
-        fh.write("\n")
-    os.replace(tmp, path)
-
-
 def bless_gt(
     geojson_path: Path,
     canonical_id: str,
@@ -110,51 +85,22 @@ def bless_gt(
     Returns the destination path on success. Raises :class:`BlessError` on
     any refusal — this function never calls ``sys.exit``; that's ``main``'s
     job, so tests can assert on the exception directly.
+
+    Thin wrapper (Task 8 extraction): the actual validate -> copy ->
+    register-alias logic now lives in
+    ``telemetry_tool.onboarding.bless_service.install_gt_geojson`` so this
+    CLI and the web bless path (``bless_service.bless_geometry``, which
+    hard-wires ``force=False``) share exactly one code path for the corpus
+    install. This function's signature and behavior are unchanged by the
+    extraction.
     """
-    geojson_path = Path(geojson_path)
     gt_dir = Path(gt_dir) if gt_dir is not None else DEFAULT_GT_DIR
     aliases_file = Path(aliases_file) if aliases_file is not None else DEFAULT_ALIASES_FILE
-    aliases = list(aliases or [])
-
-    messages = validate_gt_geojson(geojson_path)
-    if _reviewed_by_missing(messages):
-        raise BlessError(
-            "Refusing to bless " + str(geojson_path) + ": reviewed_by is missing "
-            "(absolute — --force does not override this). Validator messages:\n  "
-            + "\n  ".join(messages)
-        )
-    if messages and not force:
-        raise BlessError(
-            "Refusing to bless " + str(geojson_path) + ": validator reported issues "
-            "(pass --force to bless anyway). Validator messages:\n  "
-            + "\n  ".join(messages)
-        )
-
-    registry = _load_aliases_registry(aliases_file)
-    tracks = registry.setdefault("tracks", {})
-    if canonical_id in tracks and not force:
-        raise BlessError(
-            f"Refusing to bless: canonical_id '{canonical_id}' already exists in "
-            f"{aliases_file} (pass --force to overwrite/merge)"
-        )
-
-    gt_dir.mkdir(parents=True, exist_ok=True)
-    dest = gt_dir / f"gt_{canonical_id}.geojson"
-    shutil.copy2(geojson_path, dest)
-
-    existing = tracks.get(canonical_id)
-    entry = existing if isinstance(existing, dict) else {}
-    entry_aliases = list(entry.get("aliases", []))
-    for a in (canonical_id, *aliases):  # id self-alias always included, first
-        if a not in entry_aliases:
-            entry_aliases.append(a)
-    entry["canonical_id"] = canonical_id
-    entry["aliases"] = entry_aliases
-    tracks[canonical_id] = entry
-
-    _save_aliases_registry(aliases_file, registry)
-
-    return dest
+    return install_gt_geojson(
+        Path(geojson_path), canonical_id,
+        aliases=aliases, force=force,
+        gt_dir=gt_dir, aliases_file=aliases_file,
+    )
 
 
 def main(argv: list[str] | None = None) -> int:
