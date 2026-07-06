@@ -399,6 +399,47 @@ TIER_TIMEOUTS_S: dict[str, int] = {
 # reconciles it; see tasks/alerting_tasks.py::_reconcile_stuck_jobs).
 HARD_LIMIT_MARGIN_S = 300  # 5 minutes
 
+# ---------------------------------------------------------------------------
+# FIX #5 (HIGH, customer readiness): shared `pipeline` queue isolation
+#
+# The shared `celery-pipeline` worker (docker-compose.prod.yml /
+# docker-compose.staging.yml) is `-Q pipeline --concurrency=2
+# --time-limit=2100`. Once the tier-timeout fix above started threading
+# ``sig.set(time_limit=...)`` per-stage, the b2b tier's hard limit (3600 +
+# HARD_LIMIT_MARGIN_S = 3900s) legitimately exceeds that worker's blanket
+# 2100s ceiling — a single b2b upload can occupy 1 of only 2 shared slots for
+# ~65 minutes, and two concurrent b2b jobs stall the entire shared queue for
+# every other tenant. Endurance jobs were isolated onto their own `endurance`
+# queue/worker for the same reason (see docker-compose's celery-endurance);
+# this mirrors that pattern for the pipeline chain instead of shrinking the
+# paid b2b grace.
+#
+# PIPELINE_WORKER_TIME_LIMIT_S mirrors the shared celery-pipeline worker's
+# --time-limit in BOTH compose files (kept in sync by
+# tests/test_compute_pool.py::TestComposeQueueIsolation
+# .test_shared_pipeline_worker_blanket_matches_constant).
+PIPELINE_WORKER_TIME_LIMIT_S = 2100
+PIPELINE_LONG_QUEUE = "pipeline_long"
+
+
+def pipeline_queue_for_tier(tier: str) -> str:
+    """Return the Celery queue a pipeline dispatch for this plan tier must use.
+
+    A tier whose HARD timeout (soft + HARD_LIMIT_MARGIN_S, matching the
+    per-signature options build_pipeline_chain applies below) would exceed
+    the shared `pipeline` worker's blanket --time-limit
+    (PIPELINE_WORKER_TIME_LIMIT_S) is routed onto the isolated
+    `pipeline_long` queue / `celery-pipeline-long` worker instead, so it can
+    never occupy one of the shared queue's limited slots for longer than
+    that worker's own ceiling. Currently only the b2b tier crosses this
+    threshold; world-class's hard limit (2100s) lands exactly ON the shared
+    worker's ceiling and stays on the shared queue, unchanged from prior
+    behaviour.
+    """
+    soft = TIER_TIMEOUTS_S.get(tier, TIER_TIMEOUTS_S["locked"])
+    hard = soft + HARD_LIMIT_MARGIN_S
+    return PIPELINE_LONG_QUEUE if hard > PIPELINE_WORKER_TIME_LIMIT_S else "pipeline"
+
 
 def _build_session_meta(ctx: PipelineContext, conn=None) -> dict:
     """Build the session_meta dict expected by ``run_full_analysis()``.
@@ -1859,6 +1900,7 @@ def build_pipeline_chain(
     job_id: str,
     soft_time_limit: Optional[int] = None,
     time_limit: Optional[int] = None,
+    queue: Optional[str] = None,
 ):
     """Return a Celery chain: ingest -> analyze -> finalize.
 
@@ -1882,9 +1924,20 @@ def build_pipeline_chain(
     every stage falls back to the worker's blanket limits, unchanged from
     prior behaviour.
 
+    ``queue`` (FIX #5, HIGH): when given, routed onto EVERY stage signature
+    the same way ``soft_time_limit``/``time_limit`` are above — a chain-level
+    ``apply_async(queue=...)`` would again only bind to the first task. Pass
+    ``pipeline_queue_for_tier(plan_tier)`` here so a tier whose hard timeout
+    exceeds the shared pipeline worker's blanket --time-limit is dispatched
+    onto the isolated `pipeline_long` queue instead of the shared 2-slot
+    `pipeline` queue. When ``queue`` is None (default), no per-signature queue
+    override is set and every stage routes via celery_app.py's static
+    ``task_routes`` (queue "pipeline"), unchanged from prior behaviour.
+
     Usage::
 
-        chain = build_pipeline_chain("job-abc", soft_time_limit=3600)
+        chain = build_pipeline_chain("job-abc", soft_time_limit=3600,
+                                      queue=pipeline_queue_for_tier("b2b"))
         chain.apply_async()
     """
     ingest_sig = pipeline_ingest.s(job_id)
@@ -1895,5 +1948,9 @@ def build_pipeline_chain(
         hard_limit = time_limit if time_limit is not None else soft_time_limit + HARD_LIMIT_MARGIN_S
         for sig in (ingest_sig, analyze_sig, finalize_sig):
             sig.set(soft_time_limit=soft_time_limit, time_limit=hard_limit)
+
+    if queue is not None:
+        for sig in (ingest_sig, analyze_sig, finalize_sig):
+            sig.set(queue=queue)
 
     return chain(ingest_sig, analyze_sig, finalize_sig)

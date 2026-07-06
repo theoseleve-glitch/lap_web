@@ -143,6 +143,40 @@ services:
     networks:
       - internal
 
+  # Dedicated worker for pipeline jobs whose tier grace exceeds the shared
+  # celery-pipeline worker's blanket --time-limit=2100 above — mirrors
+  # celery-pipeline-long in docker-compose.prod.yml (FIX #5, customer
+  # readiness). Jobs are routed here at dispatch time by
+  # tasks.pipeline_tasks.pipeline_queue_for_tier. Limits match
+  # TIER_TIMEOUTS_S["b2b"] + HARD_LIMIT_MARGIN_S.
+  celery-pipeline-long:
+    build: .
+    command: >
+      celery -A telemetry_tool.celery_app worker
+      -Q pipeline_long
+      --concurrency=1
+      --soft-time-limit=3600
+      --time-limit=3900
+      --max-tasks-per-child=20
+      -l info
+    env_file: .env.staging
+    environment:
+      APP_ENV: staging
+      TELEMETRY_LOG_FORMAT: json
+      SENTRY_ENVIRONMENT: staging
+    volumes:
+      - upload_data:/data/uploads
+      - parquet_data:/data/parquet
+      - models_data:/data/models
+    depends_on:
+      redis:
+        condition: service_healthy
+      postgres:
+        condition: service_healthy
+    restart: unless-stopped
+    networks:
+      - internal
+
   celery-beat:
     build: .
     command: >

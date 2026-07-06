@@ -650,7 +650,11 @@ def upload_session() -> tuple[Response, int]:
         import redis as _redis
 
         from pipeline_context import PipelineContext
-        from tasks.pipeline_tasks import TIER_TIMEOUTS_S, build_pipeline_chain
+        from tasks.pipeline_tasks import (
+            TIER_TIMEOUTS_S,
+            build_pipeline_chain,
+            pipeline_queue_for_tier,
+        )
         from web.config import Config
 
         _r = _redis.Redis.from_url(Config.REDIS_URL)
@@ -673,11 +677,17 @@ def upload_session() -> tuple[Response, int]:
         # (not passed to apply_async) so the tier's grace reaches
         # pipeline_analyze/pipeline_finalize too — see TIER_TIMEOUTS_S docs.
         timeout = TIER_TIMEOUTS_S.get(plan_tier, TIER_TIMEOUTS_S["locked"])
-        build_pipeline_chain(job_id, soft_time_limit=timeout).apply_async()
+        # FIX #5 (HIGH): route tiers whose hard timeout exceeds the shared
+        # `pipeline` worker's blanket --time-limit onto the isolated
+        # `pipeline_long` queue/worker instead, so a long b2b job can never
+        # occupy one of only 2 shared pipeline slots — see
+        # tasks.pipeline_tasks.pipeline_queue_for_tier.
+        queue = pipeline_queue_for_tier(plan_tier)
+        build_pipeline_chain(job_id, soft_time_limit=timeout, queue=queue).apply_async()
 
         logger.info(
-            "Upload accepted: job_id=%s workspace=%s file=%s tier=%s timeout=%ds",
-            job_id, g.workspace_id, safe_name, plan_tier, timeout,
+            "Upload accepted: job_id=%s workspace=%s file=%s tier=%s timeout=%ds queue=%s",
+            job_id, g.workspace_id, safe_name, plan_tier, timeout, queue,
         )
 
         return api_response(

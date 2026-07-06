@@ -45,6 +45,7 @@ from web.api_utils import ErrorCode, api_error, api_response
 from web.chart_cache import chart_cached
 from web.db import get_db_connection
 from web.middleware.audit import audit_log
+from web.rate_limit import rate_limit
 from web.repos.delete_cascade import delete_entity_cascade, get_delete_impact
 
 logger = logging.getLogger(__name__)
@@ -3009,6 +3010,7 @@ MAX_OCP_TOTAL_SOLVES_PER_REQUEST = 500  # corners_matched * laps_considered
 
 
 @bp.route("/sessions/<session_id>/ocp-corner", methods=["POST"])
+@rate_limit(tier="analyze")
 @_safe_api
 def solve_ocp_corner(session_id: str) -> tuple[dict, int]:
     """Run OCP segment solver for selected corners across all laps.
@@ -3024,6 +3026,18 @@ def solve_ocp_corner(session_id: str) -> tuple[dict, int]:
     lap time (reuses existing result if available).
 
     Returns per-corner, per-lap optimal times + the full-lap optimal.
+
+    FIX #3 (HIGH, customer readiness): this route runs up to
+    MAX_OCP_TOTAL_SOLVES_PER_REQUEST synchronous solve_ocp_segment calls
+    INLINE on the web-worker thread. It previously fell through to the
+    blueprint's blanket "write" rate tier (60/min, x5 for world-class =
+    300/min — see _apply_rate_limit above) with no compute-budget check at
+    all, and the `analyses` quota is unlimited (-1) for world-class, so a
+    single world-class tenant could pin every gunicorn worker. The
+    @rate_limit(tier="analyze") below (5/hr, mirrors
+    track_surface_analysis.py's /run route) and the shared compute-budget
+    gate just after the session lookup close that gap without moving this
+    onto Celery.
     """
     body = request.get_json(silent=True) or {}
     corner_ids = body.get("corner_ids", [])
@@ -3043,6 +3057,32 @@ def solve_ocp_corner(session_id: str) -> tuple[dict, int]:
     session = models.get_session_by_id(conn, session_id)
     if session is None:
         return api_error(ErrorCode.NOT_FOUND, "Session not found", status=404)
+
+    # Shared per-tier compute budget (analysis + export + track-surface +
+    # endurance pool — see web.compute_budget.count_active_compute_jobs).
+    # Fail-open: a metering error must never block a legitimate solve.
+    # TODO(async-ocp): this route still runs inline on the web worker rather
+    # than being dispatched to Celery. The existing MAX_OCP_CORNER_IDS_PER_REQUEST
+    # / MAX_OCP_TOTAL_SOLVES_PER_REQUEST caps + the rate limit above + this
+    # budget gate are the scoped fix for the immediate DoS risk; a full
+    # async migration (queue + progress polling) is future work.
+    try:
+        from web.compute_budget import check_shared_compute_budget
+        allowed, info = check_shared_compute_budget(
+            conn,
+            getattr(g, "current_user_id", 0) or 0,
+            getattr(g, "workspace_id", 0) or 0,
+            getattr(g, "plan_tier", None),
+        )
+        if not allowed:
+            return api_error(
+                ErrorCode.RATE_LIMITED,
+                f"Compute budget exceeded: {info['running_jobs']}/{info['max_jobs']} jobs running",
+                status=429,
+            )
+    except Exception:
+        logger.warning("Shared compute budget check failed — allowing OCP corner solve",
+                       exc_info=True)
 
     try:
         result = _run_corner_ocp(conn, session_id, corner_ids)
