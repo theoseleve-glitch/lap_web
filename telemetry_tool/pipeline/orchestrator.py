@@ -1287,9 +1287,14 @@ def run_full_analysis(
 
     _adapter_fmt = summary.get("adapter_format", "racechrono")
 
+    _track_match_info = summary.get("track_match") or {}
     surface_result, err = _safe_step(
         "10d_track_surface", s10d_surface.run_surface_build,
         resampled_laps, track_id, _adapter_fmt,
+        is_operator_run=bool(meta.get("is_operator_run", False)),
+        job_id=meta.get("job_id") or meta.get("session_id"),
+        fingerprint=_track_match_info.get("fingerprint"),
+        track_label=_track_match_info.get("track_name") or meta.get("track_name"),
     )
     _record("10d_track_surface", surface_result, err)
     if surface_result:

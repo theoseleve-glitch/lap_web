@@ -309,6 +309,14 @@ def _dispatch_build_reprocess(conn, session_ref: str) -> None:
         workspace_id=str(job["workspace_id"]),
         session_id=new_job_id,
         file_path=job["file_path"],
+        # This dispatcher only runs from the operator/admin-triggered
+        # bless-reprocess maintenance path (see _load_ingestion_job's
+        # docstring above) -- never from an end-user upload -- so it is
+        # a genuine operator signal for the track-onboarding GT-miss hook
+        # (pipeline/stages/s10d_surface.py). In practice GT now exists by
+        # the time this runs (that's the point of a bless-reprocess), so
+        # the hook is a no-op here; set for correctness/consistency.
+        is_operator_run=True,
     )
     try:
         original_meta = redis_client.get(f"pipeline:meta:{session_ref}")

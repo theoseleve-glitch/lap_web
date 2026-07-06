@@ -22,6 +22,7 @@ Usage::
 from __future__ import annotations
 
 import json
+import os
 import shutil
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -62,6 +63,14 @@ class PipelineContext:
         Accumulated errors across stages.
     joker_decision : str | None
         Optional joker/strategy decision for the pipeline run.
+    is_operator_run : bool
+        Whether this pipeline run was triggered by an operator/admin
+        (as opposed to an ordinary end-user upload). Gates the
+        track-onboarding GT-miss detection hook in
+        ``pipeline.stages.s10d_surface`` -- end-user uploads must NEVER
+        trigger onboarding, so this defaults to ``False`` and is only
+        ever set ``True`` explicitly by known operator entrypoints (the
+        admin job-retry route, the onboarding bless-reprocess dispatcher).
     temp_dir : Path
         Directory for intermediate Parquet files.
     redis_client : Any
@@ -78,6 +87,7 @@ class PipelineContext:
     joker_decision: Optional[str] = None
     selected_corner_ids: Optional[list] = None
     custom_corners: Optional[list] = None
+    is_operator_run: bool = False
     temp_dir: Path = field(default_factory=lambda: Path(_DEFAULT_TEMP_ROOT))
     redis_client: Any = field(default=None, repr=False)
 
@@ -94,6 +104,7 @@ class PipelineContext:
         session_id: str,
         file_path: str,
         temp_root: str = _DEFAULT_TEMP_ROOT,
+        is_operator_run: Optional[bool] = None,
     ) -> "PipelineContext":
         """Create a new pipeline context, persist to Redis, and set up temp dir.
 
@@ -107,6 +118,15 @@ class PipelineContext:
             Job metadata.
         temp_root : str
             Root directory under which ``pipeline/{job_id}/`` will be created.
+        is_operator_run : bool | None
+            Pass ``True`` explicitly from a known operator/admin entrypoint
+            to allow this run to trigger the track-onboarding GT-miss hook.
+            Ordinary end-user upload call sites should leave this ``None``
+            (the default) -- it then falls back to the ``ONBOARDING_OPERATOR_RUN``
+            env var (``"1"`` -> True) so ad-hoc ops scripts/CLIs that build a
+            context without threading this kwarg through can still opt in;
+            unset -> ``False``. Never resolves to ``True`` on its own for a
+            normal upload.
 
         Returns
         -------
@@ -115,6 +135,9 @@ class PipelineContext:
         temp_dir = Path(temp_root) / "pipeline" / job_id
         temp_dir.mkdir(parents=True, exist_ok=True)
 
+        if is_operator_run is None:
+            is_operator_run = os.environ.get("ONBOARDING_OPERATOR_RUN") == "1"
+
         ctx = cls(
             job_id=job_id,
             workspace_id=workspace_id,
@@ -122,6 +145,7 @@ class PipelineContext:
             file_path=file_path,
             temp_dir=temp_dir,
             redis_client=redis_client,
+            is_operator_run=is_operator_run,
         )
         ctx.save()
         return ctx
@@ -156,6 +180,7 @@ class PipelineContext:
             joker_decision=data.get("joker_decision"),
             selected_corner_ids=data.get("selected_corner_ids"),
             custom_corners=data.get("custom_corners"),
+            is_operator_run=data.get("is_operator_run", False),
             temp_dir=temp_dir,
             redis_client=redis_client,
         )
@@ -176,6 +201,7 @@ class PipelineContext:
             "joker_decision": self.joker_decision,
             "selected_corner_ids": self.selected_corner_ids,
             "custom_corners": self.custom_corners,
+            "is_operator_run": self.is_operator_run,
         }
 
     def save(self) -> None:
