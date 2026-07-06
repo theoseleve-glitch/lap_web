@@ -208,6 +208,21 @@ def save_geometry():
         if not isinstance(geometry, dict):
             return api_error(ErrorCode.VALIDATION_ERROR, "geometry is required", status=400)
 
+        # Required deploy-config: the reviewer attestation is derived from
+        # this. Degrade to a clean 503 rather than KeyError->500 when unset
+        # (deny-safe: nothing is blessed). See runbook env table.
+        operator_email = os.environ.get("ONBOARDING_OPERATOR_EMAIL")
+        if not operator_email:
+            logger.error(
+                "onboarding save: ONBOARDING_OPERATOR_EMAIL unset -- cannot "
+                "derive reviewer attestation; refusing bless"
+            )
+            return api_error(
+                ErrorCode.INTERNAL_ERROR,
+                "Onboarding is not configured",
+                status=503,
+            )
+
         # Server-derived, never from the body (attacker-controlled fields
         # in the request JSON are silently ignored).
         canonical_id = row.get("track_key")
@@ -245,7 +260,7 @@ def save_geometry():
             result = bless_geometry(
                 geojson_path=tmp_path,
                 canonical_id=canonical_id,
-                reviewed_by=f"onboarding:{os.environ['ONBOARDING_OPERATOR_EMAIL']}",
+                reviewed_by=f"onboarding:{operator_email}",
                 auto_draft_geojson=auto_draft,
                 conn=conn,
             )

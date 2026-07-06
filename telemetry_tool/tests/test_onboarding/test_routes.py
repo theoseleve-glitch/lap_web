@@ -248,6 +248,27 @@ class TestPostSave:
         assert rkwargs["canonical_id"] == "kct_onb"
         assert rkwargs["session_refs"] == ["s1", "s2"]
 
+    def test_missing_operator_email_env_returns_503_not_500(
+        self, fake_repo, fake_draft, fake_bless, fake_reprocess, monkeypatch,
+    ):
+        """Final-review M2: an unset ONBOARDING_OPERATOR_EMAIL must degrade to
+        a clean 503 (deny-safe: nothing blessed), not KeyError->500."""
+        monkeypatch.delenv("ONBOARDING_OPERATOR_EMAIL", raising=False)
+        tok, jti = mint("req-1")
+        fake_repo.get.return_value = _row(token_jti=jti, track_key="kct_onb")
+        app = _make_app()
+        resp = app.test_client().post(
+            "/api/v1/onboarding/save",
+            json={
+                "request_id": "req-1",
+                "geometry": {"type": "FeatureCollection", "features": []},
+            },
+            headers={"Authorization": f"Bearer {tok}"},
+        )
+        assert resp.status_code == 503
+        fake_bless.assert_not_called()          # nothing reaches the trust store
+        fake_repo.set_status.assert_not_called()  # nothing blessed
+
     def test_vehicle_classes_row_derived_reach_reprocess_after_bless(
         self, fake_repo, fake_draft, fake_bless, fake_reprocess,
     ):
