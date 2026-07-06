@@ -45,12 +45,12 @@ _SETTABLE_FIELDS: dict[str, str] = {
 
 _ALL_COLUMNS = (
     "id", "track_key", "track_label", "fingerprint", "status", "bbox",
-    "first_session_ref", "session_refs", "session_count", "draft_status",
-    "draft_path", "token_jti", "error", "created_at", "updated_at",
-    "emailed_at", "blessed_at",
+    "draft_centerline", "first_session_ref", "session_refs", "session_count",
+    "draft_status", "draft_path", "token_jti", "error", "created_at",
+    "updated_at", "emailed_at", "blessed_at",
 )
 
-_JSONB_COLUMNS = {"fingerprint", "bbox", "session_refs"}
+_JSONB_COLUMNS = {"fingerprint", "bbox", "draft_centerline", "session_refs"}
 
 
 def _row_to_dict(row: Any) -> dict:
@@ -79,6 +79,7 @@ def upsert_open_request(
     fingerprint: dict | None,
     bbox: dict | None,
     session_ref: str,
+    draft_centerline: list | None = None,
 ) -> tuple[str, bool]:
     """Atomically create-or-attach-to the single open request for a track.
 
@@ -91,23 +92,33 @@ def upsert_open_request(
     On conflict, ``session_refs`` gets the new ``session_ref`` appended only
     if not already present (``@>`` containment check) and only up to 50
     entries, so a flapping/retried caller can't grow the array unbounded or
-    duplicate itself.
+    duplicate itself. ``draft_centerline`` (the downsampled lon/lat polyline
+    of one driven lap, migration 081) uses first-non-null-wins semantics on
+    conflict (``COALESCE(existing, EXCLUDED)``) instead: it's a single
+    representative geometry, not an accumulating log like ``session_refs``,
+    so a later attaching session must never clobber the one already stored.
 
     Returns ``(request_id, created)`` where ``created=False`` means this
     call attached to a pre-existing open row rather than inserting one.
     """
     fingerprint_json = json.dumps(fingerprint) if fingerprint is not None else None
     bbox_json = json.dumps(bbox) if bbox is not None else None
+    draft_centerline_json = (
+        json.dumps(draft_centerline) if draft_centerline is not None else None
+    )
 
     sql = """
         INSERT INTO track_onboarding_requests
-            (id, track_key, track_label, fingerprint, status, bbox,
+            (id, track_key, track_label, fingerprint, status, bbox, draft_centerline,
              first_session_ref, session_refs, session_count, created_at, updated_at)
         VALUES
             (gen_random_uuid(), %(track_key)s, %(track_label)s, %(fingerprint)s::jsonb, 'requested', %(bbox)s::jsonb,
-             %(session_ref)s, to_jsonb(ARRAY[%(session_ref)s]::text[]), 1, now(), now())
+             %(draft_centerline)s::jsonb, %(session_ref)s, to_jsonb(ARRAY[%(session_ref)s]::text[]), 1, now(), now())
         ON CONFLICT (track_key) WHERE status <> 'blessed'
         DO UPDATE SET
+            draft_centerline = COALESCE(
+                track_onboarding_requests.draft_centerline, EXCLUDED.draft_centerline
+            ),
             session_refs = CASE
                 WHEN track_onboarding_requests.session_refs @> to_jsonb(%(session_ref)s::text)
                      OR jsonb_array_length(track_onboarding_requests.session_refs) >= 50
@@ -123,6 +134,7 @@ def upsert_open_request(
         "track_label": track_label,
         "fingerprint": fingerprint_json,
         "bbox": bbox_json,
+        "draft_centerline": draft_centerline_json,
         "session_ref": session_ref,
     }
     cur = conn.cursor()

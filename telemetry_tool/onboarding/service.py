@@ -48,6 +48,7 @@ def record_missing_geometry(
     bbox: dict | None,
     session_ref: str,
     is_operator_run: bool,
+    draft_centerline: list | None = None,
 ) -> str | None:
     """Dedup + enqueue an onboarding draft for a real GT gap.
 
@@ -58,6 +59,11 @@ def record_missing_geometry(
       3. ``gt_loader.load_gt(track_key)`` is not ``None`` -- GT already
          exists; re-confirmed here rather than trusting the caller's
          (possibly stale) "gt is None" check.
+
+    ``draft_centerline`` (a downsampled lon/lat polyline of the driven lap,
+    migration 081) is forwarded as-is to ``repo.upsert_open_request``, which
+    applies first-non-null-wins semantics on conflict -- this function does
+    not otherwise inspect or validate it.
 
     Otherwise, atomically upserts the single open request for
     ``track_key`` (``repo.upsert_open_request``). The async draft job is
@@ -96,6 +102,7 @@ def record_missing_geometry(
             fingerprint=fingerprint,
             bbox=bbox,
             session_ref=session_ref,
+            draft_centerline=draft_centerline,
         )
         conn.commit()
 

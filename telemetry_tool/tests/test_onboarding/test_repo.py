@@ -70,6 +70,7 @@ def test_upsert_open_request_sql_shape_no_pg():
         fingerprint={"a": 1},
         bbox={"min_lat": 1.0},
         session_ref="sess-1",
+        draft_centerline=[[5.0, 45.0], [5.001, 45.0]],
     )
     assert request_id == "fake-id-1"
     assert created is True
@@ -78,6 +79,10 @@ def test_upsert_open_request_sql_shape_no_pg():
     # ON CONFLICT arbiter matches the partial unique index exactly --
     # Postgres requires the predicate to be restated for inference.
     assert "ON CONFLICT (track_key) WHERE status <> 'blessed'" in sql
+    # draft_centerline: first-non-null-wins on conflict, never clobbered by
+    # a later attaching session's (possibly absent) centerline.
+    assert "draft_centerline = COALESCE(" in sql
+    assert "track_onboarding_requests.draft_centerline, EXCLUDED.draft_centerline" in sql
     # jsonb dedup guard: don't duplicate a repeated session_ref.
     assert "session_refs @> to_jsonb(%(session_ref)s::text)" in sql
     assert "jsonb_array_length(track_onboarding_requests.session_refs) >= 50" in sql
@@ -88,6 +93,7 @@ def test_upsert_open_request_sql_shape_no_pg():
     assert params["session_ref"] == "sess-1"
     assert json.loads(params["fingerprint"]) == {"a": 1}
     assert json.loads(params["bbox"]) == {"min_lat": 1.0}
+    assert json.loads(params["draft_centerline"]) == [[5.0, 45.0], [5.001, 45.0]]
 
 
 def test_upsert_open_request_created_false_on_attach_no_pg():
@@ -105,6 +111,7 @@ def test_upsert_open_request_created_false_on_attach_no_pg():
     _, params = conn.calls[-1]
     assert params["fingerprint"] is None
     assert params["bbox"] is None
+    assert params["draft_centerline"] is None
 
 
 def test_set_status_sql_shape_no_pg():
@@ -167,7 +174,9 @@ def test_get_decodes_jsonb_columns_no_pg():
     row = {
         "id": "req-1", "track_key": "T1", "track_label": "Test",
         "fingerprint": json.dumps({"a": 1}), "status": "requested",
-        "bbox": json.dumps({"min_lat": 1.0}), "first_session_ref": "sess-1",
+        "bbox": json.dumps({"min_lat": 1.0}),
+        "draft_centerline": json.dumps([[5.0, 45.0], [5.001, 45.0]]),
+        "first_session_ref": "sess-1",
         "session_refs": json.dumps(["sess-1"]), "session_count": 1,
         "draft_status": None, "draft_path": None, "token_jti": None,
         "error": None, "created_at": None, "updated_at": None,
@@ -177,6 +186,7 @@ def test_get_decodes_jsonb_columns_no_pg():
     result = repo.get(conn, "req-1")
     assert result["fingerprint"] == {"a": 1}
     assert result["bbox"] == {"min_lat": 1.0}
+    assert result["draft_centerline"] == [[5.0, 45.0], [5.001, 45.0]]
     assert result["session_refs"] == ["sess-1"]
 
 

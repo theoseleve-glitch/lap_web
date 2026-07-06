@@ -37,6 +37,7 @@ def upgrade() -> None:
         sa.Column("fingerprint", JSONB, nullable=True),
         sa.Column("status", sa.Text, nullable=False),
         sa.Column("bbox", JSONB, nullable=True),
+        sa.Column("draft_centerline", JSONB, nullable=True),
         sa.Column("first_session_ref", sa.Text, nullable=True),
         sa.Column("session_refs", JSONB, nullable=False, server_default=sa.text("'[]'")),
         sa.Column("session_count", sa.Integer, nullable=False, server_default="0"),

@@ -92,23 +92,21 @@ except Exception:
 
 
 def _centerline_from_row(row: dict) -> list:
-    """Best-effort driven-lap centerline (``[[lon, lat], ...]``) for the
-    drafters.
+    """Driven-lap centerline (``[[lon, lat], ...]``) for the drafters.
 
-    Migration 081 / ``repo.py`` gives a request row only ``bbox`` and
-    ``fingerprint`` (opaque JSONB) as geometry-adjacent fields -- there is no
-    dedicated GPS/centerline column. Until the Task 13 trigger hook lands and
-    fixes a concrete ``fingerprint`` shape, this reads
-    ``fingerprint["centerline"]`` defensively and falls back to an empty list
-    (which ``gps_only_draft`` / ``sam2_draft`` both handle: the former raises
-    ``DraftError`` -- caught below as an unexpected drafting failure -- and
-    the latter just returns ``None``, falling through to the GPS-only path).
+    Migration 081's ``draft_centerline`` column (Task 13) is the first-class
+    home for this: a downsampled lon/lat polyline of one driven lap, written
+    at request-creation time (``onboarding.service.record_missing_geometry``
+    -> ``repo.upsert_open_request``) and threaded straight through to this
+    row. Falls back to an empty list when absent (e.g. a request created
+    before Task 13, or a caller that never supplied one) -- ``gps_only_draft``
+    raises ``DraftError`` on an empty centerline (caught above as an
+    unexpected drafting failure) and ``sam2_draft`` just returns ``None``,
+    falling through to the GPS-only path.
     """
-    fingerprint = row.get("fingerprint") or {}
-    if isinstance(fingerprint, dict):
-        centerline = fingerprint.get("centerline")
-        if isinstance(centerline, list):
-            return centerline
+    centerline = row.get("draft_centerline")
+    if isinstance(centerline, list):
+        return centerline
     return []
 
 

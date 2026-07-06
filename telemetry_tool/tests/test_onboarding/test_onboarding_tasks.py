@@ -36,7 +36,8 @@ def _row(**overrides) -> dict:
         id=_REQUEST_ID,
         track_key="T1_solokart",
         track_label="Solokart FP",
-        fingerprint={"centerline": [[5.0, 45.0], [5.001, 45.0], [5.001, 45.001]]},
+        fingerprint={"n_sessions": 1},
+        draft_centerline=[[5.0, 45.0], [5.001, 45.0], [5.001, 45.001]],
         status="drafting",
         bbox={"min_lat": 45.0, "max_lat": 45.01, "min_lon": 5.0, "max_lon": 5.01},
         token_jti=None,
@@ -107,6 +108,21 @@ def _mock_send_email(monkeypatch):
 @pytest.fixture
 def conn():
     return MagicMock(name="conn")
+
+
+class TestCenterlineFromRow:
+    def test_reads_draft_centerline_column(self):
+        row = _row(draft_centerline=[[1.0, 2.0], [1.1, 2.1]])
+        assert onboarding_tasks._centerline_from_row(row) == [[1.0, 2.0], [1.1, 2.1]]
+
+    def test_missing_draft_centerline_returns_empty_list_no_crash(self):
+        row = _row(draft_centerline=None)
+        assert onboarding_tasks._centerline_from_row(row) == []
+
+    def test_absent_key_returns_empty_list_no_crash(self):
+        row = _row()
+        del row["draft_centerline"]
+        assert onboarding_tasks._centerline_from_row(row) == []
 
 
 class TestClaimGate:

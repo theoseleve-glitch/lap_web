@@ -65,6 +65,9 @@ def _mock_draft_and_notify(monkeypatch):
     return fake_task
 
 
+_DRAFT_CENTERLINE = [[5.0, 45.0], [5.001, 45.0], [5.001, 45.001]]
+
+
 def _kwargs(**overrides):
     base = dict(
         track_key=_TRACK_KEY,
@@ -73,6 +76,7 @@ def _kwargs(**overrides):
         bbox={"min_lat": 1, "max_lat": 2, "min_lon": 3, "max_lon": 4},
         session_ref="sess-001",
         is_operator_run=True,
+        draft_centerline=_DRAFT_CENTERLINE,
     )
     base.update(overrides)
     return base
@@ -88,7 +92,15 @@ class TestOperatorMissNewTrack:
 
         assert result == "req-1"
         _mock_load_gt.assert_called_once_with(_TRACK_KEY)
-        _mock_repo.upsert_open_request.assert_called_once()
+        _mock_repo.upsert_open_request.assert_called_once_with(
+            _mock_connection,
+            track_key=_TRACK_KEY,
+            track_label="Solokart FP",
+            fingerprint={"n_sessions": 1},
+            bbox={"min_lat": 1, "max_lat": 2, "min_lon": 3, "max_lon": 4},
+            session_ref="sess-001",
+            draft_centerline=_DRAFT_CENTERLINE,
+        )
         _mock_connection.commit.assert_called_once()
         _mock_draft_and_notify.delay.assert_called_once_with("req-1")
         # created=True -> no need to re-check existing row status
