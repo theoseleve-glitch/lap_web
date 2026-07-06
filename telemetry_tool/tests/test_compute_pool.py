@@ -193,6 +193,101 @@ class TestOcpCornerComputeBudget:
         mock_run.assert_called_once()
 
 
+class TestOcpCornerSelfRegistersInSharedPool:
+    """Fix D: the route must register ITSELF in the shared compute-budget
+    pool for the duration of its synchronous solve (INCR before, DECR after
+    -- in a `finally` so a solver exception still releases the slot), not
+    just read the OTHER pools."""
+
+    @staticmethod
+    def _make_incr_redis():
+        mock_redis = MagicMock()
+        store: dict = {}
+
+        def _incr(key):
+            store[key] = int(store.get(key, 0) or 0) + 1
+            return store[key]
+
+        def _expire(key, ttl):
+            return True
+
+        def _get(key):
+            return store.get(key)
+
+        def _eval(script, numkeys, key, *rest):
+            if store.get(key, 0) > 0:
+                store[key] -= 1
+            return None
+
+        mock_redis.incr = MagicMock(side_effect=_incr)
+        mock_redis.expire = MagicMock(side_effect=_expire)
+        mock_redis.get = MagicMock(side_effect=_get)
+        mock_redis.eval = MagicMock(side_effect=_eval)
+        # Explicitly zero -- a bare, unconfigured MagicMock attribute's
+        # default __int__ returns 1 (not a TypeError), which would otherwise
+        # make count_active_endurance_jobs() spuriously contribute 1 to the
+        # shared pool via this same mock client.
+        mock_redis.scard = MagicMock(return_value=0)
+        mock_redis._store = store
+        return mock_redis
+
+    def test_incrs_before_solve_and_decrs_after_success(self, data_v2_client):
+        mock_redis = self._make_incr_redis()
+        conn = _FakeBudgetConn({})
+        with patch("web.rate_limit.get_redis", return_value=mock_redis), \
+             patch("web.routes.data_v2.get_db_connection", return_value=conn), \
+             patch("web.models.get_session_by_id", return_value={"session_id": "42"}), \
+             patch("web.routes.data_v2._run_corner_ocp",
+                   return_value={"corner_results": [], "full_lap_ocp": None}) as mock_run:
+            resp = data_v2_client.post(
+                "/api/v1/sessions/42/ocp-corner",
+                json={"corner_ids": [1, 2, 3]},
+            )
+        assert resp.status_code == 200
+        mock_run.assert_called_once()
+        # Registered then cleared -- net zero after the request completes.
+        assert mock_redis._store.get("ocp_corner:active:1", 0) == 0
+        mock_redis.incr.assert_called_once_with("ocp_corner:active:1")
+
+    def test_decrs_even_when_solver_raises(self, data_v2_client):
+        """The active-slot counter must not leak when _run_corner_ocp
+        blows up -- the DECR lives in a `finally`."""
+        mock_redis = self._make_incr_redis()
+        conn = _FakeBudgetConn({})
+        with patch("web.rate_limit.get_redis", return_value=mock_redis), \
+             patch("web.routes.data_v2.get_db_connection", return_value=conn), \
+             patch("web.models.get_session_by_id", return_value={"session_id": "42"}), \
+             patch("web.routes.data_v2._run_corner_ocp",
+                   side_effect=RuntimeError("solver blew up")):
+            resp = data_v2_client.post(
+                "/api/v1/sessions/42/ocp-corner",
+                json={"corner_ids": [1, 2, 3]},
+            )
+        assert resp.status_code == 500
+        assert mock_redis._store.get("ocp_corner:active:1", 0) == 0
+
+    def test_second_concurrent_request_from_same_workspace_is_rejected(self, data_v2_client):
+        """A first in-flight (never-cleared, e.g. still running) OCP-corner
+        solve for this workspace must be visible to a second request's
+        budget check and reject it once the pool is full."""
+        mock_redis = self._make_incr_redis()
+        # locked tier: max_concurrent_jobs == 1 (data_v2_app fixture sets
+        # g.plan_tier = "locked"). Simulate one already-registered in-flight
+        # solve for this workspace (as if a first request is still running).
+        mock_redis._store["ocp_corner:active:1"] = 1
+        conn = _FakeBudgetConn({})
+        with patch("web.rate_limit.get_redis", return_value=mock_redis), \
+             patch("web.routes.data_v2.get_db_connection", return_value=conn), \
+             patch("web.models.get_session_by_id", return_value={"session_id": "42"}), \
+             patch("web.routes.data_v2._run_corner_ocp") as mock_run:
+            resp = data_v2_client.post(
+                "/api/v1/sessions/42/ocp-corner",
+                json={"corner_ids": [1, 2, 3]},
+            )
+        assert resp.status_code == 429
+        mock_run.assert_not_called()
+
+
 class TestOcpCornerCapsStillApply:
     """Regression: the pre-existing hard caps (independent of the new rate
     limit / budget gate) must still be enforced."""

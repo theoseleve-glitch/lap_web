@@ -56,6 +56,26 @@ def map_stripe_status(stripe_status: str) -> str:
     """Convert a Stripe subscription status to our billing state."""
     return STRIPE_STATUS_MAP.get(stripe_status, "free")
 
+
+# Statuses that represent a genuinely active, currently-billable subscription.
+# Any OTHER value (past_due, unpaid, canceled, paused, expired, free, or an
+# unrecognized/missing status) is terminal/non-billable for the purposes of
+# resolving a Stripe re-attach conflict — see is_billable_status() below.
+#
+# NOTE: past_due is deliberately treated as non-billable here even though
+# Stripe is still mid-dunning on it — the conflict this classifies is "does
+# the OLD attached subscription still deserve to block a NEW paid checkout",
+# and a past_due sub is already failing to collect, so blocking the
+# customer's legitimate new subscription in favor of a struggling old one is
+# the wrong tradeoff (see web.routes.billing._handle_checkout_completed and
+# tasks.billing_tasks._reconcile_pending_entitlements_impl).
+BILLABLE_STATUSES = frozenset({"active", "trialing"})
+
+
+def is_billable_status(status: str | None) -> bool:
+    """True when `status` represents a currently active/billable subscription."""
+    return status in BILLABLE_STATUSES
+
 # Email event types mapped to state transitions
 _TRANSITION_EMAILS: dict[str, str] = {
     "active": "payment_recovered",      # recovery from past_due/canceled

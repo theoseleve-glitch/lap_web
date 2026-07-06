@@ -251,6 +251,21 @@ class TestMarkEnduranceDispatched:
         assert isinstance(record["dispatched_at"], (int, float))
 
 
+class TestMarkEnduranceStarted:
+    """HIGH FIX: the run-start marker the reconciler now ages jobs against."""
+
+    def test_writes_started_timestamp(self):
+        from tasks.endurance_tasks import mark_endurance_started
+
+        _r = _make_mock_redis()
+        before = time.time()
+        mark_endurance_started(_r, "job-y")
+        after = time.time()
+
+        raw = _r._store["endurance:started:job-y"]
+        assert before <= float(raw) <= after
+
+
 class TestEnduranceProcessRouteRealConcurrencyCap:
     """Fix #2's route-level enforcement, exercised through the REAL counting
     path (check_shared_compute_budget is NOT mocked here) -- this is the
@@ -338,6 +353,8 @@ class TestEnduranceProcessRouteRealConcurrencyCap:
 
 class TestReconcileStuckEnduranceJobs:
     def test_stale_non_terminal_job_marked_failed_and_lock_released(self):
+        """A job that ACTUALLY STARTED and has been running past the
+        ceiling (endurance:started present and stale) is force-failed."""
         from tasks.endurance_tasks import _RECONCILE_CEILING_S, reconcile_stuck_endurance_jobs
 
         _r = _make_mock_redis()
@@ -348,6 +365,7 @@ class TestReconcileStuckEnduranceJobs:
         _r._store[f"endurance:dispatch:{job_id}"] = json.dumps(
             {"workspace_id": workspace_id, "dispatched_at": stale_ts}
         )
+        _r._store[f"endurance:started:{job_id}"] = stale_ts
         _r._store[f"endurance:status:{job_id}"] = json.dumps({"status": "processing_stint"})
         # Simulates the SIGKILL: `finally: _release_job_lock` never ran, so
         # the dead worker's run-lock is still held.
@@ -364,6 +382,8 @@ class TestReconcileStuckEnduranceJobs:
         assert f"endurance:dispatch:{job_id}" not in _r._store
 
     def test_fresh_in_flight_job_is_left_alone(self):
+        """A job that started recently (started marker present, not yet past
+        the ceiling) is left running."""
         from tasks.endurance_tasks import reconcile_stuck_endurance_jobs
 
         _r = _make_mock_redis()
@@ -373,6 +393,7 @@ class TestReconcileStuckEnduranceJobs:
         _r._store[f"endurance:dispatch:{job_id}"] = json.dumps(
             {"workspace_id": workspace_id, "dispatched_at": time.time()}
         )
+        _r._store[f"endurance:started:{job_id}"] = time.time()
         _r._store[f"endurance:status:{job_id}"] = json.dumps({"status": "processing_stint"})
         _r._store[f"endurance:runlock:{job_id}"] = "live-worker-request-id"
 
@@ -398,6 +419,7 @@ class TestReconcileStuckEnduranceJobs:
         _r._store[f"endurance:dispatch:{job_id}"] = json.dumps(
             {"workspace_id": workspace_id, "dispatched_at": stale_ts}
         )
+        _r._store[f"endurance:started:{job_id}"] = stale_ts
         _r._store[f"endurance:status:{job_id}"] = json.dumps({
             "status": "completed", "job_id": job_id, "session_id": "s1",
         })
@@ -409,6 +431,41 @@ class TestReconcileStuckEnduranceJobs:
         assert status["status"] == "completed"  # untouched
         assert status["session_id"] == "s1"
         assert job_id not in _r._store.get(f"endurance:active:{workspace_id}", set())
+
+    def test_queued_not_started_past_old_ceiling_is_not_touched(self):
+        """HIGH FIX (merge-blocker): a job that has been QUEUED (dispatched)
+        behind another long-running job on the single-concurrency endurance
+        worker for well past the OLD enqueue-based ceiling, but has NOT yet
+        acquired its run-lock and started executing (no endurance:started
+        marker), must NEVER be force-failed, have its run-lock released, or
+        have its active-set slot cleared. Ageing off dispatched_at alone (the
+        pre-fix behaviour) would have force-failed this perfectly healthy,
+        still-queued job."""
+        from tasks.endurance_tasks import _RECONCILE_CEILING_S, reconcile_stuck_endurance_jobs
+
+        _r = _make_mock_redis()
+        job_id = "job-queued-long"
+        workspace_id = "6"
+        # Dispatched WAY past the old ceiling (e.g. queued ~65min behind a
+        # long job A on a single-concurrency worker) -- but never started.
+        very_old_dispatch = time.time() - (_RECONCILE_CEILING_S + 3600)
+        _r._store[f"endurance:active:{workspace_id}"] = {job_id}
+        _r._store[f"endurance:dispatch:{job_id}"] = json.dumps(
+            {"workspace_id": workspace_id, "dispatched_at": very_old_dispatch}
+        )
+        _r._store[f"endurance:status:{job_id}"] = json.dumps({
+            "status": "queued", "total_stints": 3,
+        })
+        # No endurance:started:{job_id} key -- this job has not started yet.
+        # No endurance:runlock:{job_id} key -- nothing has acquired it yet.
+
+        reconciled = reconcile_stuck_endurance_jobs(_r)
+
+        assert reconciled == []
+        assert json.loads(_r._store[f"endurance:status:{job_id}"])["status"] == "queued"
+        assert job_id in _r._store[f"endurance:active:{workspace_id}"]
+        assert f"endurance:dispatch:{job_id}" in _r._store
+        assert f"endurance:runlock:{job_id}" not in _r._store
 
 
 # ---------------------------------------------------------------------------
@@ -444,6 +501,35 @@ class TestRedeliveryAttemptsBound:
         # This delivery never actually held the run-lock -- the force-release
         # must still be a safe no-op (key simply absent).
         assert f"endurance:runlock:{job_id}" not in _r._store
+
+    def test_nth_redelivery_does_not_relabel_an_already_reconciled_stuck_job(self):
+        """LOW FIX (#G): if the job was already force-failed by the
+        reconciler (status='failed', error_class='reconciled_stuck') BEFORE
+        this Nth redelivery arrives, the redelivery-exhausted gate must NOT
+        overwrite that more specific, already-correct terminal status with
+        the less informative 'redelivery_exhausted' label."""
+        from tasks.endurance_tasks import ENDURANCE_MAX_DELIVERY_ATTEMPTS, process_endurance_session
+
+        _r = _make_mock_redis()
+        job_id = "job-already-reconciled"
+        workspace_id = "1"
+        _r._store[f"endurance:attempts:{job_id}"] = ENDURANCE_MAX_DELIVERY_ATTEMPTS
+        _r._store[f"endurance:status:{job_id}"] = json.dumps({
+            "status": "failed", "job_id": job_id, "error_class": "reconciled_stuck",
+        })
+        meta = {"file_path": "x", "workspace_id": workspace_id}
+
+        with patch("redis.Redis.from_url", return_value=_r), \
+             patch("tasks.endurance_tasks._run_endurance_session") as mock_run:
+            result = process_endurance_session(job_id, meta, [{"stint_number": 1}])
+
+        mock_run.assert_not_called()
+        assert result["skipped"] is True
+        assert result["reason"] == "already_failed"
+        status = json.loads(_r._store[f"endurance:status:{job_id}"])
+        # Unchanged -- NOT relabeled as redelivery_exhausted.
+        assert status["status"] == "failed"
+        assert status["error_class"] == "reconciled_stuck"
 
     def test_attempts_within_bound_still_runs_normally(self):
         from tasks.endurance_tasks import process_endurance_session
@@ -518,6 +604,7 @@ class TestCrossFixComposition:
         _r._store[f"endurance:dispatch:{job_id}"] = json.dumps(
             {"workspace_id": workspace_id, "dispatched_at": stale_ts}
         )
+        _r._store[f"endurance:started:{job_id}"] = stale_ts
         _r._store[f"endurance:status:{job_id}"] = json.dumps({"status": "processing_stint"})
         _r._store[f"endurance:runlock:{job_id}"] = "dead-worker-request-id"
 

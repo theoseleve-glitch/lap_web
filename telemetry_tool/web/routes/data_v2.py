@@ -3008,6 +3008,56 @@ def get_corner_positions(session_id: str) -> tuple[dict, int]:
 MAX_OCP_CORNER_IDS_PER_REQUEST = 20
 MAX_OCP_TOTAL_SOLVES_PER_REQUEST = 500  # corners_matched * laps_considered
 
+# Fix D (customer-readiness follow-up): this route only READ the shared
+# compute-budget pool (below) but never registered ITSELF in it, so
+# concurrent same-tenant OCP-corner requests were invisible to each other's
+# budget checks — @rate_limit(tier="analyze") (5/hr) was the only actual
+# concurrency bound. Registering here mirrors web.compute_budget's endurance
+# pattern, but this route is a SYNCHRONOUS request with no job_id to key on
+# (unlike an async Celery dispatch), so a bare per-workspace INCR/DECR
+# counter is the simplest countable signal instead of a SET keyed by job_id.
+# TTL is a generous backstop in case the `finally` decrement is skipped
+# (e.g. the worker process is killed mid-solve) — a healthy synchronous
+# solve finishes long before this.
+_OCP_CORNER_ACTIVE_TTL_S = 900
+
+
+def _ocp_corner_active_key(workspace_id) -> str:
+    return f"ocp_corner:active:{workspace_id}"
+
+
+def _register_ocp_corner_active(redis_client, workspace_id) -> None:
+    """INCR the per-workspace in-flight OCP-corner counter for the duration
+    of this synchronous solve. Fails open (no-op) if Redis is unavailable —
+    a metering error must never block a legitimate solve.
+    """
+    if redis_client is None:
+        return
+    try:
+        key = _ocp_corner_active_key(workspace_id)
+        redis_client.incr(key)
+        redis_client.expire(key, _OCP_CORNER_ACTIVE_TTL_S)
+    except Exception:
+        logger.debug("OCP-corner active-count increment skipped", exc_info=True)
+
+
+def _clear_ocp_corner_active(redis_client, workspace_id) -> None:
+    """DECR the per-workspace in-flight OCP-corner counter, floored at 0 so
+    a duplicate/late decrement (or a TTL expiry racing a slow solve) can
+    never drift the counter negative.
+    """
+    if redis_client is None:
+        return
+    try:
+        key = _ocp_corner_active_key(workspace_id)
+        redis_client.eval(
+            "local v = redis.call('GET', KEYS[1]); "
+            "if v and tonumber(v) > 0 then redis.call('DECR', KEYS[1]) end",
+            1, key,
+        )
+    except Exception:
+        logger.debug("OCP-corner active-count decrement skipped", exc_info=True)
+
 
 @bp.route("/sessions/<session_id>/ocp-corner", methods=["POST"])
 @rate_limit(tier="analyze")
@@ -3038,6 +3088,16 @@ def solve_ocp_corner(session_id: str) -> tuple[dict, int]:
     track_surface_analysis.py's /run route) and the shared compute-budget
     gate just after the session lookup close that gap without moving this
     onto Celery.
+
+    FIX D (customer-readiness follow-up): the budget gate above originally
+    only READ the shared pool (analysis/export/track-surface/endurance) —
+    it never registered ITSELF, so concurrent same-tenant OCP-corner
+    requests were invisible to each other's checks and @rate_limit was the
+    ONLY real concurrency bound. This route now registers its own in-flight
+    solve in that same pool for its duration (see
+    _register_ocp_corner_active / web.compute_budget.count_active_ocp_corner_jobs),
+    so a burst of concurrent requests from the SAME workspace is bounded by
+    the budget check too, not just spread out over time by the rate limit.
     """
     body = request.get_json(silent=True) or {}
     corner_ids = body.get("corner_ids", [])
@@ -3058,9 +3118,14 @@ def solve_ocp_corner(session_id: str) -> tuple[dict, int]:
     if session is None:
         return api_error(ErrorCode.NOT_FOUND, "Session not found", status=404)
 
+    _ocp_ws = getattr(g, "workspace_id", 0) or 0
+    from web.rate_limit import get_redis
+    _ocp_redis = get_redis()
+
     # Shared per-tier compute budget (analysis + export + track-surface +
-    # endurance pool — see web.compute_budget.count_active_compute_jobs).
-    # Fail-open: a metering error must never block a legitimate solve.
+    # endurance + OCP-corner pool — see
+    # web.compute_budget.count_active_compute_jobs). Fail-open: a metering
+    # error must never block a legitimate solve.
     # TODO(async-ocp): this route still runs inline on the web worker rather
     # than being dispatched to Celery. The existing MAX_OCP_CORNER_IDS_PER_REQUEST
     # / MAX_OCP_TOTAL_SOLVES_PER_REQUEST caps + the rate limit above + this
@@ -3071,8 +3136,9 @@ def solve_ocp_corner(session_id: str) -> tuple[dict, int]:
         allowed, info = check_shared_compute_budget(
             conn,
             getattr(g, "current_user_id", 0) or 0,
-            getattr(g, "workspace_id", 0) or 0,
+            _ocp_ws,
             getattr(g, "plan_tier", None),
+            redis_client=_ocp_redis,
         )
         if not allowed:
             return api_error(
@@ -3084,6 +3150,11 @@ def solve_ocp_corner(session_id: str) -> tuple[dict, int]:
         logger.warning("Shared compute budget check failed — allowing OCP corner solve",
                        exc_info=True)
 
+    # Fix D: register THIS request in the countable pool for its duration so
+    # concurrent same-tenant OCP-corner solves are actually bounded by the
+    # budget check above, not just rate-limited over time — see
+    # _register_ocp_corner_active docstring.
+    _register_ocp_corner_active(_ocp_redis, _ocp_ws)
     try:
         result = _run_corner_ocp(conn, session_id, corner_ids)
     except ImportError as e:
@@ -3096,6 +3167,8 @@ def solve_ocp_corner(session_id: str) -> tuple[dict, int]:
         logger.exception("OCP corner solve failed for session %s", session_id)
         return api_error(ErrorCode.INTERNAL_ERROR,
                          "OCP corner solve failed", status=500)
+    finally:
+        _clear_ocp_corner_active(_ocp_redis, _ocp_ws)
 
     return api_response(result)
 

@@ -61,9 +61,20 @@ _JOB_LOCK_TTL_S = ENDURANCE_HARD_TIME_LIMIT_S + 60
 #                                       countable signal for
 #                                       web.compute_budget.count_active_compute_jobs)
 #   endurance:dispatch:{job_id}      — {workspace_id, dispatched_at} written
-#                                       once at submit time (fix #4's age
-#                                       reference — independent of the
-#                                       ever-changing endurance:status blob)
+#                                       once at submit/enqueue time — used to
+#                                       recover workspace_id during the sweep
+#                                       and as a generous TTL backstop; NOT
+#                                       used to age the job anymore (see next).
+#   endurance:started:{job_id}       — RUN-START timestamp, written the
+#                                       instant the job acquires its run-lock
+#                                       and actually starts executing (HIGH
+#                                       fix, customer-readiness follow-up).
+#                                       fix #4's reconciler ages jobs off THIS
+#                                       marker, not dispatched_at — a job
+#                                       queued behind another on the
+#                                       single-concurrency worker has no
+#                                       started marker yet and must NEVER be
+#                                       force-failed for merely waiting.
 #   endurance:attempts:{job_id}      — INCR'd on every delivery, INDEPENDENT
 #                                       of the Celery/broker message id (fix
 #                                       #6's redelivery bound)
@@ -91,6 +102,10 @@ def _dispatch_key(job_id: str) -> str:
     return f"endurance:dispatch:{job_id}"
 
 
+def _started_key(job_id: str) -> str:
+    return f"endurance:started:{job_id}"
+
+
 def _attempts_key(job_id: str) -> str:
     return f"endurance:attempts:{job_id}"
 
@@ -114,6 +129,38 @@ def mark_endurance_dispatched(redis_client, job_id: str, workspace_id) -> None:
     )
 
 
+def mark_endurance_started(redis_client, job_id: str) -> None:
+    """Record the RUN-START instant for ``job_id`` (HIGH fix, customer-
+    readiness follow-up): the stuck-job reconciler below must age a job from
+    when it actually STARTS RUNNING, not from when it was enqueued.
+
+    On the single-concurrency endurance worker, a healthy job can legitimately
+    sit queued behind another long-running job for well over the reconcile
+    ceiling before it ever gets a worker slot. Aging off ``dispatched_at``
+    (set at enqueue time, see ``mark_endurance_dispatched``) meant the sweep
+    could force-fail a job just minutes into its REAL run, simply because the
+    QUEUE wait pushed its total dispatched-age past the ceiling — publishing a
+    customer-facing failure to a healthy running job, releasing its still-held
+    run-lock (opening a duplicate-concurrent-run window), and clearing its
+    active-set slot.
+
+    Called from ``process_endurance_session`` immediately AFTER
+    ``_acquire_job_lock`` succeeds — the exact instant a job stops being
+    merely "dispatched" and starts being "running". A job with NO started
+    marker is therefore still queued (or has already finished and had its
+    bookkeeping cleared by ``_clear_endurance_active``) — either way, the
+    reconciler must never force-fail it.
+
+    TTL is generous — comfortably above the hard time limit — purely as a
+    backstop so a leaked key can't live forever; the reconciler is the real
+    cleanup path.
+    """
+    redis_client.set(
+        _started_key(job_id), time.time(),
+        ex=_RECONCILE_CEILING_S + 3600,
+    )
+
+
 def _clear_endurance_active(redis_client, job_id: str, workspace_id) -> None:
     """Remove a job from the countable active-job signal on any terminal
     transition (success, soft-timeout failure, redelivery-exhaustion failure,
@@ -123,6 +170,7 @@ def _clear_endurance_active(redis_client, job_id: str, workspace_id) -> None:
     try:
         redis_client.srem(_active_set_key(workspace_id), job_id)
         redis_client.delete(_dispatch_key(job_id))
+        redis_client.delete(_started_key(job_id))
     except Exception:
         logger.debug("Endurance active-set cleanup skipped for %s", job_id, exc_info=True)
 
@@ -142,9 +190,10 @@ def _force_release_job_lock(redis_client, job_id: str) -> None:
 
 
 def reconcile_stuck_endurance_jobs(redis_client) -> list[dict]:
-    """Beat sweep (fix #4): force-fail any endurance job whose dispatch
-    record is older than the hard-limit ceiling and whose status is still
-    non-terminal, releasing its stale run-lock and active-set membership.
+    """Beat sweep (fix #4, HIGH-fix follow-up): force-fail any endurance job
+    that has actually STARTED RUNNING and stayed non-terminal past the
+    hard-limit ceiling, releasing its stale run-lock and active-set
+    membership.
 
     Mirrors ``tasks.alerting_tasks._reconcile_stuck_jobs``'s ingestion_jobs
     sweep, but endurance job state lives entirely in Redis (module docstring
@@ -152,6 +201,18 @@ def reconcile_stuck_endurance_jobs(redis_client) -> list[dict]:
     ``finally`` runs, so nothing marks the job failed or frees its run-lock
     without this sweep. Uses SCAN (not KEYS) so it never blocks Redis even
     with many in-flight jobs.
+
+    HIGH-fix (customer-readiness merge-blocker): this sweep used to age jobs
+    off ``dispatched_at`` (enqueue time, ``mark_endurance_dispatched``). On
+    the single-concurrency endurance worker, a healthy job can legitimately
+    sit QUEUED behind another long-running job for well over the reconcile
+    ceiling before it ever starts — ageing off enqueue time force-failed such
+    a job just minutes into its real run. The predicate now keys off
+    ``endurance:started:{job_id}`` (``mark_endurance_started``, written the
+    instant the job actually acquires its run-lock and starts executing):
+    a job with NO started marker is either still queued or already finished
+    and cleaned up — either way it is NEVER force-failed here, no matter how
+    long its dispatch record has existed.
 
     Deliberately does NOT rely on the attempts-based redelivery bound (fix
     #6) to converge stuck jobs: the broker's own visibility_timeout is 4200s
@@ -177,9 +238,20 @@ def reconcile_stuck_endurance_jobs(redis_client) -> list[dict]:
         except (json.JSONDecodeError, TypeError):
             continue
 
-        dispatched_at = dispatch.get("dispatched_at")
         workspace_id = dispatch.get("workspace_id", "1")
-        if dispatched_at is None or (now - float(dispatched_at)) <= _RECONCILE_CEILING_S:
+
+        # HIGH fix: age off RUN-START, not enqueue/dispatch time. A job with
+        # no started marker is still queued (or already terminal and had its
+        # bookkeeping cleared) — never force-fail it here regardless of how
+        # long ago it was dispatched.
+        started_raw = redis_client.get(_started_key(job_id))
+        if not started_raw:
+            continue
+        try:
+            started_at = float(started_raw)
+        except (TypeError, ValueError):
+            continue
+        if (now - started_at) <= _RECONCILE_CEILING_S:
             continue
 
         status_raw = redis_client.get(f"endurance:status:{job_id}")
@@ -196,10 +268,10 @@ def reconcile_stuck_endurance_jobs(redis_client) -> list[dict]:
             _clear_endurance_active(redis_client, job_id, workspace_id)
             continue
 
-        running_s = int(now - float(dispatched_at))
+        running_s = int(now - started_at)
         logger.error(
             "Reconciling stuck endurance job %s: non-terminal (%s) after %ds "
-            "(ceiling %ds) — worker was likely hard-killed mid-run",
+            "running (ceiling %ds) — worker was likely hard-killed mid-run",
             job_id, status, running_s, _RECONCILE_CEILING_S,
         )
         _publish(redis_client, job_id, {
@@ -289,6 +361,32 @@ def process_endurance_session(
     if attempts == 1:
         _r.expire(_attempts_key(job_id), _ATTEMPTS_KEY_TTL_S)
     if attempts > ENDURANCE_MAX_DELIVERY_ATTEMPTS:
+        # LOW fix (#G): consult the existing terminal status FIRST. Without
+        # this, a job already terminal via another path (e.g. the
+        # reconciler's more specific "reconciled_stuck") could be relabeled
+        # with the less-informative "redelivery_exhausted" just because a
+        # stale message for it happens to get redelivered one more time
+        # AFTER it was already resolved — pure noise for support/on-call.
+        _existing_raw = _r.get(f"endurance:status:{job_id}")
+        _existing_status = None
+        if _existing_raw:
+            try:
+                _existing_status = json.loads(_existing_raw).get("status")
+            except (json.JSONDecodeError, TypeError, AttributeError):
+                _existing_status = None
+        if _existing_status in ("completed", "failed"):
+            logger.info(
+                "Endurance job %s already %s — redelivery-exhausted gate "
+                "(attempts=%d) skipping relabel",
+                job_id, _existing_status, attempts,
+            )
+            _force_release_job_lock(_r, job_id)
+            _clear_endurance_active(_r, job_id, workspace_id)
+            return {
+                "job_id": job_id, "skipped": True,
+                "reason": f"already_{_existing_status}", "attempts": attempts,
+            }
+
         logger.error(
             "Endurance job %s redelivered %d times (max %d) — forcing failed "
             "instead of re-running (breaks the SIGKILL/requeue loop)",
@@ -323,6 +421,12 @@ def process_endurance_session(
         )
         return {"job_id": job_id, "skipped": True, "reason": "duplicate_run"}
 
+    # HIGH fix: this is the exact instant the job stops being merely
+    # "dispatched" (queued) and starts actually running — see
+    # mark_endurance_started docstring for why the stuck-job reconciler must
+    # age off THIS marker instead of enqueue time.
+    mark_endurance_started(_r, job_id)
+
     try:
         # Also skip outright if a prior attempt already reached a terminal
         # state — handles the rare case where a hard-killed task's message
@@ -340,11 +444,9 @@ def process_endurance_session(
                 "Endurance job %s already %s — skipping redelivered run",
                 job_id, existing_status,
             )
-            _clear_endurance_active(_r, job_id, workspace_id)
             return {"job_id": job_id, "skipped": True, "reason": f"already_{existing_status}"}
 
         result = _run_endurance_session(_r, job_id, meta, stint_configs)
-        _clear_endurance_active(_r, job_id, workspace_id)
         return result
     except SoftTimeLimitExceeded:
         logger.error(
@@ -361,12 +463,24 @@ def process_endurance_session(
             ),
             "error_class": "timeout",
         })
-        _clear_endurance_active(_r, job_id, workspace_id)
         # Deliberately swallowed: returning normally (not re-raising) lets
         # Celery ack the message as done, so acks_late / task_reject_on_worker_lost
         # never get a chance to redeliver a job we've already failed cleanly.
         return {"job_id": job_id, "failed": True, "error_class": "timeout"}
     finally:
+        # MEDIUM fix (#B): _clear_endurance_active must run on EVERY exit path
+        # from this try block, not just the ones that explicitly called it
+        # before (success, terminal-skip, soft-timeout). A plain, non-
+        # SoftTimeLimitExceeded exception (e.g. a bug in compute_*_report, or
+        # a ZeroDivisionError when total_stints==0) used to propagate past
+        # this function WITHOUT clearing the active-set slot — acks_late acks
+        # the message (no redelivery), so the slot leaked until the
+        # reconciler self-healed ~_RECONCILE_CEILING_S later, eating into the
+        # workspace's shared compute-budget pool the whole time. Both calls
+        # are idempotent (safe on an absent member/key), so consolidating to
+        # one call here — including on the already-handled success/timeout/
+        # skip paths above — is harmless.
+        _clear_endurance_active(_r, job_id, workspace_id)
         _release_job_lock(_r, job_id, lock_owner)
 
 

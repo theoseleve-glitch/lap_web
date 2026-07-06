@@ -649,26 +649,77 @@ def _handle_checkout_completed(session: dict):
     conn.commit()
 
     if getattr(attach_result, "rowcount", 0) != 1:
-        # CONFLICT: user already has a different subscription attached.
-        # Do NOT overwrite it and do NOT transition/audit as if this
-        # checkout activated anything — surface it loudly instead so it
-        # gets a MANUAL reconciliation rather than a silent double-charge.
-        logger.error(
-            "Checkout session %s: user %s already has a subscription "
-            "attached — NOT overwriting with customer=%s subscription=%s. "
-            "Flagging for MANUAL reconciliation.",
-            session_id, uid, customer_id, subscription_id,
-        )
-        try:
-            import sentry_sdk
-            sentry_sdk.capture_message(
-                f"Checkout attach conflict: session={session_id} user={uid} "
-                "already has a subscription attached — manual reconciliation needed",
-                level="error",
+        # CONFLICT: the guard above didn't match because this user already
+        # has a stripe_subscription_id attached. That's expected in THREE
+        # distinct cases that must be told apart (MEDIUM fix, customer-
+        # readiness follow-up — see billing.state_machine.is_billable_status):
+        #   1. Idempotent redelivery: the ALREADY-attached id is this EXACT
+        #      subscription (a retried webhook) — nothing to do, no alert.
+        #   2. Legitimate re-subscribe: a DIFFERENT id is attached, but the
+        #      existing local subscription is terminal/non-billable
+        #      (past_due/canceled/paused/unpaid/expired) — the customer paid
+        #      for a NEW subscription, so it's safe to re-attach + activate.
+        #   3. Genuine conflict: a DIFFERENT id is attached and the existing
+        #      subscription is still active/billable — overwriting would
+        #      double-bill and make the real subscription uncancelable, so
+        #      hold and alert for MANUAL reconciliation (the ONLY case the
+        #      pre-fix code handled).
+        existing_row = conn.execute(
+            "SELECT stripe_subscription_id, subscription_status FROM users "
+            "WHERE id = %(uid)s",
+            {"uid": uid},
+        ).fetchone()
+        existing = (dict(existing_row) if existing_row and not isinstance(existing_row, dict)
+                    else existing_row) or {}
+        existing_sub_id = existing.get("stripe_subscription_id")
+        existing_status = existing.get("subscription_status")
+
+        if existing_sub_id == subscription_id:
+            logger.info(
+                "Checkout session %s: user %s already has this exact "
+                "subscription %s attached — idempotent redelivery, no "
+                "action needed.",
+                session_id, uid, subscription_id,
             )
-        except Exception:
-            pass
-        return
+            return
+
+        from billing.state_machine import is_billable_status
+        if is_billable_status(existing_status):
+            logger.error(
+                "Checkout session %s: user %s already has a DIFFERENT "
+                "active subscription (%s, status=%s) attached — NOT "
+                "overwriting with customer=%s subscription=%s. Flagging "
+                "for MANUAL reconciliation.",
+                session_id, uid, existing_sub_id, existing_status,
+                customer_id, subscription_id,
+            )
+            try:
+                import sentry_sdk
+                sentry_sdk.capture_message(
+                    f"Checkout attach conflict: session={session_id} user={uid} "
+                    "already has a subscription attached — manual reconciliation needed",
+                    level="error",
+                )
+            except Exception:
+                pass
+            return
+
+        # Legitimate re-subscribe over a terminal/non-billable prior
+        # subscription — safe to overwrite (unlike the billable-conflict
+        # case above, this old subscription is no longer chargeable/
+        # cancelable in any meaningful sense).
+        logger.warning(
+            "Checkout session %s: user %s's existing subscription %s was "
+            "terminal/non-billable (status=%s) — re-attaching new "
+            "subscription %s and activating.",
+            session_id, uid, existing_sub_id, existing_status, subscription_id,
+        )
+        conn.execute(
+            "UPDATE users SET stripe_customer_id = %(cid)s, "
+            "stripe_subscription_id = %(sid)s WHERE id = %(uid)s",
+            {"cid": customer_id, "sid": subscription_id, "uid": uid},
+        )
+        conn.commit()
 
     from billing.state_machine import transition_subscription
     transition_subscription(

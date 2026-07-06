@@ -9,7 +9,7 @@ import logging
 import os
 from typing import Any
 
-from billing.state_machine import map_stripe_status, transition_subscription
+from billing.state_machine import is_billable_status, map_stripe_status, transition_subscription
 
 logger = logging.getLogger(__name__)
 
@@ -183,6 +183,34 @@ def _reconcile_stripe_impl() -> dict[str, Any]:
 # ---------------------------------------------------------------------------
 
 
+def _pending_conflict_already_alerted(pending_id) -> bool:
+    """LOW fix: dedup the pending-entitlement conflict alert to once per 24h
+    per row, instead of re-alerting every 5-minute sweep forever. A genuine
+    conflict row is deliberately left un-reconciled for manual ops (see the
+    conflict branch below), so without this dedup it re-triggers Sentry on
+    EVERY sweep pass — a storm that buries other, distinct conflicts.
+
+    Uses SET NX EX so only the FIRST caller within the 24h window gets
+    ``already_alerted=False`` (and proceeds to alert); every other caller
+    within that same window gets ``True``. Fails OPEN to alerting (returns
+    False) on any Redis error — under a Redis outage, re-alerting is a much
+    safer failure mode than silently losing a real conflict.
+    """
+    try:
+        import redis as _redis
+
+        from web.config import Config
+        r = _redis.Redis.from_url(Config.REDIS_URL)
+        claimed = r.set(f"billing:pending_conflict_alerted:{pending_id}", "1", nx=True, ex=86400)
+        return not bool(claimed)
+    except Exception:
+        logger.debug(
+            "Pending-entitlement alert dedup check failed for %s — alerting anyway",
+            pending_id, exc_info=True,
+        )
+        return False
+
+
 def _reconcile_pending_entitlements_impl() -> dict[str, Any]:
     """Sweep ``stripe_pending_entitlements`` for orphaned paying customers.
 
@@ -285,29 +313,93 @@ def _reconcile_pending_entitlements_impl() -> dict[str, Any]:
                 conn.commit()
 
                 if getattr(attach_result, "rowcount", 0) != 1:
-                    # CONFLICT: user already has a different subscription
-                    # attached. Do NOT overwrite it and do NOT mark this
-                    # row reconciled — surface it loudly instead of
-                    # silently clobbering an active subscription.
-                    reconciliation_errors += 1
-                    logger.error(
-                        "Pending entitlement %s: user %s already has a "
-                        "subscription attached — NOT overwriting with "
-                        "cus=%s sub=%s. Flagging for MANUAL reconciliation.",
-                        row_id, uid,
-                        row.get("stripe_customer_id"), row.get("stripe_subscription_id"),
-                    )
-                    try:
-                        import sentry_sdk
-                        sentry_sdk.capture_message(
-                            f"Pending entitlement conflict: pending_id={row_id} "
-                            f"user={uid} already has a subscription attached — "
-                            "manual reconciliation needed",
-                            level="error",
+                    # CONFLICT: the guard above didn't match because this
+                    # user already has a stripe_subscription_id attached.
+                    # MEDIUM fix (customer-readiness follow-up): tell apart
+                    # idempotent redelivery / legitimate re-subscribe /
+                    # genuine conflict — mirrors the identical conflict
+                    # branch in web.routes.billing._handle_checkout_completed
+                    # (see billing.state_machine.is_billable_status).
+                    existing_row = conn.execute(
+                        "SELECT stripe_subscription_id, subscription_status "
+                        "FROM users WHERE id = %(uid)s",
+                        {"uid": uid},
+                    ).fetchone()
+                    existing = (dict(existing_row) if existing_row and not isinstance(existing_row, dict)
+                                else existing_row) or {}
+                    existing_sub_id = existing.get("stripe_subscription_id")
+                    existing_status = existing.get("subscription_status")
+                    incoming_sub_id = row.get("stripe_subscription_id")
+
+                    if existing_sub_id == incoming_sub_id:
+                        # Idempotent: a prior sweep/webhook already correctly
+                        # linked this exact subscription — nothing to
+                        # reconcile, and NOT a conflict worth alerting on.
+                        conn.execute(
+                            "UPDATE stripe_pending_entitlements SET reconciled_at = NOW() "
+                            "WHERE id = %(id)s",
+                            {"id": row_id},
                         )
-                    except Exception:
-                        pass
-                    continue
+                        conn.commit()
+                        linked += 1
+                        logger.info(
+                            "Pending entitlement %s: user %s already has this "
+                            "exact subscription attached — idempotent, marking "
+                            "reconciled.",
+                            row_id, uid,
+                        )
+                        continue
+
+                    if is_billable_status(existing_status):
+                        # Genuine conflict: user already has a DIFFERENT,
+                        # still-active subscription. Do NOT overwrite it and
+                        # do NOT mark this row reconciled — surface it
+                        # loudly (at most once/day — LOW fix: avoids a
+                        # Sentry storm re-alerting every 5-min sweep and
+                        # burying other, distinct conflicts) instead of
+                        # silently clobbering an active subscription.
+                        reconciliation_errors += 1
+                        if not _pending_conflict_already_alerted(row_id):
+                            logger.error(
+                                "Pending entitlement %s: user %s already has a "
+                                "DIFFERENT active subscription (%s, status=%s) "
+                                "attached — NOT overwriting with cus=%s sub=%s. "
+                                "Flagging for MANUAL reconciliation.",
+                                row_id, uid, existing_sub_id, existing_status,
+                                row.get("stripe_customer_id"), incoming_sub_id,
+                            )
+                            try:
+                                import sentry_sdk
+                                sentry_sdk.capture_message(
+                                    f"Pending entitlement conflict: pending_id={row_id} "
+                                    f"user={uid} already has a subscription attached — "
+                                    "manual reconciliation needed",
+                                    level="error",
+                                )
+                            except Exception:
+                                pass
+                        continue
+
+                    # Legitimate re-subscribe over a terminal/non-billable
+                    # prior subscription — safe to overwrite (unlike the
+                    # billable-conflict case above, the old subscription is
+                    # no longer chargeable/cancelable in any meaningful sense).
+                    logger.warning(
+                        "Pending entitlement %s: user %s's existing "
+                        "subscription %s was terminal/non-billable "
+                        "(status=%s) — re-attaching %s and activating.",
+                        row_id, uid, existing_sub_id, existing_status, incoming_sub_id,
+                    )
+                    conn.execute(
+                        "UPDATE users SET stripe_customer_id = %(cid)s, "
+                        "stripe_subscription_id = %(sid)s WHERE id = %(uid)s",
+                        {
+                            "cid": row.get("stripe_customer_id"),
+                            "sid": incoming_sub_id,
+                            "uid": uid,
+                        },
+                    )
+                    conn.commit()
 
                 transitioned = transition_subscription(
                     conn, uid, "active",

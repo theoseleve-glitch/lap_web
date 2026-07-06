@@ -391,13 +391,13 @@ class TestCheckoutCustomerMatching:
 
     def test_matched_user_with_existing_subscription_is_not_overwritten(self):
         """BLOCKER FIX: a checkout matched (e.g. via the customer_email
-        fallback) to a user who ALREADY has a DIFFERENT subscription
-        attached must NOT have their stripe_customer_id/stripe_subscription_id
-        clobbered — that would double-charge the customer and leave the
-        real subscription uncancelable from the app. The guarded UPDATE
-        must report 0 rows affected, and the handler must skip the state
-        transition and audit log entirely rather than pretend it activated
-        something.
+        fallback) to a user who ALREADY has a DIFFERENT, still-ACTIVE
+        (billable) subscription attached must NOT have their
+        stripe_customer_id/stripe_subscription_id clobbered — that would
+        double-charge the customer and leave the real subscription
+        uncancelable from the app. The guarded UPDATE must report 0 rows
+        affected, and the handler must skip the state transition and audit
+        log entirely rather than pretend it activated something.
         """
         from web.routes.billing import _handle_checkout_completed
 
@@ -416,6 +416,11 @@ class TestCheckoutCustomerMatching:
                 # 3. guarded UPDATE ... WHERE stripe_subscription_id IS NULL
                 # -> 0 rows because the user already has a DIFFERENT subscription.
                 MagicMock(**{"fetchone.return_value": None, "rowcount": 0}),
+                # 4. MEDIUM fix: SELECT existing stripe_subscription_id/status
+                # -> a DIFFERENT id, still active/billable -> hold + alert.
+                MagicMock(**{"fetchone.return_value": {
+                    "stripe_subscription_id": "sub_A", "subscription_status": "active",
+                }}),
             ])
             conn.execute.side_effect = lambda sql, params=None: next(call_results)
 
@@ -436,6 +441,90 @@ class TestCheckoutCustomerMatching:
             attach_sql = str(conn.execute.call_args_list[2][0][0])
             assert "COALESCE" in attach_sql
             assert "stripe_subscription_id IS NULL" in attach_sql
+
+    def test_matched_user_equal_subscription_id_is_idempotent(self):
+        """MEDIUM FIX: the guarded UPDATE reports 0 rows because the user
+        ALREADY has THIS EXACT subscription id attached (e.g. a retried
+        webhook delivery) — not a conflict. Must be silent: no alert, no
+        state transition (nothing changed), no audit log."""
+        from web.routes.billing import _handle_checkout_completed
+
+        with patch("web.routes.billing._get_conn") as mock_conn_fn, \
+             patch("web.routes.billing.audit_log") as mock_audit, \
+             patch("billing.state_machine.transition_subscription") as mock_transition:
+
+            conn = _mock_conn()
+            mock_conn_fn.return_value = conn
+
+            call_results = iter([
+                MagicMock(**{"fetchone.return_value": None}),  # stripe_customer_id miss
+                MagicMock(**{"fetchone.return_value": {"id": 201, "email": "same@example.com"}}),
+                MagicMock(**{"fetchone.return_value": None, "rowcount": 0}),  # guard: 0 rows
+                MagicMock(**{"fetchone.return_value": {
+                    "stripe_subscription_id": "sub_same", "subscription_status": "active",
+                }}),
+            ])
+            conn.execute.side_effect = lambda sql, params=None: next(call_results)
+
+            session = {
+                "id": "cs_idempotent_1",
+                "customer_email": "same@example.com",
+                "customer": "cus_same",
+                "subscription": "sub_same",  # SAME as already attached
+                "metadata": {"plan_tier": "world-class"},
+            }
+            with patch("web.routes.billing.logger") as mock_logger:
+                _handle_checkout_completed(session)
+
+            mock_transition.assert_not_called()
+            mock_audit.assert_not_called()
+            mock_logger.error.assert_not_called()
+
+    def test_matched_user_different_id_terminal_status_reattaches_and_activates(self):
+        """MEDIUM FIX: a DIFFERENT subscription id is attached, but the
+        user's existing local subscription is terminal/non-billable
+        (canceled) — a legitimate re-subscribe. Must re-attach the new id
+        and activate instead of holding for manual reconciliation."""
+        from web.routes.billing import _handle_checkout_completed
+
+        with patch("web.routes.billing._get_conn") as mock_conn_fn, \
+             patch("web.routes.billing.audit_log") as mock_audit, \
+             patch("billing.state_machine.transition_subscription") as mock_transition:
+
+            conn = _mock_conn()
+            mock_conn_fn.return_value = conn
+            mock_transition.return_value = True
+
+            call_results = iter([
+                MagicMock(**{"fetchone.return_value": None}),  # stripe_customer_id miss
+                MagicMock(**{"fetchone.return_value": {"id": 202, "email": "resub@example.com"}}),
+                MagicMock(**{"fetchone.return_value": None, "rowcount": 0}),  # guard: 0 rows
+                MagicMock(**{"fetchone.return_value": {
+                    "stripe_subscription_id": "sub_old", "subscription_status": "canceled",
+                }}),
+                MagicMock(**{"fetchone.return_value": None, "rowcount": 1}),  # unconditional re-attach
+            ])
+            conn.execute.side_effect = lambda sql, params=None: next(call_results)
+
+            session = {
+                "id": "cs_resub_1",
+                "customer_email": "resub@example.com",
+                "customer": "cus_new",
+                "subscription": "sub_new",
+                "metadata": {"plan_tier": "world-class"},
+            }
+            with patch("web.routes.billing.logger"):
+                _handle_checkout_completed(session)
+
+            mock_transition.assert_called_once()
+            args = mock_transition.call_args
+            assert args[0][1] == 202
+            assert args[0][2] == "active"
+            mock_audit.assert_called_once()
+
+            reattach_sql = str(conn.execute.call_args_list[4][0][0])
+            assert "COALESCE" not in reattach_sql
+            assert "stripe_subscription_id" in reattach_sql
 
 
 # ===========================================================================

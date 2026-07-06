@@ -294,6 +294,16 @@ class TestReconcilePendingEntitlements:
         email_match_sql = str(conn.execute.call_args_list[1][0][0])
         assert "LOWER(email)" in email_match_sql
 
+        # LOW FIX (F): pin the guarded attach SQL so a future refactor that
+        # drops the CAS guard (e.g. "simplifies" the COALESCE/IS NULL clause
+        # away) fails this test instead of silently reintroducing the
+        # double-charge/uncancelable-subscription bug — mirrors
+        # test_billing_webhook.py's identical SQL-pinning for the webhook's
+        # own guarded attach.
+        attach_sql = str(conn.execute.call_args_list[2][0][0])
+        assert "COALESCE" in attach_sql
+        assert "stripe_subscription_id IS NULL" in attach_sql
+
         mock_return_conn.assert_called_once_with(conn)
 
     @patch("tasks.billing_tasks.return_pg_connection")
@@ -328,18 +338,19 @@ class TestReconcilePendingEntitlements:
         # No UPDATE of any kind should have been issued for the unmatched row.
         assert conn.execute.call_count == 2
 
+    @patch("tasks.billing_tasks._pending_conflict_already_alerted", return_value=False)
     @patch("tasks.billing_tasks.return_pg_connection")
     @patch("tasks.billing_tasks.get_maint_connection")
     @patch("tasks.billing_tasks.transition_subscription")
     def test_conflicting_user_is_not_overwritten_or_reconciled(
-        self, mock_transition, mock_get_maint, mock_return_conn,
+        self, mock_transition, mock_get_maint, mock_return_conn, mock_already_alerted,
     ):
         """BLOCKER FIX: a pending row matched by email to a user who ALREADY
-        has a DIFFERENT subscription attached must NOT be overwritten. The
-        row must NOT be marked reconciled_at (so it stays flagged for
-        manual reconciliation) and the state transition must never run —
-        overwriting here is exactly the double-charge / uncancelable-
-        subscription bug this fix closes.
+        has a DIFFERENT, still-ACTIVE (billable) subscription attached must
+        NOT be overwritten. The row must NOT be marked reconciled_at (so it
+        stays flagged for manual reconciliation) and the state transition
+        must never run — overwriting here is exactly the double-charge /
+        uncancelable-subscription bug this fix closes.
         """
         conn = _mock_conn()
         mock_get_maint.return_value = conn
@@ -353,11 +364,17 @@ class TestReconcilePendingEntitlements:
         user_match.fetchone.return_value = {"id": 99}
         attach_result = MagicMock()
         attach_result.rowcount = 0  # guard failed: stripe_subscription_id was NOT NULL
+        existing_sub_result = MagicMock()
+        existing_sub_result.fetchone.return_value = {
+            "stripe_subscription_id": "sub_A",  # DIFFERENT from incoming sub_B
+            "subscription_status": "active",     # still billable -> hold + alert
+        }
 
         conn.execute.side_effect = [
-            pending_result,   # SELECT stripe_pending_entitlements WHERE reconciled_at IS NULL
-            user_match,       # SELECT id FROM users WHERE LOWER(email) = LOWER(...)
-            attach_result,    # UPDATE users ... WHERE stripe_subscription_id IS NULL -> 0 rows
+            pending_result,       # SELECT stripe_pending_entitlements WHERE reconciled_at IS NULL
+            user_match,           # SELECT id FROM users WHERE LOWER(email) = LOWER(...)
+            attach_result,        # UPDATE users ... WHERE stripe_subscription_id IS NULL -> 0 rows
+            existing_sub_result,  # SELECT stripe_subscription_id, subscription_status FROM users
         ]
 
         from tasks.billing_tasks import _reconcile_pending_entitlements_impl
@@ -372,6 +389,122 @@ class TestReconcilePendingEntitlements:
             if "SET reconciled_at" in str(c[0][0])
         ]
         assert not reconciled_calls, "Conflicting row must NOT be marked reconciled"
+
+    @patch("tasks.billing_tasks.return_pg_connection")
+    @patch("tasks.billing_tasks.get_maint_connection")
+    @patch("tasks.billing_tasks.transition_subscription")
+    def test_equal_subscription_id_conflict_is_idempotent_and_reconciled_silently(
+        self, mock_transition, mock_get_maint, mock_return_conn,
+    ):
+        """MEDIUM FIX: when the guarded attach UPDATE reports 0 rows because
+        the user ALREADY has this EXACT subscription id attached (e.g. a
+        re-run sweep, or a webhook race that linked it moments earlier),
+        that is NOT a conflict — it's an idempotent redelivery. The row must
+        be marked reconciled (linked) silently, with no alert and no state
+        transition attempted (nothing changed).
+        """
+        conn = _mock_conn()
+        mock_get_maint.return_value = conn
+
+        pending_result = MagicMock()
+        pending_result.fetchall.return_value = [
+            _pending_row(5, "already.linked@example.com",
+                         customer_id="cus_same", subscription_id="sub_same"),
+        ]
+        user_match = MagicMock()
+        user_match.fetchone.return_value = {"id": 101}
+        attach_result = MagicMock()
+        attach_result.rowcount = 0  # guard failed: stripe_subscription_id was NOT NULL
+        existing_sub_result = MagicMock()
+        existing_sub_result.fetchone.return_value = {
+            "stripe_subscription_id": "sub_same",  # SAME as incoming -> idempotent
+            "subscription_status": "active",
+        }
+        default_result = MagicMock()
+        default_result.fetchone.return_value = None
+
+        conn.execute.side_effect = [
+            pending_result,
+            user_match,
+            attach_result,
+            existing_sub_result,
+            default_result,  # UPDATE stripe_pending_entitlements SET reconciled_at
+        ]
+
+        from tasks.billing_tasks import _reconcile_pending_entitlements_impl
+        result = _reconcile_pending_entitlements_impl()
+
+        assert result == {"checked": 1, "linked": 1, "unmatched": 0, "errors": 0}
+        mock_transition.assert_not_called()
+
+        reconciled_calls = [
+            c for c in conn.execute.call_args_list
+            if "SET reconciled_at" in str(c[0][0])
+        ]
+        assert reconciled_calls, "Idempotent redelivery must still be marked reconciled"
+
+    @patch("tasks.billing_tasks.return_pg_connection")
+    @patch("tasks.billing_tasks.get_maint_connection")
+    @patch("tasks.billing_tasks.transition_subscription")
+    def test_different_id_existing_terminal_status_reattaches_and_activates(
+        self, mock_transition, mock_get_maint, mock_return_conn,
+    ):
+        """MEDIUM FIX: a DIFFERENT subscription id is attached, but the
+        user's existing local subscription is in a terminal/non-billable
+        state (canceled) — the customer legitimately re-subscribed under a
+        new Stripe subscription. This must now re-attach the new id and
+        activate, instead of holding the row for manual reconciliation
+        forever (paid-but-locked bug)."""
+        conn = _mock_conn()
+        mock_get_maint.return_value = conn
+        mock_transition.return_value = True
+
+        pending_result = MagicMock()
+        pending_result.fetchall.return_value = [
+            _pending_row(6, "resubscribed@example.com",
+                         customer_id="cus_new", subscription_id="sub_new"),
+        ]
+        user_match = MagicMock()
+        user_match.fetchone.return_value = {"id": 202}
+        attach_result = MagicMock()
+        attach_result.rowcount = 0  # guard failed: stripe_subscription_id was NOT NULL
+        existing_sub_result = MagicMock()
+        existing_sub_result.fetchone.return_value = {
+            "stripe_subscription_id": "sub_old",   # DIFFERENT from incoming sub_new
+            "subscription_status": "canceled",      # terminal/non-billable -> safe to overwrite
+        }
+        default_result = MagicMock()
+        default_result.fetchone.return_value = None
+
+        conn.execute.side_effect = [
+            pending_result,
+            user_match,
+            attach_result,
+            existing_sub_result,
+            default_result,  # unconditional UPDATE users SET stripe_customer_id/subscription_id
+            default_result,  # UPDATE stripe_pending_entitlements SET reconciled_at
+        ]
+
+        from tasks.billing_tasks import _reconcile_pending_entitlements_impl
+        result = _reconcile_pending_entitlements_impl()
+
+        assert result == {"checked": 1, "linked": 1, "unmatched": 0, "errors": 0}
+        mock_transition.assert_called_once()
+        args, kwargs = mock_transition.call_args
+        assert args[1] == 202
+        assert args[2] == "active"
+
+        # The unconditional re-attach UPDATE must set the NEW ids directly
+        # (not COALESCE — the whole point is to overwrite the stale sub_old).
+        reattach_sql = str(conn.execute.call_args_list[4][0][0])
+        assert "stripe_subscription_id" in reattach_sql
+        assert "COALESCE" not in reattach_sql
+
+        reconciled_calls = [
+            c for c in conn.execute.call_args_list
+            if "SET reconciled_at" in str(c[0][0])
+        ]
+        assert reconciled_calls, "Re-attached row must be marked reconciled"
 
     @patch("tasks.billing_tasks.return_pg_connection")
     @patch("tasks.billing_tasks.get_maint_connection")

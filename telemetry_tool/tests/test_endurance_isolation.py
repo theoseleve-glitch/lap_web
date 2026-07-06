@@ -297,6 +297,30 @@ class TestSoftTimeLimitNotSwallowed:
 
         assert "endurance:runlock:job-boom" not in _r._store
 
+    def test_active_slot_cleared_on_unexpected_exception(self):
+        """MEDIUM FIX (#B): a plain (non-SoftTimeLimitExceeded) exception
+        propagating out of _run_endurance_session -- e.g. a bug in
+        compute_driver_report/compute_team_report, or a ZeroDivisionError
+        when total_stints==0 -- used to leak the endurance:active:{ws} slot
+        forever (acks_late acks the message, so there's no redelivery to
+        retry the clear, and the reconciler wouldn't self-heal it for
+        _RECONCILE_CEILING_S). _clear_endurance_active must now run in the
+        task's `finally`, alongside the lock release, on EVERY exit path."""
+        from tasks.endurance_tasks import process_endurance_session
+
+        workspace_id = "1"  # meta.get("workspace_id", "1") default
+        _r = _make_mock_redis({f"endurance:active:{workspace_id}": {"job-boom-2"}})
+        with patch("redis.Redis.from_url", return_value=_r), \
+             patch(
+                 "tasks.endurance_tasks._run_endurance_session",
+                 side_effect=RuntimeError("boom"),
+             ):
+            with pytest.raises(RuntimeError):
+                process_endurance_session("job-boom-2", {"file_path": "x"}, [{"stint_number": 1}])
+
+        assert "job-boom-2" not in _r._store.get(f"endurance:active:{workspace_id}", set())
+        assert "endurance:runlock:job-boom-2" not in _r._store
+
 
 # ---------------------------------------------------------------------------
 # (f) idempotency guard

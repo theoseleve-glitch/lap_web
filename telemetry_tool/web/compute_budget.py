@@ -107,6 +107,11 @@ def check_compute_budget(
 # tasks.endurance_tasks), so they were invisible to this pool and the shared
 # cap was a no-op for them. count_active_compute_jobs() folds them back in
 # via the ``redis_client`` param instead of a fourth SQL source.
+#
+# NOTE: OCP-corner solves (web.routes.data_v2.solve_ocp_corner) are ALSO not
+# a PG source — that route is synchronous with no job row to write at all —
+# and (fix D, customer-readiness follow-up) are similarly folded in via
+# ``redis_client`` (see count_active_ocp_corner_jobs).
 _ACTIVE_JOB_SOURCES: tuple[tuple[str, tuple[str, ...]], ...] = (
     ("ingestion_jobs", ("pending", "running", "processing")),
     ("exports", ("pending", "processing", "running")),
@@ -144,15 +149,37 @@ def count_active_endurance_jobs(redis_client, workspace_id) -> int:
         return 0
 
 
+def count_active_ocp_corner_jobs(redis_client, workspace_id) -> int:
+    """Count in-flight synchronous OCP-corner solves for a workspace (fix D).
+
+    Unlike the endurance job set (a Redis SET keyed by job_id, since that
+    route dispatches an async Celery job with an id to key on),
+    ``web.routes.data_v2.solve_ocp_corner`` runs synchronously on the web
+    worker with no job_id — it INCRs a per-workspace counter for the
+    duration of the request instead (see ``_register_ocp_corner_active`` /
+    ``_clear_ocp_corner_active`` in that module). Fails open (returns 0) on
+    any Redis error or when no client is supplied, matching the fail-open
+    behaviour of the other sources here.
+    """
+    if redis_client is None:
+        return 0
+    try:
+        raw = redis_client.get(f"ocp_corner:active:{workspace_id}")
+        return max(0, int(raw or 0))
+    except Exception:
+        logger.debug("OCP-corner active-job count skipped", exc_info=True)
+        return 0
+
+
 def count_active_compute_jobs(conn, workspace_id, sources=_ACTIVE_JOB_SOURCES, redis_client=None) -> int:
     """Count active heavy-compute jobs for a workspace across ALL job tables.
 
     Backs the shared per-tier concurrency budget so analysis, export,
-    track-surface, and (via ``redis_client``) endurance jobs draw from one
-    pool. Each PG source is counted inside a SAVEPOINT: a missing table or a
-    query error contributes 0 without aborting the caller's transaction
-    (important — the caller is mid-request and will still INSERT its own job
-    row after this check).
+    track-surface, and (via ``redis_client``) endurance + OCP-corner jobs
+    draw from one pool. Each PG source is counted inside a SAVEPOINT: a
+    missing table or a query error contributes 0 without aborting the
+    caller's transaction (important — the caller is mid-request and will
+    still INSERT its own job row after this check).
     """
     total = 0
     for table, statuses in sources:
@@ -176,6 +203,7 @@ def count_active_compute_jobs(conn, workspace_id, sources=_ACTIVE_JOB_SOURCES, r
                 pass
             logger.debug("Active-job count skipped for table %s", table, exc_info=True)
     total += count_active_endurance_jobs(redis_client, workspace_id)
+    total += count_active_ocp_corner_jobs(redis_client, workspace_id)
     return total
 
 
@@ -189,12 +217,13 @@ def check_shared_compute_budget(
     """Shared per-tier concurrency budget across ALL heavy async job types.
 
     Mirrors :func:`check_compute_budget` but counts analysis + export +
-    track-surface + endurance jobs in ONE pool (see
+    track-surface + endurance + OCP-corner jobs in ONE pool (see
     :func:`count_active_compute_jobs`), so a single workspace cannot saturate
     the worker fleet by spreading load across job types — including onto the
-    isolated endurance queue. Pass ``redis_client`` so the endurance signal is
-    included; omitting it degrades gracefully to the pre-existing PG-only
-    count. Returns ``(allowed, info)`` with the same shape.
+    isolated endurance queue, or by firing concurrent synchronous OCP-corner
+    solves (fix D). Pass ``redis_client`` so the endurance/OCP-corner signals
+    are included; omitting it degrades gracefully to the pre-existing
+    PG-only count. Returns ``(allowed, info)`` with the same shape.
     """
     if plan_tier is None:
         row = conn.execute(
