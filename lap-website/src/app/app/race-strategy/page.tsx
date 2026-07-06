@@ -161,9 +161,6 @@ export default function RaceStrategyListPage() {
             className="inline-flex items-center gap-1 px-4 py-2 bg-gold text-white font-telemetry text-sm rounded hover:bg-gold/80 transition-colors"
           >
             + New Race
-            {entitlements && !canFull && !canComplex && (
-              <span className="text-[10px] opacity-60 ml-1" title="4h limit on Demo">4h max</span>
-            )}
           </Link>
         }
       />
@@ -201,7 +198,7 @@ export default function RaceStrategyListPage() {
             context={
               canComplex
                 ? 'Racer plan: races up to 24 hours. Upgrade for unlimited duration.'
-                : 'Demo plan: races up to 4 hours. Upgrade for 24-hour races and advanced features.'
+                : 'Race Strategy requires the Racer plan or higher. Upgrade for 24-hour races and advanced features.'
             }
           />
         </div>

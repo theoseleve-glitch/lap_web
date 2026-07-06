@@ -414,6 +414,69 @@ class TestExpandedFeatureGates:
                     assert data["error"]["code"] == "PLAN_REQUIRED"
 
 
+class TestEnduranceRaceBridgeGate:
+    """POST /api/v1/sessions/<id>/endurance-race must be feature-gated by
+    race_strategy, matching the primary /api/v1/race-strategy/ create path.
+    Uses the existing suffix-matching mechanism (4th tuple element) so only
+    the /endurance-race sub-path is gated, not every /api/v1/sessions/ POST.
+    """
+
+    def test_endurance_race_post_blocked_for_locked_tier(self, app):
+        """POST /api/v1/sessions/42/endurance-race must be feature-gated."""
+        @app.route("/api/v1/sessions/42/endurance-race", methods=["POST"])
+        def endurance_race_post():
+            return {"ok": True}
+
+        with app.test_request_context("/api/v1/sessions/42/endurance-race", method="POST"):
+            g.current_user_id = 1
+            g.workspace_id = 1
+
+            ctx = {"reason": "race_strategy requires racer",
+                   "upgrade_tier": "racer",
+                   "upgrade_url": "/billing?plan=RACER",
+                   "current_tier": "locked"}
+            with patch("auth.entitlements.authorize_feature", return_value=(False, ctx)):
+                with patch("auth.entitlements._get_conn"):
+                    from web.middleware.entitlements import entitlement_middleware
+                    result = entitlement_middleware()
+                    assert result is not None, \
+                        "POST /api/v1/sessions/42/endurance-race should be blocked for locked tier"
+                    resp, status = result
+                    data = resp.get_json()
+                    assert status == 403
+                    assert data["error"]["code"] == "PLAN_REQUIRED"
+
+    def test_endurance_race_post_allowed_for_racer(self, app):
+        """POST /api/v1/sessions/42/endurance-race should pass for racer+ tiers."""
+        with app.test_request_context("/api/v1/sessions/42/endurance-race", method="POST"):
+            g.current_user_id = 1
+            g.workspace_id = 1
+
+            with patch("auth.entitlements.authorize_feature",
+                       return_value=(True, {"current_tier": "racer"})):
+                with patch("auth.entitlements._get_conn"):
+                    from web.middleware.entitlements import entitlement_middleware
+                    result = entitlement_middleware()
+                    assert result is None
+
+    def test_other_sessions_posts_not_gated_by_race_strategy(self, app):
+        """POST /api/v1/sessions/42/stints/assign (and other non-bridge POSTs
+        under /api/v1/sessions/) must NOT trigger the race_strategy gate —
+        the suffix match keeps this gate scoped to /endurance-race only."""
+        with app.test_request_context("/api/v1/sessions/42/stints/assign", method="POST"):
+            g.current_user_id = 1
+            g.workspace_id = 1
+
+            with patch("auth.entitlements.authorize_feature") as mock_auth:
+                with patch("auth.entitlements._get_conn"):
+                    from web.middleware.entitlements import entitlement_middleware
+                    entitlement_middleware()
+                    for call_args in mock_auth.call_args_list:
+                        feature = call_args[0][2] if len(call_args[0]) > 2 else None
+                        assert feature != "race_strategy", \
+                            "POST .../stints/assign should NOT trigger the endurance-race gate"
+
+
 class TestQuotaGating:
     def test_analysis_blocked_when_quota_exceeded(self, app):
         with app.test_request_context("/analyze/api/start", method="POST"):

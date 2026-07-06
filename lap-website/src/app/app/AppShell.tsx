@@ -48,6 +48,12 @@ const navGroups: NavGroup[] = [
     ],
   },
   {
+    label: 'Strategy',
+    items: [
+      { href: '/app/race-strategy', label: 'Race Strategy', icon: '⚑' },
+    ],
+  },
+  {
     label: 'Data',
     items: [
       { href: '/app/tracks', label: 'Tracks', icon: '◌' },

@@ -48,6 +48,10 @@ _FEATURE_GATES: list[tuple] = [
     ("PUT", "/api/v1/race-strategy/", "race_strategy"),
     ("DELETE", "/api/v1/race-strategy/", "race_strategy"),
 
+    # Session → race bridge (creates a race from an uploaded endurance
+    # session's detected stints) — same gate as the primary create path.
+    ("POST", "/api/v1/sessions/", "race_strategy", "/endurance-race"),
+
     # API Data Access — World-Class only
     ("GET", "/api/v1/data/", "api_access"),
 

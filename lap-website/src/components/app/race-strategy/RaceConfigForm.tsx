@@ -260,7 +260,7 @@ export function RaceConfigForm({
   const fieldId = useId();
   const [error, setError] = useState('');
 
-  const isDemo = raceStrategyLimit === '4h_basic';
+  const isDemo = raceStrategyLimit === 'none';
   const isComplex = raceStrategyLimit === '24h_complex' || raceStrategyLimit === 'unlimited';
 
   /* ---- form state ---- */
@@ -596,7 +596,7 @@ export function RaceConfigForm({
           <div className="mb-4">
             <UpgradeBanner
               feature="race_strategy_complex"
-              context="Demo plan: races up to 4 hours. Upgrade for 24-hour races and advanced features."
+              context="Race Strategy requires the Racer plan or higher. Upgrade for 24-hour races and advanced features."
             />
           </div>
         )}

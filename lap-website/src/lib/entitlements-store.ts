@@ -22,7 +22,7 @@ export interface Entitlements {
   visualizationEnabled: boolean;
   badgeShareCard: boolean;
   gamification: boolean;
-  raceStrategyLimit: '4h_basic' | '24h_complex' | 'unlimited' | null;
+  raceStrategyLimit: 'none' | '24h_complex' | 'unlimited' | null;
   raceStrategyMaxDurationS: number | null;
   raceStrategyParams: 'basic' | 'complex';
   optimizerModes: string[];
