@@ -19,6 +19,27 @@ Public API
     :class:`GTLoaderError` only on structurally-invalid gt files (e.g.,
     not a FeatureCollection, missing a boundary feature).
 
+``invalidate_gt_cache(canonical_id=None)``
+    Clear the process-local gt/alias caches so a gt file (and/or alias
+    entry) written at runtime — e.g. by the onboarding bless flow — becomes
+    visible on the next ``load_gt`` call without a process restart.
+    ``canonical_id`` is accepted for API symmetry with callers that know
+    which track just changed; the underlying caches are always fully
+    cleared (a bless can also touch the shared alias registry, which isn't
+    keyed by canonical_id).
+
+Runtime GT directory
+~~~~~~~~~~~~~~~~~~~~~
+
+The gt corpus under ``data/ground_truth/`` (see ``_GT_DIR``) is baked into
+the backend Docker image, so anything written there at runtime is invisible
+until a redeploy. When the ``GT_RUNTIME_DIR`` env var is set, both the
+geojson-file lookup (``gt_<alias>.geojson``) and the alias-registry lookup
+(a ``track_aliases.json`` of the same shape, merged over the baked one)
+consult that directory FIRST, falling back to the baked corpus/registry
+when the runtime dir has no match. Behavior is unchanged when
+``GT_RUNTIME_DIR`` is unset.
+
 The alias-aware lookup means slk-fp1 → slk → tries gt_slk.geojson then
 gt_slk-fp1.geojson — finds the variant filename automatically. Same for
 ouest-karting → ok → tries gt_ok.geojson (currently absent, returns None).
@@ -694,9 +715,22 @@ def _compute_cross_section_midline_and_widths(
 # ---------------------------------------------------------------------------
 
 
+def _runtime_gt_dir() -> Path | None:
+    """``GT_RUNTIME_DIR`` env var as a ``Path``, or ``None`` when unset."""
+    val = os.environ.get("GT_RUNTIME_DIR")
+    return Path(val) if val else None
+
+
 @lru_cache(maxsize=1)
 def _load_registry() -> dict[str, dict]:
-    """Return the ``tracks`` block from track_aliases.json."""
+    """Return the ``tracks`` block from track_aliases.json.
+
+    When ``GT_RUNTIME_DIR`` is set and holds a same-named
+    ``track_aliases.json`` (mirroring how ``scripts/bless_gt.py`` writes the
+    baked one), its ``tracks`` entries are merged in on top of the baked
+    registry — runtime entries win on canonical_id collisions. This lets a
+    freshly-blessed track register aliases without touching the baked file.
+    """
     with open(_ALIAS_REGISTRY_PATH, encoding="utf-8") as fh:
         data = json.load(fh)
     tracks = data.get("tracks", {})
@@ -704,6 +738,17 @@ def _load_registry() -> dict[str, dict]:
         raise GTLoaderError(
             f"{_ALIAS_REGISTRY_PATH.name}: 'tracks' is not a dict"
         )
+
+    runtime_dir = _runtime_gt_dir()
+    if runtime_dir is not None:
+        runtime_registry_path = runtime_dir / _ALIAS_REGISTRY_PATH.name
+        if runtime_registry_path.exists():
+            with open(runtime_registry_path, encoding="utf-8") as fh:
+                runtime_data = json.load(fh)
+            runtime_tracks = runtime_data.get("tracks", {})
+            if isinstance(runtime_tracks, dict):
+                tracks = {**tracks, **runtime_tracks}
+
     return tracks
 
 
@@ -1062,6 +1107,23 @@ def load_gt(track_input: str | None) -> GroundTruth | None:
     return _load_gt_canonical(canonical_id)
 
 
+def invalidate_gt_cache(canonical_id: str | None = None) -> None:
+    """Clear cached gt/alias state.
+
+    Call this after writing a gt file (and/or an alias entry) into
+    ``GT_RUNTIME_DIR`` at runtime — e.g. from the onboarding bless flow —
+    so the next ``load_gt``/``resolve_track_id`` call sees it instead of a
+    process-lifetime-cached miss. ``canonical_id`` is accepted for API
+    symmetry with call sites that know which track just changed, but the
+    clear is always full: a bless can also touch the shared alias registry,
+    which isn't keyed by canonical_id, so a partial clear could still leave
+    a stale alias index around.
+    """
+    _load_registry.cache_clear()
+    _build_alias_index.cache_clear()
+    _load_gt_canonical.cache_clear()
+
+
 @lru_cache(maxsize=16)
 def _load_gt_canonical(canonical_id: str) -> GroundTruth | None:
     """Cached gt load keyed on canonical_id. See ``load_gt`` for the
@@ -1079,9 +1141,18 @@ def _load_gt_canonical(canonical_id: str) -> GroundTruth | None:
         if alias not in aliases:
             aliases.append(str(alias))
 
+    runtime_dir = _runtime_gt_dir()
     for alias in aliases:
-        candidate = _GT_DIR / f"gt_{alias}.geojson"
-        if not candidate.exists():
+        candidate = None
+        if runtime_dir is not None:
+            runtime_candidate = runtime_dir / f"gt_{alias}.geojson"
+            if runtime_candidate.exists():
+                candidate = runtime_candidate
+        if candidate is None:
+            baked_candidate = _GT_DIR / f"gt_{alias}.geojson"
+            if baked_candidate.exists():
+                candidate = baked_candidate
+        if candidate is None:
             continue
         left, right, centerline_pred, annotated_at, schema_version = (
             _parse_gt_geojson(candidate)
