@@ -69,13 +69,20 @@ _GENERIC_AUTH_ERROR = "Invalid or expired onboarding link"
 _RATE_TIER = "analyze"
 
 
-def _extract_token() -> str | None:
+def _extract_token(*, allow_query: bool = False) -> str | None:
     """Bearer header preferred; ``?token=`` query-string fallback for the
-    annotator's plain ``fetch`` call (plan: "prefer header")."""
+    annotator's plain ``fetch`` call (plan: "prefer header") -- but ONLY for
+    the read-only ``GET /draft`` route. The write route (``POST /save``)
+    must be header-only: a query-string token can leak via proxy/access
+    logs, browser history, or ``Referer`` headers in a way a header never
+    does, and that risk is only acceptable for the read of an already-public
+    auto-draft, never for blessing a geometry."""
     auth_header = request.headers.get("Authorization", "")
     if auth_header.startswith("Bearer "):
         return auth_header[7:]
-    return request.args.get("token") or None
+    if allow_query:
+        return request.args.get("token") or None
+    return None
 
 
 def _auth_deny():
@@ -105,47 +112,43 @@ def _authorize(request_id: str | None, token: str | None, conn) -> dict | None:
     return row
 
 
-def _scoped_rate_limit(get_request_id):
-    """Outer decorator: set ``g.workspace_id`` to ``request_id``+client-IP
-    BEFORE ``@rate_limit`` computes its scope key, and short-circuit CORS
-    preflight entirely (no auth, no quota consumed).
+def _scoped_rate_limit(fn):
+    """Outer decorator: set ``g.workspace_id`` to the client IP alone BEFORE
+    ``@rate_limit`` computes its scope key, and short-circuit CORS preflight
+    entirely (no auth, no quota consumed).
 
     ``web/rate_limit.py``'s ``rate_limit()`` decorator prefers
     ``g.workspace_id`` over ``g.current_user_id``/IP when building its Redis
     key -- there is no logged-in user on these token-authed routes, so
-    stuffing ``request_id:ip`` into ``g.workspace_id`` reuses the existing
-    sliding-window limiter with the request_id+IP scoping this task requires,
-    without duplicating the Lua/Redis machinery. Must be the OUTER decorator
-    (listed above ``@rate_limit`` in the stack) so it runs first, before
-    ``rate_limit`` reads ``g.workspace_id``.
+    stuffing the IP into ``g.workspace_id`` reuses the existing sliding-
+    window limiter for this route's strict tier without duplicating the
+    Lua/Redis machinery.
+
+    IMPORTANT: the key is IP-ONLY -- it must NOT include ``request_id``.
+    ``request_id`` is read from the query string / JSON body *before* any
+    auth check runs, so it is fully attacker-controlled; keying the bucket
+    on it would let a caller mint an unlimited number of fresh buckets (one
+    per guessed/forged request_id) and the rate limit would never engage.
+    All requests from one IP share a single bucket regardless of request_id.
+
+    Must be the OUTER decorator (listed above ``@rate_limit`` in the stack)
+    so it runs first, before ``rate_limit`` reads ``g.workspace_id``.
     """
-    def decorator(fn):
-        @functools.wraps(fn)
-        def wrapper(*args, **kwargs):
-            if request.method == "OPTIONS":
-                # Browsers never attach auth headers to preflight, and CORS
-                # response headers are added globally by the after_request
-                # hook in web/middleware/cors.py regardless of body.
-                return "", 204
-            request_id = get_request_id()
-            ip = request.remote_addr or "unknown"
-            g.workspace_id = f"onboarding:{request_id or 'none'}:{ip}"
-            return fn(*args, **kwargs)
-        return wrapper
-    return decorator
-
-
-def _get_req_id_from_query() -> str | None:
-    return request.args.get("req")
-
-
-def _get_req_id_from_json_body() -> str | None:
-    body = request.get_json(silent=True)
-    return body.get("request_id") if isinstance(body, dict) else None
+    @functools.wraps(fn)
+    def wrapper(*args, **kwargs):
+        if request.method == "OPTIONS":
+            # Browsers never attach auth headers to preflight, and CORS
+            # response headers are added globally by the after_request
+            # hook in web/middleware/cors.py regardless of body.
+            return "", 204
+        ip = request.remote_addr or "unknown"
+        g.workspace_id = f"onboarding:{ip}"
+        return fn(*args, **kwargs)
+    return wrapper
 
 
 @bp.route("/draft", methods=["GET", "OPTIONS"])
-@_scoped_rate_limit(_get_req_id_from_query)
+@_scoped_rate_limit
 @rate_limit(_RATE_TIER)
 def get_draft():
     """``GET /api/v1/onboarding/draft?req=<id>`` -- fetch the auto-draft.
@@ -154,7 +157,7 @@ def get_draft():
     ``draft.load_draft``'s own sanitizer) -- never from client input.
     """
     request_id = request.args.get("req")
-    token = _extract_token()
+    token = _extract_token(allow_query=True)
 
     conn = get_maint_connection()
     try:
@@ -177,7 +180,7 @@ def get_draft():
 
 
 @bp.route("/save", methods=["POST", "OPTIONS"])
-@_scoped_rate_limit(_get_req_id_from_json_body)
+@_scoped_rate_limit
 @rate_limit(_RATE_TIER)
 def save_geometry():
     """``POST /api/v1/onboarding/save`` -- submit the corrected geojson.
@@ -194,7 +197,7 @@ def save_geometry():
         body = {}
     request_id = body.get("request_id")
     geometry = body.get("geometry")
-    token = _extract_token()
+    token = _extract_token(allow_query=False)  # header-only: see _extract_token docstring
 
     conn = get_maint_connection()
     try:
@@ -215,7 +218,25 @@ def save_geometry():
         try:
             auto_draft = load_draft(request_id)
         except DraftError:
-            auto_draft = None
+            # A valid, pending request ALWAYS has a draft on disk (it's
+            # written before the token is ever emailed out) -- its absence
+            # is a server-side fault, not a legitimate "no draft to compare
+            # against" case. Falling back to ``auto_draft=None`` here would
+            # silently disable bless_geometry's unreviewed-draft gate (it
+            # only runs that check when given a draft to diff against),
+            # letting an unedited auto-draft slip through as if reviewed.
+            # Reject and let the operator retry once the draft is restored
+            # -- do NOT revoke the token, this isn't the operator's fault.
+            logger.warning(
+                "onboarding save: draft missing for request_id=%s -- "
+                "refusing to bypass unreviewed-draft gate", request_id,
+            )
+            return api_error(
+                ErrorCode.VALIDATION_ERROR,
+                "Geometry rejected",
+                details=[{"failure": "draft_missing"}],
+                status=422,
+            )
 
         with tempfile.TemporaryDirectory(prefix="onboarding_save_") as tmp_dir:
             tmp_path = Path(tmp_dir) / f"{request_id}.geojson"
@@ -239,11 +260,27 @@ def save_geometry():
 
         # Revoke the token (single-use) in the SAME commit as the status
         # flip -- a bless can never succeed twice off the same link.
-        repo.set_status(
+        updated = repo.set_status(
             conn, request_id, "blessed",
             blessed_at=datetime.now(timezone.utc), token_jti=None,
         )
         conn.commit()
+
+        if not updated:
+            # ``set_status``'s ``WHERE status <> 'blessed'`` guard returned
+            # rowcount 0 -- either a concurrent/duplicate save already
+            # blessed (and revoked the token for) this request, or the row
+            # is gone. Either way the geometry IS blessed; it just wasn't
+            # THIS request that did it, so don't re-run token revocation
+            # bookkeeping or reprocessing (the winning request already did,
+            # or will). Report success idempotently rather than implying
+            # this call performed the bless.
+            logger.warning(
+                "onboarding save: set_status no-op for request_id=%s -- "
+                "already blessed by a concurrent/duplicate save (or row gone)",
+                request_id,
+            )
+            return api_response({"status": "blessed"})
 
         try:
             reprocess_after_bless(

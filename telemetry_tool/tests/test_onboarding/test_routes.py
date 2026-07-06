@@ -27,6 +27,7 @@ import pytest
 from flask import Flask
 
 from onboarding.bless_service import BlessResult
+from onboarding.draft import DraftError
 from onboarding.tokens import mint
 from web.api_utils import init_request_id
 from web.middleware.auth import auth_middleware
@@ -294,6 +295,120 @@ class TestPostSave:
             json={"request_id": "req-1", "geometry": {}},
         )
         assert resp.status_code == 401
+
+    def test_query_string_only_token_401_save_is_header_only(self, fake_repo):
+        """Finding 1: unlike GET /draft, POST /save must NOT accept a
+        ``?token=`` fallback -- a valid token supplied ONLY via the query
+        string (no Authorization header) must be refused."""
+        tok, jti = mint("req-1")
+        fake_repo.get.return_value = _row(token_jti=jti)
+        app = _make_app()
+        resp = app.test_client().post(
+            f"/api/v1/onboarding/save?token={tok}",
+            json={"request_id": "req-1", "geometry": {"type": "FeatureCollection", "features": []}},
+        )
+        assert resp.status_code == 401
+        assert resp.get_json()["error"]["message"] == onboarding_routes._GENERIC_AUTH_ERROR
+
+    def test_bless_called_with_load_draft_result(
+        self, fake_repo, fake_draft, fake_bless, fake_reprocess,
+    ):
+        """Finding 2 (wiring): ``bless_geometry`` must be given the SAME
+        auto-draft that ``load_draft(request_id)`` returned, not some
+        derived/None value."""
+        sentinel_draft = {"type": "FeatureCollection", "features": [{"id": "sentinel"}]}
+        fake_draft.return_value = sentinel_draft
+        tok, jti = mint("req-1")
+        fake_repo.get.return_value = _row(token_jti=jti)
+        app = _make_app()
+        resp = app.test_client().post(
+            "/api/v1/onboarding/save",
+            json={
+                "request_id": "req-1",
+                "geometry": {"type": "FeatureCollection", "features": []},
+            },
+            headers={"Authorization": f"Bearer {tok}"},
+        )
+        assert resp.status_code == 200
+        _, bkwargs = fake_bless.call_args
+        assert bkwargs["auto_draft_geojson"] is sentinel_draft
+
+    def test_missing_draft_returns_422_draft_missing_no_bless_no_revoke(
+        self, fake_repo, fake_draft, fake_bless, fake_reprocess,
+    ):
+        """Finding 2: a missing draft file must NOT silently disable the
+        unreviewed-draft gate (``auto_draft=None`` bypass) -- it must 422
+        with ``draft_missing`` and leave the token/bless/reprocess alone so
+        the operator can retry once the draft is restored."""
+        fake_draft.side_effect = DraftError("no draft on disk for request_id")
+        tok, jti = mint("req-1")
+        fake_repo.get.return_value = _row(token_jti=jti)
+        app = _make_app()
+        resp = app.test_client().post(
+            "/api/v1/onboarding/save",
+            json={
+                "request_id": "req-1",
+                "geometry": {"type": "FeatureCollection", "features": []},
+            },
+            headers={"Authorization": f"Bearer {tok}"},
+        )
+        assert resp.status_code == 422
+        assert resp.get_json()["error"]["details"] == [{"failure": "draft_missing"}]
+        fake_bless.assert_not_called()
+        fake_repo.set_status.assert_not_called()  # token NOT revoked
+        fake_reprocess.assert_not_called()
+
+    def test_set_status_noop_returns_200_idempotent_without_reprocess(
+        self, fake_repo, fake_draft, fake_bless, fake_reprocess,
+    ):
+        """Minor 4: if ``set_status`` updates no row (already blessed by a
+        concurrent/duplicate save), the route must still report success
+        idempotently but must NOT re-run reprocess for a bless it didn't
+        perform."""
+        fake_repo.set_status.return_value = False
+        tok, jti = mint("req-1")
+        fake_repo.get.return_value = _row(token_jti=jti)
+        app = _make_app()
+        resp = app.test_client().post(
+            "/api/v1/onboarding/save",
+            json={
+                "request_id": "req-1",
+                "geometry": {"type": "FeatureCollection", "features": []},
+            },
+            headers={"Authorization": f"Bearer {tok}"},
+        )
+        assert resp.status_code == 200
+        assert resp.get_json()["data"]["status"] == "blessed"
+        fake_reprocess.assert_not_called()
+
+
+# ---------------------------------------------------------------------------
+# Rate-limit bucket key (Finding 3): IP-only, no request_id
+# ---------------------------------------------------------------------------
+
+class TestScopedRateLimitKey:
+    def test_workspace_id_key_is_ip_only_regardless_of_request_id(self):
+        """A caller varying ``request_id`` (attacker-controlled, read
+        pre-auth) across requests must land in the SAME rate-limit bucket
+        -- the key must be derived from client IP alone."""
+        probe_app = Flask(__name__)
+
+        @probe_app.route("/x", methods=["POST"])
+        @onboarding_routes._scoped_rate_limit
+        def _probe():
+            from flask import g as flask_g
+            return {"workspace_id": flask_g.workspace_id}
+
+        client = probe_app.test_client()
+        resp_a = client.post("/x", json={"request_id": "req-A-attacker-controlled"})
+        resp_b = client.post("/x", json={"request_id": "req-B-different-guess"})
+
+        key_a = resp_a.get_json()["workspace_id"]
+        key_b = resp_b.get_json()["workspace_id"]
+        assert key_a == key_b
+        assert "req-A" not in key_a
+        assert "req-B" not in key_b
+        assert key_a == "onboarding:127.0.0.1"
 
 
 # ---------------------------------------------------------------------------

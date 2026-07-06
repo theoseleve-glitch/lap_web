@@ -168,3 +168,119 @@ python -m pytest tests/test_auth_middleware.py -q          -> 7 passed (no regre
   updated to read it.
 - Task 13 (trigger hook) and Task 14 (annotator) are out of scope here and
   unstarted.
+
+---
+
+# Task 12 follow-up: security review fixes (2026-07-06)
+
+Applied targeted fixes to `telemetry_tool/web/routes/onboarding_routes.py` for
+four review findings (3 IMPORTANT, 1 MINOR), plus tests. No redesign; the
+auth allowlist, row-derived canonical_id/track_key/reviewed_by, generic-401
+behavior, CORS allowlist, and fail-closed ordering are all unchanged.
+
+## Finding 1 — `?token=` fallback shared by both routes (must be GET-only)
+
+`_extract_token()` gained an `allow_query: bool = False` keyword. `GET
+/draft` calls `_extract_token(allow_query=True)` (unchanged behavior); `POST
+/save` calls `_extract_token(allow_query=False)` — header-only. A token
+supplied ONLY via `?token=` on `/save` is now treated as "no token" and
+falls into the same generic 401 as any other auth failure.
+
+Covering test: `TestPostSave::test_query_string_only_token_401_save_is_header_only`.
+
+## Finding 2 — missing draft file silently disabled the unreviewed-draft gate
+
+`save_geometry()`'s `except DraftError: auto_draft = None` fallback is
+removed. A `DraftError` from `load_draft(request_id)` now returns HTTP 422
+immediately with `details=[{"failure": "draft_missing"}]` (same envelope
+shape as every other bless-gate failure via `api_error`/`ErrorCode.
+VALIDATION_ERROR`). The token is NOT revoked and `bless_geometry`/
+`reprocess_after_bless` are never called, so a valid pending request can
+retry once the draft is restored — this is a server fault, not an auth
+bypass or a gate-skip.
+
+Covering tests:
+- `TestPostSave::test_bless_called_with_load_draft_result` — proves
+  `bless_geometry` is invoked with `auto_draft_geojson` IS the exact object
+  `load_draft(request_id)` returned (sentinel-object identity check).
+- `TestPostSave::test_missing_draft_returns_422_draft_missing_no_bless_no_revoke`
+  — `DraftError` → 422 `{"failure": "draft_missing"}`, `bless_geometry`
+  not called, `repo.set_status` not called (token untouched).
+
+## Finding 3 — rate-limit bucket keyed on attacker-controlled `request_id`
+
+`_scoped_rate_limit` no longer takes a `get_request_id` accessor or mixes
+`request_id` into the key at all. It is now a plain decorator that sets
+`g.workspace_id = f"onboarding:{ip}"` (client IP only) before `@rate_limit`
+runs. Both route decorator stacks changed from
+`@_scoped_rate_limit(_get_req_id_from_query)` /
+`@_scoped_rate_limit(_get_req_id_from_json_body)` to plain `@_scoped_rate_limit`.
+The now-dead `_get_req_id_from_query`/`_get_req_id_from_json_body` helpers
+were removed (no longer referenced anywhere). Final Redis key (built by
+`web/rate_limit.py`) is `ratelimit:analyze:ws:onboarding:{ip}` — same strict
+"analyze" tier (5 req / 3600s), same helper machinery, just without the
+attacker-forgeable `request_id` component. All requests from one IP now
+share one bucket regardless of how many distinct/forged `request_id`s are
+tried.
+
+Covering test:
+`TestScopedRateLimitKey::test_workspace_id_key_is_ip_only_regardless_of_request_id`
+— drives `_scoped_rate_limit` directly against a throwaway Flask route with
+two different `request_id` values and asserts both requests land on the
+identical `g.workspace_id` (`"onboarding:127.0.0.1"`), with neither
+`request_id` substring present in the key.
+
+## Minor 4 — `repo.set_status(...)` return value discarded
+
+`updated = repo.set_status(...)` now captures the bool. If falsey (the
+`WHERE status <> 'blessed'` guard matched zero rows — already blessed by a
+concurrent/duplicate save, or the row is gone), the route logs a warning and
+returns `200 {"status": "blessed"}` immediately, WITHOUT re-running
+`reprocess_after_bless` (a prior request already ran, or is running, it) —
+the response no longer implies THIS request performed the bless. Normal
+(first-writer) path is unchanged: reprocess still runs best-effort exactly
+as before.
+
+Covering test:
+`TestPostSave::test_set_status_noop_returns_200_idempotent_without_reprocess`
+— `fake_repo.set_status.return_value = False` still yields 200
+`{"status": "blessed"}` but `fake_reprocess.assert_not_called()`.
+
+## Test results
+
+```
+python -m pytest tests/test_onboarding/test_routes.py -v
+-> 21 passed (16 pre-existing + 5 new: query-only-token-401,
+   bless-called-with-load-draft-result, missing-draft-422-draft_missing,
+   set-status-noop-idempotent, workspace-id-key-ip-only)
+
+python -m pytest tests/test_onboarding/ -q
+-> 136 passed, 5 skipped (pre-existing, unrelated)
+```
+
+## Constraints honored
+
+- Branch-only (`feat/track-onboarding-loop`), no deploy.
+- No `git add -A` — staged `telemetry_tool/web/routes/onboarding_routes.py`
+  and `telemetry_tool/tests/test_onboarding/test_routes.py` explicitly.
+  `web/rate_limit.py` was NOT touched (fix was entirely on the onboarding
+  side's key construction) so it was not staged.
+- `onboarding_routes.py` is 305 lines (< 500-line limit).
+- No secrets touched.
+- Auth allowlist exact-match, row-derived canonical_id/track_key/
+  reviewed_by, generic-401 wording, CORS allowlist, and fail-closed
+  ordering all left unchanged (verified by the pre-existing tests in this
+  same file still passing unmodified).
+
+## Residual concerns
+
+- Rate limiting is still untested against a real Redis (none live in this
+  environment) — same pre-existing gap noted in the original Task 12
+  report; the new test verifies key *derivation* (IP-only), not the
+  Lua sliding-window enforcement itself.
+- `set_status` returning `False` due to a genuinely-vanished row (not a
+  concurrent bless) is now also reported as `200 blessed` — indistinguishable
+  from the concurrent-save case from the caller's perspective. This matches
+  the task's instruction ("the geometry is blessed either way") but a truly
+  missing row is a different failure mode that this fix does not
+  distinguish; flagging for awareness, not treating as in-scope here.
