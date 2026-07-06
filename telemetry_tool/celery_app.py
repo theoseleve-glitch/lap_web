@@ -150,6 +150,14 @@ def make_celery(app=None) -> Celery:
                 "schedule": 300,  # Every 5 minutes
                 "options": {"queue": "default"},
             },
+            "reconcile-stuck-endurance-jobs": {
+                "task": "tasks.endurance_tasks.reconcile_stuck_endurance_jobs_task",
+                "schedule": 300,  # Every 5 minutes — mirrors alerting-checks'
+                "options": {"queue": "default"},  # cadence. Deliberately NOT the
+                # `endurance` queue: if the sole --concurrency=1 endurance
+                # worker is the one stuck, routing this sweep onto its own
+                # queue would queue it BEHIND the very job it exists to fix.
+            },
             "create-future-partitions": {
                 "task": "tasks.archival_tasks.create_future_partitions",
                 "schedule": 2592000,  # Monthly (30 days)

@@ -101,6 +101,12 @@ def check_compute_budget(
 # constants (no injection). ``analysis_runs`` may be absent on older lineages
 # (its original migration 056 was orphaned) — counting is SAVEPOINT-guarded so
 # a missing table contributes 0 without aborting the caller's transaction.
+#
+# NOTE: endurance jobs are NOT a PG source here — 2c5f508 isolated them onto
+# their own Celery queue and their state lives entirely in Redis (see
+# tasks.endurance_tasks), so they were invisible to this pool and the shared
+# cap was a no-op for them. count_active_compute_jobs() folds them back in
+# via the ``redis_client`` param instead of a fourth SQL source.
 _ACTIVE_JOB_SOURCES: tuple[tuple[str, tuple[str, ...]], ...] = (
     ("ingestion_jobs", ("pending", "running", "processing")),
     ("exports", ("pending", "processing", "running")),
@@ -113,14 +119,40 @@ def _row_count(row) -> int:
     return int(d.get("cnt", 0) or 0)
 
 
-def count_active_compute_jobs(conn, workspace_id, sources=_ACTIVE_JOB_SOURCES) -> int:
+def count_active_endurance_jobs(redis_client, workspace_id) -> int:
+    """Count in-flight endurance jobs for a workspace via the Redis active-set.
+
+    Endurance jobs run on their own Celery queue and never write to
+    ``ingestion_jobs``/``exports``/``analysis_runs``, so they are otherwise
+    invisible to :func:`count_active_compute_jobs`'s PG scan.
+    ``web.routes.endurance_upload.process_stints`` SADDs ``job_id`` into
+    ``endurance:active:{workspace_id}`` at dispatch (see
+    ``tasks.endurance_tasks.mark_endurance_dispatched``) and every terminal
+    path (success, soft-timeout failure, redelivery-exhaustion failure, or
+    the stuck-job reconciler's forced failure) SREMs it back out — see
+    ``tasks.endurance_tasks._clear_endurance_active``.
+
+    Fails open (returns 0) on any Redis error or when no client is supplied,
+    matching the SAVEPOINT-guarded fail-open behaviour of the PG sources.
+    """
+    if redis_client is None:
+        return 0
+    try:
+        return int(redis_client.scard(f"endurance:active:{workspace_id}"))
+    except Exception:
+        logger.debug("Endurance active-job count skipped", exc_info=True)
+        return 0
+
+
+def count_active_compute_jobs(conn, workspace_id, sources=_ACTIVE_JOB_SOURCES, redis_client=None) -> int:
     """Count active heavy-compute jobs for a workspace across ALL job tables.
 
-    Backs the shared per-tier concurrency budget so analysis, export, and
-    track-surface jobs draw from one pool. Each source is counted inside a
-    SAVEPOINT: a missing table or a query error contributes 0 without aborting
-    the caller's transaction (important — the caller is mid-request and will
-    still INSERT its own job row after this check).
+    Backs the shared per-tier concurrency budget so analysis, export,
+    track-surface, and (via ``redis_client``) endurance jobs draw from one
+    pool. Each PG source is counted inside a SAVEPOINT: a missing table or a
+    query error contributes 0 without aborting the caller's transaction
+    (important — the caller is mid-request and will still INSERT its own job
+    row after this check).
     """
     total = 0
     for table, statuses in sources:
@@ -143,6 +175,7 @@ def count_active_compute_jobs(conn, workspace_id, sources=_ACTIVE_JOB_SOURCES) -
             except Exception:
                 pass
             logger.debug("Active-job count skipped for table %s", table, exc_info=True)
+    total += count_active_endurance_jobs(redis_client, workspace_id)
     return total
 
 
@@ -151,13 +184,17 @@ def check_shared_compute_budget(
     user_id: int,
     workspace_id: int,
     plan_tier: str | None = None,
+    redis_client=None,
 ) -> tuple[bool, dict]:
     """Shared per-tier concurrency budget across ALL heavy async job types.
 
     Mirrors :func:`check_compute_budget` but counts analysis + export +
-    track-surface jobs in ONE pool (see :func:`count_active_compute_jobs`), so a
-    single workspace cannot saturate the worker fleet by spreading load across
-    job types. Returns ``(allowed, info)`` with the same shape.
+    track-surface + endurance jobs in ONE pool (see
+    :func:`count_active_compute_jobs`), so a single workspace cannot saturate
+    the worker fleet by spreading load across job types — including onto the
+    isolated endurance queue. Pass ``redis_client`` so the endurance signal is
+    included; omitting it degrades gracefully to the pre-existing PG-only
+    count. Returns ``(allowed, info)`` with the same shape.
     """
     if plan_tier is None:
         row = conn.execute(
@@ -170,7 +207,7 @@ def check_shared_compute_budget(
 
     budget = get_budget(plan_tier)
     max_jobs = budget["max_concurrent_jobs"]
-    running = count_active_compute_jobs(conn, workspace_id)
+    running = count_active_compute_jobs(conn, workspace_id, redis_client=redis_client)
 
     info = {
         "running_jobs": running,

@@ -5,6 +5,7 @@ import json
 import logging
 import os
 import tempfile
+import time
 from datetime import datetime
 from pathlib import Path
 from typing import Any
@@ -34,6 +35,205 @@ ENDURANCE_HARD_TIME_LIMIT_S = 3900  # 65 min — same 300s cleanup-margin
 # publish to run) so a genuinely still-running job keeps its lock at least
 # as long as Celery would let it run anyway.
 _JOB_LOCK_TTL_S = ENDURANCE_HARD_TIME_LIMIT_S + 60
+
+# ── customer-readiness fixes #2/#4/#6 (2c5f508 follow-up) ──────────────────
+# 2c5f508 isolated endurance jobs onto their own Celery queue so a long
+# analysis could never stall ordinary customers' uploads, but it also moved
+# ALL endurance job state into Redis-only bookkeeping (runlock + status),
+# completely invisible to every PG-backed safety net:
+#   #2 the shared per-tier compute budget (web.compute_budget) only scans
+#      ingestion_jobs/exports/analysis_runs, so it never counted endurance
+#      jobs — the concurrency cap was a no-op for this queue.
+#   #4 there is no endurance analogue of alerting_tasks._reconcile_stuck_jobs,
+#      so a hard-killed job (SIGKILL from the task's own time_limit) is never
+#      un-stuck: its `finally: _release_job_lock` cannot run under SIGKILL,
+#      so the run-lock is held and the status is left non-terminal forever.
+#   #6 with task_reject_on_worker_lost + acks_late, that SAME hard-killed
+#      message gets requeued by the broker once visibility_timeout elapses.
+#      `self.request.id` is unchanged across redeliveries of one message, so
+#      the re-entrant run-lock re-grants immediately and the (still
+#      non-terminal) status doesn't trip the existing terminal-skip either —
+#      the job loops forever, pinning the sole --concurrency=1 worker.
+#
+# All three fixes below share ONE notion of job identity/state, entirely in
+# Redis, keyed by job_id:
+#   endurance:active:{workspace_id}  — SET of in-flight job_ids (fix #2's
+#                                       countable signal for
+#                                       web.compute_budget.count_active_compute_jobs)
+#   endurance:dispatch:{job_id}      — {workspace_id, dispatched_at} written
+#                                       once at submit time (fix #4's age
+#                                       reference — independent of the
+#                                       ever-changing endurance:status blob)
+#   endurance:attempts:{job_id}      — INCR'd on every delivery, INDEPENDENT
+#                                       of the Celery/broker message id (fix
+#                                       #6's redelivery bound)
+# The pre-existing endurance:status:{job_id} terminal check (below) is what
+# stops any of the three paths from double-handling the same job once
+# another has already reached a terminal state — see
+# tests/test_endurance_robustness.py::TestCrossFixComposition.
+ENDURANCE_MAX_DELIVERY_ATTEMPTS = 3  # allow up to 3 real run attempts of the
+                                     # SAME job_id; the 4th delivery is forced
+                                     # to 'failed' instead of running again.
+_ATTEMPTS_KEY_TTL_S = _JOB_LOCK_TTL_S  # outlives one full run attempt
+
+# Mirrors tasks.pipeline_tasks.HARD_LIMIT_MARGIN_S (300s / 5min). By design
+# this equals celery_app.py's broker_transport_options visibility_timeout
+# (4200s) — see reconcile_stuck_endurance_jobs docstring for why that's safe.
+_RECONCILE_MARGIN_S = 300
+_RECONCILE_CEILING_S = ENDURANCE_HARD_TIME_LIMIT_S + _RECONCILE_MARGIN_S
+
+
+def _active_set_key(workspace_id) -> str:
+    return f"endurance:active:{workspace_id}"
+
+
+def _dispatch_key(job_id: str) -> str:
+    return f"endurance:dispatch:{job_id}"
+
+
+def _attempts_key(job_id: str) -> str:
+    return f"endurance:attempts:{job_id}"
+
+
+def mark_endurance_dispatched(redis_client, job_id: str, workspace_id) -> None:
+    """Record a NEW endurance submission: SADD into the per-workspace active
+    set (the countable signal ``web.compute_budget.count_active_compute_jobs``
+    reads) and stamp a dispatch timestamp the reconciler ages against.
+
+    Called from ``web.routes.endurance_upload.process_stints`` BEFORE
+    ``.delay()`` so the concurrency cap reflects this submission immediately,
+    even before any worker has picked it up.
+    """
+    redis_client.sadd(_active_set_key(workspace_id), job_id)
+    redis_client.set(
+        _dispatch_key(job_id),
+        json.dumps({"workspace_id": str(workspace_id), "dispatched_at": time.time()}),
+        # Generous — the reconciler is the real cleanup path; this TTL is
+        # just a backstop so a leaked key can't live forever.
+        ex=_RECONCILE_CEILING_S + 3600,
+    )
+
+
+def _clear_endurance_active(redis_client, job_id: str, workspace_id) -> None:
+    """Remove a job from the countable active-job signal on any terminal
+    transition (success, soft-timeout failure, redelivery-exhaustion failure,
+    or a forced reconciler failure). Safe to call more than once — SREM of an
+    absent member and DEL of an absent key are both no-ops.
+    """
+    try:
+        redis_client.srem(_active_set_key(workspace_id), job_id)
+        redis_client.delete(_dispatch_key(job_id))
+    except Exception:
+        logger.debug("Endurance active-set cleanup skipped for %s", job_id, exc_info=True)
+
+
+def _force_release_job_lock(redis_client, job_id: str) -> None:
+    """Unconditionally clear the run-lock, bypassing the owner-match check
+    ``_release_job_lock`` uses for the normal compare-and-delete release.
+
+    Only used by paths that have INDEPENDENTLY proven the original holder can
+    no longer be running: the stuck-job reconciler (age past the hard-limit
+    ceiling) and the redelivery-exhaustion guard (this exact job_id has
+    already been redelivered past ``ENDURANCE_MAX_DELIVERY_ATTEMPTS``). A
+    normal release always prefers the compare-and-delete path so a still
+    legitimately-running attempt is never unlocked out from under itself.
+    """
+    redis_client.delete(f"endurance:runlock:{job_id}")
+
+
+def reconcile_stuck_endurance_jobs(redis_client) -> list[dict]:
+    """Beat sweep (fix #4): force-fail any endurance job whose dispatch
+    record is older than the hard-limit ceiling and whose status is still
+    non-terminal, releasing its stale run-lock and active-set membership.
+
+    Mirrors ``tasks.alerting_tasks._reconcile_stuck_jobs``'s ingestion_jobs
+    sweep, but endurance job state lives entirely in Redis (module docstring
+    above). A HARD Celery time_limit SIGKILLs the worker child — no Python
+    ``finally`` runs, so nothing marks the job failed or frees its run-lock
+    without this sweep. Uses SCAN (not KEYS) so it never blocks Redis even
+    with many in-flight jobs.
+
+    Deliberately does NOT rely on the attempts-based redelivery bound (fix
+    #6) to converge stuck jobs: the broker's own visibility_timeout is 4200s
+    (celery_app.py), so a genuinely still-running job's message isn't even
+    eligible for redelivery until then. This sweep is the ONLY path that
+    reclaims a stuck job/lock before that; the attempts bound only guards
+    against repeated redelivery once it starts happening — see
+    tests/test_endurance_robustness.py::TestCrossFixComposition for how the
+    two compose without double-handling the same job.
+    """
+    reconciled: list[dict] = []
+    now = time.time()
+
+    for raw_key in redis_client.scan_iter(match="endurance:dispatch:*", count=200):
+        key = raw_key.decode() if isinstance(raw_key, bytes) else raw_key
+        job_id = key[len("endurance:dispatch:"):]
+
+        raw = redis_client.get(key)
+        if not raw:
+            continue
+        try:
+            dispatch = json.loads(raw)
+        except (json.JSONDecodeError, TypeError):
+            continue
+
+        dispatched_at = dispatch.get("dispatched_at")
+        workspace_id = dispatch.get("workspace_id", "1")
+        if dispatched_at is None or (now - float(dispatched_at)) <= _RECONCILE_CEILING_S:
+            continue
+
+        status_raw = redis_client.get(f"endurance:status:{job_id}")
+        status = None
+        if status_raw:
+            try:
+                status = json.loads(status_raw).get("status")
+            except (json.JSONDecodeError, TypeError, AttributeError):
+                status = None
+
+        if status in ("completed", "failed"):
+            # Already terminal via another path — just clear leftover
+            # bookkeeping so this job stops being re-examined every sweep.
+            _clear_endurance_active(redis_client, job_id, workspace_id)
+            continue
+
+        running_s = int(now - float(dispatched_at))
+        logger.error(
+            "Reconciling stuck endurance job %s: non-terminal (%s) after %ds "
+            "(ceiling %ds) — worker was likely hard-killed mid-run",
+            job_id, status, running_s, _RECONCILE_CEILING_S,
+        )
+        _publish(redis_client, job_id, {
+            "status": "failed",
+            "job_id": job_id,
+            "error": (
+                "This endurance analysis stalled and was stopped automatically. "
+                "Try splitting the session into fewer stints, or contact support "
+                "if this keeps happening."
+            ),
+            "error_class": "reconciled_stuck",
+        })
+        _force_release_job_lock(redis_client, job_id)
+        _clear_endurance_active(redis_client, job_id, workspace_id)
+        reconciled.append({"job_id": job_id, "running_seconds": running_s})
+
+    return reconciled
+
+
+@celery_app.task(name="tasks.endurance_tasks.reconcile_stuck_endurance_jobs_task")
+def reconcile_stuck_endurance_jobs_task() -> dict[str, Any]:
+    """Celery entry point for the beat schedule — see
+    :func:`reconcile_stuck_endurance_jobs` for the actual sweep logic.
+
+    Routed to the `default` queue (celery_app.py beat_schedule), NOT
+    `endurance` — if the sole --concurrency=1 endurance worker is the one
+    stuck, queuing this sweep behind it would mean it never runs.
+    """
+    import redis as _redis
+    from web.config import Config
+
+    _r = _redis.Redis.from_url(Config.REDIS_URL)
+    reconciled = reconcile_stuck_endurance_jobs(_r)
+    return {"reconciled_count": len(reconciled), "reconciled": reconciled}
 
 
 def _acquire_job_lock(redis_client, job_id: str, owner: str, ttl: int = _JOB_LOCK_TTL_S) -> bool:
@@ -78,6 +278,42 @@ def process_endurance_session(
 
     _r = _redis.Redis.from_url(Config.REDIS_URL)
     lock_owner = self.request.id or job_id
+    workspace_id = meta.get("workspace_id", "1")
+
+    # ── Fix #6: bound broker redeliveries by JOB_ID, independent of the
+    # Celery message/task id (which stays the SAME across redeliveries of one
+    # message — see module docstring). Counted at the very top, before lock
+    # acquisition, so every delivery attempt is counted regardless of lock
+    # state or which worker picks it up.
+    attempts = _r.incr(_attempts_key(job_id))
+    if attempts == 1:
+        _r.expire(_attempts_key(job_id), _ATTEMPTS_KEY_TTL_S)
+    if attempts > ENDURANCE_MAX_DELIVERY_ATTEMPTS:
+        logger.error(
+            "Endurance job %s redelivered %d times (max %d) — forcing failed "
+            "instead of re-running (breaks the SIGKILL/requeue loop)",
+            job_id, attempts, ENDURANCE_MAX_DELIVERY_ATTEMPTS,
+        )
+        _publish(_r, job_id, {
+            "status": "failed",
+            "job_id": job_id,
+            "error": (
+                "This endurance analysis was interrupted too many times and was "
+                "stopped automatically. Please contact support."
+            ),
+            "error_class": "redelivery_exhausted",
+        })
+        # This delivery may not even hold the run-lock (it might belong to a
+        # dead prior attempt) — force-clear unconditionally, see
+        # _force_release_job_lock docstring.
+        _force_release_job_lock(_r, job_id)
+        _clear_endurance_active(_r, job_id, workspace_id)
+        # Return (do not raise) so acks_late acks THIS delivery — the goal is
+        # to stop the redelivery loop, not trigger yet another one.
+        return {
+            "job_id": job_id, "failed": True,
+            "error_class": "redelivery_exhausted", "attempts": attempts,
+        }
 
     # Idempotency guard — see _acquire_job_lock docstring.
     if not _acquire_job_lock(_r, job_id, lock_owner):
@@ -90,7 +326,8 @@ def process_endurance_session(
     try:
         # Also skip outright if a prior attempt already reached a terminal
         # state — handles the rare case where a hard-killed task's message
-        # was redelivered after that attempt's lock had already expired.
+        # was redelivered after that attempt's lock had already expired (or
+        # after the fix #4 reconciler force-failed it and freed the lock).
         existing_raw = _r.get(f"endurance:status:{job_id}")
         existing_status = None
         if existing_raw:
@@ -103,9 +340,12 @@ def process_endurance_session(
                 "Endurance job %s already %s — skipping redelivered run",
                 job_id, existing_status,
             )
+            _clear_endurance_active(_r, job_id, workspace_id)
             return {"job_id": job_id, "skipped": True, "reason": f"already_{existing_status}"}
 
-        return _run_endurance_session(_r, job_id, meta, stint_configs)
+        result = _run_endurance_session(_r, job_id, meta, stint_configs)
+        _clear_endurance_active(_r, job_id, workspace_id)
+        return result
     except SoftTimeLimitExceeded:
         logger.error(
             "Endurance job %s exceeded its %ss soft time limit — marking failed",
@@ -121,6 +361,7 @@ def process_endurance_session(
             ),
             "error_class": "timeout",
         })
+        _clear_endurance_active(_r, job_id, workspace_id)
         # Deliberately swallowed: returning normally (not re-raising) lets
         # Celery ack the message as done, so acks_late / task_reject_on_worker_lost
         # never get a chance to redeliver a job we've already failed cleanly.

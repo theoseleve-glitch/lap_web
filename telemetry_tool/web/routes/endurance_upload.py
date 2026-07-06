@@ -144,8 +144,10 @@ def process_stints():
             "stints": [{"stint_number": s.get("stint_number"), "driver_name": s.get("driver_name", ""), "status": "queued"} for s in stint_configs],
         }), ex=7200)
 
-        # Shared per-tier compute budget (analysis + export + surface pool).
+        # Shared per-tier compute budget (analysis + export + surface + now
+        # endurance pool — see web.compute_budget.count_active_compute_jobs).
         # Fail-open: never block a legitimate endurance run on a metering error.
+        _ws = int(meta.get("workspace_id") or 0)
         try:
             from web.compute_budget import check_shared_compute_budget
             # NOTE: web.db exports `get_db_connection` (dual-mode: PG when
@@ -154,10 +156,14 @@ def process_stints():
             # every call, silently swallowed by the except below, so this
             # budget check has never actually run in production.
             from web.db import get_db_connection as get_conn
-            _ws = int(meta.get("workspace_id") or 0)
             _uid = getattr(g, "current_user_id", 0) or 0
+            # redis_client=_r makes endurance jobs COUNTABLE toward this pool
+            # (they write no ingestion_jobs/exports/analysis_runs row — see
+            # tasks.endurance_tasks.mark_endurance_dispatched below) so a
+            # workspace can no longer bypass the concurrency cap by spreading
+            # load onto the isolated endurance queue.
             allowed, info = check_shared_compute_budget(
-                get_conn(), _uid, _ws, getattr(g, "plan_tier", None)
+                get_conn(), _uid, _ws, getattr(g, "plan_tier", None), redis_client=_r,
             )
             if not allowed:
                 return api_error(
@@ -168,7 +174,10 @@ def process_stints():
         except Exception:
             logger.warning("Shared compute budget check failed — allowing endurance", exc_info=True)
 
-        from tasks.endurance_tasks import process_endurance_session
+        from tasks.endurance_tasks import mark_endurance_dispatched, process_endurance_session
+        # Mark this job active BEFORE dispatch so the very next concurrent
+        # submission's budget check above already sees it (fix #2).
+        mark_endurance_dispatched(_r, job_id, _ws)
         process_endurance_session.delay(job_id, meta, stint_configs)
 
         return api_response({"job_id": job_id, "stints_queued": len(stint_configs)})

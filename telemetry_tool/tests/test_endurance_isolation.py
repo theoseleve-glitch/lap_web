@@ -79,10 +79,58 @@ def _make_mock_redis(initial: dict | None = None):
         for k in keys:
             store.pop(k, None)
 
+    # ── customer-readiness fixes #2/#4/#6: SET ops (active-job signal),
+    # INCR/EXPIRE (redelivery-attempts bound), and scan_iter (stuck-job
+    # reconciler) on top of the pre-existing GET/SET/DELETE/eval above.
+    def _sadd(key, *members):
+        s = store.setdefault(key, set())
+        if not isinstance(s, set):
+            s = store[key] = set()
+        added = 0
+        for m in members:
+            if m not in s:
+                s.add(m)
+                added += 1
+        return added
+
+    def _srem(key, *members):
+        s = store.get(key)
+        if not isinstance(s, set):
+            return 0
+        removed = 0
+        for m in members:
+            if m in s:
+                s.discard(m)
+                removed += 1
+        return removed
+
+    def _scard(key):
+        s = store.get(key)
+        return len(s) if isinstance(s, set) else 0
+
+    def _incr(key):
+        store[key] = int(store.get(key, 0) or 0) + 1
+        return store[key]
+
+    def _expire(key, ttl):
+        return key in store
+
+    def _scan_iter(match=None, count=None):
+        import fnmatch
+        for k in list(store.keys()):
+            if match is None or fnmatch.fnmatch(k, match):
+                yield k
+
     mock.eval = MagicMock(side_effect=_lua_handler)
     mock.get = MagicMock(side_effect=_get)
     mock.set = MagicMock(side_effect=_set)
     mock.delete = MagicMock(side_effect=_delete)
+    mock.sadd = MagicMock(side_effect=_sadd)
+    mock.srem = MagicMock(side_effect=_srem)
+    mock.scard = MagicMock(side_effect=_scard)
+    mock.incr = MagicMock(side_effect=_incr)
+    mock.expire = MagicMock(side_effect=_expire)
+    mock.scan_iter = MagicMock(side_effect=_scan_iter)
     mock._store = store
     return mock
 
