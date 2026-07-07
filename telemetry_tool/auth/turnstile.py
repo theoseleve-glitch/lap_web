@@ -1,11 +1,20 @@
 """Cloudflare Turnstile step-up challenge verification.
 
 Fully optional and fail-open UNTIL configured: with no ``TURNSTILE_SECRET_KEY``
-set, :func:`turnstile_configured` reports the feature as disabled and
-:func:`verify_turnstile` never makes a network call -- nothing in the login
-path changes until an operator sets the key (see auth/lockout.py's
-``challenge_required``, which gates on ``turnstile_configured()`` before this
-module is ever consulted).
+and ``TURNSTILE_SITEKEY`` set, :func:`turnstile_configured` reports the
+feature as disabled and :func:`verify_turnstile` never makes a network call
+-- nothing in the login path changes until an operator sets both keys (see
+auth/lockout.py's ``challenge_required``, which gates on
+``turnstile_configured()`` before this module is ever consulted).
+
+``turnstile_configured`` deliberately requires BOTH env vars, not just the
+secret: the 428 ``challenge_required`` response (web/routes/auth.py) hands
+the frontend widget ``TURNSTILE_SITEKEY`` to render with
+(lap-website/src/components/auth/TurnstileWidget.tsx). A secret-only config
+would still gate logins behind a 428 with no sitekey for the widget to
+render against -- turning the challenge into an attacker-triggerable soft
+lockout of the flagged victim for the whole detection window. Treating a
+half-configured setup as NOT configured keeps the feature dark instead.
 
 Once configured, a submitted token is verified server-side against
 Cloudflare's siteverify endpoint. Any problem verifying a *specific* token
@@ -28,14 +37,22 @@ _VERIFY_TIMEOUT_SECONDS = 5
 
 
 def turnstile_configured() -> bool:
-    """True once ``TURNSTILE_SECRET_KEY`` is set -- i.e. the challenge is
-    enforceable at all.
+    """True only when BOTH ``TURNSTILE_SECRET_KEY`` and ``TURNSTILE_SITEKEY``
+    are set -- i.e. the challenge is both enforceable server-side (secret)
+    AND renderable client-side (sitekey).
+
+    A secret-only config is deliberately treated as NOT configured (see
+    module docstring): otherwise the login route would gate a flagged
+    email behind a 428 challenge while handing the widget a null sitekey,
+    soft-locking that victim out with no way to obtain a token.
 
     Read fresh from the environment on every call (not cached at import
     time) so tests -- and an operator flipping the env var -- don't need a
     process restart to take effect.
     """
-    return bool(os.environ.get("TURNSTILE_SECRET_KEY"))
+    return bool(os.environ.get("TURNSTILE_SECRET_KEY")) and bool(
+        os.environ.get("TURNSTILE_SITEKEY")
+    )
 
 
 def verify_turnstile(token: str | None, remoteip: str | None = None) -> bool:

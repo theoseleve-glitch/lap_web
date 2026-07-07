@@ -6,7 +6,7 @@ import { useSearchParams } from 'next/navigation';
 import { FormField } from '@/components/app/FormField';
 import { useAuth } from '@/hooks/useAuth';
 import { OAuthButtons } from '@/components/auth/OAuthButtons';
-import { TurnstileWidget } from '@/components/auth/TurnstileWidget';
+import { TurnstileWidget, type TurnstileWidgetHandle } from '@/components/auth/TurnstileWidget';
 import { useTranslation } from '@/i18n';
 import { getSafeRedirect } from '@/lib/safe-redirect';
 
@@ -29,6 +29,7 @@ function LoginForm() {
   // Step-up challenge (Cloudflare Turnstile) state -- set when the backend
   // responds 428 challenge_required (see lib/auth.ts::ChallengeRequired).
   const [challengeSitekey, setChallengeSitekey] = useState<string | null>(null);
+  const turnstileRef = useRef<TurnstileWidgetHandle>(null);
 
   const handleLoginSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -48,7 +49,17 @@ function LoginForm() {
   /** Called once the Turnstile widget produces a token -- resubmit the same
    * credentials with the token attached so the backend re-checks it. */
   const handleTurnstileToken = async (token: string) => {
-    await login(email, password, redirect, token);
+    const result = await login(email, password, redirect, token);
+    // Rejected resubmit -- an invalid/expired token, or a wrong password --
+    // must never leave a dead widget behind: reset it so the user gets a
+    // fresh challenge to retry with. `login()` returns null on a thrown
+    // error (e.g. wrong password) and a `challenge_required` result again
+    // on a still-failing token; either way, don't distinguish which one it
+    // was in the UI (the backend already answers with the same 428 shape
+    // for both -- see web/routes/auth.py -- so there's nothing to leak).
+    if (!result || ('challenge_required' in result && result.challenge_required)) {
+      turnstileRef.current?.reset();
+    }
   };
 
   const handle2faSubmit = async (e: React.FormEvent) => {
@@ -176,7 +187,7 @@ function LoginForm() {
         </div>
 
         {challengeSitekey && (
-          <TurnstileWidget sitekey={challengeSitekey} onToken={handleTurnstileToken} />
+          <TurnstileWidget ref={turnstileRef} sitekey={challengeSitekey} onToken={handleTurnstileToken} />
         )}
 
         <button

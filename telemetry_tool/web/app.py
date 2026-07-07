@@ -129,6 +129,25 @@ def create_app(config: Config | None = None) -> Flask:
 
     logger.info("Startup hardening summary: %s", app.config["HARDENING_SUMMARY"])
 
+    # Turnstile step-up challenge (auth/turnstile.py) requires BOTH
+    # TURNSTILE_SECRET_KEY and TURNSTILE_SITEKEY to activate -- a
+    # secret-only config would gate logins behind a 428 with no sitekey for
+    # the frontend widget to render, soft-locking the flagged victim out.
+    # turnstile_configured() already treats that half-configured state as
+    # "feature off" (safe), but it's still an operator misconfiguration
+    # worth surfacing at startup rather than discovering silently.
+    _turnstile_secret_set = bool(os.environ.get("TURNSTILE_SECRET_KEY"))
+    _turnstile_sitekey_set = bool(os.environ.get("TURNSTILE_SITEKEY"))
+    if _turnstile_secret_set != _turnstile_sitekey_set:
+        logger.warning(
+            "Turnstile misconfigured: TURNSTILE_SECRET_KEY is %s but "
+            "TURNSTILE_SITEKEY is %s -- both must be set together for the "
+            "step-up challenge to activate; treating it as OFF until both "
+            "are set.",
+            "set" if _turnstile_secret_set else "unset",
+            "set" if _turnstile_sitekey_set else "unset",
+        )
+
     # Trust X-Forwarded-For from reverse proxy (Caddy) so request.remote_addr
     # returns the real client IP. Only applied in production (USE_PG=1).
     # x_for=1 means trust one proxy hop (Caddy).

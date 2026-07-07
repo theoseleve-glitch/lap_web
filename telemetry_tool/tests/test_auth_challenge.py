@@ -183,6 +183,7 @@ class TestChallengeRequiredLoginFlow:
         from auth.service import hash_password
 
         monkeypatch.delenv("TURNSTILE_SECRET_KEY", raising=False)
+        monkeypatch.delenv("TURNSTILE_SITEKEY", raising=False)
         password_hash = hash_password("correct-horse-battery-staple")
         conn = _conn_with_user("real-gate@example.com", password_hash)
         app = _make_auth_app()
@@ -199,3 +200,60 @@ class TestChallengeRequiredLoginFlow:
             resp = _post_login(client, "real-gate@example.com", "correct-horse-battery-staple")
 
         assert resp.status_code == 200
+
+    def test_secret_only_never_returns_428(self, monkeypatch):
+        """Misconfig foot-gun (Fix #1): TURNSTILE_SECRET_KEY set WITHOUT
+        TURNSTILE_SITEKEY must not activate the challenge, since the 428
+        body would carry a null sitekey the widget can't render -- a
+        secret-only config would soft-lock a flagged victim out for the
+        whole detection window. Exercises the REAL challenge_required() ->
+        turnstile_configured() gate end to end, same shape as the
+        both-unset case above."""
+        from auth.service import hash_password
+
+        monkeypatch.setenv("TURNSTILE_SECRET_KEY", "0x_test_secret")
+        monkeypatch.delenv("TURNSTILE_SITEKEY", raising=False)
+        password_hash = hash_password("correct-horse-battery-staple")
+        conn = _conn_with_user("secret-only@example.com", password_hash)
+        app = _make_auth_app()
+        client = app.test_client()
+
+        r = MagicMock()
+        r.scard.return_value = 999  # would flag if Turnstile were fully configured
+
+        with (
+            patch("web.routes.auth._get_conn", return_value=conn),
+            patch("web.rate_limit.get_redis", return_value=None),
+            patch("auth.lockout._get_redis", return_value=r),
+        ):
+            resp = _post_login(client, "secret-only@example.com", "correct-horse-battery-staple")
+
+        assert resp.status_code == 200
+
+    def test_both_configured_returns_428_with_non_null_sitekey(self, monkeypatch):
+        """Happy path for Fix #1: with BOTH env vars set and the distinct-IP
+        threshold crossed, the REAL challenge_required() gate activates and
+        the 428 body carries a non-null, renderable sitekey."""
+        from auth.service import hash_password
+
+        monkeypatch.setenv("TURNSTILE_SECRET_KEY", "0x_test_secret")
+        monkeypatch.setenv("TURNSTILE_SITEKEY", "0x_test_sitekey")
+        password_hash = hash_password("correct-horse-battery-staple")
+        conn = _conn_with_user("both-configured@example.com", password_hash)
+        app = _make_auth_app()
+        client = app.test_client()
+
+        r = MagicMock()
+        r.scard.return_value = 999  # past the distinct-IP threshold
+
+        with (
+            patch("web.routes.auth._get_conn", return_value=conn),
+            patch("web.rate_limit.get_redis", return_value=None),
+            patch("auth.lockout._get_redis", return_value=r),
+        ):
+            resp = _post_login(client, "both-configured@example.com", "correct-horse-battery-staple")
+
+        assert resp.status_code == 428
+        body = resp.get_json()
+        assert body["data"]["challenge_required"] is True
+        assert body["data"]["sitekey"] == "0x_test_sitekey"

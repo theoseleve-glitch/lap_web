@@ -20,12 +20,29 @@ from auth.turnstile import turnstile_configured, verify_turnstile
 
 
 class TestTurnstileConfigured:
-    def test_unconfigured_when_secret_unset(self, monkeypatch):
+    """turnstile_configured() requires BOTH TURNSTILE_SECRET_KEY and
+    TURNSTILE_SITEKEY -- a secret-only config is treated as NOT configured
+    (see module docstring: it would otherwise gate logins behind a 428 with
+    no sitekey for the widget to render, soft-locking the flagged victim)."""
+
+    def test_unconfigured_when_both_unset(self, monkeypatch):
         monkeypatch.delenv("TURNSTILE_SECRET_KEY", raising=False)
+        monkeypatch.delenv("TURNSTILE_SITEKEY", raising=False)
         assert turnstile_configured() is False
 
-    def test_configured_when_secret_set(self, monkeypatch):
+    def test_unconfigured_when_only_secret_set(self, monkeypatch):
         monkeypatch.setenv("TURNSTILE_SECRET_KEY", "0x_test_secret")
+        monkeypatch.delenv("TURNSTILE_SITEKEY", raising=False)
+        assert turnstile_configured() is False
+
+    def test_unconfigured_when_only_sitekey_set(self, monkeypatch):
+        monkeypatch.delenv("TURNSTILE_SECRET_KEY", raising=False)
+        monkeypatch.setenv("TURNSTILE_SITEKEY", "0x_test_sitekey")
+        assert turnstile_configured() is False
+
+    def test_configured_when_both_set(self, monkeypatch):
+        monkeypatch.setenv("TURNSTILE_SECRET_KEY", "0x_test_secret")
+        monkeypatch.setenv("TURNSTILE_SITEKEY", "0x_test_sitekey")
         assert turnstile_configured() is True
 
 
