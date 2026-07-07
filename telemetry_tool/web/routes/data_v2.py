@@ -5620,13 +5620,122 @@ def get_track_surface(session_id: str) -> tuple[dict, int]:
 # ══════════════════════════════════════════════════════════════════
 
 
+def _resolve_track_context(session: dict | None, analysis: dict | None) -> tuple[str | None, str, str]:
+    """Resolve (track_id, vehicle_class, condition) for this session's track.
+
+    Mirrors get_track_surface's resolution above and the pipeline
+    orchestrator's step 09j (_ts_track_id / _ts_vehicle_class / _ts_condition,
+    pipeline/orchestrator.py) so the lookup key lines up with how
+    compute_racing_lines was actually triggered for this track — see
+    tests/test_pipeline_racing_line_trigger.py.
+    """
+    track_id = None
+    if analysis and isinstance(analysis, dict):
+        track_id = analysis.get("track_id")
+    if not track_id and isinstance(session, dict):
+        track_id = session.get("track_id")
+    if not track_id:
+        pipeline = analysis.get("pipeline", {}) if analysis else {}
+        track_id = pipeline.get("track_id")
+
+    vehicle_class = "car"
+    condition_state = "dry"
+    if isinstance(session, dict):
+        vehicle_class = session.get("vehicle_class", "car")
+    if analysis:
+        vehicle_class = analysis.get("vehicle_class", vehicle_class)
+        condition_state = analysis.get("track_state", analysis.get("condition", "dry"))
+    return track_id, vehicle_class, condition_state
+
+
+def _lookup_gated_racing_line(track_id: str | None, vehicle_class: str, condition: str) -> dict | None:
+    """Look up the honesty-gated row for (track_id, vehicle_class, condition)
+    from ``track_racing_lines`` (migration 078/080) — the authoritative,
+    RLS-free store populated by ``decide_tier`` at compute time in
+    ``tasks.racing_line_tasks.compute_racing_lines``.
+
+    Fail-SAFE: any lookup failure (no PostgreSQL in dev, table/track absent,
+    connection error) returns None, and the caller treats an absent gated row
+    the same as "not drawable" — the honesty layer degrades on doubt rather
+    than guessing.
+    """
+    if not track_id:
+        return None
+    try:
+        from web.db_pg import get_maint_connection, return_pg_connection
+        from track_surface.racing_line_repo import get_racing_lines
+    except ImportError:
+        return None
+    conn = None
+    try:
+        conn = get_maint_connection()
+        rows = get_racing_lines(conn, track_id, vehicle_class)
+    except Exception as exc:
+        logger.debug(
+            "Gated racing-line lookup unavailable for %s/%s (%s) — degrading to non-drawable",
+            track_id, vehicle_class, exc,
+        )
+        return None
+    finally:
+        if conn is not None:
+            return_pg_connection(conn)
+    for row in rows:
+        if row.get("condition") == condition:
+            return row
+    return None
+
+
+def _gated_points_to_frontend(points: list[dict] | None) -> list[dict]:
+    """Adapt track_racing_lines' ``{d, n, v}`` points to the ``{distance_m,
+    lateral_offset_m, speed_mps}`` contract lap-website's useTrackSurfaceData
+    already expects (OptimalLinePoint)."""
+    return [
+        {
+            "distance_m": p.get("d"),
+            "lateral_offset_m": p.get("n"),
+            "speed_mps": p.get("v"),
+        }
+        for p in (points or [])
+    ]
+
+
+def _degraded_optimal_line_response(
+    reason_code: str,
+    message: str,
+    *,
+    tier: str | None = None,
+    tier_reason: str | None = None,
+) -> dict:
+    """The shared "not drawable" shape (honesty layer, spec C): extends the
+    pre-existing available:false/reason_code precedent with tier/tier_reason/
+    drawable so a non-optimal-tier or ungated line is never presented as a
+    full-authority racing line."""
+    return {
+        "available": False,
+        "reason_code": reason_code,
+        "message": message,
+        "tier": tier,
+        "tier_reason": tier_reason,
+        "drawable": False,
+    }
+
+
 @bp.route("/sessions/<session_id>/optimal-line", methods=["GET"])
 @_safe_api
 def get_optimal_line(session_id: str) -> tuple[dict, int]:
     """Return the optimal racing line with lateral offset and speed profile.
 
-    Requires the session's analysis_json to contain a track_surface_summary
-    (populated by pipeline stage s10d).
+    Honesty gate (track_surface/honesty.py, spec C): the drawable line comes
+    from the gated ``track_racing_lines`` row — tier decided by
+    ``decide_tier()`` at compute time in
+    ``tasks.racing_line_tasks.compute_racing_lines`` — never from the raw
+    per-session pipeline summary, which carries no verified
+    geometry/grip/validation provenance. When no gated ``optimal_line`` row
+    exists for this track (today's common case — GT-bless isn't widespread
+    yet) or the gated tier is below ``optimal_line``, the route degrades to
+    ``available=false`` rather than presenting an unverified line with full
+    authority. ``is_drawable_as_line()`` is the single source of truth for
+    what may render as a racing line.
     """
     conn = get_db_connection()
     session = models.get_session_by_id(conn, session_id)
@@ -5637,7 +5746,18 @@ def get_optimal_line(session_id: str) -> tuple[dict, int]:
     if not analysis or not isinstance(analysis, dict):
         return api_error(ErrorCode.NOT_FOUND, "No analysis data", status=404)
 
-    # Check for precomputed optimal line in pipeline summary.
+    try:
+        from track_surface.honesty import decide_tier, is_drawable_as_line
+    except ImportError:
+        return api_response(_degraded_optimal_line_response(
+            "honesty_module_unavailable",
+            "Racing-line honesty module unavailable — withholding rather than "
+            "presenting an unverified line as authoritative.",
+        ))
+
+    track_id, vehicle_class, condition_state = _resolve_track_context(session, analysis)
+    gated = _lookup_gated_racing_line(track_id, vehicle_class, condition_state)
+
     # Day-14 (B1): missing optimal_line is the common-case for kart sessions
     # (no canonical vehicle_params, CasADi gating). Return 200 with
     # available=false rather than 404 so the frontend useTrackSurfaceData
@@ -5645,14 +5765,83 @@ def get_optimal_line(session_id: str) -> tuple[dict, int]:
     # pattern as /gps-trace already uses.
     pipeline = analysis.get("pipeline", {})
     optimal = pipeline.get("optimal_line")
+
+    if gated is not None:
+        tier = gated.get("tier")
+        provenance = gated.get("provenance") or {}
+        reason = (
+            (provenance.get("tier_reason") or provenance.get("reason"))
+            if isinstance(provenance, dict) else None
+        )
+        if is_drawable_as_line(tier):
+            return api_response({
+                "points": _gated_points_to_frontend(gated.get("points")),
+                "lap_time_s": gated.get("lap_time_s"),
+                "condition": gated.get("condition"),
+                "solver_version": gated.get("solver_version"),
+                "tier": tier,
+                "tier_reason": None,
+                "drawable": True,
+            })
+        return api_response(_degraded_optimal_line_response(
+            f"racing_line_tier_{tier or 'unknown'}",
+            "Racing line exists but does not meet the honesty bar to be drawn as optimal.",
+            tier=tier,
+            tier_reason=reason,
+        ))
+
+    # No gated row for this track/vehicle_class/condition — today's common
+    # case (GT-bless isn't widespread yet).
+    #
+    # EXCEPTION: if the raw per-session pipeline.optimal_line already carries
+    # decide_tier's 4 signals as fields, gate on those inline instead of
+    # blanket-degrading. As of this writing OCPSolution (the dataclass behind
+    # pipeline.optimal_line, lap_oracle/config.py) carries none of
+    # boundary_source/grip_tier/validation_ok/solve_status, so this branch is
+    # dormant until that solver gains its own provenance too.
+    if isinstance(optimal, dict) and {
+        "boundary_source", "grip_tier", "validation_ok", "solve_status",
+    } <= optimal.keys():
+        tier, reason = decide_tier(
+            boundary_source=optimal.get("boundary_source"),
+            grip_tier=optimal.get("grip_tier"),
+            validation_ok=bool(optimal.get("validation_ok")),
+            solve_status=optimal.get("solve_status"),
+        )
+        if is_drawable_as_line(tier):
+            payload = {
+                k: v for k, v in optimal.items()
+                if k not in ("boundary_source", "grip_tier", "validation_ok", "solve_status")
+            }
+            payload["tier"] = tier
+            payload["tier_reason"] = None
+            payload["drawable"] = True
+            return api_response(payload)
+        return api_response(_degraded_optimal_line_response(
+            f"racing_line_tier_{tier}",
+            "Racing line exists but does not meet the honesty bar to be drawn as optimal.",
+            tier=tier,
+            tier_reason=reason,
+        ))
+
     if optimal is None:
         return api_response({
             "available": False,
             "reason_code": "optimal_line_not_computed",
             "message": "Optimal line not computed for this session (requires boundaries + CasADi + vehicle params)",
+            "tier": None,
+            "tier_reason": None,
+            "drawable": False,
         })
 
-    return api_response(optimal)
+    # A raw pipeline line exists but has no gated provenance — the honesty
+    # layer's fail-safe default is to withhold rather than present an
+    # unverified line as authoritative.
+    return api_response(_degraded_optimal_line_response(
+        "optimal_line_not_gated",
+        "Optimal line exists but has not passed the honesty gate — withholding "
+        "rather than presenting an unverified line as authoritative.",
+    ))
 
 
 # ══════════════════════════════════════════════════════════════════
