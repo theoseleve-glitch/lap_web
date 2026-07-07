@@ -50,6 +50,16 @@ function LoginForm() {
    * credentials with the token attached so the backend re-checks it. */
   const handleTurnstileToken = async (token: string) => {
     const result = await login(email, password, redirect, token);
+    // Challenge passed but the account has 2FA enabled -- route to the 2FA
+    // step exactly as the normal login path does (handleLoginSubmit). Without
+    // this, a Turnstile-flagged 2FA user would clear the challenge and then be
+    // stuck with no 2FA prompt -- a soft-lockout during the attack window.
+    if (result && 'requires_2fa' in result && result.requires_2fa) {
+      setTempToken(result.temp_token);
+      setTwoFaStep(true);
+      setTimeout(() => codeInputRef.current?.focus(), 100);
+      return;
+    }
     // Rejected resubmit -- an invalid/expired token, or a wrong password --
     // must never leave a dead widget behind: reset it so the user gets a
     // fresh challenge to retry with. `login()` returns null on a thrown

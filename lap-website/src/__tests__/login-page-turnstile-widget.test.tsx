@@ -131,6 +131,32 @@ describe('LoginPage Turnstile step-up challenge', () => {
     expect(resetMock).not.toHaveBeenCalled();
   });
 
+  it('routes a Turnstile-flagged 2FA user to the 2FA step after the challenge passes', async () => {
+    loginMock.mockResolvedValueOnce({ challenge_required: true, sitekey: 'site-key-xyz' });
+
+    render(<LoginPage />);
+    fireEvent.change(screen.getByLabelText('auth.login.email'), {
+      target: { value: '2fa-user@example.com' },
+    });
+    fireEvent.change(screen.getByLabelText('auth.login.password'), {
+      target: { value: 'correct-password' },
+    });
+    fireEvent.click(screen.getByText('auth.login.submit'));
+
+    await waitFor(() => screen.getByText('complete-turnstile-challenge'));
+
+    // Challenge passes, but the account has 2FA enabled -- backend now
+    // answers requires_2fa. The resubmit handler must route to the 2FA step,
+    // not leave the flagged user stuck (soft-lockout during an attack).
+    loginMock.mockResolvedValueOnce({ requires_2fa: true, temp_token: 'temp-abc' });
+    fireEvent.click(screen.getByText('complete-turnstile-challenge'));
+
+    await waitFor(() => expect(screen.getByText('auth.login.2fa.title')).toBeInTheDocument());
+    // The challenge widget is gone (we advanced to the 2FA step, not a dead end).
+    expect(screen.queryByText('complete-turnstile-challenge')).not.toBeInTheDocument();
+    expect(resetMock).not.toHaveBeenCalled();
+  });
+
   it('resets the widget when a resubmitted token is still rejected (challenge_required again)', async () => {
     loginMock.mockResolvedValueOnce({ challenge_required: true, sitekey: 'site-key-xyz' });
 
