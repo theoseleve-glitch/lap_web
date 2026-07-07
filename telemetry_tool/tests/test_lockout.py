@@ -360,3 +360,55 @@ class TestLockoutDegradedRecoveryIntegration:
         with patch("auth.lockout._get_redis", return_value=r):
             check_lockout("recover-user@example.com", "1.1.1.1")
         assert get_degraded_mode_stats()["lockout"]["recovered"] is True
+
+
+# ---------------------------------------------------------------------------
+# Chain-A: step-up challenge decision -- turns the distributed-attack
+# DETECTION signal above into an actual (mild) response. See
+# auth/turnstile.py for the token-verification half.
+# ---------------------------------------------------------------------------
+
+class TestChallengeRequired:
+    def test_false_when_turnstile_unconfigured_even_past_threshold(self):
+        r = MagicMock()
+        r.scard.return_value = DISTRIBUTED_ATTACK_IP_THRESHOLD
+        with (
+            patch("auth.lockout._get_redis", return_value=r),
+            patch("auth.turnstile.turnstile_configured", return_value=False),
+        ):
+            assert lockout_mod.challenge_required("victim@example.com", "1.2.3.4") is False
+        r.scard.assert_not_called()  # short-circuits before touching Redis
+
+    def test_false_when_below_threshold_even_if_configured(self):
+        r = MagicMock()
+        r.scard.return_value = DISTRIBUTED_ATTACK_IP_THRESHOLD - 1
+        with (
+            patch("auth.lockout._get_redis", return_value=r),
+            patch("auth.turnstile.turnstile_configured", return_value=True),
+        ):
+            assert lockout_mod.challenge_required("victim@example.com", "1.2.3.4") is False
+
+    def test_true_when_past_threshold_and_configured(self):
+        r = MagicMock()
+        r.scard.return_value = DISTRIBUTED_ATTACK_IP_THRESHOLD
+        with (
+            patch("auth.lockout._get_redis", return_value=r),
+            patch("auth.turnstile.turnstile_configured", return_value=True),
+        ):
+            assert lockout_mod.challenge_required("victim@example.com", "1.2.3.4") is True
+
+    def test_false_when_redis_down_even_if_configured(self):
+        with (
+            patch("auth.lockout._get_redis", return_value=None),
+            patch("auth.turnstile.turnstile_configured", return_value=True),
+        ):
+            assert lockout_mod.challenge_required("victim@example.com", "1.2.3.4") is False
+
+    def test_false_and_no_raise_on_redis_error_mid_call(self):
+        r = MagicMock()
+        r.scard.side_effect = ConnectionError("redis down mid-call")
+        with (
+            patch("auth.lockout._get_redis", return_value=r),
+            patch("auth.turnstile.turnstile_configured", return_value=True),
+        ):
+            assert lockout_mod.challenge_required("victim@example.com", "1.2.3.4") is False

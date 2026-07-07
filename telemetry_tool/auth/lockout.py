@@ -284,3 +284,58 @@ def _alert_distributed_credential_attack(email: str, distinct_ip_count: int) -> 
         # sentry_sdk not installed/initialized, or the capture call itself
         # failed -- must never raise into the login path.
         pass
+
+
+# ---------------------------------------------------------------------------
+# Step-up challenge decision -- the fuller follow-up promised by the module
+# docstring and by _check_distributed_attack above: turns the soft,
+# email-scoped distributed-attack DETECTION signal into an actual (mild)
+# response, closing the last open residual (distributed credential-stuffing
+# against one email trips no hard lock -- see module docstring) WITHOUT
+# reintroducing an account-level hard lock and its account-DoS (the reason
+# the hard lock was scoped to (email, IP) in the first place). A step-up
+# challenge annoys a distributed attacker but never locks the victim out.
+# ---------------------------------------------------------------------------
+
+def challenge_required(email: str, ip: str | None = None) -> bool:
+    """Should this login be forced through a Turnstile challenge first?
+
+    True only when BOTH:
+
+    - this email's distinct-failing-IP count (the same Redis set
+      ``_check_distributed_attack`` maintains) has crossed
+      ``DISTRIBUTED_ATTACK_IP_THRESHOLD`` within
+      ``DISTRIBUTED_ATTACK_WINDOW_SECONDS``, AND
+    - Turnstile is actually configured (``auth.turnstile.turnstile_configured()``),
+      so there is something to enforce.
+
+    *ip* is accepted (mirroring the (email, ip)-scoped hard lock's call
+    signature) but not currently part of the decision -- the distinct-IP
+    counter is inherently email-scoped; it exists precisely because the
+    hard lock above is IP-scoped and therefore blind to a many-IPs-one-email
+    attack.
+
+    Best-effort and fail-safe: unconfigured Turnstile, Redis being
+    unavailable, or a Redis error mid-check all degrade to False (no
+    challenge demanded) rather than raising into the login path -- this is a
+    step-up ADD-ON, not a new hard gate, so its own failure must never block
+    a legitimate login attempt.
+    """
+    from auth.turnstile import turnstile_configured
+    if not turnstile_configured():
+        return False
+
+    r = _get_redis()
+    if r is None:
+        return False
+
+    try:
+        distinct_ips = r.scard(_distributed_ips_key(email))
+        return distinct_ips >= DISTRIBUTED_ATTACK_IP_THRESHOLD
+    except Exception:
+        logger.debug(
+            "challenge_required check failed for email=%s ip=%s (best-effort, "
+            "treating as not required)",
+            email, ip, exc_info=True,
+        )
+        return False

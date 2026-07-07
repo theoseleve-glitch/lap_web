@@ -6,6 +6,7 @@ import { useSearchParams } from 'next/navigation';
 import { FormField } from '@/components/app/FormField';
 import { useAuth } from '@/hooks/useAuth';
 import { OAuthButtons } from '@/components/auth/OAuthButtons';
+import { TurnstileWidget } from '@/components/auth/TurnstileWidget';
 import { useTranslation } from '@/i18n';
 import { getSafeRedirect } from '@/lib/safe-redirect';
 
@@ -25,6 +26,10 @@ function LoginForm() {
   const [useBackupCode, setUseBackupCode] = useState(false);
   const codeInputRef = useRef<HTMLInputElement>(null);
 
+  // Step-up challenge (Cloudflare Turnstile) state -- set when the backend
+  // responds 428 challenge_required (see lib/auth.ts::ChallengeRequired).
+  const [challengeSitekey, setChallengeSitekey] = useState<string | null>(null);
+
   const handleLoginSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     const result = await login(email, password, redirect);
@@ -33,7 +38,17 @@ function LoginForm() {
       setTwoFaStep(true);
       // Focus the code input after render
       setTimeout(() => codeInputRef.current?.focus(), 100);
+      return;
     }
+    if (result && 'challenge_required' in result && result.challenge_required) {
+      setChallengeSitekey(process.env.NEXT_PUBLIC_TURNSTILE_SITEKEY || result.sitekey);
+    }
+  };
+
+  /** Called once the Turnstile widget produces a token -- resubmit the same
+   * credentials with the token attached so the backend re-checks it. */
+  const handleTurnstileToken = async (token: string) => {
+    await login(email, password, redirect, token);
   };
 
   const handle2faSubmit = async (e: React.FormEvent) => {
@@ -159,6 +174,10 @@ function LoginForm() {
             {t('auth.login.forgotPassword')}
           </Link>
         </div>
+
+        {challengeSitekey && (
+          <TurnstileWidget sitekey={challengeSitekey} onToken={handleTurnstileToken} />
+        )}
 
         <button
           type="submit"

@@ -37,11 +37,16 @@ export function useAuth() {
   }, []);
 
   const login = useCallback(
-    async (email: string, password: string, redirectTo?: string): Promise<LoginResult | null> => {
+    async (
+      email: string,
+      password: string,
+      redirectTo?: string,
+      turnstileToken?: string,
+    ): Promise<LoginResult | null> => {
       setLoading(true);
       setError(null);
       try {
-        const result = await apiLogin(email, password);
+        const result = await apiLogin(email, password, turnstileToken);
         if (!('access_token' in result)) {
           return result;
         }

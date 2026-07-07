@@ -44,11 +44,30 @@ export interface TwoFaRequired {
   temp_token: string;
 }
 
-/** Login can return either normal tokens or a 2FA challenge. */
-export type LoginResult = LoginResponse | TwoFaRequired;
+/**
+ * Step-up challenge required (Cloudflare Turnstile) -- returned with HTTP 428
+ * when the email has tripped the backend's distributed-attack detection
+ * (see telemetry_tool/auth/lockout.py::challenge_required). `sitekey` is a
+ * fallback for when NEXT_PUBLIC_TURNSTILE_SITEKEY isn't set at build time.
+ */
+export interface ChallengeRequired {
+  challenge_required: true;
+  sitekey: string | null;
+}
 
-export async function login(email: string, password: string): Promise<LoginResult> {
-  const result = await authFetch<LoginResult>('/login', { email, password });
+/** Login can return normal tokens, a 2FA challenge, or a step-up challenge. */
+export type LoginResult = LoginResponse | TwoFaRequired | ChallengeRequired;
+
+export async function login(
+  email: string,
+  password: string,
+  turnstileToken?: string,
+): Promise<LoginResult> {
+  const body: Record<string, unknown> = { email, password };
+  if (turnstileToken) {
+    body['cf-turnstile-response'] = turnstileToken;
+  }
+  const result = await authFetch<LoginResult>('/login', body);
   if ('access_token' in result) {
     setAccessToken(result.access_token);
     setUserProfile(result.user);

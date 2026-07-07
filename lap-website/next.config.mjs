@@ -36,11 +36,16 @@ const nextConfig = {
             key: 'Content-Security-Policy',
             value: [
               "default-src 'self'",
-              "script-src 'self' 'unsafe-inline' https://plausible.io",
+              // challenges.cloudflare.com: Turnstile step-up challenge widget
+              // script (auth/turnstile.py + auth/lockout.py::challenge_required
+              // on the backend gate WHEN it's shown; unconfigured = never shown).
+              "script-src 'self' 'unsafe-inline' https://plausible.io https://challenges.cloudflare.com",
               "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
               "font-src 'self' https://fonts.gstatic.com",
               "img-src 'self' data: blob: https://*.tile.openstreetmap.org https://*.basemaps.cartocdn.com",
-              "connect-src 'self' https://api.lap-coach.racing https://plausible.io https://*.ingest.sentry.io",
+              "connect-src 'self' https://api.lap-coach.racing https://plausible.io https://*.ingest.sentry.io https://challenges.cloudflare.com",
+              // Turnstile renders its interactive challenge in an iframe.
+              "frame-src https://challenges.cloudflare.com",
               "worker-src 'self' blob:",
               "object-src 'none'",
               "frame-ancestors 'none'",

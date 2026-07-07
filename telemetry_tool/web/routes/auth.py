@@ -1,5 +1,6 @@
 """Auth routes -- register, login, refresh, logout, me."""
 import logging
+import os
 
 from flask import Blueprint, current_app, g, make_response, request
 
@@ -251,6 +252,29 @@ def login():
         ))
         resp.headers["Retry-After"] = str(retry_after)
         return resp
+
+    # Step-up challenge: closes the residual left by the (email, IP)-scoped
+    # hard lock above -- a distributed attacker (many IPs, few guesses each)
+    # trips no hard lock at all against one victim email (see
+    # auth/lockout.py module docstring). If this email has crossed the
+    # distributed-attack detection threshold AND Turnstile is configured,
+    # demand a passing Turnstile token BEFORE attempting the password at
+    # all -- otherwise a flagged email could be used as a password oracle
+    # (success/failure of the *password* would leak through the challenge).
+    # This is never a hard lock: it annoys an attacker but never locks the
+    # victim out (the account-DoS Fix #5 removed the email-only lock for).
+    from auth.lockout import challenge_required
+    from auth.turnstile import verify_turnstile
+    if challenge_required(email, ip):
+        token = body.turnstile_token
+        if not token or not verify_turnstile(token, ip):
+            return api_response(
+                {
+                    "challenge_required": True,
+                    "sitekey": os.environ.get("TURNSTILE_SITEKEY"),
+                },
+                status=428,
+            )
 
     conn = _get_conn()
     secret = current_app.config["JWT_SECRET"]

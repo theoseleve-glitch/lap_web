@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import re
 
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 _EMAIL_RE = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
 
@@ -27,8 +27,14 @@ class RegisterSchema(BaseModel):
 class LoginSchema(BaseModel):
     """POST /auth/login request body."""
 
+    model_config = ConfigDict(populate_by_name=True)
+
     email: str = Field(min_length=1)
     password: str = Field(min_length=1, max_length=1024)
+    # Cloudflare Turnstile step-up challenge token (see auth/turnstile.py).
+    # Optional -- only checked when auth.lockout.challenge_required() flags
+    # this login attempt. Accepts the widget's native field name.
+    turnstile_token: str | None = Field(default=None, alias="cf-turnstile-response")
 
 
 class RefreshSchema(BaseModel):
