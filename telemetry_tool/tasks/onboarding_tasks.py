@@ -64,6 +64,8 @@ import os
 from datetime import datetime, timezone
 from typing import Any
 
+from celery.exceptions import SoftTimeLimitExceeded
+
 from onboarding import repo, tokens
 from onboarding.draft import (
     DraftError,
@@ -80,6 +82,35 @@ __all__ = ["draft_and_notify", "reconcile_onboarding"]
 
 _MAX_RETRIES = 3
 _EMAIL_TEMPLATE = "onboarding_task"
+
+# ── Per-task time limits (own `onboarding` queue -- routed via celery_app.py
+# task_routes, consumed by the dedicated `celery-onboarding` worker in
+# docker-compose.prod.yml / docker-compose.staging.yml; mirrors the
+# celery-endurance / celery-pipeline-long isolation pattern).
+#
+# HIGH fix (graceful-degradation bug): before this, `draft_and_notify` ran
+# on the SHARED `celery-default` queue/worker, whose blanket
+# --time-limit=900 equaled onboarding/draft.py's OWN SAM2 subprocess timeout
+# (_SAM2_TIMEOUT_S, also 900 at the time). Celery's hard time-limit clock
+# starts at task-execution start -- before this task's preflight/tempdir/
+# CSV-write overhead even begins -- so it reliably won the race and
+# SIGKILLed the worker process outright (uncatchable) before
+# ``subprocess.run(timeout=900)`` ever got to raise its own catchable
+# ``TimeoutExpired``. That meant the `except`-based gps_only_draft fallback
+# below never ran; the row stayed 'drafting' until the 60-minute reconcile
+# job recovered it -- contradicting the runbook's documented "falls back to
+# GPS-only within 15 min".
+#
+# Fix: isolate onboarding onto its own queue/worker with a generous budget
+# (a real CPU-only SAM2 draft can legitimately take 10-20 minutes) and keep
+# onboarding/draft.py's _SAM2_TIMEOUT_S (1200s) comfortably BELOW the soft
+# limit here (1500s) so subprocess.run's own catchable TimeoutExpired always
+# fires first -- the gps_only_draft fallback runs every time, never a bare
+# SIGKILL. celery-default's other (quick) tasks are unaffected: its own
+# --time-limit stays 900s, no lengthened kill window for anything else.
+_ONBOARDING_SOFT_TIME_LIMIT_S = 1500  # 25 min
+_ONBOARDING_HARD_TIME_LIMIT_S = 1800  # 30 min -- mirrors celery-onboarding's
+                                       # --soft-time-limit/--time-limit flags
 
 # ---------------------------------------------------------------------------
 # Celery app import (graceful fallback for testing) -- copied from
@@ -156,7 +187,28 @@ def _run_draft_and_notify(request_id: str, conn: Any) -> dict:
 
     centerline = _centerline_from_row(row)
     try:
-        geojson = sam2_draft(bbox, centerline)
+        try:
+            geojson = sam2_draft(bbox, centerline)
+        except SoftTimeLimitExceeded:
+            # Belt-and-braces (see the module-level _ONBOARDING_SOFT_TIME_
+            # LIMIT_S / _ONBOARDING_HARD_TIME_LIMIT_S comment above): in the
+            # normal case sam2_draft's OWN subprocess timeout
+            # (onboarding.draft._SAM2_TIMEOUT_S=1200) fires and is caught
+            # INSIDE sam2_draft well before this queue's soft limit
+            # (1500s), so sam2_draft itself already returns None and this
+            # branch is never reached. This exists purely as a second line
+            # of defense -- e.g. unexpectedly slow preflight/tempdir/CSV
+            # setup, or a future change to sam2_draft's internals -- so an
+            # onboarding request degrades gracefully to gps_only_draft
+            # instead of being SIGKILLed uncaught by the hard limit.
+            logger.warning(
+                "draft_and_notify: onboarding queue's %ss soft time limit "
+                "fired while attempting the SAM2 draft for request_id=%s "
+                "-- falling back to gps_only_draft",
+                _ONBOARDING_SOFT_TIME_LIMIT_S, request_id,
+            )
+            geojson = None
+
         if geojson is not None:
             draft_kind, drafted_status = "sam2", "drafted"
         else:
@@ -246,6 +298,14 @@ if _USE_CELERY and _celery_app is not None:
         queue="onboarding",
         acks_late=True,
         max_retries=_MAX_RETRIES,
+        # Explicit per-task limits (belt-and-braces with the dedicated
+        # celery-onboarding worker's own --soft-time-limit/--time-limit
+        # flags in docker-compose.{prod,staging}.yml -- same pattern as
+        # tasks.endurance_tasks.process_endurance_session): even if a
+        # worker were ever started with the wrong CLI flags, this task's
+        # own limits still hold.
+        soft_time_limit=_ONBOARDING_SOFT_TIME_LIMIT_S,
+        time_limit=_ONBOARDING_HARD_TIME_LIMIT_S,
     )
     def draft_and_notify(request_id: str) -> dict:
         return _dispatch(request_id)

@@ -129,11 +129,56 @@ services:
     build: .
     command: >
       celery -A telemetry_tool.celery_app worker
-      -Q default,onboarding
+      -Q default
       --concurrency=4
       --soft-time-limit=600
       --time-limit=900
       --max-tasks-per-child=200
+      -l info
+    env_file: .env.production
+    environment:
+      TELEMETRY_LOG_FORMAT: json
+      SENTRY_DSN_WORKER: ${SENTRY_DSN_WORKER}
+      SENTRY_ENVIRONMENT: production
+      SIDECAR_ROOT: /data/sidecars
+    volumes:
+      - sidecar_data:/data/sidecars
+    healthcheck:
+      test: ["CMD-SHELL", "celery -A telemetry_tool.celery_app inspect ping --timeout 5"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 15s
+    depends_on:
+      redis:
+        condition: service_healthy
+      postgres:
+        condition: service_healthy
+    restart: unless-stopped
+    networks:
+      - internal
+
+  # Dedicated worker for the onboarding queue (HIGH fix: `onboarding` used to
+  # share celery-default's queue and its blanket --time-limit=900, which
+  # equaled onboarding/draft.py's own SAM2 subprocess timeout at the time --
+  # Celery's uncatchable hard-limit SIGKILL reliably won that race before the
+  # subprocess's own catchable TimeoutExpired could fire, so the gps_only_draft
+  # graceful-fallback path never ran. Isolated onto its own queue + worker,
+  # mirroring celery-endurance/celery-pipeline-long below, with a generous
+  # budget -- a real CPU-only SAM2 draft can legitimately take 10-20 minutes.
+  # Limits mirror tasks/onboarding_tasks.py's
+  # _ONBOARDING_SOFT_TIME_LIMIT_S/_ONBOARDING_HARD_TIME_LIMIT_S, which are in
+  # turn kept comfortably above onboarding/draft.py's _SAM2_TIMEOUT_S (1200s)
+  # so the subprocess's own timeout always fires first.
+  celery-onboarding:
+    build: .
+    command: >
+      celery -A telemetry_tool.celery_app worker
+      -Q onboarding
+      --concurrency=1
+      --soft-time-limit=1500
+      --time-limit=1800
+      --max-tasks-per-child=50
       -l info
     env_file: .env.production
     environment:

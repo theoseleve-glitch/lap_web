@@ -43,21 +43,22 @@ Expect `083_ingest_policy_missing_ok` (if Chain B already deployed) or `077_stri
 cd /c/Users/Admin/lap_web-wt-chain-a
 scp -r telemetry_tool/ root@46.225.227.24:/opt/lap-api/
 scp docker-compose.prod.yml Dockerfile root@46.225.227.24:/opt/lap-api/
-ssh root@46.225.227.24 "cd /opt/lap-api && docker compose -f docker-compose.prod.yml build api celery-pipeline celery-default celery-beat celery-endurance celery-pipeline-long"
+ssh root@46.225.227.24 "cd /opt/lap-api && docker compose -f docker-compose.prod.yml build api celery-pipeline celery-default celery-beat celery-endurance celery-pipeline-long celery-onboarding"
 ssh root@46.225.227.24 "cd /opt/lap-api && docker compose -f docker-compose.prod.yml exec -T -w /app/telemetry_tool api alembic upgrade head && docker compose -f docker-compose.prod.yml exec -T -w /app/telemetry_tool api alembic current"
 ```
 **Gate:** `alembic current` → `084_merge_chain_ab (head)`. Migrations 078–082_onboarding are `CREATE TABLE` + RLS on new tables (racing-lines, geometry-audit, onboarding-requests) — non-destructive. If Chain B wasn't deployed yet, 081_feeling/082_user_corners/083_ingest also apply (see the Chain B runbook for those). **Run the PG-gated RLS tests** for user_corners + ingest (from the Chain B runbook) AND any onboarding/honesty RLS test against the disposable PG — first real-PG exercise of all of it.
 *Rollback:* `alembic downgrade 083_ingest_policy_missing_ok` (drops 084 + the Chain A branch) or `...077...` for a full unwind; each revision has a clean downgrade.
 
-### 3 — Restart workers INCLUDING `-Q onboarding`, then verify
+### 3 — Restart workers INCLUDING the dedicated `celery-onboarding` consumer, then verify
+> **`celery-onboarding` is a NEW dedicated queue consumer**, not just `-Q onboarding` tacked onto `celery-default` (HIGH graceful-degradation fix, see `telemetry_tool/onboarding/draft.py`'s `_SAM2_TIMEOUT_S` and `telemetry_tool/tasks/onboarding_tasks.py`'s `_ONBOARDING_SOFT_TIME_LIMIT_S`/`_ONBOARDING_HARD_TIME_LIMIT_S`: onboarding used to share `celery-default`'s queue and its 900s hard `--time-limit`, which equaled the SAM2 subprocess's own timeout at the time, so Celery's uncatchable SIGKILL reliably won the race before the subprocess's own catchable `TimeoutExpired` could fire and trigger the `gps_only_draft` fallback). It runs `-Q onboarding` with its own `--soft-time-limit=1500/--time-limit=1800`, mirroring `celery-endurance`/`celery-pipeline-long`'s isolation pattern below — restart/verify it the same way.
 ```bash
-ssh root@46.225.227.24 "cd /opt/lap-api && docker compose -f docker-compose.prod.yml up -d api celery-pipeline celery-default celery-beat celery-endurance celery-pipeline-long"
-ssh root@46.225.227.24 "cd /opt/lap-api && for s in celery-default celery-endurance celery-pipeline-long; do echo == \$s ==; docker compose -f docker-compose.prod.yml logs --tail=40 \$s | grep -i 'queues\|-Q'; done"
+ssh root@46.225.227.24 "cd /opt/lap-api && docker compose -f docker-compose.prod.yml up -d api celery-pipeline celery-default celery-beat celery-endurance celery-pipeline-long celery-onboarding"
+ssh root@46.225.227.24 "cd /opt/lap-api && for s in celery-default celery-endurance celery-pipeline-long celery-onboarding; do echo == \$s ==; docker compose -f docker-compose.prod.yml logs --tail=40 \$s | grep -i 'queues\|-Q'; done"
 ```
-**Gate:** `celery-default` boot log lists **both** `default` and `onboarding`; `celery-endurance` lists `endurance`; `celery-pipeline-long` lists `pipeline_long`. A missing `onboarding` consumer parks onboarding jobs unconsumed. The durable volumes `gt_runtime_data` (/data/gt_runtime) + `onboarding_draft_data` (/data/onboarding_drafts) must be mounted on api + celery-default (they're in this compose).
+**Gate:** `celery-default` lists `default` only; `celery-endurance` lists `endurance`; `celery-pipeline-long` lists `pipeline_long`; `celery-onboarding` lists `onboarding`. A missing `onboarding` consumer parks onboarding jobs unconsumed. The durable volumes `gt_runtime_data` (/data/gt_runtime) + `onboarding_draft_data` (/data/onboarding_drafts) must be mounted on api + celery-onboarding (they're in this compose).
 
 ### 4 — Env for the onboarding loop
-Set on the API + celery-default services (see `.env.example` / `docs/runbooks/track-onboarding-deploy.md`): `CORS_ALLOWED_ORIGINS` **must include the annotator origin**, `ANNOTATOR_HOST`, and (optional, for SAM2 satellite drafts) `ONBOARDING_TRACKRECO_DIR` + weights in the worker image. GPS-only drafts work without SAM2.
+Set on the API + celery-onboarding services (see `.env.example` / `docs/runbooks/track-onboarding-deploy.md`): `CORS_ALLOWED_ORIGINS` **must include the annotator origin**, `ANNOTATOR_HOST`, and (optional, for SAM2 satellite drafts) `ONBOARDING_TRACKRECO_DIR` + weights in the worker image. GPS-only drafts work without SAM2.
 
 ### 5 — Publish the annotator (separate repo)
 The web annotator is `Analysis/trackreco-main` branch `feat/onboarding-annotator` (`netlify-annotator/index.html`) — publish to Netlify per `docs/runbooks/track-onboarding-deploy.md`. Its origin must match `CORS_ALLOWED_ORIGINS`/`ANNOTATOR_HOST`.

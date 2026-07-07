@@ -144,16 +144,43 @@ def test_validate_bbox_rejects_missing_keys():
 
 # ── sam2_draft: best-effort, never raises ─────────────────────────────────
 
-def test_sam2_draft_returns_none_when_trackreco_checkout_absent(monkeypatch):
+def _configure_preflight_ok(monkeypatch, tmp_path):
+    """Set ONBOARDING_TRACKRECO_DIR/PYTHON so ``_sam2_preflight()`` passes.
+
+    Several sam2_draft tests below monkeypatch ``_trackreco_script`` and/or
+    ``subprocess.run`` directly to control what happens AFTER preflight --
+    but preflight itself runs first (see sam2_draft) and, if left unset in
+    the bare test-process env, fails closed before subprocess.run is ever
+    reached -- silently turning those tests vacuous (they'd pass for the
+    wrong reason: preflight skip, not the subprocess behavior they name).
+    Call this first so the tests actually exercise what they claim to.
+    """
+    checkout = tmp_path.joinpath(*draft._SAM2_SCRIPT_RELPATH).parent
+    checkout.mkdir(parents=True, exist_ok=True)
+    checkout.joinpath(draft._SAM2_SCRIPT_RELPATH[-1]).write_text("# stub\n", encoding="utf-8")
+    monkeypatch.setenv("ONBOARDING_TRACKRECO_DIR", str(tmp_path))
+    fake_python = tmp_path / "fake_python.exe"
+    fake_python.write_text("", encoding="utf-8")
+    monkeypatch.setenv("ONBOARDING_TRACKRECO_PYTHON", str(fake_python))
+    assert draft._sam2_preflight() == "ok"
+    return tmp_path
+
+
+def test_sam2_draft_returns_none_when_trackreco_checkout_absent(monkeypatch, tmp_path):
+    """Defensive-fallback path INSIDE sam2_draft: even once preflight passes
+    (so this is NOT merely the preflight-skip shortcut, see
+    test_sam2_draft_skips_without_raising_when_preflight_fails below), if
+    _trackreco_script() itself still comes back None on the actual attempt,
+    sam2_draft must return None rather than raise."""
+    _configure_preflight_ok(monkeypatch, tmp_path)
     monkeypatch.setattr(draft, "_trackreco_script", lambda: None)
     result = draft.sam2_draft(VALID_BBOX, _session_gps_from_centerline())
     assert result is None
 
 
 def test_sam2_draft_returns_none_when_subprocess_raises(monkeypatch, tmp_path):
-    fake_script = tmp_path / "lap_track_to_draft.py"
-    fake_script.parent.mkdir(parents=True, exist_ok=True)
-    fake_script.write_text("# stub\n", encoding="utf-8")
+    _configure_preflight_ok(monkeypatch, tmp_path)
+    fake_script = tmp_path.joinpath(*draft._SAM2_SCRIPT_RELPATH)
     monkeypatch.setattr(draft, "_trackreco_script", lambda: fake_script)
 
     def _raise(*a, **k):
@@ -165,8 +192,8 @@ def test_sam2_draft_returns_none_when_subprocess_raises(monkeypatch, tmp_path):
 
 
 def test_sam2_draft_returns_none_on_nonzero_exit(monkeypatch, tmp_path):
-    fake_script = tmp_path / "lap_track_to_draft.py"
-    fake_script.write_text("# stub\n", encoding="utf-8")
+    _configure_preflight_ok(monkeypatch, tmp_path)
+    fake_script = tmp_path.joinpath(*draft._SAM2_SCRIPT_RELPATH)
     monkeypatch.setattr(draft, "_trackreco_script", lambda: fake_script)
 
     class _Result:
@@ -175,6 +202,25 @@ def test_sam2_draft_returns_none_on_nonzero_exit(monkeypatch, tmp_path):
         stderr = b"boom"
 
     monkeypatch.setattr(draft.subprocess, "run", lambda *a, **k: _Result())
+    result = draft.sam2_draft(VALID_BBOX, _session_gps_from_centerline())
+    assert result is None
+
+
+def test_sam2_draft_returns_none_on_subprocess_timeout(monkeypatch, tmp_path):
+    """HIGH fix coverage: a slow SAM2 subprocess must hit subprocess.run's
+    OWN catchable ``TimeoutExpired`` (never Celery's uncatchable hard-limit
+    SIGKILL) so this always falls through to gps_only_draft. See
+    onboarding/draft.py's _SAM2_TIMEOUT_S and tasks/onboarding_tasks.py's
+    _ONBOARDING_SOFT_TIME_LIMIT_S/_ONBOARDING_HARD_TIME_LIMIT_S for how the
+    three numbers are kept ordered so this is guaranteed, not a race."""
+    _configure_preflight_ok(monkeypatch, tmp_path)
+    fake_script = tmp_path.joinpath(*draft._SAM2_SCRIPT_RELPATH)
+    monkeypatch.setattr(draft, "_trackreco_script", lambda: fake_script)
+
+    def _timeout(cmd, **kwargs):
+        raise draft.subprocess.TimeoutExpired(cmd=cmd, timeout=draft._SAM2_TIMEOUT_S)
+
+    monkeypatch.setattr(draft.subprocess, "run", _timeout)
     result = draft.sam2_draft(VALID_BBOX, _session_gps_from_centerline())
     assert result is None
 

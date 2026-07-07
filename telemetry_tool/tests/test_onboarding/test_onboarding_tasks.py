@@ -20,6 +20,7 @@ from pathlib import Path
 from unittest.mock import MagicMock
 
 import pytest
+from celery.exceptions import SoftTimeLimitExceeded
 from onboarding.draft import DraftError
 
 _PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
@@ -334,6 +335,36 @@ class TestRealSam2PreflightFailureFallsBackToRealGpsOnlyDraft:
         saved_geojson = _mock_save_draft.call_args.args[1]
         assert saved_geojson["properties"]["review_source"] == "gps_only_draft"
         _mock_send_email.delay.assert_called_once()
+
+
+class TestSoftTimeLimitFallsBackToGpsOnly:
+    """HIGH fix coverage: a SoftTimeLimitExceeded raised while attempting the
+    SAM2 draft must be treated exactly like a plain ``None`` return from
+    sam2_draft -- fall back to gps_only_draft -- NOT the generic
+    draft_failed path a bare Exception gets (see TestUnexpectedDraftingFailure
+    above, which must keep failing closed for every OTHER exception type)."""
+
+    def test_soft_time_limit_during_sam2_falls_back_to_gps_only(
+        self, _mock_repo, _mock_tokens, _mock_validate_bbox, _mock_sam2_draft,
+        _mock_gps_only_draft, _mock_save_draft, _mock_send_email, conn,
+    ):
+        row_after_claim = _row()
+        row_before_email = _row(token_jti="jti-1", emailed_at=None)
+        _mock_repo.get.side_effect = [row_after_claim, row_before_email]
+        _mock_sam2_draft.side_effect = SoftTimeLimitExceeded()
+
+        result = onboarding_tasks._run_draft_and_notify(_REQUEST_ID, conn)
+
+        assert result == {"ok": True, "status": "drafted_gps_only"}
+        _mock_gps_only_draft.assert_called_once()
+        drafted_call = _mock_repo.set_status.call_args_list[0]
+        assert drafted_call.args[:3] == (conn, _REQUEST_ID, "drafted_gps_only")
+        assert drafted_call.kwargs["draft_status"] == "gps_only"
+        _mock_send_email.delay.assert_called_once()
+
+        # Must NOT be treated as a draft_failed -- no such status write.
+        statuses = [c.args[2] for c in _mock_repo.set_status.call_args_list]
+        assert "draft_failed" not in statuses
 
 
 class TestMintFailureMarksDraftFailed:

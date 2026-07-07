@@ -47,7 +47,6 @@ import logging
 import os
 import re
 import subprocess
-import sys
 import tempfile
 import uuid
 from pathlib import Path
@@ -91,7 +90,20 @@ _M_PER_DEG_LON = 111_320.0
 # closing-point duplicate is added.
 _RING_RESAMPLE_MIN = MIN_BOUNDARY_POINTS + 5
 
-_SAM2_TIMEOUT_S = 900
+# HIGH fix (graceful-degradation bug): this USED TO be 900s, exactly equal
+# to the shared celery-default queue's own --time-limit=900 -- Celery's hard
+# kill clock starts at task-execution start (before this subprocess is even
+# spawned), so it reliably won the race against this timeout and SIGKILLed
+# the worker outright (uncatchable), meaning the except-block below (which
+# routes to gps_only_draft) never got a chance to run. The onboarding task
+# now runs on its OWN `celery-onboarding` queue/worker with
+# --soft-time-limit=1500/--time-limit=1800 (see docker-compose.prod.yml,
+# docker-compose.staging.yml, tasks/onboarding_tasks.py's
+# _ONBOARDING_SOFT_TIME_LIMIT_S/_ONBOARDING_HARD_TIME_LIMIT_S) -- 1200s
+# leaves 300s of headroom below the soft limit, so subprocess.run's own
+# catchable TimeoutExpired always fires first, while still giving a real
+# CPU-only SAM2 draft a generous 20 minutes to complete.
+_SAM2_TIMEOUT_S = 1200
 _SAM2_SCRIPT_RELPATH = ("scripts", "lap_track_to_draft.py")
 
 # Interpreter used to run the trackreco SAM2 script. The worker image is
@@ -99,11 +111,11 @@ _SAM2_SCRIPT_RELPATH = ("scripts", "lap_track_to_draft.py")
 # Dockerfile) to stay lean; SAM2 support comes ENTIRELY from a separately
 # provisioned trackreco-main checkout + its own venv (see
 # docs/runbooks/track-onboarding-deploy.md's SAM2 provisioning section).
-# Unset = fall back to ``sys.executable`` (this process's own interpreter),
-# the pre-existing behavior -- which is exactly what makes SAM2 silently
-# unusable in the worker container (it has no torch), hence
-# ``_sam2_preflight`` below treating an unset value as a skip reason rather
-# than attempting a subprocess that is known to fail.
+# Must be set (and exist) or ``_sam2_preflight`` below fails closed and
+# ``sam2_draft`` skips the attempt entirely -- there is no
+# ``sys.executable`` fallback (removed: that used to make SAM2 silently
+# unusable in the worker container, since it has no torch, without ever
+# telling an operator why -- see _sam2_python_executable's docstring).
 _SAM2_PYTHON_ENV = "ONBOARDING_TRACKRECO_PYTHON"
 
 # request_id is server-derived (a uuid, per repo.py's gen_random_uuid()) --
@@ -350,36 +362,36 @@ def _trackreco_script() -> Path | None:
     ``Analysis/trackreco-main`` is a SIBLING repo to ``lap_web`` (not a
     subpath reachable via a fixed relative walk from this file, which may
     be running from any of several ``lap_web`` worktrees) -- so the
-    location is env-overridable via ``ONBOARDING_TRACKRECO_DIR``, falling
-    back to this machine's known layout.
+    location comes ENTIRELY from ``ONBOARDING_TRACKRECO_DIR``. Only ever
+    called after :func:`_sam2_preflight` has confirmed that env var is set,
+    exists, and contains this script (see :func:`sam2_draft`) -- LOW fix:
+    there is no longer a hardcoded dev-machine fallback path here (removed;
+    it was unreachable in prod once preflight started gating every call
+    site, and carried one contributor's local checkout path into shipped
+    code).
     """
-    candidates = []
     override = os.environ.get("ONBOARDING_TRACKRECO_DIR")
-    if override:
-        candidates.append(Path(override))
-    candidates.append(Path(r"C:\Users\Admin\Documents\Telemetry\Analysis\trackreco-main"))
-
-    for base in candidates:
-        script = base.joinpath(*_SAM2_SCRIPT_RELPATH)
-        if script.is_file():
-            return script
-    return None
+    if not override:
+        return None
+    script = Path(override).joinpath(*_SAM2_SCRIPT_RELPATH)
+    return script if script.is_file() else None
 
 
 def _sam2_python_executable() -> str:
     """Interpreter to invoke the trackreco SAM2 script with.
 
-    ``ONBOARDING_TRACKRECO_PYTHON`` should point at the trackreco-main
+    ``ONBOARDING_TRACKRECO_PYTHON`` must point at the trackreco-main
     checkout's OWN venv interpreter (the one with torch/segment-anything
     installed) so this worker's SAM2-free interpreter is never asked to run
-    heavy-dependency code. Falls back to ``sys.executable`` (the pre-
-    existing behavior) when unset -- kept graceful/backward-compatible for
-    any environment where the calling interpreter happens to have the
-    deps itself (e.g. a from-scratch local dev venv with everything
-    installed), even though ``_sam2_preflight`` treats an unset value as a
-    reason to skip attempting the subprocess at all in the normal case.
+    heavy-dependency code. Only ever called after :func:`_sam2_preflight`
+    has confirmed this env var is set and points at an existing file (see
+    :func:`sam2_draft`) -- LOW fix: no more ``sys.executable`` fallback
+    here (removed; that was unreachable dead code in the same sense as
+    :func:`_trackreco_script`'s old hardcoded path, and had been the exact
+    mechanism that made SAM2 silently unusable in the worker container --
+    it has no torch -- before ``_sam2_preflight`` existed).
     """
-    return os.environ.get(_SAM2_PYTHON_ENV) or sys.executable
+    return os.environ[_SAM2_PYTHON_ENV]
 
 
 def _sam2_preflight() -> str:

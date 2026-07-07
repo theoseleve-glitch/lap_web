@@ -93,11 +93,43 @@ services:
     build: .
     command: >
       celery -A telemetry_tool.celery_app worker
-      -Q default,onboarding
+      -Q default
       --concurrency=2
       --soft-time-limit=600
       --time-limit=900
       --max-tasks-per-child=200
+      -l info
+    env_file: .env.staging
+    environment:
+      APP_ENV: staging
+      TELEMETRY_LOG_FORMAT: json
+      SENTRY_ENVIRONMENT: staging
+    depends_on:
+      redis:
+        condition: service_healthy
+      postgres:
+        condition: service_healthy
+    restart: unless-stopped
+    networks:
+      - internal
+
+  # Dedicated worker for the onboarding queue — mirrors celery-onboarding in
+  # docker-compose.prod.yml (HIGH fix: isolated off celery-default so its own
+  # generous soft/hard limits never lengthen celery-default's 900s kill
+  # window for its other, quick tasks). Limits match
+  # tasks/onboarding_tasks.py's _ONBOARDING_SOFT_TIME_LIMIT_S /
+  # _ONBOARDING_HARD_TIME_LIMIT_S, kept above onboarding/draft.py's
+  # _SAM2_TIMEOUT_S (1200s) so the SAM2 subprocess's own timeout always
+  # fires first.
+  celery-onboarding:
+    build: .
+    command: >
+      celery -A telemetry_tool.celery_app worker
+      -Q onboarding
+      --concurrency=1
+      --soft-time-limit=1500
+      --time-limit=1800
+      --max-tasks-per-child=50
       -l info
     env_file: .env.staging
     environment:

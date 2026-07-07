@@ -35,19 +35,20 @@ netlify deploy --dir=netlify-annotator --prod
 cd /c/Users/Admin/lap_web-wt-onboarding
 scp -r telemetry_tool/ root@46.225.227.24:/opt/lap-api/
 scp docker-compose.prod.yml Dockerfile root@46.225.227.24:/opt/lap-api/
-ssh root@46.225.227.24 "cd /opt/lap-api && docker compose -f docker-compose.prod.yml build api celery-pipeline celery-default celery-beat"
+ssh root@46.225.227.24 "cd /opt/lap-api && docker compose -f docker-compose.prod.yml build api celery-pipeline celery-default celery-beat celery-onboarding"
 ssh root@46.225.227.24 "cd /opt/lap-api && docker compose -f docker-compose.prod.yml exec -T -w /app/telemetry_tool api alembic upgrade head && docker compose -f docker-compose.prod.yml exec -T -w /app/telemetry_tool api alembic current"
 ```
 **Gate:** `alembic current` → `082_onboarding_email_count (head)`. Migrations are non-destructive (082's `ADD COLUMN NOT NULL DEFAULT 0` is metadata-only on Postgres 16). Alembic reads `TELEMETRY_PG_MIGRATION_URL` (falls back to `TELEMETRY_PG_URL`).
 *Rollback (migrations):* `… alembic downgrade 080_racing_line_honesty` (both 081/082 have real `downgrade()` bodies; `track_onboarding_requests` is dropped).
-*Rollback (code/config):* `git checkout <prior-sha> -- telemetry_tool docker-compose.prod.yml Dockerfile` in the worktree, re-`scp`, rebuild, `up -d` the four services.
+*Rollback (code/config):* `git checkout <prior-sha> -- telemetry_tool docker-compose.prod.yml Dockerfile` in the worktree, re-`scp`, rebuild, `up -d` the five services.
 
 ## Step 4 — Restart api + workers + beat, verify the onboarding consumer
+> **`celery-onboarding` is a NEW dedicated queue consumer** (HIGH graceful-degradation fix: `onboarding` used to share `celery-default`'s queue and its 900s hard `--time-limit`, which equaled `onboarding/draft.py`'s own SAM2 subprocess timeout at the time — Celery's uncatchable SIGKILL reliably won that race before the subprocess's own catchable `TimeoutExpired` could fire, so the documented "falls back to GPS-only within 15 min" behavior below never actually happened). It runs `-Q onboarding` with its own `--soft-time-limit=1500/--time-limit=1800` (mirrors `celery-endurance`/`celery-pipeline-long`'s isolation pattern) — you must restart/verify it exactly like those two, not just `celery-default`.
 ```bash
-ssh root@46.225.227.24 "cd /opt/lap-api && docker compose -f docker-compose.prod.yml up -d api celery-pipeline celery-default celery-beat"
-ssh root@46.225.227.24 "cd /opt/lap-api && docker compose -f docker-compose.prod.yml logs --tail=80 celery-default | grep -i onboarding"
+ssh root@46.225.227.24 "cd /opt/lap-api && docker compose -f docker-compose.prod.yml up -d api celery-pipeline celery-default celery-beat celery-onboarding"
+ssh root@46.225.227.24 "cd /opt/lap-api && docker compose -f docker-compose.prod.yml logs --tail=80 celery-onboarding | grep -i 'queues\|-Q'"
 ```
-**Gate (B1):** the `celery-default` boot log must list `onboarding` in its `[queues]` line — check the log, not just that the process is up. *Rollback: as Step 3 code rollback.*
+**Gate (B1):** the `celery-onboarding` boot log must list `onboarding` in its `[queues]` line — check the log, not just that the process is up. (`celery-default`'s own `[queues]` line should list only `default` now.) *Rollback: as Step 3 code rollback.*
 
 ## Step 5 — Set env secrets in `/opt/lap-api/.env.production` (never commit values), then restart to re-read
 | Var | Value | Note |
@@ -62,7 +63,7 @@ ssh root@46.225.227.24 "cd /opt/lap-api && docker compose -f docker-compose.prod
 | `ONBOARDING_TRACKRECO_DIR` | *(leave unset)* | Unset = safe GPS-only drafts. SAM2-in-prod is a fast-follow -- see the dedicated section below if/when you provision it. |
 | `ONBOARDING_TRACKRECO_PYTHON` | *(leave unset)* | Same as above -- part of the optional SAM2 provisioning, not required for this deploy. |
 ```bash
-ssh root@46.225.227.24 "cd /opt/lap-api && docker compose -f docker-compose.prod.yml up -d api celery-pipeline celery-default celery-beat"
+ssh root@46.225.227.24 "cd /opt/lap-api && docker compose -f docker-compose.prod.yml up -d api celery-pipeline celery-default celery-beat celery-onboarding"
 ```
 *Rollback:* revert the added `.env.production` lines, restart. Removing `ONBOARDING_TOKEN_SECRET` fails the whole feature closed (safe).
 
@@ -92,11 +93,11 @@ Expect the ~6 `skipif`-gated PG tests (dedup-race, CAS claim, blessed-write refu
 
 ## Optional — Provisioning SAM2 satellite drafting in prod (fast-follow, not required to ship the loop)
 
-By default `celery-default` only ever runs `gps_only_draft` (`telemetry_tool/onboarding/draft.py`) — `sam2_draft` needs a SAM2-capable Python environment this worker's own lean image does NOT ship (no torch, no imagery/segmentation deps — see `Dockerfile`). This section wires that up. It is entirely optional and additive: skip it and the loop keeps working exactly as documented above (GPS-only drafts, human-reviewed in the annotator either way — review is mandatory regardless of draft source, see the honesty note below).
+By default `celery-onboarding` (the dedicated onboarding worker — see Step 4) only ever runs `gps_only_draft` (`telemetry_tool/onboarding/draft.py`) — `sam2_draft` needs a SAM2-capable Python environment this worker's own lean image does NOT ship (no torch, no imagery/segmentation deps — see `Dockerfile`). This section wires that up. It is entirely optional and additive: skip it and the loop keeps working exactly as documented above (GPS-only drafts, human-reviewed in the annotator either way — review is mandatory regardless of draft source, see the honesty note below).
 
 **Read the log first.** `sam2_draft` calls `_sam2_preflight()` on every single attempt and logs one of:
 - `SAM2 draft skipped: <reason>` — the reason names exactly which of the 3 requirements below is missing (dir/script/interpreter), so you never have to guess why a track got a GPS-only draft.
-- `SAM2 draft attempting (trackreco_dir=..., interpreter=...)` — config looks complete; a subsequent `sam2_draft: lap_track_to_draft.py exited N: ...` line or a silent timeout (`_SAM2_TIMEOUT_S=900`) means the trackreco side itself failed — inspect that log line / the trackreco-main repo, not this one.
+- `SAM2 draft attempting (trackreco_dir=..., interpreter=...)` — config looks complete; a subsequent `sam2_draft: lap_track_to_draft.py exited N: ...` line or a timeout (`_SAM2_TIMEOUT_S=1200` — a catchable `subprocess.TimeoutExpired`, comfortably below `celery-onboarding`'s own 1500s soft time limit, see the HIGH graceful-degradation fix noted in Step 4) means the trackreco side itself failed — inspect that log line / the trackreco-main repo, not this one.
 
 **1. Clone + build the trackreco-main venv (on the VPS, once)**
 ```bash
@@ -121,14 +122,14 @@ ONBOARDING_TRACKRECO_WEIGHTS_DIR=/opt/trackreco-main/checkpoints/sam2
 ```
 
 **4. Mount into the worker and restart**
-Uncomment the two `# -` volume lines already present (commented, inert) under `celery-default` in `docker-compose.prod.yml`, then:
+Uncomment the two `# -` volume lines already present (commented, inert) under `celery-onboarding` in `docker-compose.prod.yml`, then:
 ```bash
-docker compose -f docker-compose.prod.yml up -d celery-default
-docker compose -f docker-compose.prod.yml logs --tail=40 celery-default | grep -i "SAM2 draft"
+docker compose -f docker-compose.prod.yml up -d celery-onboarding
+docker compose -f docker-compose.prod.yml logs --tail=40 celery-onboarding | grep -i "SAM2 draft"
 ```
-Trigger a real onboarding draft (Post-deploy verification, step 1, above) and confirm the log now reads `SAM2 draft attempting` instead of `SAM2 draft skipped`. *Rollback: re-comment the two mount lines and `up -d celery-default` again — the app tolerates the mount vanishing exactly like it tolerates it never having existed (preflight fails closed to GPS-only, nothing crashes).*
+Trigger a real onboarding draft (Post-deploy verification, step 1, above) and confirm the log now reads `SAM2 draft attempting` instead of `SAM2 draft skipped`. *Rollback: re-comment the two mount lines and `up -d celery-onboarding` again — the app tolerates the mount vanishing exactly like it tolerates it never having existed (preflight fails closed to GPS-only, nothing crashes).*
 
-**Honesty note — GPU/CPU and review stay mandatory.** SAM2/segment-anything is a vision transformer that wants a GPU; this VPS is CPU-only, so a SAM2 attempt is considerably slower than the GPS-only path (seconds vs. potentially many minutes — `_SAM2_TIMEOUT_S=900` gives it 15 minutes before giving up and falling back to GPS-only). That is acceptable for how this feature is actually used — an operator manually triggering onboarding for one unrecognized track at a time, not a hot path — but do not expect it to be fast, and do not provision a GPU for this alone without a separate cost/benefit conversation. **Human review in the annotator stays MANDATORY regardless of draft source** (SAM2's own measured accuracy against held-out ground truth was ~1.9 m MAE vs. a 1.0 m target in the geometry-factory work) — a SAM2 draft is a better STARTING POINT for the annotator to correct, never a bypass of review. GPS-only remains the permanent, zero-dependency default and is never removed by provisioning the above.
+**Honesty note — GPU/CPU and review stay mandatory.** SAM2/segment-anything is a vision transformer that wants a GPU; this VPS is CPU-only, so a SAM2 attempt is considerably slower than the GPS-only path (seconds vs. potentially ~20 minutes — `_SAM2_TIMEOUT_S=1200` gives it 20 minutes before giving up and falling back to GPS-only, well inside `celery-onboarding`'s own 25-minute soft / 30-minute hard time limit — see the HIGH graceful-degradation fix noted in Step 4). That is acceptable for how this feature is actually used — an operator manually triggering onboarding for one unrecognized track at a time, not a hot path — but do not expect it to be fast, and do not provision a GPU for this alone without a separate cost/benefit conversation. **Human review in the annotator stays MANDATORY regardless of draft source** (SAM2's own measured accuracy against held-out ground truth was ~1.9 m MAE vs. a 1.0 m target in the geometry-factory work) — a SAM2 draft is a better STARTING POINT for the annotator to correct, never a bypass of review. GPS-only remains the permanent, zero-dependency default and is never removed by provisioning the above.
 
 ## Accepted known-limitations (non-blocking)
 - **SAM2 satellite drafting disabled by default in prod** (`ONBOARDING_TRACKRECO_DIR`/`ONBOARDING_TRACKRECO_PYTHON` unset) → `drafted_gps_only` (loop still completes; rougher centerline). See "Optional — Provisioning SAM2 satellite drafting in prod" above to enable it.
