@@ -167,9 +167,12 @@ def login_user(
     )
     user = cur.fetchone()
 
-    # Account lockout — check before attempting password verification
+    # Account lockout — check before attempting password verification.
+    # Scoped by (email, ip_address): see auth/lockout.py — an attacker who
+    # only knows the victim's email cannot lock the victim out from a
+    # different IP this way.
     from auth.lockout import check_lockout, clear_attempts, record_failed_attempt
-    lockout_remaining = check_lockout(email)
+    lockout_remaining = check_lockout(email, ip_address)
     if lockout_remaining is not None:
         log_security_event(conn, "login_locked_out",
                            ip_address=ip_address,
@@ -184,13 +187,13 @@ def login_user(
     # accounts where password_hash column is intentionally nullable).
     if user is None:
         verify_password(password, _DUMMY_HASH)
-        record_failed_attempt(email)
+        record_failed_attempt(email, ip_address)
         log_security_event(conn, "login_failed",
                            ip_address=ip_address, details={"email": email, "reason": "user_not_found"})
         raise AuthError("Invalid credentials", "INVALID_CREDENTIALS")
 
     if not user["password_hash"] or not verify_password(password, user["password_hash"]):
-        record_failed_attempt(email)
+        record_failed_attempt(email, ip_address)
         log_security_event(conn, "login_failed",
                            user_id=user["id"], ip_address=ip_address,
                            details={"email": email, "reason": "wrong_password"})
@@ -212,7 +215,7 @@ def login_user(
         user_agent=user_agent,
         ip_address=ip_address,
     )
-    clear_attempts(email)
+    clear_attempts(email, ip_address)
     log_security_event(conn, "login_success",
                        user_id=user["id"], ip_address=ip_address,
                        user_agent=user_agent, details={"email": email})

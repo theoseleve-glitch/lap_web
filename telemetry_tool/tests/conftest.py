@@ -29,6 +29,38 @@ def update_snapshots(request):
     return request.config.getoption("--update-snapshots")
 
 
+@pytest.fixture(autouse=True)
+def _reset_degraded_mode_state():
+    """Reset the in-process degraded-mode buckets used by web/rate_limit.py
+    (auth tier) and auth/lockout.py before every test.
+
+    These are deliberately module-level, per-worker dicts (bounded fallback
+    for the fail-open-on-Redis-outage fix) so a real outage's throttling
+    persists across requests within a worker process. In the test suite
+    that same persistence would otherwise let unrelated tests -- many of
+    which never mock Redis and so exercise the real "Redis unavailable"
+    fallback incidentally -- accumulate state and start throttling each
+    other by coincidence of sharing a scope value (e.g. the default
+    test-client IP). Not needed in production; harmless no-op if the
+    modules aren't importable for some reason.
+    """
+    def _clear():
+        try:
+            import auth.lockout as _lockout_mod
+            _lockout_mod._degraded_buckets.clear()
+        except Exception:
+            pass
+        try:
+            import web.rate_limit as _rate_limit_mod
+            _rate_limit_mod._degraded_auth_buckets.clear()
+        except Exception:
+            pass
+
+    _clear()
+    yield
+    _clear()
+
+
 @pytest.fixture
 def test_db():
     """Create an in-memory SQLite database with full schema."""

@@ -228,7 +228,7 @@ def register():
 @rate_limit(tier="auth")
 @validate_body(LoginSchema)
 def login():
-    from auth.lockout import check_lockout, clear_attempts, record_failed_attempt
+    from auth.lockout import check_lockout, clear_attempts
     from auth.service import AuthError, login_user
 
     body = g.body  # validated LoginSchema
@@ -238,8 +238,12 @@ def login():
     if len(password) > _PASSWORD_MAX:
         return api_error(ErrorCode.VALIDATION_ERROR, "Password too long", status=400)
 
-    # Check account lockout before attempting auth
-    retry_after = check_lockout(email)
+    ip = request.remote_addr or ""
+
+    # Check account lockout before attempting auth. Scoped by (email, ip)
+    # so an attacker who only knows the victim's email can't lock the
+    # victim out from a different IP (see auth/lockout.py).
+    retry_after = check_lockout(email, ip)
     if retry_after is not None:
         resp = make_response(api_error(
             ErrorCode.RATE_LIMITED, "Too many failed attempts. Try again later.",
@@ -251,7 +255,6 @@ def login():
     conn = _get_conn()
     secret = current_app.config["JWT_SECRET"]
     ua = request.headers.get("User-Agent", "")
-    ip = request.remote_addr or ""
     try:
         result = login_user(
             conn, email, password, secret,
@@ -270,7 +273,7 @@ def login():
                 )
 
         # Clear lockout on successful login
-        clear_attempts(email)
+        clear_attempts(email, ip)
 
         # If 2FA is required, return the temp token (no cookies set yet)
         if result.get("requires_2fa"):
@@ -289,7 +292,12 @@ def login():
         set_csrf_cookie(resp, generate_csrf_token())
         return resp
     except AuthError as e:
-        record_failed_attempt(email)
+        # NOTE: do not record_failed_attempt() here -- auth.service.login_user()
+        # already records exactly one attempt for every credential failure
+        # (user-not-found / wrong-password) before raising AuthError, and does
+        # NOT record one for ACCOUNT_LOCKED errors (that's not a new failure).
+        # Recording again here used to double-count every bad password and
+        # let 3 wrong-password POSTs trip a 5-attempt lockout.
         return api_error(ErrorCode.INVALID_CREDENTIALS, str(e), status=401)
     except Exception:
         logger.exception("Login failed unexpectedly")

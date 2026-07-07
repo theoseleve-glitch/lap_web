@@ -12,6 +12,7 @@ if str(_PROJECT_ROOT) not in sys.path:
 
 from flask import Flask, g
 
+import web.rate_limit as rate_limit_mod
 from web.api_utils import ErrorCode, api_response, init_request_id
 from web.rate_limit import _SLIDING_WINDOW_LUA, RATE_TIERS, rate_limit
 
@@ -273,3 +274,89 @@ class TestRateLimitRedisFailopenAlert:
         assert resp.status_code == 200  # still fails open
         mock_alert.assert_called_once()
         assert mock_alert.call_args[0][0] == "rate_limit"
+
+
+# ---------------------------------------------------------------------------
+# Fix #4: bounded degraded mode for the ``auth`` tier when Redis is down.
+#
+# Non-auth tiers must keep failing fully open (unchanged) -- only ``auth``
+# gets the bounded in-process fallback, since it's the tier that guards
+# credential brute-force.
+# ---------------------------------------------------------------------------
+
+class TestDegradedAuthTierRateLimit:
+    def setup_method(self):
+        rate_limit_mod._degraded_auth_buckets.clear()
+
+    def test_nth_rapid_attempt_from_one_ip_is_throttled_when_redis_down(self):
+        """With Redis unavailable, the auth tier's own configured limit
+        (5/60s) is still enforced per-IP by the in-process fallback rather
+        than letting every request through."""
+        app = _make_app(tier="auth")
+        max_requests = RATE_TIERS["auth"]["max_requests"]
+        client = app.test_client()
+        with patch("web.rate_limit.get_redis", return_value=None):
+            statuses = [
+                client.get("/limited", environ_base={"REMOTE_ADDR": "42.42.42.42"}).status_code
+                for _ in range(max_requests + 1)
+            ]
+        assert statuses[:max_requests] == [200] * max_requests
+        assert statuses[max_requests] == 429  # the (N+1)th is throttled
+
+    def test_single_normal_login_still_works_when_redis_down(self):
+        """A lone request from a fresh IP is never blocked by the fallback."""
+        app = _make_app(tier="auth")
+        with patch("web.rate_limit.get_redis", return_value=None):
+            client = app.test_client()
+            resp = client.get("/limited", environ_base={"REMOTE_ADDR": "43.43.43.43"})
+        assert resp.status_code == 200
+
+    def test_degraded_fallback_scoped_per_ip(self):
+        """Throttling one IP must not affect a different IP."""
+        app = _make_app(tier="auth")
+        max_requests = RATE_TIERS["auth"]["max_requests"]
+        client = app.test_client()
+        with patch("web.rate_limit.get_redis", return_value=None):
+            for _ in range(max_requests):
+                client.get("/limited", environ_base={"REMOTE_ADDR": "44.44.44.44"})
+            resp = client.get("/limited", environ_base={"REMOTE_ADDR": "55.55.55.55"})
+        assert resp.status_code == 200
+
+    def test_redis_up_behaviour_for_auth_tier_is_unchanged(self):
+        """When Redis is available, the degraded fallback is never consulted
+        -- normal Redis sliding-window behaviour applies as before."""
+        app = _make_app(tier="auth")
+        mock_r = _mock_redis(eval_return=1)
+        with patch("web.rate_limit.get_redis", return_value=mock_r):
+            client = app.test_client()
+            resp = client.get("/limited")
+        assert resp.status_code == 200
+        mock_r.eval.assert_called_once()
+
+    def test_non_auth_tiers_still_fail_fully_open_when_redis_down(self):
+        """Only the ``auth`` tier gets the bounded fallback -- other tiers
+        keep the existing fail-open behaviour unchanged."""
+        app = _make_app(tier="read")
+        client = app.test_client()
+        with patch("web.rate_limit.get_redis", return_value=None):
+            statuses = [
+                client.get("/limited", environ_base={"REMOTE_ADDR": "66.66.66.66"}).status_code
+                for _ in range(10)
+            ]
+        assert statuses == [200] * 10
+
+    def test_eval_exception_also_engages_degraded_auth_fallback(self):
+        """A Redis error mid-eval (not just Redis being absent) also routes
+        the auth tier through the bounded fallback."""
+        app = _make_app(tier="auth")
+        max_requests = RATE_TIERS["auth"]["max_requests"]
+        r = MagicMock()
+        r.eval.side_effect = ConnectionError("redis down")
+        client = app.test_client()
+        with patch("web.rate_limit.get_redis", return_value=r):
+            statuses = [
+                client.get("/limited", environ_base={"REMOTE_ADDR": "77.77.77.77"}).status_code
+                for _ in range(max_requests + 1)
+            ]
+        assert statuses[:max_requests] == [200] * max_requests
+        assert statuses[max_requests] == 429

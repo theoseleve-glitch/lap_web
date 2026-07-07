@@ -20,7 +20,11 @@ Usage::
         ...
 
 Architecture notes:
-- **Fail open**: if Redis is unavailable the request is allowed through.
+- **Fail open**: if Redis is unavailable the request is allowed through,
+  EXCEPT for the ``auth`` tier, which falls back to a small in-process,
+  per-worker fixed-window limiter (same limit/window as its Redis config)
+  keyed by client IP -- see ``_degraded_auth_gate`` below. This bounds
+  brute-force during a Redis outage without locking out real logins.
 - **Key format**: ``ratelimit:{tier}:{scope_value}`` where scope_value
   is the client IP for the ``auth`` tier and ``user_id`` for all others.
 """
@@ -29,13 +33,14 @@ from __future__ import annotations
 import functools
 import logging
 import math
+import threading
 import time
 from typing import Any
 
 from flask import g, request
 
 from .api_utils import ErrorCode, api_error
-from .redis_health import alert_redis_failopen
+from .redis_health import alert_redis_failopen, record_degraded_mode
 
 logger = logging.getLogger(__name__)
 
@@ -143,6 +148,63 @@ def _get_effective_limit(base_max: int, tier_name: str) -> int:
     return math.ceil(base_max * multiplier)
 
 
+# ---------------------------------------------------------------------------
+# Degraded-mode limiter -- ``auth`` tier only
+#
+# Redis outages must not turn into unbounded credential brute-force (see
+# redis_health.py for why this whole family of defenses fails open in the
+# first place). For the ``auth`` tier specifically we replace the plain
+# "let it through" fallback with a small in-process, per-worker fixed-window
+# limiter keyed by client IP, using the SAME limit/window as the tier's own
+# Redis-backed config. It's deliberately not shared across workers/fleet --
+# during an outage it's an approximation of the real limit, not a
+# replacement for it, but it bounds the attack rate instead of removing the
+# control entirely. Scoped to "auth" only so we don't add per-worker state
+# for every rate-limited route.
+# ---------------------------------------------------------------------------
+
+_degraded_auth_lock = threading.Lock()
+_degraded_auth_buckets: dict[str, list[float]] = {}
+
+
+def _degraded_auth_allow(scope_value: str) -> bool:
+    """Fixed-window check+record for the auth-tier degraded fallback.
+
+    Returns True if the request should be allowed through.
+    """
+    cfg = RATE_TIERS["auth"]
+    window_seconds = cfg["window_seconds"]
+    max_requests = cfg["max_requests"]
+    now = time.time()
+    window_start = now - window_seconds
+    with _degraded_auth_lock:
+        bucket = [t for t in _degraded_auth_buckets.get(scope_value, ()) if t > window_start]
+        allowed = len(bucket) < max_requests
+        bucket.append(now)
+        _degraded_auth_buckets[scope_value] = bucket
+    return allowed
+
+
+def _degraded_auth_gate(fn, args, kwargs):
+    """Bounded fallback invoked for the ``auth`` tier when Redis is down."""
+    record_degraded_mode("rate_limit_auth")
+    scope_value = request.remote_addr or "unknown"
+    if not _degraded_auth_allow(scope_value):
+        window_seconds = RATE_TIERS["auth"]["window_seconds"]
+        log_security_event("rate_limited",
+                           user_id=getattr(g, "current_user_id", None),
+                           ip_address=request.remote_addr,
+                           details={"tier": "auth", "mode": "degraded"})
+        resp, status = api_error(
+            ErrorCode.RATE_LIMITED,
+            "Rate limit exceeded (Redis degraded — bounded fallback active).",
+            status=429,
+        )
+        resp.headers["Retry-After"] = str(window_seconds)
+        return resp, status
+    return fn(*args, **kwargs)
+
+
 def rate_limit(tier: str = "read"):
     """Decorator that enforces a sliding-window rate limit.
 
@@ -169,6 +231,8 @@ def rate_limit(tier: str = "read"):
         def wrapper(*args, **kwargs):
             r = get_redis()
             if r is None:
+                if tier == "auth":
+                    return _degraded_auth_gate(fn, args, kwargs)
                 return fn(*args, **kwargs)
 
             # Apply plan-aware multiplier (auth tier is always IP-based, no plan)
@@ -210,6 +274,8 @@ def rate_limit(tier: str = "read"):
                     tier, redis_key, exc_info=True,
                 )
                 alert_redis_failopen("rate_limit", f"tier={tier}: {exc}")
+                if tier == "auth":
+                    return _degraded_auth_gate(fn, args, kwargs)
                 return fn(*args, **kwargs)
 
             remaining = max(0, max_requests - count)

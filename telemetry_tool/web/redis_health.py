@@ -22,8 +22,48 @@ app's own Redis instance.
 from __future__ import annotations
 
 import logging
+import threading
+import time
 
 logger = logging.getLogger(__name__)
+
+# ---------------------------------------------------------------------------
+# Degraded-mode metric (NOT Redis-backed on purpose)
+#
+# rate_limit.py's ``auth`` tier and auth/lockout.py no longer fail fully
+# open when Redis is unavailable -- they fall back to a small in-process,
+# per-worker bounded limiter (see ``_degraded_auth_gate`` in rate_limit.py
+# and ``_degraded_peek``/``_degraded_record`` in lockout.py). This tracker
+# records how many requests were served by that fallback and how long
+# (wall-clock seconds) the current process has been in degraded mode per
+# component, so an operator can see "we were in degraded auth mode for N
+# seconds" without needing Redis to be back up to read it.
+# ---------------------------------------------------------------------------
+
+_degraded_lock = threading.Lock()
+_degraded_state: dict[str, dict[str, float]] = {}
+
+
+def record_degraded_mode(component: str) -> None:
+    """Record one request handled by *component*'s degraded-mode fallback.
+
+    Never raises -- called from inside another fail-open path.
+    """
+    try:
+        now = time.monotonic()
+        with _degraded_lock:
+            state = _degraded_state.setdefault(component, {"requests": 0, "started_at": now})
+            state["requests"] += 1
+            state["seconds"] = now - state["started_at"]
+    except Exception:
+        pass
+
+
+def get_degraded_mode_stats() -> dict[str, dict[str, float]]:
+    """Snapshot of per-component degraded-mode counters (best-effort,
+    per-worker only -- not aggregated across the fleet)."""
+    with _degraded_lock:
+        return {k: dict(v) for k, v in _degraded_state.items()}
 
 
 def alert_redis_failopen(component: str, detail: str = "") -> None:

@@ -313,9 +313,14 @@ class TestLockoutModule:
             clear_attempts("test@example.com")
 
     def test_lockout_key_format(self):
-        """Key should be login_attempts:{email}."""
+        """Key should be login_attempts:{email}:{ip} — IP-scoped hard lock
+        so an attacker who only knows the victim's email can't lock the
+        victim out from a different IP (fix for email-only DoS)."""
         from auth.lockout import _key
-        assert _key("Test@Example.COM") == "login_attempts:test@example.com"
+        assert _key("Test@Example.COM", "203.0.113.5") == "login_attempts:test@example.com:203.0.113.5"
+        # No IP available falls back to a distinguishable "unknown" scope
+        # rather than silently reverting to the old email-only key.
+        assert _key("Test@Example.COM") == "login_attempts:test@example.com:unknown"
 
     def test_check_lockout_with_redis_not_locked(self):
         """Not locked when under threshold."""
