@@ -58,6 +58,8 @@ def make_celery(app=None) -> Celery:
             "tasks.ocp_tasks",
             "tasks.endurance_tasks",
             "tasks.recap_tasks",
+            "tasks.racing_line_tasks",
+            "tasks.onboarding_tasks",
             "admin.metrics_collector",
         ],
     )
@@ -84,8 +86,14 @@ def make_celery(app=None) -> Celery:
             "tasks.pipeline_tasks.*": {"queue": "pipeline"},
             "tasks.training_tasks.*": {"queue": "pipeline"},
             "tasks.ocp_tasks.*": {"queue": "pipeline"},
+            "tasks.racing_line_tasks.*": {"queue": "pipeline"},
             "tasks.batch_tasks.*": {"queue": "default"},
             "tasks.endurance_tasks.*": {"queue": "endurance"},
+            # Matches the queue="onboarding" already set on the task
+            # decorator in tasks/onboarding_tasks.py (belt-and-braces, same
+            # dual registration as tasks.racing_line_tasks above) -- a
+            # worker must run with `-Q onboarding,...` to consume it.
+            "tasks.onboarding_tasks.*": {"queue": "onboarding"},
         },
         task_default_queue="default",
         # Beat schedule for periodic tasks
@@ -210,6 +218,16 @@ def make_celery(app=None) -> Celery:
                 "schedule": crontab(hour=6, minute=0, day_of_week=1),  # Monday 06:00 UTC
                 "options": {"queue": "default"},
             },
+            "nightly-racing-lines": {
+                "task": "tasks.racing_line_tasks.compute_all_racing_lines",
+                "schedule": crontab(hour=3, minute=30),  # Daily 03:30 UTC
+                "options": {"queue": "pipeline"},
+            },
+            "reconcile-onboarding": {
+                "task": "tasks.onboarding_tasks.reconcile_onboarding",
+                "schedule": 1800,  # Every 30 minutes -- backstop for requests
+                "options": {"queue": "onboarding"},  # stuck mid-flight (worker
+            },  # crash between drafting and emailing).
         },
     )
 

@@ -20,6 +20,8 @@ services:
       - parquet_data:/data/parquet
       - export_data:/data/exports
       - models_data:/data/models
+      - gt_runtime_data:/data/gt_runtime
+      - onboarding_draft_data:/data/onboarding_drafts
     depends_on:
       postgres:
         condition: service_healthy
@@ -77,6 +79,7 @@ services:
       - upload_data:/data/uploads
       - parquet_data:/data/parquet
       - models_data:/data/models
+      - gt_runtime_data:/data/gt_runtime
     depends_on:
       redis:
         condition: service_healthy
@@ -90,7 +93,7 @@ services:
     build: .
     command: >
       celery -A telemetry_tool.celery_app worker
-      -Q default
+      -Q default,onboarding
       --concurrency=2
       --soft-time-limit=600
       --time-limit=900
@@ -101,6 +104,8 @@ services:
       APP_ENV: staging
       TELEMETRY_LOG_FORMAT: json
       SENTRY_ENVIRONMENT: staging
+    volumes:
+      - onboarding_draft_data:/data/onboarding_drafts
     depends_on:
       redis:
         condition: service_healthy
@@ -215,6 +220,8 @@ volumes:
   parquet_data:
   export_data:
   models_data:
+  gt_runtime_data:
+  onboarding_draft_data:
   caddy_data:
   caddy_config:
 

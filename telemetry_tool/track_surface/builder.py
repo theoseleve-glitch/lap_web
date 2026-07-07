@@ -27,7 +27,8 @@ from track_surface.elevation import (
 from track_surface.frenet import FrenetFrame
 from track_surface.grip_2d import build_grip_surface
 from track_surface.gt_loader import (
-    GroundTruth, load_gt, resolve_canonical_via_pg, resolve_track_id,
+    GroundTruth, load_gt, refresh_runtime_gt_if_configured,
+    resolve_canonical_via_pg, resolve_track_id,
 )
 from track_surface.model import TrackSurface
 from track_surface.normalizer import detect_coordinate_system, normalize_positions
@@ -159,6 +160,15 @@ def build_track_surface(
     ------
     ValueError : if no valid laps with position data are provided.
     """
+    # 0. Cross-process GT cache staleness guard (final-review finding I1):
+    #    a bless (onboarding/bless_service.py) can happen in the WEB process
+    #    while THIS build runs in a separate Celery pipeline worker whose
+    #    gt_loader cache may still hold a stale pre-bless miss. Refresh
+    #    unconditionally when GT_RUNTIME_DIR is configured, before load_gt
+    #    is ever called below -- negligible cost next to the rest of this
+    #    build. No-op (and no behavior change) when GT_RUNTIME_DIR is unset.
+    refresh_runtime_gt_if_configured()
+
     # 1. Normalise positions
     xy_list, z_list, enriched_laps, lap_times_s = _extract_lap_xy(laps, adapter_format)
     n_laps = len(xy_list)

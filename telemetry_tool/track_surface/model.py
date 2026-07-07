@@ -64,6 +64,13 @@ class TrackSurface:
     # for the data_derived path. (Day-8 fix for the |n| side-swap bug.)
     boundary_side_swap: bool = False
 
+    # Projection reference (radians) used to convert GPS lat/lon into the
+    # session-local XY frame shared with centerline_xy (see
+    # builder._compute_global_gps_ref). None for non-GPS coord systems or
+    # when unset (pre-persistence tracks).
+    proj_lat_ref: float | None = None
+    proj_lon_ref: float | None = None
+
     @property
     def has_boundaries(self) -> bool:
         return self.width_left is not None and self.width_right is not None
@@ -120,6 +127,8 @@ class TrackSurface:
             "quality_tier": self.quality_tier,
             "boundary_source": self.boundary_source,
             "boundary_side_swap": self.boundary_side_swap,
+            "proj_lat_ref": self.proj_lat_ref,
+            "proj_lon_ref": self.proj_lon_ref,
             "has_boundaries": self.has_boundaries,
             "has_elevation": self.has_elevation,
             "has_camber": self.has_camber,

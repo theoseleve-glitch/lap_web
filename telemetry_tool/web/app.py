@@ -438,6 +438,12 @@ def create_app(config: Config | None = None) -> Flask:
             from .routes.sync_upload import bp as sync_upload_bp
             app.register_blueprint(sync_upload_bp)
             logger.debug("Registered sync_upload blueprint")
+
+            # Track onboarding loop (draft/save) — signed-token auth only,
+            # exempt from JWT auth_middleware via _AUTH_PUBLIC_PATHS.
+            from .routes.onboarding_routes import bp as onboarding_bp
+            app.register_blueprint(onboarding_bp)
+            logger.debug("Registered onboarding_routes blueprint")
         except Exception as exc:
             logger.error("Failed to register auth blueprints: %s", exc)
 

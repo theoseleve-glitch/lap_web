@@ -515,6 +515,14 @@ def _build_session_meta(ctx: PipelineContext, conn=None) -> dict:
             except Exception:
                 pass
 
+    # Track-onboarding GT-miss detection hook (pipeline/stages/s10d_surface.py)
+    # needs both of these: job_id doubles as the onboarding request's
+    # session_ref (must equal ingestion_jobs.job_id -- see PipelineContext's
+    # session_id==job_id convention), and is_operator_run is the gate that
+    # keeps ordinary end-user uploads from ever triggering onboarding.
+    meta["job_id"] = ctx.job_id
+    meta["is_operator_run"] = bool(getattr(ctx, "is_operator_run", False))
+
     return meta
 
 

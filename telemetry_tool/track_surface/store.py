@@ -15,12 +15,13 @@ import logging
 import os
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable
 
 import numpy as np
 
 from track_surface.centerline import extract_centerline
 from track_surface.frenet import FrenetFrame
+from track_surface.geometry_gates import GateReport, run_geometry_gates
 from track_surface.grip_2d import GripSurface
 from track_surface.model import TrackSurface
 
@@ -174,11 +175,21 @@ def load_track_model(
         if isinstance(sim_sources, str):
             sim_sources = [s.strip() for s in sim_sources.split(",") if s.strip()]
 
+        boundary_source = df["boundary_source"].iloc[0] if "boundary_source" in df.columns else None
+        if not boundary_source:
+            boundary_source = None
+
+        proj_lat_ref = float(df["proj_lat_ref"].iloc[0]) if "proj_lat_ref" in df.columns else None
+        proj_lon_ref = float(df["proj_lon_ref"].iloc[0]) if "proj_lon_ref" in df.columns else None
+
         surface = TrackSurface(
             track_id=track_id,
             frenet=frenet,
             n_laps=n_laps,
             sim_sources=sim_sources,
+            boundary_source=boundary_source,
+            proj_lat_ref=proj_lat_ref,
+            proj_lon_ref=proj_lon_ref,
         )
 
         # Load optional 1D arrays if present
@@ -194,6 +205,13 @@ def load_track_model(
                 arr = df[col].to_numpy()
                 if np.any(np.isfinite(arr)):
                     setattr(surface, attr, arr)
+
+        # Load the 2D elevation surface z(s,n) — the quasi-3D geometry field's
+        # source. Absent on pre-persistence / insufficient-lateral-coverage
+        # tracks, in which case the solver honestly falls back to 2D.
+        elev_path = model_dir / "elevation_surface.parquet"
+        if elev_path.exists():
+            surface.elevation_surface = _load_elevation_surface(elev_path)
 
         # Load 2D grip from class+condition-keyed directory
         grip_dir = _grip_model_dir(track_id, vehicle_class, condition, sidecar_root)
@@ -233,12 +251,21 @@ def _load_grip_2d(path: Path) -> GripSurface | None:
         count_grid = count_flat[:M * K].reshape(M, K).astype(int)
         confidence = np.clip(count_grid / 50.0, 0.0, 1.0)
 
+        if "mu_limit_grid" in df.columns:
+            lim_flat = df["mu_limit_grid"].to_numpy()
+            mu_limit_grid = lim_flat[:M * K].reshape(M, K)
+            if np.isnan(mu_limit_grid).all():
+                mu_limit_grid = None     # a written-but-empty limit == no limit
+        else:
+            mu_limit_grid = None
+
         return GripSurface(
             s_bins=s_bins[:M],
             n_bins=n_bins[:K],
             mu_grid=mu_grid,
             count_grid=count_grid,
             confidence=confidence,
+            mu_limit_grid=mu_limit_grid,
         )
     except Exception as exc:
         logger.warning("Failed to load grip_2d: %s", exc)
@@ -254,6 +281,7 @@ def merge_track_model(
     sidecar_root: str | None = None,
     vehicle_class: str = "generic",
     condition: str = "dry",
+    on_geometry_rejected: Callable[[GateReport], None] | None = None,
 ) -> bool:
     """Merge a session's TrackSurface into the accumulated sidecar.
 
@@ -262,6 +290,14 @@ def merge_track_model(
 
     Creates the sidecar from scratch if none exists (bootstrap).
     Returns True on success, False if rejected or failed.
+
+    Before the geometry parquet is written (either the bootstrap path or the
+    merged path), the surface actually being written runs through
+    ``run_geometry_gates`` (spec A3). A failing surface withholds ONLY that
+    parquet write — grip/global persistence and the return value are
+    unaffected — and, if given, ``on_geometry_rejected`` is invoked exactly
+    once with the ``GateReport``. Callback exceptions are swallowed+logged so
+    a broken caller can never break persistence.
     """
     try:
         import pyarrow as pa
@@ -278,7 +314,14 @@ def merge_track_model(
 
     if existing is None:
         # Bootstrap: save geometry to shared dir, grip to keyed dir
-        _save_surface_parquet(model_path, new_surface)
+        report = run_geometry_gates(new_surface)
+        if report.passed:
+            _save_surface_parquet(model_path, new_surface)
+            es = getattr(new_surface, "elevation_surface", None)
+            if es is not None:
+                _save_elevation_surface(model_dir / "elevation_surface.parquet", es)
+        else:
+            _reject_geometry(track_id, report, on_geometry_rejected)
         if new_surface.grip_2d is not None:
             _save_grip_2d(grip_dir / "grip_2d.parquet", new_surface.grip_2d)
         logger.info("Bootstrapped track model: track=%s, class=%s, cond=%s, laps=%d",
@@ -364,14 +407,53 @@ def merge_track_model(
     elif existing.grip_2d is not None:
         merged.grip_2d = existing.grip_2d
 
+    # Merge 2D elevation surface (quasi-3D geometry source), mirroring grip.
+    old_es = getattr(existing, "elevation_surface", None)
+    new_es = getattr(new_surface, "elevation_surface", None)
+    if old_es is not None and new_es is not None:
+        merged.elevation_surface = _merge_elevation_surface(old_es, new_es)
+    elif new_es is not None:
+        merged.elevation_surface = new_es
+    elif old_es is not None:
+        merged.elevation_surface = old_es
+
     # Save
-    _save_surface_parquet(model_path, merged)
+    report = run_geometry_gates(merged)
+    if report.passed:
+        _save_surface_parquet(model_path, merged)
+        if getattr(merged, "elevation_surface", None) is not None:
+            _save_elevation_surface(
+                model_dir / "elevation_surface.parquet", merged.elevation_surface,
+            )
+    else:
+        _reject_geometry(track_id, report, on_geometry_rejected)
     if merged.grip_2d is not None:
         _save_grip_2d(grip_dir / "grip_2d.parquet", merged.grip_2d)
 
     logger.info("Merged track model: track=%s, laps=%d→%d, tier=%s",
                 track_id, existing.n_laps, n_merged, merged.quality_tier)
     return True
+
+
+def _reject_geometry(
+    track_id: str,
+    report: GateReport,
+    on_geometry_rejected: Callable[[GateReport], None] | None,
+) -> None:
+    """Log a gate rejection and fire the callback at most once.
+
+    The callback is user/caller-supplied (e.g. pipeline audit recording) and
+    must never be allowed to break persistence — exceptions are swallowed
+    and logged, never propagated.
+    """
+    logger.warning("geometry gates rejected %s: %s", track_id,
+                    [f.gate for f in report.failures])
+    if on_geometry_rejected is None:
+        return
+    try:
+        on_geometry_rejected(report)
+    except Exception as exc:
+        logger.warning("on_geometry_rejected callback raised for %s: %s", track_id, exc)
 
 
 def _validate_merge(existing: TrackSurface, new: TrackSurface) -> bool:
@@ -432,13 +514,19 @@ def _merge_centerlines(
 
 
 def _merge_grip_2d(old: GripSurface, new: GripSurface) -> GripSurface:
-    """Merge two 2D grip grids by combining counts and sums."""
+    """Merge two 2D grip grids: mean by additive sum/count, LIMIT by NaN-aware MAX."""
     # Use the grid with more bins as the base
     if old.mu_grid.size >= new.mu_grid.size:
         base_s, base_n = old.s_bins, old.n_bins
         M, K = old.mu_grid.shape
         merged_sum = old.mu_grid * old.count_grid
         merged_count = old.count_grid.copy()
+
+        has_any_limit = old.mu_limit_grid is not None or new.mu_limit_grid is not None
+        merged_limit = (
+            old.mu_limit_grid.copy() if old.mu_limit_grid is not None
+            else np.full((M, K), np.nan)
+        )
 
         # Add new grid's data, interpolating to base grid
         for si in range(len(new.s_bins)):
@@ -451,8 +539,12 @@ def _merge_grip_2d(old: GripSurface, new: GripSurface) -> GripSurface:
                 if s_idx < M and n_idx < K:
                     merged_sum[s_idx, n_idx] += new.mu_grid[si, ni] * new.count_grid[si, ni]
                     merged_count[s_idx, n_idx] += new.count_grid[si, ni]
+                if new.mu_limit_grid is not None:
+                    merged_limit[s_idx, n_idx] = np.fmax(
+                        merged_limit[s_idx, n_idx], new.mu_limit_grid[si, ni]
+                    )
     else:
-        return _merge_grip_2d(new, old)  # swap so larger is base
+        return _merge_grip_2d(new, old)  # swap so larger is base (MAX is symmetric)
 
     has_data = merged_count > 0
     mu_grid = np.ones((M, K))
@@ -463,6 +555,50 @@ def _merge_grip_2d(old: GripSurface, new: GripSurface) -> GripSurface:
         s_bins=base_s.copy(),
         n_bins=base_n.copy(),
         mu_grid=mu_grid,
+        count_grid=merged_count,
+        confidence=confidence,
+        mu_limit_grid=(merged_limit if has_any_limit else None),
+    )
+
+
+def _merge_elevation_surface(old: Any, new: Any) -> Any:
+    """Merge two elevation surfaces: count-weighted mean of z(s,n) and kv(s,n),
+    mirroring _merge_grip_2d (the larger grid is the base). Cells with no samples
+    in EITHER surface keep the base surface's gap-filled/interpolated value."""
+    from track_surface.elevation import ElevationSurface
+    if old.z_grid.size < new.z_grid.size:
+        return _merge_elevation_surface(new, old)   # keep the larger grid as base
+
+    base_s, base_n = old.s_bins, old.n_bins
+    M, K = old.z_grid.shape
+    z_sum = old.z_grid * old.count_grid
+    kv_sum = old.kv_grid * old.count_grid
+    merged_count = old.count_grid.copy()
+
+    for si in range(len(new.s_bins)):
+        for ni in range(len(new.n_bins)):
+            c = new.count_grid[si, ni]
+            if c == 0:
+                continue
+            s_idx = int(np.argmin(np.abs(base_s - new.s_bins[si])))
+            n_idx = int(np.argmin(np.abs(base_n - new.n_bins[ni])))
+            if s_idx < M and n_idx < K:
+                z_sum[s_idx, n_idx] += new.z_grid[si, ni] * c
+                kv_sum[s_idx, n_idx] += new.kv_grid[si, ni] * c
+                merged_count[s_idx, n_idx] += c
+
+    has_data = merged_count > 0
+    z_grid = old.z_grid.copy()      # preserve gap-fills where no samples merged
+    kv_grid = old.kv_grid.copy()
+    z_grid[has_data] = z_sum[has_data] / merged_count[has_data]
+    kv_grid[has_data] = kv_sum[has_data] / merged_count[has_data]
+    confidence = np.clip(merged_count / 20.0, 0.0, 1.0)
+
+    return ElevationSurface(
+        s_bins=base_s.copy(),
+        n_bins=base_n.copy(),
+        z_grid=z_grid,
+        kv_grid=kv_grid,
         count_grid=merged_count,
         confidence=confidence,
     )
@@ -485,7 +621,11 @@ def _save_surface_parquet(path: Path, surface: TrackSurface) -> None:
         "curvature_1pm": surface.frenet.curvature_1pm,
         "n_laps_accumulated": np.full(n, surface.n_laps),
         "sim_sources": np.full(n, ",".join(surface.sim_sources), dtype=object),
+        "boundary_source": np.full(n, surface.boundary_source or "", dtype=object),
     }
+    if surface.proj_lat_ref is not None and surface.proj_lon_ref is not None:
+        data["proj_lat_ref"] = np.full(n, surface.proj_lat_ref)
+        data["proj_lon_ref"] = np.full(n, surface.proj_lon_ref)
 
     # Add optional 1D arrays
     for col, attr in [
@@ -528,9 +668,80 @@ def _save_grip_2d(path: Path, grip: GripSurface) -> None:
         "count_grid": grip.count_grid.flatten().astype(float),
         "grid_shape_m": np.full(max_len, M),
         "grid_shape_k": np.full(max_len, K),
+        "mu_limit_grid": (
+            grip.mu_limit_grid.flatten()
+            if grip.mu_limit_grid is not None
+            else np.full(max_len, np.nan)
+        ),
     }
     table = pa.table(data)
     pq.write_table(table, path, compression="snappy")
+
+
+def _save_elevation_surface(path: Path, es: Any) -> None:
+    """Save the 2D elevation surface z(s,n) grid to Parquet (mirrors _save_grip_2d).
+
+    Persists the source of the quasi-3D geometry field. Without this the surface
+    was rebuilt in-session and dropped, so a loaded/prod track had no elevation
+    surface and the solver always honest-fell-back to 2D.
+    """
+    import pyarrow as pa
+    import pyarrow.parquet as pq
+
+    M, K = es.z_grid.shape
+    max_len = M * K
+    s_padded = np.zeros(max_len)
+    s_padded[:len(es.s_bins)] = es.s_bins
+    n_padded = np.zeros(max_len)
+    n_padded[:len(es.n_bins)] = es.n_bins
+
+    data = {
+        "s_bins": s_padded,
+        "n_bins": n_padded,
+        "z_grid": es.z_grid.flatten(),
+        "kv_grid": es.kv_grid.flatten(),
+        "count_grid": es.count_grid.flatten().astype(float),
+        "grid_shape_m": np.full(max_len, M),
+        "grid_shape_k": np.full(max_len, K),
+    }
+    table = pa.table(data)
+    pq.write_table(table, path, compression="snappy")
+
+
+def _load_elevation_surface(path: Path) -> Any:
+    """Load the 2D elevation surface from Parquet (mirrors _load_grip_2d).
+
+    Returns an ElevationSurface, or None on any read/shape error (the caller
+    then leaves surface.elevation_surface at its None default -> honest 2D).
+    """
+    try:
+        import pyarrow.parquet as pq
+
+        from track_surface.elevation import ElevationSurface
+        table = pq.read_table(path)
+        df = table.to_pandas()
+
+        s_bins = df["s_bins"].to_numpy()
+        n_bins = df["n_bins"].to_numpy()
+        M = int(df["grid_shape_m"].iloc[0])
+        K = int(df["grid_shape_k"].iloc[0])
+        z_grid = df["z_grid"].to_numpy()[:M * K].reshape(M, K)
+        kv_grid = df["kv_grid"].to_numpy()[:M * K].reshape(M, K)
+        count_grid = df["count_grid"].to_numpy()[:M * K].reshape(M, K).astype(int)
+        # confidence divisor mirrors build_elevation_surface (count / 20).
+        confidence = np.clip(count_grid / 20.0, 0.0, 1.0)
+
+        return ElevationSurface(
+            s_bins=s_bins[:M],
+            n_bins=n_bins[:K],
+            z_grid=z_grid,
+            kv_grid=kv_grid,
+            count_grid=count_grid,
+            confidence=confidence,
+        )
+    except Exception as exc:
+        logger.warning("Failed to load elevation_surface: %s", exc)
+        return None
 
 
 # -- PG upsert ----------------------------------------------------------------

@@ -234,6 +234,59 @@ class TestPipelineContextDataFrames:
         assert result is None
 
 
+class TestPipelineContextIsOperatorRunEnvFallbackRemoved:
+    """M1: unset env + no explicit flag -> False; env var no longer honored."""
+
+    def test_unset_env_no_explicit_flag_is_false(self, tmp_path, monkeypatch):
+        monkeypatch.delenv("ONBOARDING_OPERATOR_RUN", raising=False)
+        mock_redis = _make_mock_redis()
+        from pipeline_context import PipelineContext
+
+        ctx = PipelineContext.create(
+            redis_client=mock_redis,
+            job_id="job-080",
+            workspace_id="ws-9",
+            session_id="sess-9",
+            file_path="/data/s9.csv",
+            temp_root=str(tmp_path),
+        )
+        assert ctx.is_operator_run is False
+
+    def test_env_var_set_does_not_make_it_true(self, tmp_path, monkeypatch):
+        """The old ONBOARDING_OPERATOR_RUN=1 fallback is REMOVED (M1) -- a
+        shared Celery worker with this env var set must NOT silently turn
+        every end-user upload into an operator run."""
+        monkeypatch.setenv("ONBOARDING_OPERATOR_RUN", "1")
+        mock_redis = _make_mock_redis()
+        from pipeline_context import PipelineContext
+
+        ctx = PipelineContext.create(
+            redis_client=mock_redis,
+            job_id="job-081",
+            workspace_id="ws-9",
+            session_id="sess-9",
+            file_path="/data/s9.csv",
+            temp_root=str(tmp_path),
+        )
+        assert ctx.is_operator_run is False
+
+    def test_explicit_true_still_works(self, tmp_path, monkeypatch):
+        monkeypatch.delenv("ONBOARDING_OPERATOR_RUN", raising=False)
+        mock_redis = _make_mock_redis()
+        from pipeline_context import PipelineContext
+
+        ctx = PipelineContext.create(
+            redis_client=mock_redis,
+            job_id="job-082",
+            workspace_id="ws-9",
+            session_id="sess-9",
+            file_path="/data/s9.csv",
+            temp_root=str(tmp_path),
+            is_operator_run=True,
+        )
+        assert ctx.is_operator_run is True
+
+
 class TestPipelineContextCleanup:
     """Verify cleanup removes temp dir and Redis key."""
 

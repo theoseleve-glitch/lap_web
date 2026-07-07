@@ -1,0 +1,251 @@
+# Track Onboarding Loop — Ops Runbook
+
+Automated version of "onboard a new track." When a session's pipeline can't
+find ground-truth (GT) boundary geometry for its track, the loop auto-drafts
+a boundary (SAM2 satellite pass, falling back to a GPS-derived centerline),
+emails an operator a one-shot annotator link, and — once the operator
+corrects and submits the draft — blesses the correction into the runtime GT
+store and re-drives the sessions that were waiting on it.
+
+This is a different (and complementary) path from
+`docs/runbooks/track-geometry-factory-bless.md`, which documents the
+original manual operator-local `trackreco-main` → `bless_gt.py` flow. That
+manual flow still exists and still works; this loop automates the
+trigger → draft → notify half of it and reuses the same fail-closed
+validation gates (`bless_geometry`, `run_geometry_gates`) for the actual
+install.
+
+## 1. What the loop does
+
+A pipeline build that can't resolve GT for its track (`pipeline/stages/
+s10d_surface.py`, gated on `is_operator_run=True` — see §6) calls
+`onboarding.service.record_missing_geometry`, which upserts a row in
+`track_onboarding_requests` (migration `081_track_onboarding_requests`) and
+enqueues `tasks.onboarding_tasks.draft_and_notify` on the `onboarding` Celery
+queue. That task drafts a boundary, saves it, mints a signed one-shot token,
+and emails the operator an annotator link. The operator corrects the draft
+in the annotator UI and submits; `POST /api/v1/onboarding/save` runs the
+submission through `onboarding.bless_service.bless_geometry` and, on
+success, kicks off reprocessing (§7).
+
+**State machine** (`track_onboarding_requests.status`):
+
+```
+requested → drafting → drafted / drafted_gps_only → emailed → blessed
+                ↕ (validation/exception)
+           draft_failed
+```
+
+- `requested` — row created (or an additional session attached to an
+  already-open request); not yet claimed for drafting.
+- `drafting` — claimed by a worker (`repo.claim_for_drafting`, a
+  compare-and-set: only fires from `requested` or `draft_failed`).
+- `drafted` — SAM2 satellite draft succeeded and was saved.
+- `drafted_gps_only` — SAM2 draft unavailable/failed; fell back to the
+  GPS-derived centerline draft (`draft.gps_only_draft`).
+- `draft_failed` — bbox invalid or drafting raised; `error` column set;
+  reclaimable from this state.
+- `emailed` — operator notification sent (`emailed_at` set); only reached
+  once, guarded by `emailed_at IS NULL` so a request is never re-emailed.
+- `blessed` — terminal. `repo.set_status`/`claim_for_drafting`/
+  `reset_for_retry` all refuse to touch a row once `status = 'blessed'`
+  (`WHERE status <> 'blessed'` on every write).
+- **Reconcile path**: `reconcile_onboarding` (§3) runs two phases on every
+  tick. Phase 1 resets a stale, never-emailed row (`emailed_at IS NULL`,
+  untouched 60+ minutes) back to `requested` and re-enqueues
+  `draft_and_notify` — the only place `draft_failed`/stuck-`drafting` rows
+  get auto-retried. Phase 2 (migration `082_onboarding_email_count`, the
+  bounded auto-resend fast-follow) covers the complementary gap: an
+  already-emailed, unblessed request whose token has expired (the operator
+  never acted before the `ONBOARDING_TOKEN_TTL_HOURS` window closed) gets a
+  fresh token minted and re-emailed, up to `MAX_EMAILS` total sends (see
+  §8). Neither phase ever touches a `blessed` row.
+
+A track can only be re-onboarded (a fresh `requested` row) once its prior
+request reaches `blessed` — enforced by the partial unique index
+`ux_onboarding_open(track_key) WHERE status <> 'blessed'`.
+
+## 2. Required env / config
+
+| Var | Purpose | If unset |
+|---|---|---|
+| `ONBOARDING_TOKEN_SECRET` | HMAC-SHA256 secret signing the one-shot annotator token (`onboarding.tokens`). | **Fails closed**: `tokens.mint`/`tokens.verify` both raise `TokenError` immediately — no draft email can ever go out, and no `/save` can ever be authorized. Never falls back to a default secret. |
+| `ONBOARDING_TOKEN_TTL_HOURS` | Token lifetime in hours. | Falls back to a **default of 72 hours** (`tokens._DEFAULT_TTL_HOURS`); also falls back on an unparseable value. |
+| `ONBOARDING_OPERATOR_EMAIL` | Recipient of the draft-ready notification and the `reviewed_by` identity stamped by the web `/save` route (`onboarding:<email>`). | Inside `_run_draft_and_notify`, missing/empty is caught right before the email is built and transitions the request to `draft_failed` (reclaimable, no raise, no worker retry/dead-letter) — see the module docstring. The `/save` route still reads it via bare `os.environ[...]` (no default) and raises `KeyError` if unset. |
+| `ANNOTATOR_HOST` | Base URL of the annotator webapp; the emailed link is `{ANNOTATOR_HOST}/?req=<id>#token=<raw_token>`. | Same `draft_failed`-not-raise handling in `_run_draft_and_notify` as `ONBOARDING_OPERATOR_EMAIL` above. |
+| `CORS_ALLOWED_ORIGINS` | Backend CORS allowlist; must include the annotator origin (same value as `ANNOTATOR_HOST`) or the annotator webapp's browser `fetch()` to `/api/v1/onboarding/save` (and other onboarding API calls) is blocked by CORS. | If the annotator origin is missing, the operator's browser silently fails the save with a CORS error — no server-side error or status change; only visible in the browser console/network tab. |
+| `GT_RUNTIME_DIR` | Durable, writable directory for blessed runtime GT (see §4). | `bless_geometry` explicitly refuses and returns a `gt_runtime_dir_unset` rejection ("refusing to install (fail-closed)") — no install happens. |
+| `ONBOARDING_DRAFT_DIR` | Where auto-drafted (pre-bless) geojson files are written/read (`draft.save_draft`/`load_draft`). | Falls back to `{GT_RUNTIME_DIR}/../onboarding_drafts` if `GT_RUNTIME_DIR` is set, else the OS temp dir (`lap_onboarding_drafts`) — i.e. drafts land somewhere non-durable unless one of the two is set. |
+| `ONBOARDING_TRACKRECO_DIR` | Path override for the sibling `trackreco-main` checkout (SAM2 draft script location). | Falls back to a hardcoded local path (`C:\Users\Admin\Documents\Telemetry\Analysis\trackreco-main`) that only exists on the dev machine; on any other host, `sam2_draft` logs "trackreco-main checkout not found" and returns `None`, so drafting degrades to GPS-only (never raises). |
+
+None of these have secret values documented here — reference names only;
+set actual values via the deploy environment / secrets manager.
+
+## 3. Celery topology
+
+- **Queue**: `onboarding`, both via the task decorator (`queue="onboarding"`
+  on `draft_and_notify` and `reconcile_onboarding` in
+  `telemetry_tool/tasks/onboarding_tasks.py`) and belt-and-braces via
+  `task_routes` in `telemetry_tool/celery_app.py`
+  (`"tasks.onboarding_tasks.*": {"queue": "onboarding"}`).
+- **The worker MUST consume this queue explicitly** — it is not part of the
+  `default` or `pipeline` queues any other worker pool already listens on:
+  ```bash
+  celery -A <app> worker -Q onboarding,pipeline,default
+  ```
+  If no worker consumes `onboarding`, `draft_and_notify` and
+  `reconcile_onboarding` messages sit unconsumed forever — no draft, no
+  email, no reconcile.
+- **Beat**: `reconcile-onboarding` in `celery_app.py`'s `beat_schedule`,
+  cadence **every 1800s (30 minutes)**, dispatched onto the `onboarding`
+  queue. It calls `repo.find_stale_unemailed` (rows: `status <> 'blessed'`,
+  `emailed_at IS NULL`, `updated_at` older than `_STALE_AFTER_MINUTES = 60`
+  minutes) and, for each, `repo.reset_for_retry` (back to `requested`,
+  clearing `draft_status`/`draft_path`/`token_jti`) then re-enqueues
+  `draft_and_notify`. Per-id failures are caught and logged so one bad row
+  never blocks the batch.
+  - **Scope note**: Phase 1 (`find_stale_unemailed`/`reset_for_retry`) only
+    covers requests stuck *before* the first email goes out (worker crash
+    between the `drafted`/`token_jti` write and the `emailed` write). Phase
+    2 (`_resend_expired_links`, same beat tick, same connection) is what
+    covers an already-emailed request whose token later expires — see §8
+    for the bounded-resend behavior and cap.
+- **SAM2 worker runtime contract**: `onboarding.draft.sam2_draft` shells out
+  to `Analysis/trackreco-main/scripts/lap_track_to_draft.py` in a
+  subprocess (`sys.executable`, so it must be runnable from the worker's own
+  Python — the trackreco checkout is a sibling repo, not a package
+  dependency of `lap_web`). It needs: the `trackreco-main` checkout present
+  at `ONBOARDING_TRACKRECO_DIR` (or the hardcoded dev-machine fallback), that
+  checkout's own dependencies (SAM2 weights/checkpoint, `trackreco_platform`
+  importable) installed for whatever Python `sys.executable` resolves to on
+  the worker host, and at least 10 GPS points in the session.
+  **Absence degrades gracefully**: any failure mode here — missing
+  checkout, missing deps, timeout, non-zero exit, unreadable/malformed
+  output — is caught inside `sam2_draft` (never raises) and falls through
+  to `gps_only_draft`, landing the request in `drafted_gps_only` instead of
+  `drafted`. The loop still completes end-to-end; the draft is just a
+  rougher, GPS-only centerline for the operator to correct instead of a
+  SAM2 satellite trace.
+
+## 4. Durable GT store
+
+- `GT_RUNTIME_DIR` **must be a persistent, writable volume** — not
+  ephemeral container storage. `bless_geometry` writes the corrected
+  geojson there (`install_gt_geojson`) and then calls
+  `track_surface.gt_loader.invalidate_gt_cache(canonical_id)`, so the new
+  GT is picked up by the next `load_gt(...)` call **immediately, with no
+  redeploy** (`gt_loader` consults `GT_RUNTIME_DIR` first, falling back to
+  the git-baked `data/ground_truth/` corpus).
+- **A redeploy re-seeds the baked GT corpus from the git image.**
+  `GT_RUNTIME_DIR` content is runtime-only state — blessed geometry living
+  there is **not** automatically committed to git. If the volume is lost
+  (or a redeploy wipes/reprovisions it) before someone reconciles, blessed
+  corrections silently revert to whatever (or nothing) is baked in git.
+- **Manual reconcile-to-git step (must be done periodically by an
+  operator)**: copy each blessed `gt_<canonical_id>.geojson` (and any
+  `track_aliases.json` merge) out of `GT_RUNTIME_DIR` into the versioned
+  corpus (`data/ground_truth/`) and commit, mirroring what
+  `scripts/bless_gt.py` does for the manual flow
+  (`docs/runbooks/track-geometry-factory-bless.md` Step 3-4). This gives
+  the correction code-review + durability across redeploys instead of
+  living only in the runtime volume.
+
+## 5. Deploy-gate checklist
+
+The dev environment for this feature had **no Postgres** — the checklist
+below is where DB behavior gets validated for the first time. Do these in
+order:
+
+1. Apply migrations `081_track_onboarding_requests` and
+   `082_onboarding_email_count` on prod: `alembic upgrade head`; confirm
+   `alembic current` reaches `082_onboarding_email_count (head)`.
+2. Set `TELEMETRY_PG_URL` and run the PG-gated onboarding tests:
+   ```bash
+   cd telemetry_tool
+   TELEMETRY_PG_URL=<prod-or-staging-pg-url> python -m pytest tests/test_onboarding -q
+   ```
+   Six tests are `@pytest.mark.skipif` guarded on `TELEMETRY_PG_URL` being
+   unset and only run against a real PG: `test_repo.py`'s
+   `test_pg_first_upsert_creates_one_row`,
+   `test_pg_second_upsert_same_open_track_attaches_no_dup_refs` (the
+   dedup-race coverage for `ux_onboarding_open`),
+   `test_pg_claim_for_drafting_true_once_then_false`,
+   `test_pg_find_stale_unemailed_and_reset_for_retry`,
+   `test_pg_set_status_blessed_then_further_writes_refused`, plus one
+   migration-shape check in `test_migration_081.py`. These exercise the
+   real dedup/CAS SQL against actual PG, not mocks — do not skip this step.
+3. Confirm the Celery worker pool is started with `-Q onboarding,...` (§3)
+   — check worker startup logs/args, not just that *a* worker is running.
+4. Set every env var in §2 in the deploy environment.
+5. Confirm the `GT_RUNTIME_DIR` volume is mounted and persistent (survives
+   a container restart/redeploy) — see §4. Also confirm `ONBOARDING_DRAFT_DIR`
+   is mounted on a persistent volume (not ephemeral container storage) —
+   otherwise in-flight drafts are lost on redeploy before the operator has a
+   chance to correct and submit them.
+
+## 6. Operator gating
+
+Onboarding only ever triggers when `is_operator_run=True` is threaded down
+to `pipeline/stages/s10d_surface.py`'s GT-miss hook
+(`PipelineContext.is_operator_run`, default `False`). `PipelineContext.create`
+takes `is_operator_run` **only** as an explicit constructor/`create` argument
+— there is deliberately no environment-variable fallback (a prior
+`ONBOARDING_OPERATOR_RUN=1` fallback was removed: on a shared Celery worker
+that also processes end-user uploads, that env var being set would have
+silently turned EVERY upload into an operator run, defeating the
+operator-only invariant by config). The only call sites that pass it `True`
+are:
+
+- `POST /admin/jobs/<job_id>/retry` (`web/routes/admin/jobs.py`), gated by
+  `@require_superadmin` + `@require_admin_role("root_admin", "sre_admin")`
+  — a genuine authenticated-operator retry of an existing job.
+- `onboarding.reprocess._dispatch_builds`'s internal bless-reprocess
+  dispatcher (`reprocess.py`), which re-runs sessions that were waiting on
+  a track that has just been blessed — GT already exists by then, so the
+  hook is a no-op there; set for consistency, not because it's expected to
+  fire.
+
+Ordinary end-user session uploads never set it, so ordinary uploads never
+trigger onboarding, even if their track has no GT. **To onboard a track
+that genuinely lacks GT**, an operator/admin must retry an affected
+session via the superadmin admin-retry route above — that (or the internal
+bless-reprocess dispatcher) is the ONLY way to make a run operator-flagged;
+there is no ad-hoc env-var opt-in anymore.
+
+## 7. Reprocessing / racing lines after a bless
+
+`POST /api/v1/onboarding/save` → `bless_geometry` (success) →
+`onboarding.reprocess.reprocess_after_bless`, which (best-effort, one
+session's failure never aborts the rest):
+
+1. Updates `tracks.canonical_id` for every waiting `session_ref`.
+2. Re-dispatches the full ingest → analyze → finalize pipeline chain per
+   session (`tasks.pipeline_tasks.build_pipeline_chain(...).apply_async()`
+   — the same entrypoint `web/routes/jobs.py`'s manual `retry()` uses),
+   which is the only place `build_track_surface`/`load_gt` re-executes and
+   re-anchors the session onto the newly-blessed GT.
+3. Enqueues exactly one `tasks.racing_line_tasks.compute_racing_lines` per
+   distinct `(track_key, vehicle_class)`, delayed by
+   `_RACING_LINE_REPROCESS_DELAY_S = 1800` (30 minutes) so the builds above
+   get a head start before the racing-line solve reads their sidecars.
+
+This 30-minute delay is a **heuristic, not a guarantee** — if a build takes
+longer, the racing-line solve can still run against a stale sidecar. It's
+backstopped by the nightly `nightly-racing-lines` beat
+(`tasks.racing_line_tasks.compute_all_racing_lines`, daily 03:30 UTC on the
+`pipeline` queue), so a session's `optimal_line` may not appear until that
+next nightly run. This delay is **honesty-safe by design**: the tier system
+refuses to emit `optimal_line` rather than serve one solved against
+not-yet-anchored geometry — a missing line for a few hours is the intended
+behavior, not a bug.
+
+## 8. Troubleshooting
+
+| Symptom | Check | Fix |
+|---|---|---|
+| Operator never received the draft-ready email | Request's `status`/`draft_status`/`emailed_at`: `SELECT status, draft_status, error, emailed_at, updated_at FROM track_onboarding_requests WHERE id = '<request_id>';` (or filter by `track_key`) | If stuck pre-email (`emailed_at IS NULL`) and `updated_at` is 60+ minutes old, the next `reconcile_onboarding` beat tick (≤30 min) auto-resets and re-drives it — confirm the `onboarding` queue actually has a consuming worker (§3), since reconcile's re-enqueue is also a message on that queue. |
+| Row stuck in `draft_failed` | Check the `error` column for the exception message. | Common cause: invalid `bbox`. Once the underlying issue is fixed, either wait for reconcile (only fires if also `emailed_at IS NULL` and stale) or manually re-drive: `repo.claim_for_drafting` requires status in `('requested','draft_failed')`, so calling `tasks.onboarding_tasks.draft_and_notify.delay(request_id)` again is safe and idempotent. |
+| Row stuck in `drafting` indefinitely (worker died mid-task) | `updated_at` age vs the 60-minute reconcile threshold. | Same reconcile path as above once it crosses the threshold; `emailed_at` must still be `NULL` (it always is at this stage) for `reset_for_retry` to touch it. |
+| Annotator link returns "Invalid or expired onboarding link" (generic 401 by design — never reveals which check failed) | Token TTL (`ONBOARDING_TOKEN_TTL_HOURS`, default 72h) vs `emailed_at`; whether the link was already used (`/save` revokes the `jti` on success, one-shot); `email_count` vs `MAX_EMAILS`. | `reconcile_onboarding`'s Phase 2 (`_resend_expired_links`, migration `082_onboarding_email_count`) auto-resends: once an emailed, unblessed request's `emailed_at` crosses the `ONBOARDING_TOKEN_TTL_HOURS` window, the next beat tick (≤30 min) mints a fresh token, atomically claims the resend (`repo.claim_resend` — a compare-and-set `UPDATE` that sets `token_jti`, increments `email_count`, and resets `emailed_at = now()` all in one guarded statement, so two concurrent beat ticks can never both send), and re-emails the operator. This repeats **up to `MAX_EMAILS = 4` total sends** (`tasks.onboarding_tasks.MAX_EMAILS`: 1 initial + 3 resends — the initial send already stamps `email_count = 1`). Once a request hits the cap it is deliberately left alone (`repo.find_expired_emailed`'s `email_count < max_emails` guard excludes it) — an ignored track must not be nagged forever. **Past the cap, recovery is manual**: in a DB/python shell, `UPDATE track_onboarding_requests SET email_count = 0 WHERE id = '<request_id>' AND status <> 'blessed';` re-arms the budget, then wait for the next reconcile tick (or call `tasks.onboarding_tasks.draft_and_notify.delay(request_id)` if `emailed_at IS NULL` still holds, which it won't once emailed — prefer resetting `email_count` and letting the beat's Phase 2 pick it up). Check `SELECT email_count, emailed_at, token_jti FROM track_onboarding_requests WHERE id = '<request_id>';` first to confirm which side of the cap the row is on. |
+| Bless succeeds but the correction "disappears" after a later deploy | `GT_RUNTIME_DIR` volume was not persistent, or the manual reconcile-to-git step (§4) was never done. | Re-bless from the operator's last-known-good export (if retained), or re-run the loop for that track; going forward, do the §4 reconcile-to-git step regularly so blessed corrections survive a redeploy. |
+| `optimal_line` missing right after a bless | Reprocessing timeline (§7): builds take time, racing-line solve is delayed 30 min and may still race a slow build; full backstop is the next 03:30 UTC nightly `compute_all_racing_lines` run. | Not a bug by itself — check `track_geometry_audit` / the session's rebuilt sidecar `boundary_source` first to confirm the rebuild actually landed before assuming the solver is broken. |

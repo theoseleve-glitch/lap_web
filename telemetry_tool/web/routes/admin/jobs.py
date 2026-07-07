@@ -191,6 +191,11 @@ def retry_job(job_id: str):
             workspace_id=str(job.get("workspace_id", "")),
             session_id=job_id,
             file_path=job.get("file_path", ""),
+            # This route is gated by @require_superadmin +
+            # @require_admin_role -- a genuine authenticated-operator
+            # signal, so this run is allowed to trigger the track-
+            # onboarding GT-miss hook (pipeline/stages/s10d_surface.py).
+            is_operator_run=True,
         )
     except Exception:
         logger.warning("Failed to seed PipelineContext for admin retry %s", job_id, exc_info=True)
