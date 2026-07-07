@@ -16,7 +16,6 @@ const sections: SitemapSection[] = [
       { href: '/', label: 'Home' },
       { href: '/product', label: 'Product overview' },
       { href: '/pricing', label: 'Plans & pricing' },
-      { href: '/billing', label: 'Billing' },
       { href: '/demo', label: 'Request a demo' },
       { href: '/register?source=sitemap', label: 'Try free analysis' },
       { href: '/compare-tools', label: 'LAP vs Spreadsheets' },

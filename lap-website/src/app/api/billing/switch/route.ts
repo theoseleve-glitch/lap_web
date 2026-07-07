@@ -144,9 +144,16 @@ export async function POST(request: Request) {
     }
   }
 
-  return NextResponse.json({
-    ok: true,
-    message: 'Plan switch recorded (fallback mode).',
-    mode: 'fallback',
-  });
+  // Neither a real Stripe switch nor a configured webhook actually performed
+  // the switch -- do NOT report success. Prior behavior returned HTTP 200
+  // {ok:true, mode:'fallback'} here even though nothing changed in Stripe,
+  // which told the customer a plan switch happened when it hadn't.
+  return NextResponse.json(
+    {
+      ok: false,
+      message: "Plan changes aren't available right now. Contact support to change your plan.",
+      mode: 'unavailable',
+    },
+    { status: 501 },
+  );
 }

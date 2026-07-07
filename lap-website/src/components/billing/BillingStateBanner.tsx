@@ -49,6 +49,17 @@ const BANNER_MAP: Record<string, BannerConfig> = {
     style: 'bg-steel/10 text-steel',
     borderStyle: 'border-steel/30',
   },
+  // Reachable, distinct terminal state (billing/state_machine.py: past_due,
+  // unpaid, and canceled all transition here after their grace period ends;
+  // it has its own "subscription_expired" email). Without an entry here the
+  // banner silently rendered nothing for an expired account.
+  expired: {
+    message: 'Your subscription has expired. Resubscribe to resume uploads and reports.',
+    cta: 'Resubscribe',
+    href: '/pricing',
+    style: 'bg-safety-red/10 text-safety-red',
+    borderStyle: 'border-safety-red/30',
+  },
 };
 
 /**
@@ -56,7 +67,7 @@ const BANNER_MAP: Record<string, BannerConfig> = {
  *
  * Fetches subscription status and renders a dismissible warning bar when
  * the subscription is in a non-healthy state (past_due, unpaid, canceled,
- * paused). Renders nothing for active/trialing/free states.
+ * paused, expired). Renders nothing for active/trialing/free states.
  */
 export function BillingStateBanner() {
   const { data: sub } = useQuery<SubscriptionStatus>({

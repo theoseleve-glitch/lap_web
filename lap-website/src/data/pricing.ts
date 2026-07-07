@@ -14,7 +14,6 @@ export interface Plan {
   trialDays: number;
   features: Record<string, string>;
   cta: string;
-  ctaHref: string;
   highlighted?: boolean;
   availability: CapabilityStatus;
 }
@@ -48,7 +47,6 @@ export const plans: Plan[] = [
       'Report retention': '5 years',
     },
     cta: 'Start 30-day free trial',
-    ctaHref: '/billing',
     highlighted: true,
     availability: 'available_now',
   },

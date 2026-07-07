@@ -137,15 +137,14 @@ export const routeMap: Record<string, RouteEntry> = {
     jsonLdType: 'FAQPage',
   },
   '/billing': {
+    // Orphaned marketing page: its AuthGate could never pass (checked the
+    // httpOnly lap_refresh_token cookie from client JS) and it duplicates
+    // the real, authenticated billing UI at /app/account/billing. The page
+    // now just redirects there -- noIndex so it stays out of the sitemap.
     path: '/billing',
     title: 'Billing',
     parent: '/',
-    sectionAnchors: [
-      { id: 'vat-currency', label: 'VAT & Currency' },
-      { id: 'invoice-payment', label: 'Invoice & Payment' },
-    ],
-    primaryKeyword: 'lap billing and invoices',
-    metaDescription: 'Manage your LAP subscription billing. Learn about supported currencies, VAT handling, invoice downloads, and available payment methods.',
+    noIndex: true,
   },
   '/status': {
     path: '/status',
