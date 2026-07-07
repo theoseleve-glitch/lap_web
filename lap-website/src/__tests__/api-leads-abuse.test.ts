@@ -83,7 +83,16 @@ describe('POST /api/leads abuse controls', () => {
     expect(lastStatus).toBe(429);
   });
 
-  it('rejects missing challenge token', async () => {
+  it('rejects an empty/omitted challenge token when a provider is configured (no skip-by-omission)', async () => {
+    // A configured provider rejects an empty response token. The route must
+    // ALWAYS call verifyBotChallenge — a bot must not be able to skip the
+    // challenge by simply omitting challengeToken (the fixed bypass).
+    vi.mocked(verifyBotChallenge).mockResolvedValue({
+      ok: false,
+      reason: 'missing-input-response',
+      provider: 'turnstile',
+    });
+
     const response = await POST(
       makeRequest({
         ...validPayload,
@@ -91,7 +100,31 @@ describe('POST /api/leads abuse controls', () => {
       }),
     );
 
-    expect(response.status).toBe(400);
+    expect(verifyBotChallenge).toHaveBeenCalledWith(
+      expect.objectContaining({ token: '' }),
+    );
+    expect(response.status).toBe(403);
     expect(deliverLead).not.toHaveBeenCalled();
+  });
+
+  it('accepts an empty token when no challenge provider is configured (honeypot/rate-limit fallback)', async () => {
+    // Documented design: with no provider set, verifyBotChallenge reports
+    // "not configured" and the route falls back to honeypot + rate limiting +
+    // dedupe rather than hard-requiring a token — which would break legit
+    // forms whose challenge widget is not wired yet.
+    vi.mocked(verifyBotChallenge).mockResolvedValue({
+      ok: false,
+      reason: 'challenge provider is not configured',
+    });
+
+    const response = await POST(
+      makeRequest({
+        ...validPayload,
+        challengeToken: '',
+      }),
+    );
+
+    expect(verifyBotChallenge).toHaveBeenCalled();
+    expect(response.status).toBe(200);
   });
 });

@@ -35,31 +35,32 @@ export async function POST(request: Request) {
     .find((part) => part.startsWith('lap_session_id='))
     ?.split('=')[1];
 
-  // Bot challenge verification — only enforced when a provider is configured.
-  // When no provider is set, rely on honeypot + rate limiting + duplicate detection.
-  if (challengeToken) {
-    const challenge = await verifyBotChallenge({ token: challengeToken, remoteIp: ip });
-    if (!challenge.ok && challenge.reason !== 'challenge provider is not configured') {
-      const alert = recordLeadAbuseEvent('challenge_failed');
-      await sendServerConversion({
-        event: 'lead_abuse_signal',
-        sourcePath: undefined,
-        leadType: 'unknown',
-        sessionId: sessionIdFromCookie,
-        attribution: { reason: challenge.reason ?? 'challenge_failed', provider: challenge.provider ?? 'unknown' },
+  // Bot challenge verification — ALWAYS run so a bot cannot skip it by simply
+  // omitting `challengeToken`. verifyBotChallenge returns 'challenge provider is
+  // not configured' when no provider is set (then we fall back to honeypot +
+  // rate limiting + duplicate detection); any OTHER failure — including an
+  // empty/missing token while a provider IS configured — is a rejected challenge.
+  const challenge = await verifyBotChallenge({ token: challengeToken, remoteIp: ip });
+  if (!challenge.ok && challenge.reason !== 'challenge provider is not configured') {
+    const alert = recordLeadAbuseEvent('challenge_failed');
+    await sendServerConversion({
+      event: 'lead_abuse_signal',
+      sourcePath: undefined,
+      leadType: 'unknown',
+      sessionId: sessionIdFromCookie,
+      attribution: { reason: challenge.reason ?? 'challenge_failed', provider: challenge.provider ?? 'unknown' },
+    });
+    if (alert.shouldAlert) {
+      console.error('Lead abuse alert triggered', {
+        ratio: alert.ratio,
+        total: alert.total,
+        reason: 'challenge_failed',
       });
-      if (alert.shouldAlert) {
-        console.error('Lead abuse alert triggered', {
-          ratio: alert.ratio,
-          total: alert.total,
-          reason: 'challenge_failed',
-        });
-      }
-      return NextResponse.json(
-        { ok: false, message: 'Challenge verification failed.' },
-        { status: 403 },
-      );
     }
+    return NextResponse.json(
+      { ok: false, message: 'Challenge verification failed.' },
+      { status: 403 },
+    );
   }
 
   if (!validation.valid) {
