@@ -285,9 +285,18 @@ export function useTrackSurfaceData(sessionId: string, lap?: number | null) {
   // than the canonical {points: [...]} shape. Detect via the `points`
   // key presence so the consumer sees null instead of an unexpected
   // available-flag object.
+  //
+  // Honesty gate (racing-line honesty layer): the API only ever includes a
+  // `points` array when the backend's track_racing_lines tier is
+  // "optimal_line" (drawable: true) — a degraded/ungated/lower-tier result
+  // never carries `points`. The `drawable !== false` check is redundant with
+  // that backend invariant today, but keeps this consumer honest even if a
+  // future response shape change stops omitting `points` on non-drawable
+  // tiers — never render a speed_profile_only/refused/ungated result as a
+  // full-authority racing line.
   const optimalPoints = optimalLine.data && Array.isArray(
     (optimalLine.data as { points?: unknown }).points,
-  )
+  ) && (optimalLine.data as { drawable?: boolean }).drawable !== false
     ? (optimalLine.data as OptimalLineResponse).points
     : null;
   const lineDeltaPoints = lineDelta.data && Array.isArray(
