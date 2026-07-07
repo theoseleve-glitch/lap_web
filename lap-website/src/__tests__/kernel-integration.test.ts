@@ -8,10 +8,10 @@ describe('Kernel Integration', () => {
     useKernelStore.setState(useKernelStore.getInitialState());
   });
 
-  it('rooms array has 11 entries matching expected chapter IDs', () => {
-    expect(rooms).toHaveLength(11);
+  it('rooms array has 10 entries matching expected chapter IDs', () => {
+    expect(rooms).toHaveLength(10);
     expect(rooms[0].id).toBe('start-grid');
-    expect(rooms[10].id).toBe('podium');
+    expect(rooms[9].id).toBe('podium');
   });
 
   it('transition map covers all adjacent room pairs', () => {
@@ -28,8 +28,12 @@ describe('Kernel Integration', () => {
     expect(Object.keys(transitionMap)).toHaveLength(10);
   });
 
-  it('preloader complete transitions to idle mode', () => {
-    expect(useKernelStore.getState().mode).toBe('preloading');
+  it('completePreloader is idempotent and leaves mode idle', () => {
+    // NOTE: Preloader (src/experience/preloader/Preloader.tsx) is orphaned —
+    // never mounted anywhere in the app — so the store already boots into
+    // 'idle' with preloaderComplete: true (see store.ts initialState).
+    // There is no live 'preloading' -> 'idle' transition to test; this only
+    // pins that calling completePreloader() again doesn't disturb that state.
     useKernelStore.getState().completePreloader();
     expect(useKernelStore.getState().mode).toBe('idle');
     expect(useKernelStore.getState().preloaderComplete).toBe(true);

@@ -6,13 +6,14 @@
  * redundant /auth/refresh calls that would fail (token already revoked).
  *
  * jsdom does not ship BroadcastChannel, so we provide a minimal mock.
+ *
+ * NOTE: the app is single-user / server-resolved workspace (see
+ * src/lib/auth-store.ts) — AuthBroadcastMessage carries no workspaceId.
  */
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import {
   getAccessToken,
   setAccessToken,
-  getWorkspaceId,
-  setWorkspaceId,
   getAuthChannel,
   broadcastTokenRefresh,
   broadcastLogout,
@@ -70,7 +71,6 @@ beforeEach(() => {
 
   // Reset in-memory store
   setAccessToken(null);
-  setWorkspaceId(null);
   closeAuthChannel();
 
   // Clear channel registry
@@ -121,31 +121,12 @@ describe('BroadcastChannel auth coordination', () => {
       const received: AuthBroadcastMessage[] = [];
       tabB.onmessage = (e) => received.push(e.data);
 
-      broadcastTokenRefresh('new-access-token', 42);
+      broadcastTokenRefresh('new-access-token');
 
       expect(received).toHaveLength(1);
       expect(received[0]).toEqual({
         type: 'token-refresh',
         accessToken: 'new-access-token',
-        workspaceId: 42,
-      });
-
-      tabB.close();
-    });
-
-    it('includes null workspaceId when workspace is not set', () => {
-      getAuthChannel();
-
-      const tabB = new MockBroadcastChannel(AUTH_CHANNEL_NAME);
-      const received: AuthBroadcastMessage[] = [];
-      tabB.onmessage = (e) => received.push(e.data);
-
-      broadcastTokenRefresh('tok', null);
-
-      expect(received[0]).toEqual({
-        type: 'token-refresh',
-        accessToken: 'tok',
-        workspaceId: null,
       });
 
       tabB.close();
@@ -170,10 +151,9 @@ describe('BroadcastChannel auth coordination', () => {
   });
 
   describe('receiving token-refresh from another tab', () => {
-    it('updates in-memory access token and workspace ID', () => {
+    it('updates in-memory access token', () => {
       // This tab has an old token
       setAccessToken('old-token');
-      setWorkspaceId(1);
 
       // Initialize our channel listener
       getAuthChannel();
@@ -183,29 +163,9 @@ describe('BroadcastChannel auth coordination', () => {
       otherTab.postMessage({
         type: 'token-refresh',
         accessToken: 'refreshed-token',
-        workspaceId: 99,
       } satisfies AuthBroadcastMessage);
 
       expect(getAccessToken()).toBe('refreshed-token');
-      expect(getWorkspaceId()).toBe(99);
-
-      otherTab.close();
-    });
-
-    it('handles null workspace ID in broadcast', () => {
-      setAccessToken('old');
-      setWorkspaceId(5);
-      getAuthChannel();
-
-      const otherTab = new MockBroadcastChannel(AUTH_CHANNEL_NAME);
-      otherTab.postMessage({
-        type: 'token-refresh',
-        accessToken: 'new',
-        workspaceId: null,
-      } satisfies AuthBroadcastMessage);
-
-      expect(getAccessToken()).toBe('new');
-      expect(getWorkspaceId()).toBeNull();
 
       otherTab.close();
     });
@@ -217,7 +177,6 @@ describe('BroadcastChannel auth coordination', () => {
       otherTab.postMessage({
         type: 'token-refresh',
         accessToken: 'broadcast-token',
-        workspaceId: 10,
       } satisfies AuthBroadcastMessage);
 
       // No fetch should have been called — token was received via broadcast
@@ -229,16 +188,14 @@ describe('BroadcastChannel auth coordination', () => {
   });
 
   describe('receiving logout from another tab', () => {
-    it('clears access token and workspace ID', () => {
+    it('clears access token', () => {
       setAccessToken('active-token');
-      setWorkspaceId(42);
       getAuthChannel();
 
       const otherTab = new MockBroadcastChannel(AUTH_CHANNEL_NAME);
       otherTab.postMessage({ type: 'logout' } satisfies AuthBroadcastMessage);
 
       expect(getAccessToken()).toBeNull();
-      expect(getWorkspaceId()).toBeNull();
 
       otherTab.close();
     });
@@ -280,11 +237,6 @@ describe('auth.ts broadcasts via BroadcastChannel', () => {
       }),
     );
 
-    // Mock /api/v1/workspaces/current
-    fetchSpy.mockResolvedValueOnce(
-      mockAuthResponse({ workspace_id: 7, role: 'member' }),
-    );
-
     const { silentRefresh } = await import('@/lib/auth');
     await silentRefresh();
 
@@ -292,7 +244,6 @@ describe('auth.ts broadcasts via BroadcastChannel', () => {
     expect(received[0]).toEqual({
       type: 'token-refresh',
       accessToken: 'refreshed-jwt',
-      workspaceId: 7,
     });
 
     peerTab.close();
@@ -333,11 +284,6 @@ describe('auth.ts broadcasts via BroadcastChannel', () => {
       }),
     );
 
-    // Mock /api/v1/workspaces/current
-    fetchSpy.mockResolvedValueOnce(
-      mockAuthResponse({ workspace_id: 3, role: 'owner' }),
-    );
-
     const { login } = await import('@/lib/auth');
     await login('a@b.com', 'pass');
 
@@ -345,7 +291,6 @@ describe('auth.ts broadcasts via BroadcastChannel', () => {
     expect(received[0]).toEqual({
       type: 'token-refresh',
       accessToken: 'login-jwt',
-      workspaceId: 3,
     });
 
     peerTab.close();
@@ -365,11 +310,6 @@ describe('auth.ts broadcasts via BroadcastChannel', () => {
       }),
     );
 
-    // Mock /api/v1/workspaces/current
-    fetchSpy.mockResolvedValueOnce(
-      mockAuthResponse({ workspace_id: 5, role: 'owner' }),
-    );
-
     const { register } = await import('@/lib/auth');
     await register('b@c.com', 'pass', 'B');
 
@@ -377,7 +317,6 @@ describe('auth.ts broadcasts via BroadcastChannel', () => {
     expect(received[0]).toEqual({
       type: 'token-refresh',
       accessToken: 'reg-jwt',
-      workspaceId: 5,
     });
 
     peerTab.close();
@@ -395,7 +334,6 @@ describe('multi-tab race condition prevention', () => {
     // This prevents Tab B from using the now-revoked refresh token.
 
     setAccessToken('expired-token');
-    setWorkspaceId(1);
 
     // Tab B listener (our module acts as Tab B)
     getAuthChannel();
@@ -405,7 +343,6 @@ describe('multi-tab race condition prevention', () => {
     tabA.postMessage({
       type: 'token-refresh',
       accessToken: 'tab-a-refreshed-token',
-      workspaceId: 1,
     } satisfies AuthBroadcastMessage);
 
     // Tab B (our module) should now have the refreshed token
@@ -426,31 +363,26 @@ describe('multi-tab race condition prevention', () => {
     tabA.postMessage({
       type: 'token-refresh',
       accessToken: 'token-1',
-      workspaceId: 1,
     } satisfies AuthBroadcastMessage);
 
     tabA.postMessage({
       type: 'token-refresh',
       accessToken: 'token-2',
-      workspaceId: 2,
     } satisfies AuthBroadcastMessage);
 
     tabA.postMessage({
       type: 'token-refresh',
       accessToken: 'token-3',
-      workspaceId: 3,
     } satisfies AuthBroadcastMessage);
 
     // Should have the last token
     expect(getAccessToken()).toBe('token-3');
-    expect(getWorkspaceId()).toBe(3);
 
     tabA.close();
   });
 
   it('logout from any tab clears tokens in all tabs', () => {
     setAccessToken('active');
-    setWorkspaceId(10);
     getAuthChannel();
 
     // Another tab logs out
@@ -458,7 +390,6 @@ describe('multi-tab race condition prevention', () => {
     tabC.postMessage({ type: 'logout' } satisfies AuthBroadcastMessage);
 
     expect(getAccessToken()).toBeNull();
-    expect(getWorkspaceId()).toBeNull();
 
     tabC.close();
   });

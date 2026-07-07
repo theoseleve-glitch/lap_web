@@ -1,5 +1,6 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import { useKernelStore } from '@/experience/state/store';
+import { colors } from '@/lib/tokens';
 
 describe('TimingTower store integration', () => {
   beforeEach(() => {
@@ -16,7 +17,7 @@ describe('TimingTower store integration', () => {
     useKernelStore.getState().completeSector(0);
     const { hudTower } = useKernelStore.getState();
     expect(hudTower.sectors[0].status).toBe('completed');
-    expect(hudTower.sectors[0].color).toBe('#D946EF');
+    expect(hudTower.sectors[0].color).toBe(colors.racingPurple);
   });
 
   it('sector progress updates independently', () => {

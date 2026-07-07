@@ -87,19 +87,17 @@ describe('silentRefresh', () => {
 });
 
 describe('clearAuthState', () => {
-  it('wipes token, profile, and workspace', async () => {
+  it('wipes token and profile', async () => {
     const { clearAuthState } = await import('@/lib/auth');
-    const { setAccessToken, setUserProfile, setWorkspaceId, getAccessToken, getUserProfile, getWorkspaceId } = await import('@/lib/auth-store');
+    const { setAccessToken, setUserProfile, getAccessToken, getUserProfile } = await import('@/lib/auth-store');
 
     setAccessToken('test-token');
     setUserProfile({ id: 1, email: 'a@b.com', display_name: 'A' });
-    setWorkspaceId(42);
 
     clearAuthState();
 
     expect(getAccessToken()).toBeNull();
     expect(getUserProfile()).toBeNull();
-    expect(getWorkspaceId()).toBeNull();
   });
 });
 

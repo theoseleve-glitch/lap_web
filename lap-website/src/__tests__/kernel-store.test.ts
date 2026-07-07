@@ -1,5 +1,6 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import { useKernelStore } from '@/experience/state/store';
+import { colors } from '@/lib/tokens';
 
 describe('KernelStore', () => {
   beforeEach(() => {
@@ -7,11 +8,16 @@ describe('KernelStore', () => {
   });
 
   it('initializes with default state', () => {
+    // NOTE: Preloader (src/experience/preloader/Preloader.tsx) is orphaned —
+    // never mounted anywhere in the app — so the store boots straight into
+    // 'idle' with the preloader already marked complete (see store.ts
+    // initialState), not a 'preloading' gate.
     const state = useKernelStore.getState();
     expect(state.currentChapter).toBe(0);
-    expect(state.mode).toBe('preloading');
+    expect(state.mode).toBe('idle');
     expect(state.qualityTier).toBe('high');
-    expect(state.preloaderComplete).toBe(false);
+    expect(state.preloaderComplete).toBe(true);
+    expect(state.loadProgress).toBe(1);
     expect(state.scrollVelocity).toBe(0);
     expect(state.pointerX).toBe(0.5);
     expect(state.pointerY).toBe(0.5);
@@ -88,7 +94,7 @@ describe('Extended KernelStore — HUD state', () => {
     completeSector(0);
     const { hudTower } = useKernelStore.getState();
     expect(hudTower.sectors[0].status).toBe('completed');
-    expect(hudTower.sectors[0].color).toBe('#D946EF');
+    expect(hudTower.sectors[0].color).toBe(colors.racingPurple);
     expect(hudTower.activeSectorIndex).toBe(1);
   });
 
