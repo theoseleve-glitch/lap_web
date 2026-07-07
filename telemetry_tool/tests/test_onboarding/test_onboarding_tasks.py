@@ -296,6 +296,46 @@ class TestMissingRequiredEnvAtEmailTimeMarksDraftFailed:
         assert statuses[-1] == "draft_failed"
 
 
+class TestRealSam2PreflightFailureFallsBackToRealGpsOnlyDraft:
+    """Closer-to-real check of the SAM2-in-prod gap this ticket closes:
+    with the trackreco env vars unset (the default -- no torch/SAM2 in this
+    worker), the REAL sam2_draft (not mocked) must fail its preflight and
+    return None, and the REAL gps_only_draft (not mocked either) must then
+    produce a usable draft -- the whole task completing without raising."""
+
+    def test_unset_trackreco_env_falls_back_to_real_gps_only_draft(
+        self, _mock_repo, _mock_tokens, _mock_validate_bbox, _mock_save_draft,
+        _mock_send_email, conn, monkeypatch,
+    ):
+        monkeypatch.delenv("ONBOARDING_TRACKRECO_DIR", raising=False)
+        monkeypatch.delenv("ONBOARDING_TRACKRECO_PYTHON", raising=False)
+
+        # A closed-enough oval centerline so the real gps_only_draft succeeds.
+        import math
+        lat0, lon0 = 45.0, 5.0
+        mx = math.cos(math.radians(lat0)) * 111_320.0
+        my = 110_540.0
+        centerline = []
+        for k in range(30):
+            t = 2.0 * math.pi * k / 30
+            x, y = 60.0 * math.cos(t), 35.0 * math.sin(t)
+            centerline.append([lon0 + x / mx, lat0 + y / my])
+
+        row_after_claim = _row(draft_centerline=centerline)
+        row_before_email = _row(draft_centerline=centerline, token_jti="jti-1", emailed_at=None)
+        _mock_repo.get.side_effect = [row_after_claim, row_before_email]
+
+        result = onboarding_tasks._run_draft_and_notify(_REQUEST_ID, conn)
+
+        assert result == {"ok": True, "status": "drafted_gps_only"}
+        drafted_call = _mock_repo.set_status.call_args_list[0]
+        assert drafted_call.args[:3] == (conn, _REQUEST_ID, "drafted_gps_only")
+        assert drafted_call.kwargs["draft_status"] == "gps_only"
+        saved_geojson = _mock_save_draft.call_args.args[1]
+        assert saved_geojson["properties"]["review_source"] == "gps_only_draft"
+        _mock_send_email.delay.assert_called_once()
+
+
 class TestMintFailureMarksDraftFailed:
     """M2: tokens.mint raising TokenError (e.g. unset ONBOARDING_TOKEN_SECRET)
     must not raise into Celery either -- same draft_failed treatment."""

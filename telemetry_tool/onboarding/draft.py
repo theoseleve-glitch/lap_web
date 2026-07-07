@@ -94,6 +94,18 @@ _RING_RESAMPLE_MIN = MIN_BOUNDARY_POINTS + 5
 _SAM2_TIMEOUT_S = 900
 _SAM2_SCRIPT_RELPATH = ("scripts", "lap_track_to_draft.py")
 
+# Interpreter used to run the trackreco SAM2 script. The worker image is
+# deliberately kept SAM2-free (no torch, no imagery/segmentation deps -- see
+# Dockerfile) to stay lean; SAM2 support comes ENTIRELY from a separately
+# provisioned trackreco-main checkout + its own venv (see
+# docs/runbooks/track-onboarding-deploy.md's SAM2 provisioning section).
+# Unset = fall back to ``sys.executable`` (this process's own interpreter),
+# the pre-existing behavior -- which is exactly what makes SAM2 silently
+# unusable in the worker container (it has no torch), hence
+# ``_sam2_preflight`` below treating an unset value as a skip reason rather
+# than attempting a subprocess that is known to fail.
+_SAM2_PYTHON_ENV = "ONBOARDING_TRACKRECO_PYTHON"
+
 # request_id is server-derived (a uuid, per repo.py's gen_random_uuid()) --
 # this is intentionally stricter than "no path separators": no dots either,
 # so accidental "../.." style values are rejected outright rather than
@@ -354,20 +366,79 @@ def _trackreco_script() -> Path | None:
     return None
 
 
+def _sam2_python_executable() -> str:
+    """Interpreter to invoke the trackreco SAM2 script with.
+
+    ``ONBOARDING_TRACKRECO_PYTHON`` should point at the trackreco-main
+    checkout's OWN venv interpreter (the one with torch/segment-anything
+    installed) so this worker's SAM2-free interpreter is never asked to run
+    heavy-dependency code. Falls back to ``sys.executable`` (the pre-
+    existing behavior) when unset -- kept graceful/backward-compatible for
+    any environment where the calling interpreter happens to have the
+    deps itself (e.g. a from-scratch local dev venv with everything
+    installed), even though ``_sam2_preflight`` treats an unset value as a
+    reason to skip attempting the subprocess at all in the normal case.
+    """
+    return os.environ.get(_SAM2_PYTHON_ENV) or sys.executable
+
+
+def _sam2_preflight() -> str:
+    """Cheap, side-effect-free check of whether a SAM2 draft attempt is
+    likely to succeed. Returns ``"ok"`` or a short human-readable reason.
+
+    Checks, in order (first failure wins): ``ONBOARDING_TRACKRECO_DIR`` is
+    set and exists, the trackreco script exists under it, and
+    ``ONBOARDING_TRACKRECO_PYTHON`` is set and exists. Deliberately does
+    NOT import numpy/pandas/torch or execute anything -- pure filesystem/
+    env checks, safe to call on every single draft attempt. (The trackreco
+    script has no cheap ``--check``/deps-import mode today, so that layer
+    of the check is not implemented; the reasons above already cover every
+    failure mode seen in practice -- missing checkout, missing script,
+    missing/wrong interpreter.)
+
+    Never raises -- callers log the returned reason (see :func:`sam2_draft`)
+    so an operator can tell WHY a track got a GPS-only draft instead of a
+    SAM2 one, without a failure ever being fatal to the drafting flow.
+    """
+    trackreco_dir = os.environ.get("ONBOARDING_TRACKRECO_DIR")
+    if not trackreco_dir:
+        return "ONBOARDING_TRACKRECO_DIR is not set"
+    base = Path(trackreco_dir)
+    if not base.is_dir():
+        return f"ONBOARDING_TRACKRECO_DIR={trackreco_dir!r} does not exist"
+
+    script = base.joinpath(*_SAM2_SCRIPT_RELPATH)
+    if not script.is_file():
+        return f"trackreco script not found at {script}"
+
+    python = os.environ.get(_SAM2_PYTHON_ENV)
+    if not python:
+        return (
+            f"{_SAM2_PYTHON_ENV} is not set (would fall back to this "
+            "worker's own interpreter, which normally lacks SAM2/torch)"
+        )
+    if not Path(python).is_file():
+        return f"{_SAM2_PYTHON_ENV}={python!r} does not exist"
+
+    return "ok"
+
+
 def sam2_draft(bbox: dict, session_gps) -> dict | None:
     """Best-effort SAM2 satellite draft. Returns the geojson dict, or ``None``.
 
     NEVER raises: an invalid bbox, an absent trackreco-main checkout, a
-    session with too few GPS points, missing heavy deps (numpy/pandas/torch)
-    inside the child process, a timeout, a non-zero exit, or an unreadable/
-    malformed output file all simply produce ``None`` so the caller falls
-    back to :func:`gps_only_draft`.
+    session with too few GPS points, a failed :func:`_sam2_preflight`,
+    missing heavy deps (numpy/pandas/torch) inside the child process, a
+    timeout, a non-zero exit, or an unreadable/malformed output file all
+    simply produce ``None`` so the caller falls back to :func:`gps_only_draft`.
 
     Shells ``Analysis/trackreco-main/scripts/lap_track_to_draft.py --name
     <slug> --session-csv <tmp.csv> --zoom 19 --backend auto``, which itself
     invokes ``build_satellite_gt.py`` and writes
     ``data/satellite_gt/<slug>/gt_<slug>.geojson`` (verified by reading
-    both scripts) -- that file is parsed and returned as-is.
+    both scripts) -- that file is parsed and returned as-is. Invoked with
+    ``_sam2_python_executable()`` (see :data:`_SAM2_PYTHON_ENV`), NOT
+    necessarily this worker's own interpreter.
     """
     try:
         validate_bbox(bbox)
@@ -377,8 +448,22 @@ def sam2_draft(bbox: dict, session_gps) -> dict | None:
             logger.info("sam2_draft: skip (only %d session GPS points, need >= 10)", len(points))
             return None
 
+        reason = _sam2_preflight()
+        if reason != "ok":
+            logger.info("SAM2 draft skipped: %s", reason)
+            return None
+        logger.info(
+            "SAM2 draft attempting (trackreco_dir=%s, interpreter=%s)",
+            os.environ.get("ONBOARDING_TRACKRECO_DIR"),
+            _sam2_python_executable(),
+        )
+
         script = _trackreco_script()
         if script is None:
+            # Preflight passed (it independently re-derives the same
+            # ONBOARDING_TRACKRECO_DIR-relative path) so this should not
+            # normally happen -- kept as a defensive fallback rather than
+            # assuming the two can never disagree.
             logger.info("sam2_draft: skip (trackreco-main checkout not found)")
             return None
         repo_root = script.parents[1]
@@ -392,7 +477,7 @@ def sam2_draft(bbox: dict, session_gps) -> dict | None:
 
             slug = "obdraft" + uuid.uuid4().hex[:16]
             cmd = [
-                sys.executable, str(script),
+                _sam2_python_executable(), str(script),
                 "--name", slug,
                 "--session-csv", str(csv_path),
                 "--zoom", "19",

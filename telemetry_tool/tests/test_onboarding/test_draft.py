@@ -193,6 +193,121 @@ def test_sam2_draft_returns_none_on_too_few_gps_points(monkeypatch):
     assert result is None
 
 
+# ── _sam2_preflight ──────────────────────────────────────────────────────
+
+def _make_trackreco_checkout(tmp_path):
+    """A tmp dir with the trackreco script (but no interpreter) in place."""
+    script = tmp_path.joinpath(*draft._SAM2_SCRIPT_RELPATH)
+    script.parent.mkdir(parents=True, exist_ok=True)
+    script.write_text("# stub\n", encoding="utf-8")
+    return tmp_path
+
+
+def test_sam2_preflight_reason_when_dir_env_unset(monkeypatch):
+    monkeypatch.delenv("ONBOARDING_TRACKRECO_DIR", raising=False)
+    reason = draft._sam2_preflight()
+    assert reason == "ONBOARDING_TRACKRECO_DIR is not set"
+
+
+def test_sam2_preflight_reason_when_dir_does_not_exist(monkeypatch, tmp_path):
+    missing = tmp_path / "does-not-exist"
+    monkeypatch.setenv("ONBOARDING_TRACKRECO_DIR", str(missing))
+    reason = draft._sam2_preflight()
+    assert "does not exist" in reason
+    assert "does-not-exist" in reason
+
+
+def test_sam2_preflight_reason_when_script_missing(monkeypatch, tmp_path):
+    # Directory exists but has no scripts/lap_track_to_draft.py under it.
+    monkeypatch.setenv("ONBOARDING_TRACKRECO_DIR", str(tmp_path))
+    reason = draft._sam2_preflight()
+    assert "trackreco script not found" in reason
+
+
+def test_sam2_preflight_reason_when_interpreter_env_unset(monkeypatch, tmp_path):
+    _make_trackreco_checkout(tmp_path)
+    monkeypatch.setenv("ONBOARDING_TRACKRECO_DIR", str(tmp_path))
+    monkeypatch.delenv("ONBOARDING_TRACKRECO_PYTHON", raising=False)
+    reason = draft._sam2_preflight()
+    assert "ONBOARDING_TRACKRECO_PYTHON is not set" in reason
+
+
+def test_sam2_preflight_reason_when_interpreter_does_not_exist(monkeypatch, tmp_path):
+    _make_trackreco_checkout(tmp_path)
+    monkeypatch.setenv("ONBOARDING_TRACKRECO_DIR", str(tmp_path))
+    missing_python = tmp_path / "no-such-python.exe"
+    monkeypatch.setenv("ONBOARDING_TRACKRECO_PYTHON", str(missing_python))
+    reason = draft._sam2_preflight()
+    assert "does not exist" in reason
+    assert "no-such-python.exe" in reason
+
+
+def test_sam2_preflight_ok_when_everything_present(monkeypatch, tmp_path):
+    _make_trackreco_checkout(tmp_path)
+    monkeypatch.setenv("ONBOARDING_TRACKRECO_DIR", str(tmp_path))
+    fake_python = tmp_path / "fake_python.exe"
+    fake_python.write_text("", encoding="utf-8")
+    monkeypatch.setenv("ONBOARDING_TRACKRECO_PYTHON", str(fake_python))
+    assert draft._sam2_preflight() == "ok"
+
+
+# ── sam2_draft: interpreter selection + preflight gating ─────────────────
+
+def test_sam2_draft_skips_without_raising_when_preflight_fails(monkeypatch):
+    # No ONBOARDING_TRACKRECO_DIR/PYTHON set in this test process -> preflight
+    # fails -> sam2_draft must skip (return None) WITHOUT ever touching
+    # subprocess.run, never raising.
+    monkeypatch.delenv("ONBOARDING_TRACKRECO_DIR", raising=False)
+    monkeypatch.delenv("ONBOARDING_TRACKRECO_PYTHON", raising=False)
+
+    def _boom(*a, **k):
+        raise AssertionError("subprocess.run must not be called when preflight fails")
+
+    monkeypatch.setattr(draft.subprocess, "run", _boom)
+    result = draft.sam2_draft(VALID_BBOX, _session_gps_from_centerline())
+    assert result is None
+
+
+def test_sam2_draft_uses_configured_interpreter(monkeypatch, tmp_path):
+    checkout = _make_trackreco_checkout(tmp_path)
+    monkeypatch.setenv("ONBOARDING_TRACKRECO_DIR", str(checkout))
+    configured_python = tmp_path / "trackreco_venv_python.exe"
+    configured_python.write_text("", encoding="utf-8")
+    monkeypatch.setenv("ONBOARDING_TRACKRECO_PYTHON", str(configured_python))
+
+    captured_cmd = {}
+
+    class _Result:
+        returncode = 1  # non-zero so sam2_draft returns None right after capturing cmd
+        stdout = b""
+        stderr = b""
+
+    def _fake_run(cmd, **kwargs):
+        captured_cmd["cmd"] = cmd
+        return _Result()
+
+    monkeypatch.setattr(draft.subprocess, "run", _fake_run)
+    result = draft.sam2_draft(VALID_BBOX, _session_gps_from_centerline())
+
+    assert result is None
+    assert captured_cmd["cmd"][0] == str(configured_python)
+
+
+def test_sam2_draft_falls_back_to_gps_only_draft_on_preflight_failure(monkeypatch):
+    """Integration-style check of the module docstring's contract: when
+    sam2_draft yields None (here, via a failing preflight), the caller
+    (tasks.onboarding_tasks._run_draft_and_notify) falls back to
+    gps_only_draft, and that fallback itself never raises."""
+    monkeypatch.delenv("ONBOARDING_TRACKRECO_DIR", raising=False)
+    monkeypatch.delenv("ONBOARDING_TRACKRECO_PYTHON", raising=False)
+
+    geojson = draft.sam2_draft(VALID_BBOX, _session_gps_from_centerline())
+    assert geojson is None
+
+    fallback = draft.gps_only_draft(SAMPLE_CENTERLINE_LONLAT)
+    assert fallback["properties"]["review_source"] == "gps_only_draft"
+
+
 # ── save_draft / load_draft ────────────────────────────────────────────────
 
 def test_save_and_load_draft_round_trip(tmp_path, monkeypatch):

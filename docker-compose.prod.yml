@@ -144,6 +144,21 @@ services:
     volumes:
       - sidecar_data:/data/sidecars
       - onboarding_draft_data:/data/onboarding_drafts
+      # ── SAM2 satellite-GT drafting, OPTIONAL / host-provided ──────────
+      # Absent by default: the stack boots fine without these, sam2_draft's
+      # preflight (telemetry_tool/onboarding/draft.py::_sam2_preflight)
+      # simply reports the trackreco checkout/weights as missing and every
+      # onboarding draft is the zero-dependency GPS-only fallback (see
+      # gps_only_draft). Torch/SAM2 are deliberately NOT baked into this
+      # worker's own image (Dockerfile stays lean) -- SAM2 support comes
+      # ENTIRELY from a separately provisioned trackreco-main checkout +
+      # its own venv, mounted read-only. To enable: provision per
+      # docs/runbooks/track-onboarding-deploy.md's SAM2 section, set
+      # ONBOARDING_TRACKRECO_DIR (and, if you keep weights outside the
+      # checkout, ONBOARDING_TRACKRECO_WEIGHTS_DIR) to the SAME absolute
+      # path on the host and in .env.production, then uncomment:
+      # - ${ONBOARDING_TRACKRECO_DIR}:${ONBOARDING_TRACKRECO_DIR}:ro
+      # - ${ONBOARDING_TRACKRECO_WEIGHTS_DIR}:${ONBOARDING_TRACKRECO_WEIGHTS_DIR}:ro
     healthcheck:
       test: ["CMD-SHELL", "celery -A telemetry_tool.celery_app inspect ping --timeout 5"]
       interval: 30s

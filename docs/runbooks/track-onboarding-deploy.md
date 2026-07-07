@@ -59,7 +59,8 @@ ssh root@46.225.227.24 "cd /opt/lap-api && docker compose -f docker-compose.prod
 | `ONBOARDING_DRAFT_DIR` | `/data/onboarding_drafts` | Set **explicitly** (F3) — do not rely on the `..` fallback. |
 | `CORS_ALLOWED_ORIGINS` | `https://www.lap-coach.racing,https://lap-coach.racing,<ANNOTATOR_ORIGIN>` | **Required.** App-wide allowlist (no route-scoping). Without the annotator origin, its `fetch()` fails CORS as a silent "network error". |
 | `ONBOARDING_TOKEN_TTL_HOURS` | *(leave unset → 72h)* | Optional. |
-| `ONBOARDING_TRACKRECO_DIR` | *(leave unset)* | Unset = safe GPS-only drafts. SAM2-in-prod is a fast-follow. |
+| `ONBOARDING_TRACKRECO_DIR` | *(leave unset)* | Unset = safe GPS-only drafts. SAM2-in-prod is a fast-follow -- see the dedicated section below if/when you provision it. |
+| `ONBOARDING_TRACKRECO_PYTHON` | *(leave unset)* | Same as above -- part of the optional SAM2 provisioning, not required for this deploy. |
 ```bash
 ssh root@46.225.227.24 "cd /opt/lap-api && docker compose -f docker-compose.prod.yml up -d api celery-pipeline celery-default celery-beat"
 ```
@@ -89,8 +90,48 @@ Expect the ~6 `skipif`-gated PG tests (dedup-race, CAS claim, blessed-write refu
 
 **Un-bless (if ever needed):** remove `gt_<canonical_id>.geojson` + its `track_aliases.json` entry from `GT_RUNTIME_DIR`, `invalidate_gt_cache(canonical_id)` (or restart), and reset the row's `status` from `blessed` in SQL (the app refuses to mutate a `blessed` row by design).
 
+## Optional — Provisioning SAM2 satellite drafting in prod (fast-follow, not required to ship the loop)
+
+By default `celery-default` only ever runs `gps_only_draft` (`telemetry_tool/onboarding/draft.py`) — `sam2_draft` needs a SAM2-capable Python environment this worker's own lean image does NOT ship (no torch, no imagery/segmentation deps — see `Dockerfile`). This section wires that up. It is entirely optional and additive: skip it and the loop keeps working exactly as documented above (GPS-only drafts, human-reviewed in the annotator either way — review is mandatory regardless of draft source, see the honesty note below).
+
+**Read the log first.** `sam2_draft` calls `_sam2_preflight()` on every single attempt and logs one of:
+- `SAM2 draft skipped: <reason>` — the reason names exactly which of the 3 requirements below is missing (dir/script/interpreter), so you never have to guess why a track got a GPS-only draft.
+- `SAM2 draft attempting (trackreco_dir=..., interpreter=...)` — config looks complete; a subsequent `sam2_draft: lap_track_to_draft.py exited N: ...` line or a silent timeout (`_SAM2_TIMEOUT_S=900`) means the trackreco side itself failed — inspect that log line / the trackreco-main repo, not this one.
+
+**1. Clone + build the trackreco-main venv (on the VPS, once)**
+```bash
+ssh root@46.225.227.24
+mkdir -p /opt/trackreco-main && cd /opt/trackreco-main
+git clone <trackreco-main remote> .          # or scp/rsync an existing checkout across
+git checkout <sha that has scripts/lap_track_to_draft.py>
+python3.11 -m venv .venv
+.venv/bin/pip install -e '.[sam]'
+```
+`pyproject.toml`'s `[project.optional-dependencies].sam` extra (`segment-anything @ git+https://github.com/facebookresearch/segment-anything.git`) transitively pulls in torch — expect a sizeable (several-hundred-MB), slow install. This venv is intentionally kept OUT of the `lap_web` worker image (see the honesty note below on why this stays worker-external).
+
+**2. Obtain the SAM2 checkpoint weights**
+NOT committed to any repo (a multi-hundred-MB to multi-GB binary — do not `git add` it anywhere). Download the official Meta-published checkpoint (e.g. `sam_vit_h_4b8939.pth` for ViT-H) from the `segment-anything` project's release assets into a directory of your choosing, e.g. `/opt/trackreco-main/checkpoints/sam2/`. Confirm against trackreco-main's own config/code (`scripts/build_satellite_gt.py` / `trackreco_platform/satellite_gt/segmentation.py`) exactly which checkpoint filename/path it expects — that detail lives in the sibling repo, out of scope here.
+
+**3. Set the env vars — SAME absolute path in both `/opt/lap-api/.env.production` (container-side; the app reads these) and `/opt/lap-api/.env` (compose-side; only needed if you use the templated mount lines in step 4)**:
+```
+ONBOARDING_TRACKRECO_DIR=/opt/trackreco-main
+ONBOARDING_TRACKRECO_PYTHON=/opt/trackreco-main/.venv/bin/python
+# only if you keep weights outside the checkout:
+ONBOARDING_TRACKRECO_WEIGHTS_DIR=/opt/trackreco-main/checkpoints/sam2
+```
+
+**4. Mount into the worker and restart**
+Uncomment the two `# -` volume lines already present (commented, inert) under `celery-default` in `docker-compose.prod.yml`, then:
+```bash
+docker compose -f docker-compose.prod.yml up -d celery-default
+docker compose -f docker-compose.prod.yml logs --tail=40 celery-default | grep -i "SAM2 draft"
+```
+Trigger a real onboarding draft (Post-deploy verification, step 1, above) and confirm the log now reads `SAM2 draft attempting` instead of `SAM2 draft skipped`. *Rollback: re-comment the two mount lines and `up -d celery-default` again — the app tolerates the mount vanishing exactly like it tolerates it never having existed (preflight fails closed to GPS-only, nothing crashes).*
+
+**Honesty note — GPU/CPU and review stay mandatory.** SAM2/segment-anything is a vision transformer that wants a GPU; this VPS is CPU-only, so a SAM2 attempt is considerably slower than the GPS-only path (seconds vs. potentially many minutes — `_SAM2_TIMEOUT_S=900` gives it 15 minutes before giving up and falling back to GPS-only). That is acceptable for how this feature is actually used — an operator manually triggering onboarding for one unrecognized track at a time, not a hot path — but do not expect it to be fast, and do not provision a GPU for this alone without a separate cost/benefit conversation. **Human review in the annotator stays MANDATORY regardless of draft source** (SAM2's own measured accuracy against held-out ground truth was ~1.9 m MAE vs. a 1.0 m target in the geometry-factory work) — a SAM2 draft is a better STARTING POINT for the annotator to correct, never a bypass of review. GPS-only remains the permanent, zero-dependency default and is never removed by provisioning the above.
+
 ## Accepted known-limitations (non-blocking)
-- **SAM2 satellite drafting unavailable in prod** (`ONBOARDING_TRACKRECO_DIR` unset) → `drafted_gps_only` (loop still completes; rougher centerline). Wiring SAM2 into the worker image is a fast-follow.
+- **SAM2 satellite drafting disabled by default in prod** (`ONBOARDING_TRACKRECO_DIR`/`ONBOARDING_TRACKRECO_PYTHON` unset) → `drafted_gps_only` (loop still completes; rougher centerline). See "Optional — Provisioning SAM2 satellite drafting in prod" above to enable it.
 - **Auto-resend may spend one email slot without sending** if the broker enqueue fails after `claim_resend` commits (biases toward *less* nagging, never double-send; `MAX_EMAILS=4`; recovery = `UPDATE … SET email_count=0`).
 - **Rate limiter fails open on a Redis outage** on the two public routes — pre-existing app-wide behavior; the HMAC one-shot token is the real auth boundary, so this removes throttling only, not access.
 - **Blessed GT lives only in the runtime volume until reconciled to git** (`data/ground_truth/`). A lost/reprovisioned volume before reconcile silently reverts corrections — do the periodic reconcile-to-git step.
