@@ -25,6 +25,14 @@ _OAUTH_PATH_RE = re.compile(r"^/auth/oauth/[a-z]+(/callback)?$")
 # Matches /api/v1/devices/pair/<uuid>/status for unauthenticated poll
 _DEVICE_PAIR_STATUS_RE = re.compile(r"^/api/v1/devices/pair/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/status$")
 
+# Path prefixes that require a valid JWT. ``/api/ingest/`` (streaming ingest
+# job status/SSE, see web/routes/ingest.py) used to fall outside this list
+# entirely -- it was reachable with no auth at all because it doesn't start
+# with /api/v1/. Confirmed cross-tenant IDOR risk (ingestion_jobs RLS policy
+# has no missing_ok fallback, see migration 083); bring it under the same
+# enforcement as /api/v1/.
+_AUTH_ENFORCED_PREFIXES = ("/api/v1/", "/api/ingest/")
+
 
 def auth_middleware() -> Response | tuple | None:
     """Before-request hook: decode JWT if present.
@@ -66,7 +74,7 @@ def auth_middleware() -> Response | tuple | None:
         return None
 
     # Skip for legacy HTML routes (backward compat)
-    if not request.path.startswith("/api/v1/"):
+    if not request.path.startswith(_AUTH_ENFORCED_PREFIXES):
         return None
 
     token = _extract_token()

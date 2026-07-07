@@ -12,6 +12,13 @@ from flask.wrappers import Response
 
 logger = logging.getLogger(__name__)
 
+# Kept in sync with web.middleware.auth._AUTH_ENFORCED_PREFIXES -- any path
+# that requires a JWT must also get workspace_id resolved + RLS context set,
+# otherwise handlers either crash on an unset g.workspace_id or (worse) fall
+# back to an unscoped query. /api/ingest/ was missing here, which is how the
+# ingestion_jobs cross-tenant IDOR was possible (see migration 083).
+_TENANT_ENFORCED_PREFIXES = ("/api/v1/", "/api/ingest/")
+
 
 def tenant_middleware() -> Response | tuple | None:
     """Before-request hook: resolve workspace and set RLS context.
@@ -24,7 +31,7 @@ def tenant_middleware() -> Response | tuple | None:
         return None  # SQLite mode — no tenancy
 
     # Only apply to API routes
-    if not request.path.startswith("/api/v1/"):
+    if not request.path.startswith(_TENANT_ENFORCED_PREFIXES):
         return None
 
     # Legacy mode: use system default workspace

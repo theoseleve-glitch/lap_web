@@ -26,6 +26,16 @@ _LEGACY_PREFIXES = (
     "/analytics",
     "/leaderboard",
     "/tracks",
+    # web/routes/ingest.py (old streaming-ingest SSE/polling blueprint) is
+    # fully superseded by the workspace-scoped /api/v1/jobs blueprint
+    # (web/routes/jobs.py + tasks/job_registry.py) and has no known caller.
+    # It was reachable with no auth at all (outside /api/v1/, see
+    # web/middleware/auth.py) and its JobStore queried ingestion_jobs with
+    # no workspace predicate — a confirmed cross-tenant IDOR. Blocked
+    # outright in production rather than kept alive as a second, harder to
+    # audit code path. auth/tenant middleware + JobStore now scope it too
+    # (defense in depth) in case this guard is ever relaxed.
+    "/api/ingest",
 )
 
 

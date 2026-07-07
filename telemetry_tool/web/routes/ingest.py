@@ -24,7 +24,7 @@ import os
 import time
 from typing import Any, Optional
 
-from flask import Blueprint, Response, jsonify
+from flask import Blueprint, Response, g, jsonify
 from web.api_utils import api_error, api_response, ErrorCode
 
 logger = logging.getLogger(__name__)
@@ -111,8 +111,13 @@ class JobStore:
             logger.debug("JobStore persist_update failed (non-fatal): %s", exc)
 
     def register(self, job_id: str, file_path: str, file_size: int,
-                 sha256_partial: str = "") -> None:
-        """Register a new ingestion job."""
+                 sha256_partial: str = "", workspace_id: Optional[int] = None) -> None:
+        """Register a new ingestion job.
+
+        ``workspace_id`` is stamped onto the in-memory cache entry so a
+        later ``get``/``list_recent`` call from a *different* workspace
+        cannot read it back, even before the SQLite/PG round-trip.
+        """
         job = {
             "job_id": job_id,
             "file_path": file_path,
@@ -122,6 +127,7 @@ class JobStore:
             "status": "pending",
             "progress": None,
             "started_at": time.time(),
+            "workspace_id": workspace_id,
         }
         self._cache[job_id] = job
         self._persist_register(job)
@@ -166,33 +172,55 @@ class JobStore:
             fields["error_message"] = error
         self._persist_update(job_id, **fields)
 
-    def get(self, job_id: str) -> Optional[dict]:
-        """Get a job by ID (memory cache first, then SQLite fallback)."""
-        if job_id in self._cache:
-            return self._cache[job_id]
-        # SQLite fallback for jobs from a previous Flask session
+    def get(self, job_id: str, workspace_id: Optional[int] = None) -> Optional[dict]:
+        """Get a job by ID (memory cache first, then SQLite/PG fallback).
+
+        When ``workspace_id`` is given (multi-tenant/PG mode), the lookup
+        is scoped to that workspace -- mirroring the predicate used by
+        ``tasks.job_registry.get_job`` -- so a caller can never read
+        another tenant's job even if RLS is misconfigured or bypassed.
+        """
+        cached = self._cache.get(job_id)
+        if cached is not None:
+            if workspace_id is not None and cached.get("workspace_id") != workspace_id:
+                return None
+            return cached
+        # SQLite/PG fallback for jobs from a previous Flask session
         conn = self._get_conn()
         if conn is None:
             return None
         try:
-            row = conn.execute(
-                "SELECT job_id, file_path, file_size, status, started_at, "
-                "elapsed_s, error_message FROM ingestion_jobs WHERE job_id=?",
-                (job_id,),
-            ).fetchone()
+            if workspace_id is not None:
+                row = conn.execute(
+                    "SELECT job_id, file_path, file_size, status, started_at, "
+                    "elapsed_s, error_message FROM ingestion_jobs "
+                    "WHERE job_id=? AND workspace_id=?",
+                    (job_id, workspace_id),
+                ).fetchone()
+            else:
+                row = conn.execute(
+                    "SELECT job_id, file_path, file_size, status, started_at, "
+                    "elapsed_s, error_message FROM ingestion_jobs WHERE job_id=?",
+                    (job_id,),
+                ).fetchone()
             if row:
                 job = dict(row)
                 job["file_name"] = os.path.basename(job.get("file_path", ""))
                 job["started_at"] = job.get("started_at", time.time())
+                job.setdefault("workspace_id", workspace_id)
                 self._cache[job_id] = job
                 return job
         except Exception:
             pass
         return None
 
-    def list_recent(self, limit: int = 50) -> list[dict]:
-        """List recent jobs (memory cache for active, SQLite for historical)."""
-        # Active jobs from cache
+    def list_recent(self, limit: int = 50, workspace_id: Optional[int] = None) -> list[dict]:
+        """List recent jobs (memory cache for active, SQLite/PG for historical).
+
+        When ``workspace_id`` is given, only jobs belonging to that
+        workspace are returned -- see ``get`` docstring.
+        """
+        # Active jobs from cache, scoped to the caller's workspace.
         active = [
             {
                 "job_id": j["job_id"],
@@ -203,22 +231,32 @@ class JobStore:
                 else j.get("elapsed_s", 0),
             }
             for j in self._cache.values()
+            if workspace_id is None or j.get("workspace_id") == workspace_id
         ]
         # If we have enough from cache, return immediately
         if len(active) >= limit:
             return active[:limit]
 
-        # Supplement with historical jobs from SQLite
+        # Supplement with historical jobs from SQLite/PG
         conn = self._get_conn()
         if conn is None:
             return active
         try:
-            rows = conn.execute(
-                "SELECT job_id, file_path, status, elapsed_s "
-                "FROM ingestion_jobs "
-                "ORDER BY started_at DESC LIMIT ?",
-                (limit,),
-            ).fetchall()
+            if workspace_id is not None:
+                rows = conn.execute(
+                    "SELECT job_id, file_path, status, elapsed_s "
+                    "FROM ingestion_jobs "
+                    "WHERE workspace_id=? "
+                    "ORDER BY started_at DESC LIMIT ?",
+                    (workspace_id, limit),
+                ).fetchall()
+            else:
+                rows = conn.execute(
+                    "SELECT job_id, file_path, status, elapsed_s "
+                    "FROM ingestion_jobs "
+                    "ORDER BY started_at DESC LIMIT ?",
+                    (limit,),
+                ).fetchall()
             cached_ids = {j["job_id"] for j in active}
             for row in rows:
                 d = dict(row)
@@ -237,9 +275,9 @@ _store = JobStore()
 # -- Public helpers (called by pipeline code) --------------------------
 
 def register_job(job_id: str, file_path: str, file_size: int,
-                 sha256_partial: str = "") -> None:
+                 sha256_partial: str = "", workspace_id: Optional[int] = None) -> None:
     """Register a new ingestion job for progress tracking."""
-    _store.register(job_id, file_path, file_size, sha256_partial)
+    _store.register(job_id, file_path, file_size, sha256_partial, workspace_id=workspace_id)
 
 
 def update_job_progress(job_id: str, progress_dict: dict) -> None:
@@ -260,7 +298,7 @@ def list_jobs():
     err = _check_flag()
     if err:
         return err
-    return api_response({"jobs": _store.list_recent()})
+    return api_response({"jobs": _store.list_recent(workspace_id=getattr(g, "workspace_id", None))})
 
 
 @bp.route("/<job_id>/status", methods=["GET"])
@@ -269,7 +307,7 @@ def get_status(job_id: str):
     err = _check_flag()
     if err:
         return err
-    job = _store.get(job_id)
+    job = _store.get(job_id, workspace_id=getattr(g, "workspace_id", None))
     if not job:
         return api_error(ErrorCode.NOT_FOUND, f"Job {job_id} not found", status=404)
     elapsed = (
@@ -291,7 +329,8 @@ def stream_progress(job_id: str):
     err = _check_flag()
     if err:
         return err
-    job = _store.get(job_id)
+    workspace_id = getattr(g, "workspace_id", None)
+    job = _store.get(job_id, workspace_id=workspace_id)
     if not job:
         return api_error(ErrorCode.NOT_FOUND, f"Job {job_id} not found", status=404)
 
@@ -299,7 +338,7 @@ def stream_progress(job_id: str):
         iterations = 0
         while iterations < _SSE_MAX_ITERATIONS:
             iterations += 1
-            j = _store.get(job_id)
+            j = _store.get(job_id, workspace_id=workspace_id)
             if not j:
                 yield f"data: {json.dumps({'error': 'job disappeared'})}\n\n"
                 break
