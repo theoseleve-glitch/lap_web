@@ -49,7 +49,7 @@ def _mock_redis(eval_return=None):
 class TestRateTierConfig:
     def test_auth_tier_exists(self):
         assert "auth" in RATE_TIERS
-        assert RATE_TIERS["auth"]["max_requests"] == 20
+        assert RATE_TIERS["auth"]["max_requests"] == 5
         assert RATE_TIERS["auth"]["window_seconds"] == 60
 
     def test_read_tier_exists(self):
@@ -72,8 +72,13 @@ class TestRateTierConfig:
         assert RATE_TIERS["upload"]["max_requests"] == 10
         assert RATE_TIERS["upload"]["window_seconds"] == 3600
 
-    def test_exactly_5_tiers(self):
-        assert len(RATE_TIERS) == 5
+    def test_expected_tiers(self):
+        # Assert the exact set of configured tiers (self-documenting; catches
+        # both accidental removals and undocumented additions).
+        assert set(RATE_TIERS) == {
+            "auth", "read", "write", "analyze", "upload",
+            "device_pair", "device_poll", "sync_upload", "marketing",
+        }
 
 
 # ---------------------------------------------------------------------------
