@@ -360,3 +360,75 @@ class TestDegradedAuthTierRateLimit:
             ]
         assert statuses[:max_requests] == [200] * max_requests
         assert statuses[max_requests] == 429
+
+
+# ---------------------------------------------------------------------------
+# Follow-up Fix #3 (integration): degraded-mode stats reflect Redis recovery
+# for the auth-tier rate limiter specifically.
+# ---------------------------------------------------------------------------
+
+class TestRateLimitDegradedRecoveryIntegration:
+    def setup_method(self):
+        from web import redis_health as redis_health_mod
+        redis_health_mod._degraded_state.clear()
+
+    def test_successful_eval_marks_recovery_after_outage(self):
+        from web.redis_health import get_degraded_mode_stats
+
+        app = _make_app(tier="auth")
+        client = app.test_client()
+        # Outage first -- degraded fallback engages.
+        with patch("web.rate_limit.get_redis", return_value=None):
+            client.get("/limited", environ_base={"REMOTE_ADDR": "99.99.99.1"})
+        assert get_degraded_mode_stats()["rate_limit_auth"]["recovered"] is False
+
+        # Redis is back.
+        mock_r = _mock_redis(eval_return=1)
+        with patch("web.rate_limit.get_redis", return_value=mock_r):
+            client.get("/limited", environ_base={"REMOTE_ADDR": "99.99.99.1"})
+        assert get_degraded_mode_stats()["rate_limit_auth"]["recovered"] is True
+
+
+# ---------------------------------------------------------------------------
+# Follow-up Fix #1: bounded degraded-mode buckets (crash-DoS).
+#
+# During a Redis outage, every distinct scope_value (attacker-controlled
+# email / rotated IP hitting the auth tier) used to create a dict entry
+# that was never removed -- unbounded growth could OOM a worker over a
+# long outage. The dict must stay capped via LRU eviction.
+# ---------------------------------------------------------------------------
+
+class TestDegradedAuthBucketBounding:
+    def setup_method(self):
+        rate_limit_mod._degraded_auth_buckets.clear()
+
+    def test_spraying_distinct_ips_stays_bounded_by_cap(self):
+        """Many distinct IPs hammering the auth tier during an outage must
+        not grow the in-process dict without bound -- LRU eviction caps
+        it instead."""
+        app = _make_app(tier="auth")
+        client = app.test_client()
+        with (
+            patch("web.rate_limit.get_redis", return_value=None),
+            patch("web.rate_limit._DEGRADED_AUTH_MAX_KEYS", 50),
+        ):
+            for i in range(500):
+                client.get(
+                    "/limited",
+                    environ_base={"REMOTE_ADDR": f"10.1.{i % 255}.{i % 200}"},
+                )
+        assert len(rate_limit_mod._degraded_auth_buckets) <= 50
+
+    def test_normal_same_ip_throttling_still_works_after_bounding_change(self):
+        """The existing per-IP fixed-window behavior for a single scope
+        key is unaffected by the LRU-bounding change."""
+        app = _make_app(tier="auth")
+        max_requests = RATE_TIERS["auth"]["max_requests"]
+        client = app.test_client()
+        with patch("web.rate_limit.get_redis", return_value=None):
+            statuses = [
+                client.get("/limited", environ_base={"REMOTE_ADDR": "88.88.88.88"}).status_code
+                for _ in range(max_requests + 1)
+            ]
+        assert statuses[:max_requests] == [200] * max_requests
+        assert statuses[max_requests] == 429

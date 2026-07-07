@@ -35,12 +35,13 @@ import logging
 import math
 import threading
 import time
+from collections import OrderedDict
 from typing import Any
 
 from flask import g, request
 
 from .api_utils import ErrorCode, api_error
-from .redis_health import alert_redis_failopen, record_degraded_mode
+from .redis_health import alert_redis_failopen, record_degraded_mode, record_recovery
 
 logger = logging.getLogger(__name__)
 
@@ -164,7 +165,14 @@ def _get_effective_limit(base_max: int, tier_name: str) -> int:
 # ---------------------------------------------------------------------------
 
 _degraded_auth_lock = threading.Lock()
-_degraded_auth_buckets: dict[str, list[float]] = {}
+# OrderedDict (not plain dict) so we can LRU-evict: during a Redis outage
+# every distinct scope_value (attacker-controlled email / rotated IP) would
+# otherwise create a dict entry that is NEVER removed -- unbounded growth
+# turns a transient Redis blip into a crash-DoS. Capped at
+# _DEGRADED_AUTH_MAX_KEYS; oldest (least-recently-touched) key is evicted
+# once the cap is exceeded.
+_degraded_auth_buckets: "OrderedDict[str, list[float]]" = OrderedDict()
+_DEGRADED_AUTH_MAX_KEYS = 50_000
 
 
 def _degraded_auth_allow(scope_value: str) -> bool:
@@ -182,6 +190,9 @@ def _degraded_auth_allow(scope_value: str) -> bool:
         allowed = len(bucket) < max_requests
         bucket.append(now)
         _degraded_auth_buckets[scope_value] = bucket
+        _degraded_auth_buckets.move_to_end(scope_value)
+        while len(_degraded_auth_buckets) > _DEGRADED_AUTH_MAX_KEYS:
+            _degraded_auth_buckets.popitem(last=False)
     return allowed
 
 
@@ -277,6 +288,13 @@ def rate_limit(tier: str = "read"):
                 if tier == "auth":
                     return _degraded_auth_gate(fn, args, kwargs)
                 return fn(*args, **kwargs)
+
+            if tier == "auth":
+                # Redis just answered successfully for the auth tier -- if a
+                # prior Redis outage had this worker in degraded mode, close
+                # that window out so degraded-mode stats show "recovered"
+                # instead of growing forever (see redis_health.py).
+                record_recovery("rate_limit_auth")
 
             remaining = max(0, max_requests - count)
             reset_at = int(now + window_seconds)

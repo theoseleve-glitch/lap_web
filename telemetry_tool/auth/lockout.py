@@ -4,10 +4,15 @@ After MAX_ATTEMPTS failed logins within WINDOW_SECONDS for a given
 (email, IP) pair, that pair is locked for LOCKOUT_SECONDS.  The hard lock
 is scoped by IP as well as email: an attacker who only knows a victim's
 email address can lock out their OWN IP for that email, but cannot lock
-the victim out of a login attempt from the victim's own IP/device.  (A
-full CAPTCHA/step-up flow that also watches for the same email being
-attacked from many different IPs is a larger follow-up — see the fix
-report.)
+the victim out of a login attempt from the victim's own IP/device.
+
+That IP-scoping deliberately removes the only email-*global* signal, so a
+distributed attacker (many IPs, few guesses each) trips no hard lock at
+all against one victim email. ``_check_distributed_attack`` below adds a
+SOFT, detection-only counterpart: it watches for the same email failing
+from many DISTINCT IPs in a short window and raises a security ALERT
+(observability only, never a block). A full CAPTCHA/step-up flow driven by
+that signal is the fuller follow-up — see the fix report.
 
 Uses the same Redis sorted-set sliding window pattern as the rate limiter.
 
@@ -23,8 +28,9 @@ from __future__ import annotations
 import logging
 import threading
 import time
+from collections import OrderedDict
 
-from web.redis_health import alert_redis_failopen, record_degraded_mode
+from web.redis_health import alert_redis_failopen, record_degraded_mode, record_recovery
 
 logger = logging.getLogger(__name__)
 
@@ -38,7 +44,21 @@ _DEGRADED_MAX_ATTEMPTS = 5
 _DEGRADED_WINDOW_SECONDS = 60
 
 _degraded_lock = threading.Lock()
-_degraded_buckets: dict[str, list[float]] = {}
+# OrderedDict (not plain dict) so we can LRU-evict: every distinct
+# (email, IP) scope key creates an entry, and during a Redis outage an
+# attacker sprays either to grow this dict without bound (crash-DoS). Empty
+# buckets are popped outright (see _degraded_peek); the dict is additionally
+# capped at _DEGRADED_MAX_KEYS, evicting the oldest (least-recently-touched)
+# key once exceeded.
+_degraded_buckets: "OrderedDict[str, list[float]]" = OrderedDict()
+_DEGRADED_MAX_KEYS = 50_000
+
+# Soft, email-scoped DETECTION signal (Fix #2 follow-up) -- see
+# _check_distributed_attack. Deliberately separate window/threshold from
+# the (email, IP) hard lock's MAX_ATTEMPTS/WINDOW_SECONDS above: this is an
+# alert trigger, not a lockout policy.
+DISTRIBUTED_ATTACK_WINDOW_SECONDS = 300   # 5 minutes
+DISTRIBUTED_ATTACK_IP_THRESHOLD = 5       # >= 5 distinct IPs -> alert
 
 
 def _get_redis():
@@ -73,7 +93,14 @@ def _degraded_peek(email: str, ip: str | None) -> int | None:
     window_start = now - _DEGRADED_WINDOW_SECONDS
     with _degraded_lock:
         bucket = [t for t in _degraded_buckets.get(key, ()) if t > window_start]
-        _degraded_buckets[key] = bucket
+        if bucket:
+            _degraded_buckets[key] = bucket
+            _degraded_buckets.move_to_end(key)
+        else:
+            # Nothing left in the window -- drop the entry entirely instead
+            # of writing back an empty list. A key that's never removed is
+            # exactly the unbounded-growth crash-DoS this fix closes.
+            _degraded_buckets.pop(key, None)
         count = len(bucket)
     if count >= _DEGRADED_MAX_ATTEMPTS:
         return _DEGRADED_WINDOW_SECONDS
@@ -88,6 +115,9 @@ def _degraded_record(email: str, ip: str | None) -> None:
         bucket = [t for t in _degraded_buckets.get(key, ()) if t > window_start]
         bucket.append(now)
         _degraded_buckets[key] = bucket
+        _degraded_buckets.move_to_end(key)
+        while len(_degraded_buckets) > _DEGRADED_MAX_KEYS:
+            _degraded_buckets.popitem(last=False)
 
 
 def check_lockout(email: str, ip: str | None = None) -> int | None:
@@ -109,6 +139,11 @@ def check_lockout(email: str, ip: str | None = None) -> int | None:
         # Count recent failed attempts
         r.zremrangebyscore(key, "-inf", window_start)
         count = r.zcard(key)
+
+        # Redis just answered successfully -- if a prior outage had this
+        # worker in degraded mode, close that window out so degraded-mode
+        # stats show "recovered" instead of growing forever.
+        record_recovery("lockout")
 
         if count >= MAX_ATTEMPTS:
             # Check when the oldest attempt in window was — lockout starts then
@@ -144,15 +179,108 @@ def record_failed_attempt(email: str, ip: str | None = None) -> None:
     except Exception:
         logger.exception("Failed to record login attempt (falling back to degraded mode)")
         _degraded_record(email, ip)
+        return
+
+    # Soft, email-scoped distributed-attack detection -- see
+    # _check_distributed_attack. Only runs on the successful-Redis path;
+    # a Redis error above already falls back to the bounded per-(email, IP)
+    # degraded limiter, which is the actual control during an outage.
+    _check_distributed_attack(r, email, ip)
 
 
 def clear_attempts(email: str, ip: str | None = None) -> None:
     """Clear failed attempts for this (email, IP) pair on successful login."""
     r = _get_redis()
     if r is None:
+        # No Redis state to clear, but do clear our own in-process
+        # fallback bucket -- otherwise a real login success during an
+        # outage leaves stale degraded-mode state sitting in memory
+        # instead of being freed like the Redis-backed path would.
+        key = _degraded_key(email, ip)
+        with _degraded_lock:
+            _degraded_buckets.pop(key, None)
         return
 
     try:
         r.delete(_key(email, ip))
     except Exception:
         logger.exception("Failed to clear login attempts")
+
+
+# ---------------------------------------------------------------------------
+# Fix #2 follow-up: soft, email-scoped DETECTION signal for a *distributed*
+# brute force -- see module docstring for why this is needed alongside the
+# (email, IP)-scoped hard lock above.
+# ---------------------------------------------------------------------------
+
+def _distributed_ips_key(email: str) -> str:
+    return f"login_attempts_distinct_ips:{email.lower()}"
+
+
+def _distributed_alert_key(email: str) -> str:
+    return f"login_attempts_distinct_ips_alerted:{email.lower()}"
+
+
+def _check_distributed_attack(r, email: str, ip: str | None) -> None:
+    """Track distinct failing IPs for *email* and ALERT past a threshold.
+
+    Detection only -- never blocks a request. Adds *ip* to a short-lived
+    Redis set keyed by email; once the set's distinct-member count crosses
+    ``DISTRIBUTED_ATTACK_IP_THRESHOLD`` within
+    ``DISTRIBUTED_ATTACK_WINDOW_SECONDS``, raises a security ALERT via
+    Sentry (mirroring ``alert_redis_failopen``'s best-effort log+capture
+    pattern) so the attack is visible + on-call actionable. A separate
+    SET-NX dedup key (same pattern as
+    ``tasks/billing_tasks.py::_pending_conflict_already_alerted``) ensures
+    only the FIRST call to cross the threshold within a window alerts --
+    every additional attacking IP in the same window does not re-alert.
+
+    A full mitigation (CAPTCHA / step-up authentication triggered by this
+    signal) is the fuller follow-up; for now this only makes the pattern
+    detectable.
+
+    Best-effort: never raises into the login path. Silently skipped when
+    Redis is unavailable -- the bounded per-(email, IP) degraded-mode
+    fallback above already bounds the attack *rate* during an outage; this
+    signal is an alert, not a control, so it's fine for it to go dark too.
+    """
+    if not ip:
+        return
+    try:
+        ips_key = _distributed_ips_key(email)
+        r.sadd(ips_key, ip)
+        r.expire(ips_key, DISTRIBUTED_ATTACK_WINDOW_SECONDS)
+        distinct_ips = r.scard(ips_key)
+        if distinct_ips >= DISTRIBUTED_ATTACK_IP_THRESHOLD:
+            claimed = r.set(
+                _distributed_alert_key(email), "1",
+                nx=True, ex=DISTRIBUTED_ATTACK_WINDOW_SECONDS,
+            )
+            if claimed:
+                _alert_distributed_credential_attack(email, distinct_ips)
+    except Exception:
+        logger.debug(
+            "Distributed-attack detection failed for email=%s (best-effort, ignoring)",
+            email, exc_info=True,
+        )
+
+
+def _alert_distributed_credential_attack(email: str, distinct_ip_count: int) -> None:
+    """Best-effort security ALERT for a suspected distributed credential
+    attack against one email. Mirrors ``alert_redis_failopen``
+    (web/redis_health.py): log at ERROR + forward to Sentry via
+    ``sentry_sdk.capture_message``. Never raises.
+    """
+    message = (
+        f"Distributed credential attack suspected for {email}: "
+        f"{distinct_ip_count} distinct IPs failed login within "
+        f"{DISTRIBUTED_ATTACK_WINDOW_SECONDS}s"
+    )
+    logger.error(message)
+    try:
+        import sentry_sdk
+        sentry_sdk.capture_message(message, level="error")
+    except Exception:
+        # sentry_sdk not installed/initialized, or the capture call itself
+        # failed -- must never raise into the login path.
+        pass

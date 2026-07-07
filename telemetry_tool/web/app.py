@@ -136,6 +136,38 @@ def create_app(config: Config | None = None) -> Flask:
         from werkzeug.middleware.proxy_fix import ProxyFix
         app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1, x_proto=1, x_host=1)
 
+        # Observability for the XFF/ProxyFix trust question: the (email, IP)
+        # account lockout and the auth-tier per-IP rate limit (auth/lockout.py,
+        # web/rate_limit.py) both depend on request.remote_addr resolving to
+        # the REAL client IP. Log the resolved config once at startup so
+        # operators can verify hop-count correctness at deploy (e.g. a CDN/LB
+        # in front of Caddy would need x_for bumped, or the CDN's own client-IP
+        # header trusted instead). Log only, never changes ProxyFix behavior.
+        logger.info(
+            "ProxyFix trust config: x_for=1, x_proto=1, x_host=1 (trusting 1 "
+            "hop from Caddy) -- request.remote_addr is the IP ProxyFix resolves "
+            "from X-Forwarded-For. Verify this matches the real proxy chain "
+            "in front of this deploy."
+        )
+
+        _cf_header_sample_state = {"logged": False}
+
+        @app.before_request
+        def _log_cf_connecting_ip_sample_once():
+            """One-time (first request only) sample log noting whether a
+            CF-Connecting-IP header is present, to help operators cross-check
+            ProxyFix's resolved remote_addr against Cloudflare's own view of
+            the client IP if Cloudflare sits in front of Caddy."""
+            if _cf_header_sample_state["logged"]:
+                return
+            _cf_header_sample_state["logged"] = True
+            cf_ip = request.headers.get("CF-Connecting-IP")
+            logger.info(
+                "Startup IP-source sample: CF-Connecting-IP=%s, "
+                "request.remote_addr (ProxyFix-resolved)=%s",
+                cf_ip or "<absent>", request.remote_addr,
+            )
+
     # Phase 4 API infrastructure — request ID, structured logging, metrics.
     try:
         from .api_utils import init_request_id

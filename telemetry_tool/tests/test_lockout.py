@@ -15,12 +15,14 @@ if str(_PROJECT_ROOT) not in sys.path:
 import auth.lockout as lockout_mod
 from auth.lockout import (
     _DEGRADED_MAX_ATTEMPTS,
+    DISTRIBUTED_ATTACK_IP_THRESHOLD,
     MAX_ATTEMPTS,
     _key,
     check_lockout,
     clear_attempts,
     record_failed_attempt,
 )
+from web.redis_health import get_degraded_mode_stats
 
 
 class TestCheckLockout:
@@ -174,3 +176,187 @@ class TestDegradedModeLockout:
             assert check_lockout("someone-else@example.com", "8.8.8.8") is None
             # Same email, different IP -- unaffected.
             assert check_lockout("victim2@example.com", "1.1.1.1") is None
+
+
+# ---------------------------------------------------------------------------
+# Follow-up Fix #1: bounded degraded-mode buckets (crash-DoS).
+#
+# During a Redis outage every distinct (email, IP) scope key used to create
+# a dict entry that was never removed -- an attacker spraying distinct
+# emails/IPs (or just rotating IPs) could grow the dict without bound and
+# OOM a worker. Empty buckets must be popped, and the dict must be capped.
+# ---------------------------------------------------------------------------
+
+class TestDegradedBucketBounding:
+    def setup_method(self):
+        lockout_mod._degraded_buckets.clear()
+
+    def test_empty_bucket_is_popped_not_left_stale(self):
+        """Once a bucket's timestamps age out of the window, the dict entry
+        is removed entirely -- not left behind as an empty list forever."""
+        with patch("auth.lockout._get_redis", return_value=None):
+            record_failed_attempt("stale@example.com", "1.1.1.1")
+        key = lockout_mod._degraded_key("stale@example.com", "1.1.1.1")
+        assert key in lockout_mod._degraded_buckets
+
+        # Age the recorded timestamp out of the degraded window.
+        lockout_mod._degraded_buckets[key] = [
+            time.time() - lockout_mod._DEGRADED_WINDOW_SECONDS - 1
+        ]
+        with patch("auth.lockout._get_redis", return_value=None):
+            result = check_lockout("stale@example.com", "1.1.1.1")
+        assert result is None
+        assert key not in lockout_mod._degraded_buckets
+
+    def test_spraying_distinct_keys_stays_bounded_by_cap(self):
+        """Many distinct (email, IP) scope keys during an outage must not
+        grow the in-process dict without bound -- LRU eviction caps it."""
+        with (
+            patch("auth.lockout._get_redis", return_value=None),
+            patch("auth.lockout._DEGRADED_MAX_KEYS", 50),
+        ):
+            for i in range(500):
+                record_failed_attempt(f"attacker{i}@example.com", f"10.0.{i % 255}.1")
+        assert len(lockout_mod._degraded_buckets) <= 50
+
+    def test_same_key_throttling_still_works(self):
+        """Normal per-(email, IP) throttling is unaffected by the bounding
+        change -- the Nth attempt for a fresh key is still allowed and the
+        (N+1)th is still throttled."""
+        email, ip = "normal-throttle@example.com", "2.2.2.2"
+        with patch("auth.lockout._get_redis", return_value=None):
+            for _ in range(_DEGRADED_MAX_ATTEMPTS):
+                assert check_lockout(email, ip) is None
+                record_failed_attempt(email, ip)
+            assert check_lockout(email, ip) is not None
+
+    def test_clear_attempts_evicts_degraded_bucket_when_redis_down(self):
+        """A successful login during an outage frees the in-process bucket
+        instead of leaving it to sit in memory until it ages out."""
+        email, ip = "cleared@example.com", "3.3.3.3"
+        with patch("auth.lockout._get_redis", return_value=None):
+            record_failed_attempt(email, ip)
+            key = lockout_mod._degraded_key(email, ip)
+            assert key in lockout_mod._degraded_buckets
+            clear_attempts(email, ip)
+        assert key not in lockout_mod._degraded_buckets
+
+
+# ---------------------------------------------------------------------------
+# Follow-up Fix #2: soft, email-scoped distributed-attack DETECTION signal.
+#
+# The (email, IP) hard lock above correctly stops the "attacker locks out my
+# email" DoS (Fix #5), but that also removed the only email-global signal --
+# a botnet failing one victim email from many distinct IPs (<= MAX_ATTEMPTS
+# per IP) trips no hard lock at all. This is detection/alert-only, never a
+# block.
+# ---------------------------------------------------------------------------
+
+class TestDistributedAttackDetection:
+    def test_below_threshold_does_not_alert(self):
+        r = MagicMock()
+        r.scard.return_value = DISTRIBUTED_ATTACK_IP_THRESHOLD - 1
+        with (
+            patch("auth.lockout._get_redis", return_value=r),
+            patch("auth.lockout._alert_distributed_credential_attack") as mock_alert,
+        ):
+            record_failed_attempt("victim@example.com", "1.2.3.4")
+        mock_alert.assert_not_called()
+
+    def test_at_threshold_distinct_ips_alerts_exactly_once(self):
+        r = MagicMock()
+        r.scard.return_value = DISTRIBUTED_ATTACK_IP_THRESHOLD
+        r.set.return_value = True  # SET NX succeeds -- first caller claims it
+        with (
+            patch("auth.lockout._get_redis", return_value=r),
+            patch("auth.lockout._alert_distributed_credential_attack") as mock_alert,
+        ):
+            record_failed_attempt("victim2@example.com", "9.9.9.1")
+        mock_alert.assert_called_once()
+        args = mock_alert.call_args[0]
+        assert args[0] == "victim2@example.com"
+        assert args[1] == DISTRIBUTED_ATTACK_IP_THRESHOLD
+
+    def test_further_crossings_in_same_window_do_not_realert(self):
+        """The SET-NX dedup key means additional attacking IPs within the
+        same window must not trigger a second alert."""
+        r = MagicMock()
+        r.scard.return_value = DISTRIBUTED_ATTACK_IP_THRESHOLD + 3
+        r.set.return_value = None  # NX failed -- already claimed this window
+        with (
+            patch("auth.lockout._get_redis", return_value=r),
+            patch("auth.lockout._alert_distributed_credential_attack") as mock_alert,
+        ):
+            record_failed_attempt("victim3@example.com", "9.9.9.2")
+        mock_alert.assert_not_called()
+
+    def test_single_ip_fat_fingering_does_not_alert(self):
+        """One IP repeatedly failing must not trigger the distributed
+        (many-IPs) alert -- a Redis set's distinct-member count for one
+        member stays at 1 no matter how many times it's re-added."""
+        r = MagicMock()
+        r.scard.return_value = 1
+        with (
+            patch("auth.lockout._get_redis", return_value=r),
+            patch("auth.lockout._alert_distributed_credential_attack") as mock_alert,
+        ):
+            for _ in range(10):
+                record_failed_attempt("fatfinger@example.com", "5.5.5.5")
+        mock_alert.assert_not_called()
+
+    def test_hard_lock_behavior_is_unchanged(self):
+        """The (email, IP) hard lock's own decision (Fix #5) is unaffected
+        by the new distributed-detection bookkeeping running alongside it."""
+        r = MagicMock()
+        r.zcard.return_value = MAX_ATTEMPTS
+        r.zrange.return_value = [("member", time.time())]
+        r.scard.return_value = 1
+        with patch("auth.lockout._get_redis", return_value=r):
+            result = check_lockout("hardlock-check@example.com", "7.7.7.1")
+        assert result is not None and result > 0
+
+    def test_ip_none_skips_detection_without_raising(self):
+        r = MagicMock()
+        with patch("auth.lockout._get_redis", return_value=r):
+            record_failed_attempt("noip@example.com", None)
+        r.sadd.assert_not_called()
+
+    def test_detection_never_raises_when_redis_errors_mid_call(self):
+        r = MagicMock()
+        r.sadd.side_effect = ConnectionError("redis down mid-call")
+        with patch("auth.lockout._get_redis", return_value=r):
+            record_failed_attempt("errorcase@example.com", "6.6.6.6")  # must not raise
+
+    def test_skipped_entirely_when_redis_down(self):
+        """Best-effort: no crash and no alert when Redis is unavailable --
+        the bounded per-(email, IP) degraded fallback is the real control
+        during an outage, this signal is allowed to go dark too."""
+        with (
+            patch("auth.lockout._get_redis", return_value=None),
+            patch("auth.lockout._alert_distributed_credential_attack") as mock_alert,
+        ):
+            record_failed_attempt("downcase@example.com", "4.4.4.4")
+        mock_alert.assert_not_called()
+
+
+# ---------------------------------------------------------------------------
+# Follow-up Fix #3 (integration): degraded-mode stats reflect Redis recovery.
+# ---------------------------------------------------------------------------
+
+class TestLockoutDegradedRecoveryIntegration:
+    def setup_method(self):
+        from web import redis_health as redis_health_mod
+        redis_health_mod._degraded_state.clear()
+
+    def test_check_lockout_marks_recovery_on_next_successful_redis_call(self):
+        # Simulate an outage first.
+        with patch("auth.lockout._get_redis", return_value=None):
+            check_lockout("recover-user@example.com", "1.1.1.1")
+        assert get_degraded_mode_stats()["lockout"]["recovered"] is False
+
+        # Redis is back.
+        r = MagicMock()
+        r.zcard.return_value = 0
+        with patch("auth.lockout._get_redis", return_value=r):
+            check_lockout("recover-user@example.com", "1.1.1.1")
+        assert get_degraded_mode_stats()["lockout"]["recovered"] is True

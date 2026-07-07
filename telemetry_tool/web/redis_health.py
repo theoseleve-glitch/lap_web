@@ -35,13 +35,18 @@ logger = logging.getLogger(__name__)
 # per-worker bounded limiter (see ``_degraded_auth_gate`` in rate_limit.py
 # and ``_degraded_peek``/``_degraded_record`` in lockout.py). This tracker
 # records how many requests were served by that fallback and how long
-# (wall-clock seconds) the current process has been in degraded mode per
-# component, so an operator can see "we were in degraded auth mode for N
-# seconds" without needing Redis to be back up to read it.
+# (monotonic-clock seconds) the CURRENT degraded-mode episode has been
+# running per component, so an operator can see "we were in degraded auth
+# mode for N seconds" without needing Redis to be back up to read it.
+#
+# ``record_recovery`` (called from the success path once Redis answers
+# again) closes out the episode: ``seconds`` freezes instead of growing
+# forever, ``recovered`` flips True, and the NEXT outage starts its own
+# fresh window rather than accumulating on top of every prior one.
 # ---------------------------------------------------------------------------
 
 _degraded_lock = threading.Lock()
-_degraded_state: dict[str, dict[str, float]] = {}
+_degraded_state: dict[str, dict[str, float | bool]] = {}
 
 
 def record_degraded_mode(component: str) -> None:
@@ -52,14 +57,51 @@ def record_degraded_mode(component: str) -> None:
     try:
         now = time.monotonic()
         with _degraded_lock:
-            state = _degraded_state.setdefault(component, {"requests": 0, "started_at": now})
+            state = _degraded_state.get(component)
+            if state is None:
+                state = {"requests": 0, "degraded_since": now}
+                _degraded_state[component] = state
+            elif state.get("recovered"):
+                # A new outage starting after a prior one recovered --
+                # restart the timing window so "seconds" measures THIS
+                # episode, not cumulative time since the very first
+                # degraded call this worker ever made. The lifetime
+                # ``requests`` total is intentionally kept, not reset.
+                state["degraded_since"] = now
             state["requests"] += 1
-            state["seconds"] = now - state["started_at"]
+            state["seconds"] = now - state["degraded_since"]
+            state["recovered"] = False
     except Exception:
         pass
 
 
-def get_degraded_mode_stats() -> dict[str, dict[str, float]]:
+def record_recovery(component: str) -> None:
+    """Mark *component* as recovered now that a Redis-backed operation has
+    succeeded again, closing out the current degraded-mode window.
+
+    Freezes ``seconds`` at the just-ended episode's duration and sets
+    ``recovered: True`` so :func:`get_degraded_mode_stats` can report
+    "recovered" instead of an ever-growing counter -- the ``seconds``
+    field previously grew forever because nothing ever reset it, so
+    dashboards could never show a Redis outage had ended. The cumulative
+    ``requests`` total (all episodes, lifetime of this worker) is left
+    untouched. No-op if *component* was never recorded as degraded (or is
+    already marked recovered). Never raises -- called from a success path
+    and must never turn "Redis is back" into a crash.
+    """
+    try:
+        now = time.monotonic()
+        with _degraded_lock:
+            state = _degraded_state.get(component)
+            if state is None or state.get("recovered"):
+                return
+            state["seconds"] = now - state["degraded_since"]
+            state["recovered"] = True
+    except Exception:
+        pass
+
+
+def get_degraded_mode_stats() -> dict[str, dict[str, float | bool]]:
     """Snapshot of per-component degraded-mode counters (best-effort,
     per-worker only -- not aggregated across the fleet)."""
     with _degraded_lock:
