@@ -104,8 +104,9 @@ export default function TrackSurfacePanel({ sessionId, laps = [], className }: T
   const [mode, setMode] = useState<HeatmapMode>('grip');
   const [userTouchedMode, setUserTouchedMode] = useState(false);
   const [spatialFactor, setSpatialFactor] = useState<SpatialFactor>('combined');
-  // EXEC-8: gold optimal line dropped for this ship; only the driven (actual)
-  // lap line remains, on by default.
+  // EXEC-8: the driven (actual) lap line stays a user toggle, on by default.
+  // The gold optimal line is NOT a toggle — it is honesty-gated below
+  // (optimalLineActive) and never user-controllable.
   const [showActual, setShowActual] = useState(true);
 
   // A-lap selection. Best lap is the default; null until laps resolve, at
@@ -120,7 +121,22 @@ export default function TrackSurfacePanel({ sessionId, laps = [], className }: T
     if (selectedLap == null && bestLapNumber != null) setSelectedLap(bestLapNumber);
   }, [selectedLap, bestLapNumber]);
 
-  const { surface, isLoading } = useTrackSurfaceData(sessionId, selectedLap);
+  const {
+    surface,
+    isLoading,
+    optimalLineDrawable,
+    optimalLineTier,
+    optimalLineReason,
+  } = useTrackSurfaceData(sessionId, selectedLap);
+
+  // Frontend optimal-line data contract (sub-project C honesty layer): draw
+  // the racing line ONLY when the backend's verdict is exactly
+  // `optimal_line` — never on a missing/undefined `drawable` (fail-safe
+  // default) and never on a non-optimal tier even if `drawable` were
+  // erroneously true-ish (defense-in-depth; the hook already re-derives
+  // `optimalLineDrawable` from the same tier check, so this re-check
+  // costs nothing and guards against either layer drifting alone).
+  const optimalLineActive = optimalLineDrawable === true && optimalLineTier === 'optimal_line';
 
   // GRIP availability — degenerate μ (no spread / all-0 / all-1) or a
   // provisional (no-gt) surface with no per-vertex grip → GRIP greyed +
@@ -230,7 +246,7 @@ export default function TrackSurfacePanel({ sessionId, laps = [], className }: T
           lap={selectedLap}
           mode={mode}
           spatialFactor={spatialFactor}
-          showOptimalLine={false}
+          showOptimalLine={optimalLineActive}
           showActualLine={showActual}
           className="w-full aspect-[16/9]"
         />
@@ -304,8 +320,9 @@ export default function TrackSurfacePanel({ sessionId, laps = [], className }: T
             </label>
           )}
 
-          {/* Driven-line toggle (EXEC-8). The gold optimal line is out of
-              scope for this ship, so only the selected lap's line remains. */}
+          {/* Driven-line toggle (EXEC-8). The gold optimal line has no user
+              toggle — it renders only when optimalLineActive (the honesty
+              gate above) is true, driven entirely by the backend verdict. */}
           <label className="flex items-center gap-1.5 rounded-lg bg-concrete/85 backdrop-blur-sm border border-steel/20 px-3 min-h-[2.75rem] cursor-pointer pointer-events-auto">
             <input
               type="checkbox"
@@ -381,6 +398,18 @@ export default function TrackSurfacePanel({ sessionId, laps = [], className }: T
           visible on every session, not just spatial-debug ones. The full
           spatial-gated ConditionRow below stays as the deep readout. */}
       <CompactConditionReadout conditions={surface?.conditions ?? null} />
+
+      {/* Optimal-line honesty affordance (sub-project C frontend contract).
+          Mirrors CompactConditionReadout's pattern: a small, always-decoupled
+          status row. Never shown alongside a drawn line — only tells the
+          driver WHY there is no gold racing line on the mesh right now. */}
+      {!isLoading && (
+        <OptimalLineStatusRow
+          active={optimalLineActive}
+          tier={optimalLineTier}
+          reason={optimalLineReason}
+        />
+      )}
 
       {/* Conditions (Day-11/12). Renders nothing on pre-Day-11 sessions
           per Day-13 Phase C lock — empty slot is the honest UI.
@@ -582,6 +611,41 @@ export function CompactConditionReadout({
       <span className="ml-auto font-telemetry text-[10px] text-steel bg-steel/10 border border-steel/30 rounded px-2 py-0.5">
         {SOURCE_LABEL[source]}
       </span>
+    </div>
+  );
+}
+
+/** Fallback copy per degraded tier, used only when the backend didn't send
+ *  a `tier_reason` / `message` string. Keeps the row from going blank on
+ *  responses that predate those optional fields. */
+const OPTIMAL_LINE_TIER_FALLBACK: Record<string, string> = {
+  speed_profile_only: 'Racing line not yet available — speed profile only.',
+  refused: 'Racing line withheld — data did not meet the accuracy bar.',
+};
+const OPTIMAL_LINE_DEFAULT_MESSAGE = 'Racing line not yet available for this track.';
+
+/** Honest "why no racing line" affordance (sub-project C frontend data
+ *  contract). Renders instead of the gold line whenever the backend's
+ *  honesty verdict is anything other than `optimal_line` — including when
+ *  `tier`/`drawable` are missing entirely. Never renders alongside the
+ *  drawn line (mutually exclusive with `active`). */
+export function OptimalLineStatusRow({
+  active,
+  tier,
+  reason,
+}: {
+  active: boolean;
+  tier: string | null;
+  reason: string | null;
+}) {
+  if (active) return null;
+  const text = reason ?? (tier ? OPTIMAL_LINE_TIER_FALLBACK[tier] : undefined) ?? OPTIMAL_LINE_DEFAULT_MESSAGE;
+  return (
+    <div className="flex items-center gap-2 px-4 py-2 border-t border-steel/10">
+      <span className="font-telemetry text-[10px] uppercase tracking-wide text-steel">
+        Optimal line
+      </span>
+      <span className="font-telemetry text-[10px] text-steel/80">{text}</span>
     </div>
   );
 }

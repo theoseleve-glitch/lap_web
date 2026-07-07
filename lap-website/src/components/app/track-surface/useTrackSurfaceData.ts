@@ -209,6 +209,19 @@ export interface OptimalLinePoint {
 
 export interface OptimalLineResponse {
   points: OptimalLinePoint[];
+  /** Honesty-gate fields (Race Brief honesty layer, sub-project C):
+   *  `data_v2.py::get_optimal_line` always returns these three, gated or
+   *  degraded alike. `drawable` is only `true` when `tier ===
+   *  'optimal_line'` — see `track_surface/honesty.py::is_drawable_as_line`.
+   *  `tier_reason` explains a degraded tier (e.g. below-grip-floor,
+   *  validation-red); `null` when drawable. */
+  drawable?: boolean;
+  tier?: string | null;
+  tier_reason?: string | null;
+  /** Present on the degraded/not-yet-computed shapes (no gated row at all,
+   *  or the honesty module import failed) where there is no per-tier
+   *  reason string — a human-readable fallback for the UI affordance. */
+  message?: string | null;
 }
 
 export interface GpsTraceResponse {
@@ -285,20 +298,35 @@ export function useTrackSurfaceData(sessionId: string, lap?: number | null) {
   // than the canonical {points: [...]} shape. Detect via the `points`
   // key presence so the consumer sees null instead of an unexpected
   // available-flag object.
-  //
-  // Honesty gate (racing-line honesty layer): the API only ever includes a
-  // `points` array when the backend's track_racing_lines tier is
-  // "optimal_line" (drawable: true) — a degraded/ungated/lower-tier result
-  // never carries `points`. The `drawable !== false` check is redundant with
-  // that backend invariant today, but keeps this consumer honest even if a
-  // future response shape change stops omitting `points` on non-drawable
-  // tiers — never render a speed_profile_only/refused/ungated result as a
+  const optimalLineRaw = optimalLine.data as
+    | (Partial<OptimalLineResponse> & { points?: unknown })
+    | undefined
+    | null;
+
+  // Frontend optimal-line data contract (sub-project C honesty layer): the
+  // backend's `tier` is the single source of truth for whether a line may
+  // be drawn as authoritative — `is_drawable_as_line()` on the Python side
+  // sets `drawable: true` iff `tier === 'optimal_line'`. We re-derive that
+  // exact check here (not just trust the boolean) so a future response
+  // shape change that sets `drawable` without the matching tier string
+  // can't slip an unverified line past this consumer — defense-in-depth,
+  // never render a speed_profile_only/refused/ungated result as a
   // full-authority racing line.
-  const optimalPoints = optimalLine.data && Array.isArray(
-    (optimalLine.data as { points?: unknown }).points,
-  ) && (optimalLine.data as { drawable?: boolean }).drawable !== false
-    ? (optimalLine.data as OptimalLineResponse).points
+  const optimalLineTier: string | null = optimalLineRaw?.tier ?? null;
+  const optimalPoints = optimalLineRaw && Array.isArray(optimalLineRaw.points)
+    && optimalLineRaw.drawable === true
+    && optimalLineTier === 'optimal_line'
+    ? (optimalLineRaw.points as OptimalLinePoint[])
     : null;
+  // Derived, not re-trusted: true only when the points array above actually
+  // survived the same tier check — the render gate downstream (checked
+  // again in TrackSurfacePanel for defense-in-depth) never has to reason
+  // about `drawable` and `points` disagreeing.
+  const optimalLineDrawable = optimalPoints !== null;
+  // Human-readable "why not" for the UI affordance — the per-tier reason
+  // when a gated-but-degraded row exists, else the not-yet-computed /
+  // not-gated message. Both are optional on the wire; null when absent.
+  const optimalLineReason = optimalLineRaw?.tier_reason ?? optimalLineRaw?.message ?? null;
   const lineDeltaPoints = lineDelta.data && Array.isArray(
     (lineDelta.data as { points?: unknown }).points,
   )
@@ -321,6 +349,13 @@ export function useTrackSurfaceData(sessionId: string, lap?: number | null) {
   return {
     surface: surface.data ?? null,
     optimalLine: optimalPoints,
+    // Honesty-gate fields for the render gate (TrackSurfacePanel): drive
+    // `showOptimalLine` from `optimalLineDrawable`/`optimalLineTier`
+    // instead of a hardcoded flag. `optimalLineReason` feeds the
+    // not-drawable affordance.
+    optimalLineDrawable,
+    optimalLineTier,
+    optimalLineReason,
     gpsTrace: gpsTraceValid,
     lineDelta: lineDeltaPoints,
     isLoading,

@@ -60,9 +60,6 @@ export type SpatialFactor = 'combined' | 'drainage' | 'sun' | 'wind';
 
 const GOLD = 0xC9A84C;
 const CHALK = 0xF0EDE5;
-// EXEC-8: the gold "optimal" reference line is out of scope for this ship
-// (Reference C). Kept wired but unmounted behind this flag.
-const SHOW_OPTIMAL_LINE = false;
 // Fallback widths when neither width_left_m/width_right_m nor legacy width_m
 // is supplied. 4 m + 4 m matches the prior symmetric DEFAULT_TRACK_WIDTH = 8.
 const DEFAULT_WIDTH_LEFT = 4;
@@ -1585,8 +1582,13 @@ function Scene({
         </mesh>
       )}
 
-      {/* Optimal racing line — flagged off for this ship (EXEC-8). */}
-      {SHOW_OPTIMAL_LINE && optimalGeo && (
+      {/* Optimal racing line — honesty-gated (sub-project C frontend data
+       *  contract). `optimalGeo` is already null unless the `showOptimalLine`
+       *  prop is true, which the caller (TrackSurfacePanel) only sets when
+       *  the backend's tier === 'optimal_line' (drawable: true). There is no
+       *  separate feature flag here anymore — the data contract IS the
+       *  gate; see useTrackSurfaceData's optimalLineDrawable. */}
+      {optimalGeo && (
         <line frustumCulled={false}>
           <primitive object={optimalGeo} attach="geometry" />
           <primitive object={optimalLineMat} attach="material" />
@@ -1674,7 +1676,11 @@ export function TrackSurface3D({
   lap = null,
   mode = 'grip',
   spatialFactor = 'combined',
-  showOptimalLine = true,
+  // Fail-safe default: an authoritative racing line is only ever drawn
+  // when a caller explicitly opts in with a backend-verdict-derived value
+  // (see TrackSurfacePanel's honesty-gate condition) — an omitted prop
+  // must never draw a line.
+  showOptimalLine = false,
   showActualLine = false,
   className,
 }: TrackSurface3DProps) {
