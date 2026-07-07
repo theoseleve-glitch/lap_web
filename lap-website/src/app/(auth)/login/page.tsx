@@ -7,12 +7,13 @@ import { FormField } from '@/components/app/FormField';
 import { useAuth } from '@/hooks/useAuth';
 import { OAuthButtons } from '@/components/auth/OAuthButtons';
 import { useTranslation } from '@/i18n';
+import { getSafeRedirect } from '@/lib/safe-redirect';
 
 function LoginForm() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const searchParams = useSearchParams();
-  const redirect = searchParams.get('redirect') ?? '/app/dashboard';
+  const redirect = getSafeRedirect(searchParams.get('redirect'), '/app/dashboard');
   const oauthError = searchParams.get('error');
   const { login, verify2fa, loading, error } = useAuth();
   const { t } = useTranslation();

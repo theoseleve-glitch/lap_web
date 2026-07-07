@@ -1,10 +1,30 @@
 import { NextResponse } from 'next/server';
 import { verifyBillingAuth } from '@/lib/stripe-billing';
+import { getSiteUrl } from '@/lib/site-url';
 
 const BACKEND_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5000';
 
 interface PortalBody {
   return_url?: string;
+}
+
+/**
+ * Stripe's billing portal session requires an absolute return_url. Only
+ * accept one that resolves to this app's own origin -- otherwise a client
+ * could point the post-portal redirect at an arbitrary external site.
+ */
+function sanitizeReturnUrl(raw: string | undefined): string | undefined {
+  if (!raw) return undefined;
+
+  const siteOrigin = getSiteUrl();
+  let resolved: URL;
+  try {
+    resolved = new URL(raw, siteOrigin);
+  } catch {
+    return undefined;
+  }
+
+  return resolved.origin === siteOrigin ? resolved.toString() : undefined;
 }
 
 export async function POST(request: Request) {
@@ -36,13 +56,14 @@ export async function POST(request: Request) {
       return NextResponse.json({ ok: false, message: 'Authentication required' }, { status: 401 });
     }
 
+    const safeReturnUrl = sanitizeReturnUrl(body.return_url);
     backendRes = await fetch(`${BACKEND_URL}/api/v1/billing/portal`, {
       method: 'POST',
       headers: {
         'content-type': 'application/json',
         authorization: `Bearer ${accessToken}`,
       },
-      body: JSON.stringify(body.return_url ? { return_url: body.return_url } : {}),
+      body: JSON.stringify(safeReturnUrl ? { return_url: safeReturnUrl } : {}),
     });
   } catch {
     return NextResponse.json({ ok: false, message: 'Billing service unavailable' }, { status: 502 });

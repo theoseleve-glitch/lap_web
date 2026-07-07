@@ -7,6 +7,7 @@ import { FormField } from '@/components/app/FormField';
 import { useAuth } from '@/hooks/useAuth';
 import { OAuthButtons } from '@/components/auth/OAuthButtons';
 import { useTranslation } from '@/i18n';
+import { getSafeRedirect } from '@/lib/safe-redirect';
 
 function getPasswordStrength(pw: string): { score: 0 | 1 | 2 | 3 | 4; label: string; color: string } {
   if (!pw) return { score: 0, label: '', color: '' };
@@ -30,7 +31,7 @@ function RegisterForm() {
   const [validationError, setValidationError] = useState<string | null>(null);
   const [touched, setTouched] = useState<Record<string, boolean>>({});
   const searchParams = useSearchParams();
-  const redirect = searchParams.get('redirect') ?? '/app/dashboard';
+  const redirect = getSafeRedirect(searchParams.get('redirect'), '/app/dashboard');
   const { register, loading, error } = useAuth();
   const { t } = useTranslation();
   const strength = getPasswordStrength(password);

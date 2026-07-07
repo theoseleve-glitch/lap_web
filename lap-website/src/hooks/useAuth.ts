@@ -11,6 +11,7 @@ import {
   silentRefresh,
 } from '@/lib/auth';
 import { queryClient } from '@/providers/query-provider';
+import { getSafeRedirect } from '@/lib/safe-redirect';
 
 /** Clear React Query cache — safe to call even outside QueryClientProvider. */
 function clearQueryCache(): void {
@@ -46,7 +47,7 @@ export function useAuth() {
         }
         clearQueryCache();
         setUser(result.user);
-        router.push(redirectTo ?? '/app/dashboard');
+        router.push(getSafeRedirect(redirectTo, '/app/dashboard'));
         return result;
       } catch (err) {
         setError(err instanceof Error ? err.message : 'Login failed');
@@ -66,7 +67,7 @@ export function useAuth() {
         const result = await apiVerify2fa(tempToken, code, isBackup);
         clearQueryCache();
         setUser(result.user);
-        router.push(redirectTo ?? '/app/dashboard');
+        router.push(getSafeRedirect(redirectTo, '/app/dashboard'));
       } catch (err) {
         setError(err instanceof Error ? err.message : 'Verification failed');
       } finally {
@@ -84,7 +85,7 @@ export function useAuth() {
         const result = await apiRegister(email, password, displayName);
         clearQueryCache();
         setUser(result.user);
-        router.push(redirectTo ?? '/app/dashboard');
+        router.push(getSafeRedirect(redirectTo, '/app/dashboard'));
       } catch (err) {
         setError(err instanceof Error ? err.message : 'Registration failed');
       } finally {
