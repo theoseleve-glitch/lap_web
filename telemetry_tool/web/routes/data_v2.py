@@ -7002,6 +7002,9 @@ def save_user_corners(session_id: str) -> tuple[dict, int]:
            "s_entry": ..., "s_apex": ..., "s_exit": ...}, ...]}
     """
     conn = get_db_connection()
+    if models.get_session_by_id(conn, session_id) is None:
+        return api_error(ErrorCode.NOT_FOUND, "Session not found", status=404)
+
     data = request.get_json(silent=True) or {}
     corners = data.get("corners", [])
 
@@ -7043,6 +7046,8 @@ def save_user_corners(session_id: str) -> tuple[dict, int]:
 def get_user_corners(session_id: str) -> tuple[dict, int]:
     """Retrieve user-defined corners for a session."""
     conn = get_db_connection()
+    if models.get_session_by_id(conn, session_id) is None:
+        return api_error(ErrorCode.NOT_FOUND, "Session not found", status=404)
 
     try:
         rows = conn.execute(

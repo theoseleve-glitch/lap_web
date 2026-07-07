@@ -14,6 +14,7 @@ from pathlib import Path
 import pandas as pd
 from flask import Blueprint, current_app, request
 
+from web import models
 from web.api_utils import ErrorCode, api_error, api_response
 from web.db import get_db_connection
 
@@ -66,7 +67,21 @@ def _load_session_raw_data(session_id: str) -> tuple[pd.DataFrame | None, str | 
 
     Looks for a Parquet file at <sidecar_root>/<session_id>/raw_sidecar.parquet.
     Returns (DataFrame, None) on success, or (None, error_message) on failure.
+
+    SECURITY: the sidecar path is built directly from the client-supplied
+    session_id with NO DB query on the read path, so the RLS backstop (which
+    only guards rows reached through the request's RLS-scoped connection)
+    never sees this lookup. Before touching disk we resolve session_id via
+    models.get_session_by_id() on the RLS-scoped request connection -- the
+    same ownership check ~20 sibling routes in data_v2.py use. If RLS (or a
+    genuinely missing row) hides the session from the caller's workspace,
+    get_session_by_id returns None and we fail closed here, before any file
+    access, for a cross-tenant session_id.
     """
+    conn = get_db_connection()
+    if models.get_session_by_id(conn, session_id) is None:
+        return None, "Session not found"
+
     sidecar_dir = _get_sidecar_root() / str(session_id)
     parquet_path = sidecar_dir / "raw_sidecar.parquet"
 
