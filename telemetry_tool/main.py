@@ -34,6 +34,19 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Optional
 
+# ── Import path bootstrap ──────────────────────────────────────────────
+# Make BOTH this package's directory (bare imports like ``import
+# theoretical_engine``) and its parent (package-qualified ``from
+# telemetry_tool.X import Y`` used across the pipeline) importable, whatever the
+# entry mode. Prod (gunicorn from the lap_web WORKDIR) always has the parent on
+# sys.path; running main.py from inside telemetry_tool did not, so the
+# kart_envelope theoretical solver and the condition / analyser stages silently
+# failed with "No module named 'telemetry_tool'" and were skipped.
+_THIS_DIR = Path(__file__).resolve().parent
+for _p in (str(_THIS_DIR.parent), str(_THIS_DIR)):
+    if _p not in sys.path:
+        sys.path.insert(0, _p)
+
 # -- -
 
 # Silence NumExpr thread-limit warning.  Must be set *before* any import of
