@@ -507,6 +507,17 @@ def run(
     """
     from pipeline import run_full_analysis
 
+    # Ensure the local schema exists BEFORE the pipeline reads it. Flask calls
+    # init_db() on app startup; the CLI/desktop path has no such hook, so
+    # mid-pipeline reads (e.g. user_corners at step 10h) would hit tables that
+    # are otherwise only created at persist time (step 15). Best-effort — a DB
+    # that cannot be initialised must never block an analysis run.
+    try:
+        from web.db import init_db
+        init_db()
+    except Exception:
+        logger.debug("init_db() at CLI startup failed (continuing).", exc_info=True)
+
     # -- Construct SessionContext if available
     _context = None
     try:

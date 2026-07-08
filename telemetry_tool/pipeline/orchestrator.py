@@ -62,16 +62,24 @@ except ImportError:
 def _fetch_user_corners(conn, session_id: str) -> list[dict] | None:
     """Fetch user-placed corner definitions for a session.
 
-    Returns [] on success with no rows, None when conn/session_id missing.
+    Returns [] on success with no rows, None when conn/session_id missing or the
+    user_corners table is unavailable. User-defined corners are an optional
+    override, so a missing table (e.g. a fresh DB whose schema is created at
+    persist time) means "no overrides" — it must not degrade the pipeline.
     """
     if conn is None or not session_id:
         return None
-    cursor = conn.execute(
-        "SELECT corner_index, s_entry, s_apex, s_exit, lat_entry, lon_entry, "
-        "lat_apex, lon_apex, lat_exit, lon_exit FROM user_corners WHERE session_id = ?",
-        (session_id,),
-    )
-    return [dict(zip([d[0] for d in cursor.description], row)) for row in cursor.fetchall()]
+    try:
+        cursor = conn.execute(
+            "SELECT corner_index, s_entry, s_apex, s_exit, lat_entry, lon_entry, "
+            "lat_apex, lon_apex, lat_exit, lon_exit FROM user_corners WHERE session_id = ?",
+            (session_id,),
+        )
+        return [dict(zip([d[0] for d in cursor.description], row)) for row in cursor.fetchall()]
+    except Exception:  # noqa: BLE001 — SQLite/psycopg both, optional read
+        logger.debug("user_corners unavailable for %s; treating as no overrides.",
+                     session_id, exc_info=True)
+        return None
 
 
 def _build_corner_perfs_from_user_corners(
