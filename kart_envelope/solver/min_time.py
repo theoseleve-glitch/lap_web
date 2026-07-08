@@ -261,7 +261,6 @@ def _compute_theoretical_lap_qss(
             aero_lf = aero_runtime.downforce_load_factor(v_cur, powertrain.mass_kg)
             a_drive_env = env.max_longitudinal_accel(float(v_cur), float(a_lat), braking=False)
             a_drive_env *= float(drv_prof[i]) * float(aero_lf)
-            a_drive = powertrain.max_drive_accel(float(v_cur), float(a_drive_env))
             a_rr = powertrain.resistance_accel(
                 float(v_cur),
                 condition_label=condition_label,
@@ -269,6 +268,11 @@ def _compute_theoretical_lap_qss(
             )
             a_drag = aero_runtime.drag_accel(float(v_cur), powertrain.mass_kg)
             a_res = a_rr + a_drag
+            # The capability envelope is trained from NET accel (drag + rolling
+            # resistance already removed); add resistance back so the power-map
+            # cap compares gross-with-gross and resistance is subtracted exactly
+            # once. See docs/theoretical-lap-grip-underestimation-diagnosis.md.
+            a_drive = powertrain.max_drive_accel(float(v_cur), float(a_drive_env) + float(a_res))
             a_net = max(0.0, float(a_drive) - float(a_res))
             v_sq_next = v_cur * v_cur + 2.0 * a_net * ds[i]
             v_next = math.sqrt(max(v_sq_next, 0.0))
@@ -309,7 +313,6 @@ def _compute_theoretical_lap_qss(
             aero_lf = aero_runtime.downforce_load_factor(v_cur, powertrain.mass_kg)
             a_drive_env = env.max_longitudinal_accel(float(v_cur), float(a_lat), braking=False)
             a_drive_env *= float(drv_prof[i]) * float(aero_lf)
-            a_drive = powertrain.max_drive_accel(float(v_cur), float(a_drive_env))
             a_rr = powertrain.resistance_accel(
                 float(v_cur),
                 condition_label=condition_label,
@@ -317,6 +320,11 @@ def _compute_theoretical_lap_qss(
             )
             a_drag = aero_runtime.drag_accel(float(v_cur), powertrain.mass_kg)
             a_res = a_rr + a_drag
+            # The capability envelope is trained from NET accel (drag + rolling
+            # resistance already removed); add resistance back so the power-map
+            # cap compares gross-with-gross and resistance is subtracted exactly
+            # once. See docs/theoretical-lap-grip-underestimation-diagnosis.md.
+            a_drive = powertrain.max_drive_accel(float(v_cur), float(a_drive_env) + float(a_res))
             a_net = max(0.0, float(a_drive) - float(a_res))
             v_sq_next = v_cur * v_cur + 2.0 * a_net * ds[i]
             v_next = math.sqrt(max(v_sq_next, 0.0))
