@@ -30,6 +30,65 @@ from pipeline.helpers import (
 logger = logging.getLogger(__name__)
 
 
+# ── Theoretical-lap plausibility guard ─────────────────────────────────
+# A theoretical / "optimal" lap must never be presented as slower than a lap
+# the driver actually achieved — that is physically impossible and produces a
+# negative ideal-lap gap. When a physics simulator emits such a result (e.g. a
+# grip-starved model), the guard rejects it and the cascade falls through to the
+# data-driven percentile envelope, which is built from the driver's own fast
+# laps and so cannot be slower than their best.
+_OPTIMAL_PLAUSIBILITY_TOL = 0.02  # accept up to 2% slower as measurement noise
+
+
+def theoretical_lap_time_s(theo_df: Optional[pd.DataFrame], sim_result: Any) -> float:
+    """Best-effort lap time [s] of a theoretical result.
+
+    Prefers ``sim_result.lap_time_s``; otherwise integrates the theoretical
+    lap's time column. Returns ``NaN`` when neither is available.
+    """
+    if sim_result is not None and hasattr(sim_result, "lap_time_s"):
+        try:
+            t = float(sim_result.lap_time_s)
+            if math.isfinite(t) and t > 0:
+                return t
+        except (TypeError, ValueError):
+            pass
+    if theo_df is not None and len(theo_df):
+        for col in ("Time (s)", "time_s", "cumulative_time_s"):
+            if col in theo_df.columns:
+                try:
+                    times = pd.to_numeric(theo_df[col], errors="coerce").dropna()
+                    if len(times) > 1:
+                        span = float(times.iloc[-1] - times.iloc[0])
+                        if math.isfinite(span) and span > 0:
+                            return span
+                except (TypeError, ValueError):
+                    pass
+    return float("nan")
+
+
+def is_optimal_plausible(
+    theo_time_s: float,
+    best_driver_time_s: float,
+    tol: float = _OPTIMAL_PLAUSIBILITY_TOL,
+) -> bool:
+    """False only when the theoretical lap is meaningfully slower than the best
+    achieved lap. Missing/degenerate inputs are accepted (cannot judge)."""
+    if not (
+        isinstance(best_driver_time_s, (int, float))
+        and math.isfinite(best_driver_time_s)
+        and best_driver_time_s > 0
+    ):
+        return True  # no reference lap → cannot judge
+    if not (
+        isinstance(theo_time_s, (int, float))
+        and math.isfinite(theo_time_s)
+        and theo_time_s > 0
+    ):
+        return True  # no theoretical time → do not reject on missing data
+    return theo_time_s <= best_driver_time_s * (1.0 + tol)
+
+
 # ── Step 10: Theoretical lap ───────────────────────────────────────────
 
 
@@ -94,6 +153,11 @@ def run_theoretical(
     if valid_times:
         best_driver_time = min(t for _, t in valid_times)
 
+    # Fastest-but-implausible candidate, kept only as a last resort so we never
+    # crash where a (bad) result previously existed.
+    _rejected_fallback: Optional[tuple] = None
+    _rejected_time: float = float("inf")
+
     # ── Priority 0: kart_envelope solver ──────────────────────────
     try:
         adapter_mod = lazy_import("theoretical_adapter")
@@ -120,15 +184,12 @@ def run_theoretical(
                     "confidence": round(sc.confidence, 4),
                     "condition_label": sc.condition_label,
                 }
+            _theo_t = theoretical_lap_time_s(adapter_result.theoretical_df, sim_result)
             logger.info(
                 "kart_envelope solver [%s]: %.2fs (driver best %.2fs).",
-                adapter_result.method,
-                adapter_result.theoretical_result.lap_time_s
-                if adapter_result.theoretical_result
-                else float("nan"),
-                best_driver_time,
+                adapter_result.method, _theo_t, best_driver_time,
             )
-            return (
+            _cand = (
                 adapter_result.theoretical_df,
                 sim_method,
                 sim_result,
@@ -137,6 +198,19 @@ def run_theoretical(
                 session_scalars,
                 None,
             )
+            if is_optimal_plausible(_theo_t, best_driver_time):
+                return _cand
+            logger.warning(
+                "kart_envelope theoretical %.2fs is slower than driver best "
+                "%.2fs — rejecting as implausible, trying next method.",
+                _theo_t, best_driver_time,
+            )
+            if _theo_t < _rejected_time:
+                _rejected_time, _rejected_fallback = _theo_t, _cand
+            # Drop the rejected candidate's artefacts so they don't leak into a
+            # later method's return tuple (metrics prefer sim_result.lap_time_s).
+            sim_method, sim_result = "none", None
+            corner_coaching = delta_map = session_scalars = None
     except Exception as exc:
         logger.warning(
             "kart_envelope adapter failed: %s — falling back to legacy engines.",
@@ -188,7 +262,19 @@ def run_theoretical(
                 ),
             )
             theo_df = sim_mod.result_to_theoretical_df(result)
-            return (theo_df, sim_method, sim_result, corner_coaching, delta_map, session_scalars, None)
+            _cand = (theo_df, sim_method, sim_result, corner_coaching, delta_map, session_scalars, None)
+            _theo_t = theoretical_lap_time_s(theo_df, result)
+            if is_optimal_plausible(_theo_t, best_driver_time):
+                return _cand
+            logger.warning(
+                "Hybrid sim theoretical %.2fs is slower than driver best %.2fs "
+                "— rejecting as implausible, falling through to percentile envelope.",
+                _theo_t, best_driver_time,
+            )
+            if _theo_t < _rejected_time:
+                _rejected_time, _rejected_fallback = _theo_t, _cand
+            # Drop the rejected sim so it can't leak into the percentile return.
+            sim_method, sim_result = "none", None
         except Exception as exc:
             logger.warning(
                 "Simulation (with fallback) failed: %s — "
@@ -199,6 +285,13 @@ def run_theoretical(
     # ── Priority 2: Adaptive percentile envelope ──────────────────
     theo_mod = lazy_import("theoretical_engine")
     if theo_mod is None:
+        if _rejected_fallback is not None:
+            logger.warning(
+                "Percentile-envelope engine unavailable; returning best available "
+                "(implausible) theoretical %.2fs as last resort.",
+                _rejected_time,
+            )
+            return _rejected_fallback
         raise ImportError(
             "No simulation method available: both lap_simulation and "
             "theoretical_engine are unavailable."
