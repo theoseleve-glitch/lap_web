@@ -732,6 +732,45 @@ def compute_accel_envelope(
 # -- -
 
 
+_G_MPS2: Final[float] = 9.80665
+
+# Feature-schema aliases. Distance-resampled laps from the pipeline usually
+# carry snake_case feature columns, but on some paths they still hold raw
+# RaceChrono headers (e.g. "Distance (m)"). The physics/kart solvers rename
+# internally; the percentile-envelope path did not, so it crashed when the
+# plausibility guard routed implausible physics results to it. Normalise here so
+# the data-driven fallback works on any lap shape. (scale converts units, e.g.
+# G -> m/s^2 for the longitudinal-acceleration source.)
+_FEATURE_ALIASES: Final[dict[str, list[tuple[str, float]]]] = {
+    _COL_DIST:  [("Distance (m)", 1.0), ("distance", 1.0), ("LapDistance (m)", 1.0)],
+    _COL_SPEED: [("Speed (m/s)", 1.0), ("Speed (m/s) *calc", 1.0), ("speed", 1.0)],
+    _COL_ACCEL: [("Longitudinal acceleration (G) *calc", _G_MPS2), ("accel_long", 1.0)],
+}
+
+
+def _ensure_feature_columns(laps: list[pd.DataFrame]) -> list[pd.DataFrame]:
+    """Add snake_case feature columns from known aliases when absent.
+
+    No-op for laps that already carry the feature schema (e.g. unit tests), so
+    existing callers are unaffected.
+    """
+    out: list[pd.DataFrame] = []
+    for df in laps:
+        if df is None or not len(df):
+            out.append(df)
+            continue
+        add: dict[str, Any] = {}
+        for target, sources in _FEATURE_ALIASES.items():
+            if target in df.columns:
+                continue
+            for src, scale in sources:
+                if src in df.columns:
+                    add[target] = pd.to_numeric(df[src], errors="coerce") * scale
+                    break
+        out.append(df.assign(**add) if add else df)
+    return out
+
+
 def build_theoretical_lap(
     laps:              list[pd.DataFrame],
     n_points:          int   = 1000,
@@ -766,8 +805,9 @@ def build_theoretical_lap(
         Columns: ``distance_m``, ``v_env_mps``, ``accel_max_mps2``,
         ``brake_max_mps2``.
     """
-    # Normalise once -- downstream functions receive lap-relative distances.
-
+    # Normalise columns (raw RaceChrono -> feature schema) then distances, so the
+    # data-driven fallback works whatever shape the laps arrive in.
+    laps = _ensure_feature_columns(laps)
     laps = _normalize_lap_distances(laps)
 
     speed_env = compute_speed_percentile_envelope(

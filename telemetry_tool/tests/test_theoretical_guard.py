@@ -103,3 +103,27 @@ def test_run_theoretical_rejects_implausible_sim_and_falls_through(monkeypatch):
     # Fell through to the percentile envelope, not the implausible 71s sim
     assert sim_method == "percentile_envelope"
     assert S10.theoretical_lap_time_s(theo_df, sim_result) == pytest.approx(60.0, abs=0.5)
+
+
+# ── the fallback must accept raw RaceChrono-named laps ───────────────────────
+def test_build_theoretical_lap_accepts_racechrono_columns():
+    """The percentile-envelope fallback (what the guard routes to) must work on
+    distance-resampled laps that still carry raw RaceChrono headers, not only
+    snake_case feature columns."""
+    from theoretical_engine import build_theoretical_lap
+
+    rng = np.random.default_rng(7)
+    laps = []
+    for _ in range(4):
+        dist = np.linspace(0.0, 500.0, 200)
+        speed = 20.0 + 5.0 * np.sin(2 * np.pi * dist / 500.0) + rng.normal(0, 0.3, 200)
+        laps.append(pd.DataFrame({
+            "Distance (m)": dist,
+            "Speed (m/s)": speed,
+            "Longitudinal acceleration (G) *calc": rng.normal(0, 0.2, 200),
+        }))
+
+    theo = build_theoretical_lap(laps, n_points=100)
+    assert theo is not None and len(theo) > 0
+    assert "v_env_mps" in theo.columns
+    assert theo["v_env_mps"].notna().any()
