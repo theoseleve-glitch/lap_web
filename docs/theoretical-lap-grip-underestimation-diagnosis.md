@@ -1,7 +1,7 @@
 # Diagnosis: physics solvers under-estimate kart grip (optimal lap slower than driver)
 
-**Status:** investigation complete, fix NOT yet applied (deploy-gated). 2026-07-08.
-**Branch:** `feat/theoretical-hardening`. **Confidence:** 0.85 (multi-agent investigation, adversarially verified).
+**Status:** diagnosed AND longitudinal fix APPLIED + validated on real data (branch-only, deploy-gated). A distinct residual (lateral corner-speed) remains — see "Fix applied" below. 2026-07-08.
+**Branch:** `feat/theoretical-hardening`. **Confidence:** 0.85 (multi-agent investigation, adversarially verified; core claim re-verified at source).
 
 ## Symptom
 
@@ -72,6 +72,48 @@ the envelope net and *remove* the resistance subtraction from `_forward_pass` (a
 gate preserves correct net-out behavior for genuine gross powertrain maps. Guarded by the
 existing 0.5–2.0 driver-ratio sanity warning (`theoretical_adapter.py:528-535`) and, in this
 branch, by the plausibility guard.
+
+## Fix applied (commits a60af61 hybrid, 0f15dec QSS)
+
+Both solvers now convert the net-derived drive limits to gross before the single
+resistance subtraction:
+- **Hybrid** (`lap_simulation.py`): new `VehicleModel.gross_traction_accel()` adds
+  `Crr·g + drag·v²` back to the net envelope; `_forward_pass` converts the net friction
+  grip to gross the same way, then subtracts resistance once. A `traction_is_net` flag
+  makes provenance explicit (default True; an already-gross envelope adds nothing).
+- **QSS** (`kart_envelope/solver/min_time.py`): both forward drive passes add `a_res` to the
+  net `CapabilityEnvelope` value before the gross power-map cap (`max_drive_accel`), then
+  subtract `a_res` once. Braking passes untouched.
+
+**A/B on real SLK_FP2** (driver best 61.68 s):
+
+| Metric | Before | After |
+|---|---|---|
+| Hybrid mean speed | 13.4 m/s (crawl) | **21.4 m/s** (driver 21.2) |
+| Hybrid "power-limited" fraction | 53% | **0%** |
+| Hybrid optimal (calibrated) | 63.63 s (103.2%) | **62.26 s (100.9%) — ACCEPTED by guard** |
+| QSS optimal | 74.78 s (121%) | **71.29 s (115.6%)** |
+
+The longitudinal double-count is resolved and the pipeline now serves a *physics-based*
+optimum (the hybrid) rather than the percentile fallback. 219 physics/sim + 116 kart tests green.
+
+**Car-regression safety (analysed, not yet A/B'd on real car data):** in both solvers the drive
+envelope is *always* the net telemetry-trained capability; the gross power map/limit is applied
+only as a *cap*. So `net_env + a_res` (gross) capped by the gross map, minus `a_res` once, is
+correct for both regimes — there is no net-vs-gross path that dropping/adding the subtraction
+would regress. `test_gross_capped_by_gross_power` + the kart aero/powertrain suite cover the
+map-binding case. A real car-data A/B remains a deploy-gate item.
+
+## Residual finding (NEW — distinct from the double-count)
+
+After the longitudinal fix, **both solvers are still ~11–15% pessimistic uncalibrated** (QSS
+71.29 s rejected; hybrid raw first-iteration 68.6 s, only reaching 62.26 s via grip-scaling
+calibration). The double-count was real but not the *only* cause. The residual lives in the
+**lateral/corner-speed subsystem** — the 0.5 g lateral floor and the `grip_map mu=0.627`
+fallback cap corner entry/apex speeds below what the driver achieves. This is open question #2,
+now promoted to the next investigation: the QSS solver will keep being rejected (guard →
+hybrid fallback) until corner grip is also corrected. The product is protected in the
+meantime (guard + hybrid calibration serve a plausible optimum).
 
 ## Validation plan (before deploy)
 
