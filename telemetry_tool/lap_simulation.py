@@ -197,9 +197,19 @@ class VehicleModel:
     tire_load_sensitivity:       float = 0.08
     confidence:                  float = 0.5
     n_samples:                   int = 0
+    # The traction envelope is trained from the measured longitudinal-accel
+    # channel, which is a NET body acceleration (drag + rolling resistance
+    # already removed). Kept explicit so the forward integrator can recover the
+    # GROSS tractive capability instead of subtracting resistance a second time.
+    traction_is_net:             bool = True
 
     def traction_accel(self, speed: float) -> float:
-        """Max traction acceleration [m/s²] at *speed*, power-limited."""
+        """Max traction acceleration [m/s²] at *speed*, power-limited.
+
+        Returns the NET envelope value (as trained). For lap simulation use
+        :meth:`gross_traction_accel`, which recovers gross capability so the
+        single resistance subtraction in the integrator is not a double-count.
+        """
         v = max(speed, _MIN_SPEED_MPS)
         # Interpolate from the fitted envelope
         a_envelope = float(np.interp(v, self.v_knots, self.traction_force_per_kg))
@@ -209,6 +219,24 @@ class VehicleModel:
             a_power = p_at_v / v
             a_envelope = min(a_envelope, a_power)
         return max(a_envelope, 0.0)
+
+    def gross_traction_accel(self, speed: float) -> float:
+        """Max GROSS tractive acceleration [m/s²] at *speed* (before resistance).
+
+        The traction envelope is NET (drag + rolling resistance already removed),
+        so add them back to recover gross engine/tyre capability; the integrator
+        then subtracts resistance exactly once. The power limit ``P/v`` is already
+        gross. When ``traction_is_net`` is False the envelope is already gross and
+        nothing is added.
+        """
+        v = max(speed, _MIN_SPEED_MPS)
+        a_env = float(np.interp(v, self.v_knots, self.traction_force_per_kg))
+        if self.traction_is_net:
+            a_env = a_env + self.rolling_resistance * _G + self.drag_accel(v)
+        if self.estimated_peak_power_w_per_kg > 0 and v > _MIN_SPEED_MPS:
+            p_at_v = float(np.interp(v, self.v_knots, self.power_envelope_w_per_kg))
+            a_env = min(a_env, p_at_v / v)  # gross power ceiling
+        return max(a_env, 0.0)
 
     def braking_decel(self, speed: float) -> float:
         """Max braking deceleration [m/s²] (positive) at *speed*."""
@@ -803,21 +831,25 @@ def _forward_pass(
             v_cur, a_lat_used, braking=False,
         )
 
-        # --- Power-limited acceleration ---
+        # --- Convert the net-derived limits to GROSS so resistance is
+        # subtracted exactly once (a_grip and the traction envelope are both
+        # trained from NET measured accel; drag + rolling resistance are already
+        # removed). See docs/theoretical-lap-grip-underestimation-diagnosis.md.
         a_power = float("inf")
         if vehicle_model is not None:
-            # Telemetry-fitted traction (includes power limits)
-            a_fitted = vehicle_model.traction_accel(v_cur)
-            # Add downforce-enhanced grip
-            df_boost = vehicle_model.downforce_grip_boost(v_cur)
-            a_grip_boosted = a_grip + df_boost * 0.3  # Fraction goes to traction
-            # Use the minimum of fitted and grip-limited
-            a_power = a_fitted
+            a_rr_drag = vehicle_model.rolling_resistance * _G + vehicle_model.drag_accel(v_cur)
+            a_grip_gross = a_grip + a_rr_drag
+            a_power = vehicle_model.gross_traction_accel(v_cur)  # gross
+        else:
+            a_rr_drag = rolling_resistance * _G
+            if aero_drag_factor > 0:
+                a_rr_drag += aero_drag_factor * v_cur * v_cur
+            a_grip_gross = a_grip + a_rr_drag
 
-        # The actual available acceleration is the min of grip and power
-        a_traction = min(a_grip, a_power)
+        # The actual available (gross) acceleration is the min of grip and power
+        a_traction = min(a_grip_gross, a_power)
 
-        # --- Subtract resistances ---
+        # --- Subtract resistances exactly once (drag + rolling + grade) ---
         g_val = 0.0
         if grade is not None and i < len(grade):
             g_val = float(grade[i])
