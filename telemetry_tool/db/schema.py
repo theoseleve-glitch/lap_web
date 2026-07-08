@@ -6,7 +6,7 @@ All CREATE TABLE statements live here as constants so that
 """
 
 # Current schema version -- bump when adding/altering tables.
-SCHEMA_VERSION = 36
+SCHEMA_VERSION = 37
 
 # ------------------------------------------------------------------
 # Phase 1 tables
@@ -38,6 +38,7 @@ CREATE TABLE IF NOT EXISTS tracks (
     joker_time_delta_s     REAL,
     dry_ref_session_id  TEXT REFERENCES sessions(session_id),
     wet_ref_session_id  TEXT REFERENCES sessions(session_id),
+    canonical_id  TEXT,
     created_at    TEXT NOT NULL DEFAULT (datetime('now')),
     updated_at    TEXT NOT NULL DEFAULT (datetime('now'))
 );
