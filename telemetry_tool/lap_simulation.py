@@ -232,10 +232,23 @@ class VehicleModel:
         v = max(speed, _MIN_SPEED_MPS)
         a_env = float(np.interp(v, self.v_knots, self.traction_force_per_kg))
         if self.traction_is_net:
+            # The traction envelope is speed-binned from observed accel, so it
+            # collapses at low speed where the driver's throttle is submaximal
+            # (corner exits) — a sampling artifact, not a real grip drop. Without
+            # downforce the grip-limited capability does not fall at low speed,
+            # so lift the dip to the envelope's peak grip. Downforce cars keep the
+            # speed dependence (grip genuinely rises with speed).
+            if self.aero_downforce_coeff <= 0.0:
+                a_env = max(a_env, float(np.max(self.traction_force_per_kg)))
             a_env = a_env + self.rolling_resistance * _G + self.drag_accel(v)
         if self.estimated_peak_power_w_per_kg > 0 and v > _MIN_SPEED_MPS:
-            p_at_v = float(np.interp(v, self.v_knots, self.power_envelope_w_per_kg))
-            a_env = min(a_env, p_at_v / v)  # gross power ceiling
+            # Engine peak power is available across the speed range: model the
+            # power ceiling as P_peak/v (large at low speed → grip-limited; falls
+            # with speed). A speed-binned power percentile under-reads at low
+            # speed and would wrongly power-limit corner exits.
+            p_peak = max(self.estimated_peak_power_w_per_kg,
+                         float(np.max(self.power_envelope_w_per_kg)))
+            a_env = min(a_env, p_peak / v)  # gross power ceiling
         return max(a_env, 0.0)
 
     def braking_decel(self, speed: float) -> float:

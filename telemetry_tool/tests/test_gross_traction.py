@@ -61,3 +61,47 @@ def test_net_minus_resistance_recovers_observed_accel():
     a_resist = vm.resistance_accel(v, 0.0)   # rr + drag (no grade)
     a_net = vm.gross_traction_accel(v) - a_resist
     assert a_net == pytest.approx(3.0, rel=1e-9)   # back to the trained net value
+
+
+def _vm_dip(**kw):
+    """Envelope that dips at low speed (the corner-exit sampling artifact)."""
+    v = np.array([8.0, 12.0, 16.0, 20.0, 24.0])
+    params = dict(
+        v_knots=v,
+        traction_force_per_kg=np.array([1.5, 2.0, 3.0, 3.2, 2.8]),  # NET, dips at low v
+        braking_force_per_kg=np.array([6.0] * 5),
+        power_envelope_w_per_kg=np.array([1e6] * 5),  # power not binding
+        estimated_peak_power_w_per_kg=1e6,
+        aero_drag_coeff=0.0, rolling_resistance=0.0,  # isolate the grip term
+        aero_downforce_coeff=0.0,
+    )
+    params.update(kw)
+    return VehicleModel(**params)
+
+
+def test_no_lowspeed_collapse_without_downforce():
+    vm = _vm_dip()
+    # at 8 m/s the raw envelope dips to 1.5 but peak is 3.2 -> lifted to peak
+    assert vm.gross_traction_accel(8.0) == pytest.approx(3.2, rel=1e-9)
+    assert vm.gross_traction_accel(12.0) == pytest.approx(3.2, rel=1e-9)
+    assert vm.gross_traction_accel(20.0) == pytest.approx(3.2, rel=1e-9)
+
+
+def test_downforce_keeps_lowspeed_dependence():
+    vm = _vm_dip(aero_downforce_coeff=0.001)  # has downforce -> low-speed grip is real
+    assert vm.gross_traction_accel(8.0) == pytest.approx(1.5, rel=1e-9)
+
+
+def test_power_ceiling_uses_peak_not_binned():
+    # binned power collapses at low speed; P_peak/v must be used instead
+    v = np.array([8.0, 12.0, 20.0, 30.0])
+    vm = VehicleModel(
+        v_knots=v,
+        traction_force_per_kg=np.array([5.0, 5.0, 5.0, 5.0]),   # grip floored to peak 5
+        braking_force_per_kg=np.array([6.0] * 4),
+        power_envelope_w_per_kg=np.array([40.0, 48.0, 1500.0, 3000.0]),  # collapses low; peak 3000
+        estimated_peak_power_w_per_kg=3000.0,
+        aero_drag_coeff=0.0, rolling_resistance=0.0, aero_downforce_coeff=0.0,
+    )
+    # binned would give 48/12 = 4.0 (wrongly power-limited); P_peak/v = 3000/12 = 250 -> grip 5 binds
+    assert vm.gross_traction_accel(12.0) == pytest.approx(5.0, rel=1e-9)
