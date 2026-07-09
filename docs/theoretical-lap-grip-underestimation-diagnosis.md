@@ -136,15 +136,35 @@ accel-limited points achieve only **0.23 g median** (vs 0.35 g available / 0.33 
 tops out at **26.2 m/s vs driver 29.9 m/s**; sim mean speed **19.0 vs 22.5 m/s**. The sim crawls
 out of corners → enters straights slow → never reaches top speed → compounds to ~11% slow.
 
-**Fix direction (NOT yet applied — higher-risk, touches capability-envelope construction for ALL
-vehicles):** the longitudinal traction capability and engine power must not decrease at low speed.
-Options: (a) power — model `a_power = P_peak / v` from a single estimated peak power (grip-limited
-at low v) instead of a speed-binned power percentile; (b) traction — enforce a monotone
-non-decreasing-toward-low-speed capability (running max, or floor low-speed bins to the mid-speed
-peak). The existing `_KART_TRACTION_FLOOR` (0.35 g) is a uniform patch that doesn't fix the
-*vehicle-model* envelope (which is separate from the friction model and un-floored). Needs an A/B
-on this + a car fixture before deploy (car power maps must not regress). Until then the product is
-protected (guard + hybrid calibration serve a plausible optimum).
+**Fix APPLIED (two coordinated parts) + validated:**
+
+1. **Dropped-return bug** (`s09_physics.py:run_vehicle_model`): `apply_kart_traction_floor` returns
+   a *new* floored FrictionCircle, but its return was discarded — so the 0.35 g traction floor was
+   computed, logged, and thrown away; the sim received un-floored 0.20 g low-speed traction. The
+   orchestrator already expected `(vehicle_params, corrected_friction)` (half-built wiring). Fixed:
+   capture the floored friction and return the tuple.
+2. **Vehicle-model low-speed collapse** (`lap_simulation.py:VehicleModel.gross_traction_accel`):
+   (a) for no-downforce vehicles, lift the net traction envelope's low-speed dip to its peak grip
+   (the dip is a corner-exit sampling artifact; downforce cars keep the speed dependence);
+   (b) model the power ceiling as `P_peak/v` (peak available across speed) instead of a speed-binned
+   power percentile that under-reads at low speed.
+
+**A/B on SLK_FP2** (driver 61.68 s): raw hybrid **68.60 → 66.99 s**; auto-calibrated served optimum
+**62.26 → 61.05 s (100.9% → 99.0%)** — now correctly *faster* than the driver's best actual lap
+(a valid ideal lap) and accepted by the guard. 202 physics/sim tests green.
+
+**Residual #3 — peak power under-read (NEXT lever, NOT applied):** the raw physics is still ~8%
+pessimistic (calibration scale 1.877×) because the estimated peak power is **95 W/kg** but the
+driver's data implies **114–117 W/kg** (max of `(a_long+resistance)·v` on the fast lap, peak at
+25 m/s). Note **95 × 1.20 = 114**: this is the *same 20% GPS under-read* that the pre-existing
+`_GPS_GRIP_CORRECTION = 1.20` already corrects for the friction envelopes — but that correction is
+**not** applied to the vehicle-model power/peak-power estimate (a separate module, `fit_vehicle_model`).
+Principled fix: extend the GPS correction (or a higher power percentile) to the vehicle-model power
+estimate. Tuning-sensitive + car-regression risk → deferred; the auto-calibration bridges it in the
+meantime, and the served optimum is already correct.
+
+Needs an A/B on a car fixture before deploy (car power maps / downforce grip must not regress).
+Until deployed the product is protected (guard + hybrid calibration serve a plausible optimum).
 
 ## Validation plan (before deploy)
 
