@@ -237,7 +237,9 @@ def run_vehicle_model(
     vehicle_overrides: Optional[dict[str, Any]] = None,
 ) -> Any:
     """Step 09d + 09d2: Vehicle classification + kart traction fix.
-    Returns vehicle_params."""
+    Returns ``(vehicle_params, friction_circle)`` — the friction model is the
+    kart-floored copy when applicable (``apply_kart_traction_floor`` returns a new
+    object; the orchestrator adopts it as ``corrected_friction``)."""
     veh_mod = lazy_import("vehicle_model")
     if veh_mod is None:
         raise ImportError("vehicle_model module unavailable")
@@ -266,9 +268,14 @@ def run_vehicle_model(
             fric_mod = lazy_import("friction_model")
             if fric_mod is not None and hasattr(fric_mod, "apply_kart_traction_floor"):
                 logger.info("Applying kart traction floor correction.")
-                fric_mod.apply_kart_traction_floor(friction_circle, floor_g=0.35)
+                # apply_kart_traction_floor returns a NEW floored FrictionCircle;
+                # capture it so the floor actually reaches the simulator (the
+                # return was previously dropped, so the floor was a no-op).
+                friction_circle = fric_mod.apply_kart_traction_floor(
+                    friction_circle, floor_g=0.35,
+                )
 
-    return vehicle_params
+    return vehicle_params, friction_circle
 
 
 # ── 09e: Data quality assessment ─────────────────────────────────────
