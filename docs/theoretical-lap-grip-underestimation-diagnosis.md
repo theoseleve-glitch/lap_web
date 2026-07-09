@@ -153,15 +153,24 @@ out of corners → enters straights slow → never reaches top speed → compoun
 **62.26 → 61.05 s (100.9% → 99.0%)** — now correctly *faster* than the driver's best actual lap
 (a valid ideal lap) and accepted by the guard. 202 physics/sim tests green.
 
-**Residual #3 — peak power under-read (NEXT lever, NOT applied):** the raw physics is still ~8%
-pessimistic (calibration scale 1.877×) because the estimated peak power is **95 W/kg** but the
-driver's data implies **114–117 W/kg** (max of `(a_long+resistance)·v` on the fast lap, peak at
-25 m/s). Note **95 × 1.20 = 114**: this is the *same 20% GPS under-read* that the pre-existing
-`_GPS_GRIP_CORRECTION = 1.20` already corrects for the friction envelopes — but that correction is
-**not** applied to the vehicle-model power/peak-power estimate (a separate module, `fit_vehicle_model`).
-Principled fix: extend the GPS correction (or a higher power percentile) to the vehicle-model power
-estimate. Tuning-sensitive + car-regression risk → deferred; the auto-calibration bridges it in the
-meantime, and the served optimum is already correct.
+**Residual #3 — peak power: investigated, REFUTED as the cause.** The raw physics is still ~8%
+pessimistic (calibration scale 1.877×). A first look suggested the estimated peak power (95 W/kg)
+was under-read vs a driver-implied 114 W/kg — but that 114 used drag coefficient Cd=0.0032, whereas
+`fit_vehicle_model` computes power with **Cd=0.002**. Recomputing the driver's implied power with the
+model's own Cd gives a global distribution of **max 100, p99 96, p95 94 W/kg** — so the model's
+`estimated_peak_power=95` sits right at p95–p99 and is **accurate, not under-read**. The
+"95 × 1.20 = 114" match was a coincidence of an inconsistent drag constant, not a GPS under-read. No
+peak-power fix applied (the grip-correction plumbing that was drafted for it was reverted).
+
+**Residual raw pessimism — root cause UNRESOLVED (two leads refuted).** After the low-speed fixes the
+raw hybrid is 66.99 s vs driver 61.68 s, bridged to 61.05 s by grip calibration (1.877×). Neither the
+lateral-grip subsystem (envelopes match the driver) nor peak power (accurate given Cd) explains it.
+The classifier now labels ~90% "power-limited" yet friction-scaling still reduces the time, which is
+internally inconsistent and suggests the remaining gap is in how the sim *uses* grip/power (friction-
+ellipse coupling, the P_peak/v idealization at modest power, or resistance/Cd), not a single envelope
+magnitude. Resolving it needs matched-Cd, per-segment sim-vs-driver instrumentation — diminishing
+returns given the served optimum is already correct (99% of driver, faster-than-driver ideal lap,
+accepted). Documented and deferred rather than fixed with a tuning hack.
 
 Needs an A/B on a car fixture before deploy (car power maps / downforce grip must not regress).
 Until deployed the product is protected (guard + hybrid calibration serve a plausible optimum).
