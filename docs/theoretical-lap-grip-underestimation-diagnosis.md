@@ -104,16 +104,47 @@ correct for both regimes — there is no net-vs-gross path that dropping/adding 
 would regress. `test_gross_capped_by_gross_power` + the kart aero/powertrain suite cover the
 map-binding case. A real car-data A/B remains a deploy-gate item.
 
-## Residual finding (NEW — distinct from the double-count)
+## Residual finding (NEW — distinct from the double-count) — INVESTIGATED, root cause found
 
 After the longitudinal fix, **both solvers are still ~11–15% pessimistic uncalibrated** (QSS
-71.29 s rejected; hybrid raw first-iteration 68.6 s, only reaching 62.26 s via grip-scaling
-calibration). The double-count was real but not the *only* cause. The residual lives in the
-**lateral/corner-speed subsystem** — the 0.5 g lateral floor and the `grip_map mu=0.627`
-fallback cap corner entry/apex speeds below what the driver achieves. This is open question #2,
-now promoted to the next investigation: the QSS solver will keep being rejected (guard →
-hybrid fallback) until corner grip is also corrected. The product is protected in the
-meantime (guard + hybrid calibration serve a plausible optimum).
+71.29 s rejected; hybrid raw 68.6 s, only reaching 62.26 s via grip-scaling calibration).
+
+**The lateral-grip theory was REFUTED by measurement.** On the fastest lap (61.68 s) the driver
+sustained **1.42 g max / 1.30 g p95 lateral** (from the reliable `Lateral acceleration (G) *calc`
+= speed×bearing-rate channel, independent of the corrupt gyro) and **0.33 g max longitudinal
+accel**, **0.62 g braking**. The built envelopes MATCH: `lateral_vals` 1.33 g, `traction_vals`
+0.32 g→0.35 g floor, braking ~0.61 g. Grip *magnitudes* are correct — the slowest corner (~12.3
+m/s) is correctly grip-limited at the full 1.33 g. So open-question #2 (lateral floor / grip_map)
+is not the cause.
+
+**VERIFIED root cause (solver instrumentation, `LAP_SOLVER_DUMP` env-gated dump, reverted):**
+the longitudinal **traction and power envelopes collapse at low speed**. Measured
+vehicle-model envelope (g):
+
+| v (m/s) | veh_trac_net | power P/v | fric_trac |
+|---|---|---|---|
+| 8  | 0.07 | 0.11 | 0.20 |
+| 12 (corner exit) | 0.16 | 0.22 | 0.20 |
+| 20 (peak) | 0.32 | 0.43 | 0.32 |
+
+Both `traction_env` and `power_env` are **speed-binned percentiles of observed acceleration**, so
+at low speed (corner-exit range, where the driver's throttle is progressive/submaximal and samples
+are sparse) they capture what the driver *did* there, not the kart's *capability*. `power_Pv`
+tracks `veh_trac` at low speed → the sim is **power-limited at 12–13 m/s corner exits** by a bogus
+low-speed power envelope. Consequences (from the raw dump, sim 68.6 s vs driver 61.68 s):
+accel-limited points achieve only **0.23 g median** (vs 0.35 g available / 0.33 g driver); sim
+tops out at **26.2 m/s vs driver 29.9 m/s**; sim mean speed **19.0 vs 22.5 m/s**. The sim crawls
+out of corners → enters straights slow → never reaches top speed → compounds to ~11% slow.
+
+**Fix direction (NOT yet applied — higher-risk, touches capability-envelope construction for ALL
+vehicles):** the longitudinal traction capability and engine power must not decrease at low speed.
+Options: (a) power — model `a_power = P_peak / v` from a single estimated peak power (grip-limited
+at low v) instead of a speed-binned power percentile; (b) traction — enforce a monotone
+non-decreasing-toward-low-speed capability (running max, or floor low-speed bins to the mid-speed
+peak). The existing `_KART_TRACTION_FLOOR` (0.35 g) is a uniform patch that doesn't fix the
+*vehicle-model* envelope (which is separate from the friction model and un-floored). Needs an A/B
+on this + a car fixture before deploy (car power maps must not regress). Until then the product is
+protected (guard + hybrid calibration serve a plausible optimum).
 
 ## Validation plan (before deploy)
 
