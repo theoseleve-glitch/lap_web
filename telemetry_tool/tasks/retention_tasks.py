@@ -486,6 +486,48 @@ def _cleanup_retention_audit_impl() -> dict:
         conn.close()
 
 
+# ── Sidecar retention (W9.T9.3) ────────────────────────────────────────
+
+_SIDECAR_DEFAULT_RETENTION_DAYS = 30
+
+
+def _enforce_sidecar_retention_impl() -> int:
+    """Delete raw Parquet sidecars older than SIDECAR_RETENTION_DAYS.
+
+    Two-axis retention intent:
+    - User-facing tiered retention is enforced by ``_enforce_retention_impl``
+      above (deletes per-workspace raw tables based on plan tier).
+    - This task enforces the *internal long-term* ML-training ceiling on
+      raw-channel sidecars; 30 days is short enough to cap disk use but
+      long enough for post-hoc reprocessing windows.
+
+    Returns the number of files deleted. 0 when the root dir doesn't
+    exist (local dev or fresh deploy).
+    """
+    import time
+    root = Path(os.environ.get("SIDECAR_ROOT", "/data/sidecars"))
+    if not root.is_dir():
+        return 0
+    cutoff = time.time() - (
+        int(os.environ.get("SIDECAR_RETENTION_DAYS", _SIDECAR_DEFAULT_RETENTION_DAYS)) * 86400
+    )
+    deleted = 0
+    for pq in root.rglob("raw.parquet"):
+        try:
+            if pq.stat().st_mtime < cutoff:
+                pq.unlink()
+                # prune empty parents (session dir, then workspace dir)
+                for p in (pq.parent, pq.parent.parent):
+                    try:
+                        p.rmdir()
+                    except OSError:
+                        break
+                deleted += 1
+        except OSError:
+            continue
+    return deleted
+
+
 # ── Register as Celery task or plain function ─────────────────────────
 
 try:
@@ -504,6 +546,14 @@ try:
         """Monthly task: trim retention_audit rows older than 24 months."""
         return _cleanup_retention_audit_impl()
 
+    @celery.task(
+        name="tasks.retention_tasks.enforce_sidecar_retention",
+        queue="default", max_retries=1,
+    )
+    def enforce_sidecar_retention() -> int:
+        """Daily Celery Beat task: delete Parquet sidecars past 30d."""
+        return _enforce_sidecar_retention_impl()
+
 except ImportError:
     logger.debug("Celery not available — retention task not registered")
 
@@ -514,3 +564,7 @@ except ImportError:
     def cleanup_retention_audit():
         """Stub when Celery is not available."""
         return _cleanup_retention_audit_impl()
+
+    def enforce_sidecar_retention() -> int:
+        """Stub when Celery is not available."""
+        return _enforce_sidecar_retention_impl()

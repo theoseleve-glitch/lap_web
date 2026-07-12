@@ -57,6 +57,7 @@ def make_celery(app=None) -> Celery:
             "tasks.dead_letter_tasks",
             "tasks.ocp_tasks",
             "tasks.endurance_tasks",
+            "tasks.sim_tasks",
         ],
     )
     celery.conf.update(
@@ -71,6 +72,7 @@ def make_celery(app=None) -> Celery:
             "tasks.training_tasks.*": {"queue": "pipeline"},
             "tasks.ocp_tasks.*": {"queue": "pipeline"},
             "tasks.batch_tasks.*": {"queue": "default"},
+            "tasks.sim_tasks.*": {"queue": "sim"},
         },
         task_default_queue="default",
         # Beat schedule for periodic tasks
@@ -140,6 +142,11 @@ def make_celery(app=None) -> Celery:
             "enforce-tiered-retention": {
                 "task": "tasks.retention_tasks.enforce_telemetry_retention",
                 "schedule": crontab(hour=3, minute=0),  # Daily 03:00 UTC
+                "options": {"queue": "default"},
+            },
+            "enforce-sidecar-retention": {
+                "task": "tasks.retention_tasks.enforce_sidecar_retention",
+                "schedule": crontab(hour=3, minute=30),  # 30 min after tier retention
                 "options": {"queue": "default"},
             },
             "cleanup-retention-audit": {

@@ -243,3 +243,41 @@ def make_corner_metrics(n_laps=5, n_corners=4):
             })
         metrics[lap] = lap_metrics
     return metrics
+
+
+# ── W9.T9.4 backfill fixture ──────────────────────────────────────────
+# Only activates when TELEMETRY_PG_URL_TEST is set (disposable PG). Seeds
+# two session rows with NULL source/data_profile/capabilities so the
+# backfill script has something to update; cleans up on teardown.
+
+import os as _os  # already imported by sections above; rebound locally
+
+
+@pytest.fixture
+def disposable_pg():
+    """Seed 2 sessions with source=NULL on a disposable PG."""
+    dsn = _os.environ.get("TELEMETRY_PG_URL_TEST")
+    if not dsn:
+        pytest.skip("TELEMETRY_PG_URL_TEST not set")
+    import psycopg2
+    with psycopg2.connect(dsn) as conn:
+        with conn.cursor() as cur:
+            cur.execute("ALTER TABLE sessions ALTER COLUMN source DROP NOT NULL")
+            cur.execute("ALTER TABLE sessions ALTER COLUMN data_profile DROP NOT NULL")
+            cur.execute("ALTER TABLE sessions ALTER COLUMN capabilities DROP NOT NULL")
+            cur.execute(
+                "INSERT INTO sessions (session_id, workspace_id, source, "
+                "data_profile, capabilities) "
+                "VALUES (%s, %s, NULL, NULL, NULL), (%s, %s, NULL, NULL, NULL)",
+                ("00000000-0000-0000-0000-0000000000a1", "ws-test",
+                 "00000000-0000-0000-0000-0000000000a2", "ws-test"),
+            )
+        conn.commit()
+    yield
+    with psycopg2.connect(dsn) as conn:
+        with conn.cursor() as cur:
+            cur.execute("DELETE FROM sessions WHERE workspace_id = 'ws-test'")
+            cur.execute("ALTER TABLE sessions ALTER COLUMN source SET NOT NULL")
+            cur.execute("ALTER TABLE sessions ALTER COLUMN data_profile SET NOT NULL")
+            cur.execute("ALTER TABLE sessions ALTER COLUMN capabilities SET NOT NULL")
+        conn.commit()
