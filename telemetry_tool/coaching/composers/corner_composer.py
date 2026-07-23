@@ -156,7 +156,7 @@ def _resolve_cause(
     # 4. Throttle lifts
     dangerous_lifts = [tl for tl in throttle_lifts if tl.severity == "dangerous"]
     if dangerous_lifts:
-        return "mid_corner_lift", dangerous_lifts[0].throttle_drop_pct
+        return "mid_corner_lift", dangerous_lifts[0].drop_pct
 
     # 5. Speed-based: find largest time loss phase
     phases = {

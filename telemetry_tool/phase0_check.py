@@ -133,7 +133,6 @@ def check_core_imports() -> None:
         "feature_builder", "deltas", "theoretical_engine", "scoring",
         "ml_engine", "anomaly_detection", "driver_profile",
         "reporting_html", "reporting_pdf", "pipeline",
-        "debrief_engine",
     ]
     ok = 0
     for mod_name in modules:

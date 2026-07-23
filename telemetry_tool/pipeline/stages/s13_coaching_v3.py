@@ -39,7 +39,10 @@ def run_coaching_analyzers(
     from coaching.analyzers.traction_budget import analyze_traction_budget
     from coaching.analyzers.symptom_detector import detect_symptoms
     from coaching.analyzers.throttle_lift import detect_throttle_lifts
-    from coaching.analyzers.weight_transfer import compute_weight_transfer
+    from coaching.analyzers.weight_transfer import (
+        compute_weight_transfer,
+        _DEFAULTS as _VEHICLE_MASS_DEFAULTS,
+    )
 
     bundle: dict[str, list] = {
         "trail_brakes": [],
@@ -90,7 +93,15 @@ def run_coaching_analyzers(
         try:
             if lap_df is not None:
                 friction_max = _estimate_friction(friction_model, cp)
-                lifts = detect_throttle_lifts(cp, lap_df, friction_max)
+                # Same per-vehicle-class mass table the sibling weight-transfer
+                # analyzer below already assumes for this corner (its own
+                # `mass_kg` default) -- reusing it keeps the two analyzers'
+                # physics estimates for the same corner internally consistent
+                # instead of introducing a second, divergent mass convention.
+                vehicle_mass_kg = _VEHICLE_MASS_DEFAULTS.get(
+                    cp.get("vehicle_class", "car"), _VEHICLE_MASS_DEFAULTS["car"],
+                )["mass_kg"]
+                lifts = detect_throttle_lifts(cp, lap_df, friction_max, vehicle_mass_kg)
                 bundle["throttle_lifts"].extend(lifts)
         except Exception:
             logger.debug("Throttle lift detection failed for corner %s", cid, exc_info=True)
