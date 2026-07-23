@@ -4,7 +4,7 @@ from __future__ import annotations
 import numpy as np
 import pandas as pd
 
-from telemetry_tool.coaching.models import ExitSpeedCascade
+from coaching.models import ExitSpeedCascade
 
 
 def analyze_exit_cascades(

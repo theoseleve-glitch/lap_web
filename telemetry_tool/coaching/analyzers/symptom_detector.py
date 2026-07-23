@@ -9,7 +9,7 @@ from __future__ import annotations
 import numpy as np
 import pandas as pd
 
-from telemetry_tool.coaching.models import Symptom, SymptomDetection
+from coaching.models import Symptom, SymptomDetection
 
 
 def detect_symptoms(corner: dict, lap: pd.DataFrame) -> SymptomDetection:

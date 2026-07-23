@@ -1,7 +1,7 @@
 """Confidence framer — rewrites weaknesses as strengths-in-progress."""
 from __future__ import annotations
 
-from telemetry_tool.coaching.templates.confidence_frames import CONFIDENCE_FRAMES
+from coaching.templates.confidence_frames import CONFIDENCE_FRAMES
 
 
 def reframe_strengths(

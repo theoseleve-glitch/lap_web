@@ -5,7 +5,7 @@ import math
 import numpy as np
 import pandas as pd
 
-from telemetry_tool.coaching.models import TractionBudget
+from coaching.models import TractionBudget
 
 
 def analyze_traction_budget(

@@ -1,7 +1,7 @@
 """Progressive coach — generates session-to-session goals, warm-up protocol, late apex reset."""
 from __future__ import annotations
 
-from telemetry_tool.coaching.models import (
+from coaching.models import (
     FocusArea, WarmUpProtocol, CornerTrend,
 )
 

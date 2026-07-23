@@ -7,13 +7,13 @@ Resolution order:
 """
 from __future__ import annotations
 
-from telemetry_tool.coaching.models import (
+from coaching.models import (
     CornerCoachingDetail, ExitSpeedCascade, SymptomDetection,
     TractionBudget, TrailBrakeAssessment, WeightTransferInsight,
     ThrottleLiftEvent,
 )
-from telemetry_tool.coaching.taxonomy.causes import CauseTaxonomy
-from telemetry_tool.coaching.templates.corner_tips import CORNER_TIPS
+from coaching.taxonomy.causes import CauseTaxonomy
+from coaching.templates.corner_tips import CORNER_TIPS
 
 # Symptom → cause_id mapping
 _SYMPTOM_TO_CAUSE = {

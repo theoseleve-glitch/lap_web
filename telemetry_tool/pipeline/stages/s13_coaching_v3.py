@@ -29,12 +29,12 @@ def run_coaching_analyzers(
     symptoms, throttle_lifts, weight_transfers. Values may be empty lists
     if data is insufficient.
     """
-    from telemetry_tool.coaching.analyzers.trail_brake import analyze_trail_braking
-    from telemetry_tool.coaching.analyzers.exit_speed import analyze_exit_cascades
-    from telemetry_tool.coaching.analyzers.traction_budget import analyze_traction_budget
-    from telemetry_tool.coaching.analyzers.symptom_detector import detect_symptoms
-    from telemetry_tool.coaching.analyzers.throttle_lift import detect_throttle_lifts
-    from telemetry_tool.coaching.analyzers.weight_transfer import compute_weight_transfer
+    from coaching.analyzers.trail_brake import analyze_trail_braking
+    from coaching.analyzers.exit_speed import analyze_exit_cascades
+    from coaching.analyzers.traction_budget import analyze_traction_budget
+    from coaching.analyzers.symptom_detector import detect_symptoms
+    from coaching.analyzers.throttle_lift import detect_throttle_lifts
+    from coaching.analyzers.weight_transfer import compute_weight_transfer
 
     bundle: dict[str, list] = {
         "trail_brakes": [],
@@ -141,7 +141,7 @@ def run_multi_session_lookup(
         return None
 
     try:
-        from telemetry_tool.coaching.persistence.queries import get_driver_corner_trends
+        from coaching.persistence.queries import get_driver_corner_trends
         from web.db_pg import get_pg_connection
 
         conn = get_pg_connection()
@@ -170,8 +170,8 @@ def run_enhanced_coaching(
         return coaching_v2
 
     try:
-        from telemetry_tool.coaching.composers.session_composer import compose_session_coaching
-        from telemetry_tool.coaching.taxonomy.causes import CauseTaxonomy
+        from coaching.composers.session_composer import compose_session_coaching
+        from coaching.taxonomy.causes import CauseTaxonomy
 
         taxonomy = CauseTaxonomy()
         result = compose_session_coaching(
@@ -214,7 +214,7 @@ def persist_coaching_v3(
     if (conn is not None and session_id and driver_id and track_id
             and corner_coaching and os.environ.get("USE_PG", "0") != "0"):
         try:
-            from telemetry_tool.coaching.persistence.queries import store_corner_progression
+            from coaching.persistence.queries import store_corner_progression
 
             corners_data = []
             for cc in corner_coaching:

@@ -4,7 +4,7 @@ from __future__ import annotations
 import numpy as np
 import pandas as pd
 
-from telemetry_tool.coaching.models import BrakingBlock, TrailBrakeAssessment
+from coaching.models import BrakingBlock, TrailBrakeAssessment
 
 # Thresholds
 _BRAKE_THRESHOLD = 5.0       # % to consider brake applied

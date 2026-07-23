@@ -1,7 +1,7 @@
 """Focus limiter — enforces max 2 focus areas per session (coaching book rule)."""
 from __future__ import annotations
 
-from telemetry_tool.coaching.models import FocusArea
+from coaching.models import FocusArea
 
 _SIGNIFICANCE_RATIO = 0.30  # 2nd area must be ≥30% of 1st area's time loss
 

@@ -1,7 +1,7 @@
 """Weight transfer analyzer — computes load transfer under braking, cornering, and acceleration."""
 from __future__ import annotations
 
-from telemetry_tool.coaching.models import WeightTransferInsight
+from coaching.models import WeightTransferInsight
 
 # Vehicle class defaults
 _DEFAULTS = {

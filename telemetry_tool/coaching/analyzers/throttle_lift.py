@@ -4,7 +4,7 @@ from __future__ import annotations
 import numpy as np
 import pandas as pd
 
-from telemetry_tool.coaching.models import ThrottleLiftEvent
+from coaching.models import ThrottleLiftEvent
 
 # Detection thresholds
 _MIN_DROP_PCT = 15.0      # Minimum throttle drop to count as a lift

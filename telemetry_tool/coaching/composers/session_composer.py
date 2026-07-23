@@ -14,20 +14,20 @@ from __future__ import annotations
 
 from typing import Any
 
-from telemetry_tool.coaching.models import (
+from coaching.models import (
     CornerCoachingDetail, Drill, FocusArea, ProgressionInsight,
     SessionCoaching, WarmUpProtocol,
 )
-from telemetry_tool.coaching.taxonomy.causes import CauseTaxonomy
-from telemetry_tool.coaching.composers.corner_composer import compose_corner_coaching
-from telemetry_tool.coaching.composers.focus_limiter import limit_focus_areas
-from telemetry_tool.coaching.composers.progressive_coach import (
+from coaching.taxonomy.causes import CauseTaxonomy
+from coaching.composers.corner_composer import compose_corner_coaching
+from coaching.composers.focus_limiter import limit_focus_areas
+from coaching.composers.progressive_coach import (
     generate_warm_up, generate_next_session_goals, generate_late_apex_reset,
 )
-from telemetry_tool.coaching.composers.confidence_framer import reframe_strengths
-from telemetry_tool.coaching.templates.drills import DRILL_LIBRARY
-from telemetry_tool.coaching.templates.narratives import SESSION_NARRATIVES
-from telemetry_tool.coaching.templates.mental_imagery import MENTAL_IMAGERY
+from coaching.composers.confidence_framer import reframe_strengths
+from coaching.templates.drills import DRILL_LIBRARY
+from coaching.templates.narratives import SESSION_NARRATIVES
+from coaching.templates.mental_imagery import MENTAL_IMAGERY
 
 
 def compose_session_coaching(
