@@ -9,8 +9,14 @@ output.
 import json
 import re
 
+from coaching.composers.corner_composer import _build_placeholders
 from coaching.composers.session_composer import compose_session_coaching
+from coaching.models import ThrottleLiftEvent
 from coaching.taxonomy.causes import CauseTaxonomy
+
+# Magnitude tokens that `_build_placeholders` previously hardcoded to 0.0
+# and now sources from real throttle-lift analyzer output (or omits entirely).
+_LIFT_MAGNITUDE_KEYS = ("throttle_drop_pct", "lift_duration_s", "weight_shift_kg", "yaw_spike")
 
 # NOTE: `tests.coaching.test_session_composer._corner_perfs` cannot be imported
 # by dotted path here — this worktree's pytest.ini rootdir sits one level above
@@ -52,3 +58,61 @@ def test_payload_has_no_unrendered_placeholders_or_fake_zero_pct():
     )
     assert "0.0%" not in blob, "fabricated 0.0% magnitude leaked to payload"
     assert "Unknown cause" not in blob
+
+
+# ---------------------------------------------------------------------------
+# Direct guard for the `_build_placeholders` real-magnitude fix.
+#
+# The payload-level test above does NOT actually exercise the magnitude path:
+# its fixture (all corners braking_point_delta_m=10.0, analyzer_results={})
+# only ever resolves to `early_braking_confidence`, whose templates use
+# {delta_m}/{time_loss_s} and never the {throttle_drop_pct}/{weight_shift_kg}/
+# {lift_duration_s}/{yaw_spike} tokens — so reverting `_build_placeholders` to
+# the hardcoded-0.0 version still passes it. These two tests call
+# `_build_placeholders` directly so a revert of that fix FAILS.
+# ---------------------------------------------------------------------------
+
+def _corner_perf():
+    # Minimal corner_perf shaped like the real _corner_perf fixture; the
+    # magnitude tokens under test come from the throttle-lift arg, not here.
+    return {"corner_id": 3, "braking_point_delta_m": 12.0, "time_loss_s": 0.35,
+            "grip_utilisation_pct": 68.0}
+
+
+def _dangerous_lift():
+    return ThrottleLiftEvent(
+        corner_id=3, s_position=120.0,
+        throttle_before_pct=95.0, throttle_after_pct=35.0,
+        drop_pct=60.0, drop_duration_s=0.35,
+        lateral_grip_at_lift_pct=70.0, weight_shift_estimate_kg=45.0,
+        yaw_rate_change_dps=12.5, resulted_in_correction=True,
+        severity="dangerous",
+    )
+
+
+def test_build_placeholders_threads_real_throttle_lift_magnitudes():
+    """A real ThrottleLiftEvent's magnitudes must reach the placeholders,
+    NOT the old hardcoded 0.0 — reverting the fix regresses these equalities."""
+    placeholders = _build_placeholders(
+        _corner_perf(), "T3", exit_cascade=None, throttle_lifts=[_dangerous_lift()],
+    )
+    assert placeholders["throttle_drop_pct"] == 60.0
+    assert placeholders["lift_duration_s"] == 0.35
+    assert placeholders["weight_shift_kg"] == 45.0
+    assert placeholders["yaw_spike"] == 12.5
+    # None of the real magnitudes should read as the fabricated zero default.
+    for key in _LIFT_MAGNITUDE_KEYS:
+        assert placeholders[key] != 0.0
+
+
+def test_build_placeholders_omits_magnitudes_when_no_analyzer_data():
+    """With no throttle-lift data, the magnitude tokens must be OMITTED, not
+    fabricated as 0.0 — reverting to the hardcoded version (which always sets
+    them to 0.0) regresses this. `pct_increase` has no analyzer source at all
+    and must never appear."""
+    placeholders = _build_placeholders(
+        _corner_perf(), "T3", exit_cascade=None, throttle_lifts=None,
+    )
+    for key in _LIFT_MAGNITUDE_KEYS:
+        assert key not in placeholders, f"{key} fabricated with no analyzer data"
+    assert "pct_increase" not in placeholders
