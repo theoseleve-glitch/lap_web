@@ -6916,28 +6916,6 @@ def get_boundaries(session_id: str) -> tuple[dict, int]:
     )
 
 
-@bp.route("/sessions/<session_id>/practice-plan", methods=["GET"])
-@_safe_api
-def get_practice_plan(session_id: str) -> tuple[dict, int]:
-    """Return generated practice plan for a session."""
-    conn = get_db_connection()
-    session = models.get_session_by_id(conn, session_id)
-    if session is None:
-        return api_error(ErrorCode.NOT_FOUND, "Session not found", status=404)
-
-    analysis = models.get_analysis_json(conn, session_id)
-    if analysis and isinstance(analysis, dict):
-        plan = analysis.get("practice_plan")
-        if plan:
-            return api_response(plan)
-
-    return api_error(
-        ErrorCode.NOT_FOUND,
-        "Practice plan not available — requires coaching_v2 data",
-        status=404,
-    )
-
-
 @bp.route("/sessions/<session_id>/endurance", methods=["GET"])
 @_safe_api
 def get_endurance(session_id: str) -> tuple[dict, int]:

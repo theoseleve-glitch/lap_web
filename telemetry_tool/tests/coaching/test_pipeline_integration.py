@@ -3,7 +3,6 @@ import json
 import pytest
 from telemetry_tool.pipeline.stages.s13_coaching_v3 import (
     run_coaching_analyzers, run_multi_session_lookup, run_enhanced_coaching,
-    persist_coaching_v3,
 )
 from coaching.composers.session_composer import compose_session_coaching
 from coaching.taxonomy.causes import CauseTaxonomy
@@ -111,28 +110,6 @@ class TestRunEnhancedCoaching:
         assert result == {**fallback, "engine": "v2_fallback"}
 
 
-class TestPersistCoachingV3:
-    def test_writes_to_analysis_json(self):
-        analysis = {}
-        coaching = {"session_theme": "Test", "corner_coaching": []}
-        persist_coaching_v3(
-            coaching_dict=coaching, analysis_json=analysis,
-            conn=None, session_id=None, driver_id=None,
-            track_id=None, corner_coaching=None,
-        )
-        assert "coaching_v3" in analysis
-        assert analysis["coaching_v3"]["session_theme"] == "Test"
-
-    def test_none_coaching_does_nothing(self):
-        analysis = {}
-        persist_coaching_v3(
-            coaching_dict=None, analysis_json=analysis,
-            conn=None, session_id=None, driver_id=None,
-            track_id=None, corner_coaching=None,
-        )
-        assert "coaching_v3" not in analysis
-
-
 class TestEndToEndCoachingV3:
     """Full end-to-end test: analyzer → composer → persist → API shape."""
 
@@ -176,13 +153,12 @@ class TestEndToEndCoachingV3:
         )
         assert isinstance(coaching_dict, dict)
 
-        # Step 3: Persist to analysis_json
-        analysis = {}
-        persist_coaching_v3(
-            coaching_dict=coaching_dict, analysis_json=analysis,
-            conn=None, session_id=1, driver_id=1,
-            track_id=1, corner_coaching=coaching_dict.get("corner_coaching"),
-        )
+        # Step 3: Persist to analysis_json (mirrors what
+        # `summary["coaching_v3"] = _coaching_v3` + `_build_analysis_blob()`
+        # do in the real orchestrator/pipeline_tasks path -- the old
+        # `persist_coaching_v3` helper that used to do this inline was
+        # removed as dead code; it had zero runtime callers).
+        analysis = {"coaching_v3": coaching_dict}
         assert "coaching_v3" in analysis
 
         # Step 4: Validate API shape

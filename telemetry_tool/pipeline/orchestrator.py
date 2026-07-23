@@ -1531,9 +1531,9 @@ def run_full_analysis(
         # either. Real persistence of coaching_v3 happens via
         # `summary["coaching_v3"]` above, which `_build_analysis_blob()`
         # (tasks/pipeline_tasks.py) reads into the `sessions.analysis_json`
-        # column. `persist_coaching_v3` itself is kept (see
-        # tests/coaching/test_pipeline_integration.py) but is no longer
-        # wired into this orchestrator path.
+        # column. `persist_coaching_v3` had zero runtime callers left after
+        # this step stopped wiring to it, so it was removed outright
+        # (dead-code cleanup, see tests/test_no_phantom_coaching_stages.py).
 
     # ── Step 13h: Gamification — XP, streaks, achievements ─────
     # skip_gamification is set by the SaaS pipeline, where

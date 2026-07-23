@@ -129,8 +129,12 @@ def run_coaching_guide(
 ) -> Optional[dict[str, Any]]:
     """Generate coaching guide.
 
-    Returns a dict with ``focus_areas`` and recommendations, or ``None``
-    if the debrief engine is unavailable or distance quality is degraded.
+    Always returns ``None``: the legacy generator module this step used to
+    lazy-import never existed, so this step has always been a no-op. Kept
+    as a step (rather than deleted outright) because
+    ``summary["coaching_guide"]`` is still read by the HTML report
+    (``reporting_html.py``), ``s14_reports.py``, and the analysis-blob
+    builders in ``tasks/pipeline_tasks.py`` / ``web/routes/sessions_v2.py``.
     """
     # Gate on distance quality
     if (
@@ -141,21 +145,7 @@ def run_coaching_guide(
         logger.warning("Coaching guide SKIPPED: distance quality gate active.")
         return None
 
-    de_mod = lazy_import("debrief_engine")
-    if de_mod is None or not hasattr(de_mod, "generate_coaching_guide"):
-        return None
-
-    result = de_mod.generate_coaching_guide(
-        corner_performances=corner_performances,
-        lap_metrics=lap_metrics,
-        score_result=score_result,
-        track_evolution=track_evolution,
-        session_type=meta.get("session_type", "practice"),
-    )
-    if result:
-        n_focus = len(result.get("focus_areas", []))
-        logger.info("Coaching guide: %d focus areas", n_focus)
-    return result
+    return None
 
 
 # ── Step 13c: Coaching V2 ─────────────────────────────────────────────

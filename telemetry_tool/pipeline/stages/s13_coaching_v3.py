@@ -1,7 +1,12 @@
-"""Pipeline stages S13e–S13g2: Coaching V3 analyzers, multi-session lookup, assembly, persist.
+"""Pipeline stages S13e-S13g: Coaching V3 analyzers, multi-session lookup, assembly.
 
 Each function is designed to be called via _safe_step() — returns None on failure
 without crashing the pipeline. The orchestrator wires these after existing S13d.
+
+Real persistence of coaching_v3 happens via ``summary["coaching_v3"]``, which
+``_build_analysis_blob()`` (tasks/pipeline_tasks.py) reads into the
+``sessions.analysis_json`` column — see orchestrator.py for the note on why
+the former S13g2 persist step (``persist_coaching_v3``) was removed.
 
 Feature-flagged: COACHING_V3 env var (default ON, set =0 to disable).
 """
@@ -211,63 +216,6 @@ def run_enhanced_coaching(
         )
 
 
-def persist_coaching_v3(
-    coaching_dict: dict | None,
-    analysis_json: dict | None,
-    conn: Any | None,
-    session_id: int | str | None,
-    driver_id: int | None,
-    track_id: int | None,
-    corner_coaching: list[dict] | None,
-) -> None:
-    """S13g2: Write coaching_v3 to analysis_json and persist corner progression."""
-    if coaching_dict is None:
-        return
-
-    # Store in analysis_json blob
-    if analysis_json is not None:
-        analysis_json["coaching_v3"] = coaching_dict
-
-    # Persist corner progression to DB
-    if (conn is not None and session_id and driver_id and track_id
-            and corner_coaching and os.environ.get("USE_PG", "0") != "0"):
-        try:
-            from coaching.persistence.queries import store_corner_progression
-
-            corners_data = []
-            for cc in corner_coaching:
-                corners_data.append({
-                    "corner_id": cc.get("corner_id"),
-                    "apex_speed_mps": _kmh_to_mps(cc.get("apex_speed_target_kmh")),
-                    "entry_speed_mps": _kmh_to_mps(cc.get("entry_speed_target_kmh")),
-                    "exit_speed_mps": _kmh_to_mps(cc.get("exit_speed_target_kmh")),
-                    "braking_point_m": None,
-                    "time_loss_s": cc.get("time_loss_corner_s"),
-                    "grip_utilisation_pct": None,
-                    "trail_brake_score": (
-                        cc.get("trail_brake", {}).get("overall_score")
-                        if cc.get("trail_brake") else None
-                    ),
-                    "primary_cause": cc.get("primary_cause"),
-                    "theoretical_apex_mps": _kmh_to_mps(cc.get("apex_speed_target_kmh")),
-                    "theoretical_entry_mps": _kmh_to_mps(cc.get("entry_speed_target_kmh")),
-                    "theoretical_exit_mps": _kmh_to_mps(cc.get("exit_speed_target_kmh")),
-                })
-
-            import datetime
-            store_corner_progression(
-                conn=conn,
-                workspace_id=getattr(conn, "_workspace_id", 1),
-                driver_id=driver_id,
-                track_id=track_id,
-                session_id=session_id,
-                session_date=datetime.date.today().isoformat(),
-                corners=corners_data,
-            )
-        except Exception:
-            logger.warning("Failed to persist corner progression", exc_info=True)
-
-
 # ---------------------------------------------------------------------------
 # Internal helpers
 # ---------------------------------------------------------------------------
@@ -305,9 +253,3 @@ def _estimate_friction(friction_model, corner_perf: dict) -> float:
     if friction_model and isinstance(friction_model, dict):
         return friction_model.get("max_lateral_g", 1.2) * 9.81
     return 10.0  # ~1g default
-
-
-def _kmh_to_mps(kmh: float | None) -> float | None:
-    if kmh is None:
-        return None
-    return kmh / 3.6
