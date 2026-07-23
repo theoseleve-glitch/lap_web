@@ -12,6 +12,7 @@ Orchestration order:
 """
 from __future__ import annotations
 
+import statistics
 from typing import Any
 
 from coaching.models import (
@@ -103,7 +104,10 @@ def compose_session_coaching(
 
     # ── 8. Narrative + theme ──
     grade = scores.get("grade", "C")
-    session_theme, narrative = _pick_narrative(grade, primary_areas)
+    narrative_subs = _build_narrative_subs(
+        vehicle_class, primary_areas, strengths, weaknesses, lap_metrics,
+    )
+    session_theme, narrative = _pick_narrative(grade, primary_areas, narrative_subs)
 
     # ── 9. Mental imagery ──
     imagery_prompts = _pick_mental_imagery(primary_areas)
@@ -277,8 +281,58 @@ def _select_drills(
     return selected
 
 
-def _pick_narrative(grade: str, focus_areas: list[FocusArea]) -> tuple[str, str]:
-    """Select session theme and narrative from templates."""
+class _SafeDict(dict):
+    """dict for str.format_map that degrades a missing key to an em-dash
+    instead of raising KeyError (which would otherwise force callers to fall
+    back to the raw, un-rendered template and leak a literal `{token}`)."""
+
+    def __missing__(self, key):
+        return "—"
+
+
+def _build_narrative_subs(
+    vehicle_class: str,
+    primary_areas: list[FocusArea],
+    strengths: list[str],
+    weaknesses: list[str],
+    lap_metrics: list | None,
+) -> dict:
+    """Assemble real substitution values for SESSION_NARRATIVES templates.
+
+    Only ever includes a key when a genuine measured/derived value backs it.
+    `_pick_narrative` renders with `_SafeDict`, so any token a chosen variant
+    needs but that isn't backed by real data here degrades to an em-dash
+    rather than a fabricated number — no-fabrication rule.
+    """
+    subs: dict = {"vehicle_class": vehicle_class}
+
+    if primary_areas:
+        # Real, already-computed cascade time loss for the top focus area —
+        # not a fabricated stand-in for "gap to theoretical".
+        subs["time_delta_s"] = primary_areas[0].time_loss_s
+        subs["corner_count"] = len(primary_areas[0].corner_ids)
+
+    if strengths:
+        subs["primary_strength"] = strengths[0]
+    if weaknesses:
+        subs["primary_weakness"] = weaknesses[0]
+
+    lap_times = [
+        float(lm.get("lap_time_s") or lm.get("lap_time"))
+        for lm in (lap_metrics or [])
+        if isinstance(lm, dict) and (lm.get("lap_time_s") or lm.get("lap_time")) is not None
+    ]
+    if len(lap_times) >= 2:
+        subs["std_dev_s"] = statistics.pstdev(lap_times)
+        subs["clean_laps"] = len(lap_times)
+
+    return subs
+
+
+def _pick_narrative(
+    grade: str, focus_areas: list[FocusArea], subs: dict,
+) -> tuple[str, str]:
+    """Select, then RENDER, the session theme and narrative from templates."""
     if grade in ("S", "A"):
         band = "S-A"
     elif grade in ("B", "C"):
@@ -297,13 +351,21 @@ def _pick_narrative(grade: str, focus_areas: list[FocusArea]) -> tuple[str, str]
         }
         theme = theme_map.get(cat, "general")
 
+    # A "consistency" narrative needs a real std_dev_s, rendered with a
+    # numeric format spec ({std_dev_s:.2f}) — a missing value can't safely
+    # degrade to an em-dash there (format spec would crash on a string).
+    # Without lap-level data to compute a real one, tell an honest general
+    # story instead of fabricating a variance figure.
+    if theme == "consistency" and "std_dev_s" not in subs:
+        theme = "general"
+
     key = (band, theme)
     variants = SESSION_NARRATIVES.get(key)
     if not variants:
         # Fallback to general for this band
         variants = SESSION_NARRATIVES.get((band, "general"), ["Good session overall."])
 
-    narrative = variants[0]
+    narrative = variants[0].format_map(_SafeDict(subs))
 
     # Theme headline
     theme_headlines = {

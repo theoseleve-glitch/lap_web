@@ -73,20 +73,13 @@ def compose_corner_coaching(
         }
 
     # ── 4. Fill template placeholders ──
-    placeholders = _build_placeholders(corner_perf, corner_name, exit_cascade)
-    try:
-        coaching_tip = template["tip"].format(**placeholders)
-    except (KeyError, IndexError):
-        coaching_tip = template["tip"]
-
-    progressive_steps = []
-    for step in template["progressive_steps"]:
-        try:
-            progressive_steps.append(step.format(**placeholders))
-        except (KeyError, IndexError):
-            progressive_steps.append(step)
-
-    symptom_check = template["symptom_check"]
+    placeholders = _build_placeholders(corner_perf, corner_name, exit_cascade, throttle_lifts)
+    safe_placeholders = _SafeDict(placeholders)
+    coaching_tip = template["tip"].format_map(safe_placeholders)
+    progressive_steps = [
+        step.format_map(safe_placeholders) for step in template["progressive_steps"]
+    ]
+    symptom_check = template["symptom_check"].format_map(safe_placeholders)
 
     # ── 5. Symptom evidence ──
     symptom_evidence = []
@@ -186,12 +179,31 @@ def _resolve_cause(
     return "mid_corner_speed_loss", corner_perf.get("time_loss_s", 0.1) or 0.1
 
 
+class _SafeDict(dict):
+    """dict for str.format_map that degrades a missing key to an em-dash
+    instead of raising KeyError. Templates are rendered with this so a
+    token an entry needs — but that has no real measurement backing it —
+    reads as "insufficient data" rather than either crashing, leaking a raw
+    `{token}`, or (the no-fabrication rule) silently showing a hardcoded
+    0.0/0.0% as if it were a genuine measurement."""
+
+    def __missing__(self, key):
+        return "—"
+
+
 def _build_placeholders(
     corner_perf: dict,
     corner_name: str,
     exit_cascade: ExitSpeedCascade | None,
+    throttle_lifts: list[ThrottleLiftEvent] | None = None,
 ) -> dict:
-    """Build placeholder dict for template formatting."""
+    """Build placeholder dict for template formatting.
+
+    Only ever includes a key when a real analyzer/corner_perf value backs
+    it. Missing keys are NOT filled with a hardcoded 0.0 — templates are
+    rendered via `_SafeDict`, which degrades an absent token to an em-dash
+    instead (see `compose_corner_coaching`).
+    """
     bp_delta = corner_perf.get("braking_point_delta_m", 0.0) or 0.0
     time_loss = corner_perf.get("time_loss_s", 0.0) or 0.0
 
@@ -205,19 +217,33 @@ def _build_placeholders(
         "step2_m": abs(bp_delta) * 0.33,
         "target_delta_m": 2.0,
         "time_loss_s": time_loss,
-        "exit_speed_loss_kmh": 0.0,
-        "cascade_time_s": 0.0,
-        "pct_increase": 0.0,
-        "throttle_drop_pct": 0.0,
-        "lift_duration_s": 0.0,
         "grip_pct": corner_perf.get("grip_utilisation_pct", 50.0) or 50.0,
-        "weight_shift_kg": 0.0,
-        "yaw_spike": 0.0,
     }
 
     if exit_cascade:
         placeholders["exit_speed_loss_kmh"] = exit_cascade.exit_gain_needed_kmh
         placeholders["cascade_time_s"] = exit_cascade.total_cascade_time_s
+
+    # Throttle-lift-derived magnitudes — real measurements when a lift event
+    # is present for this corner, omitted (never a fabricated 0.0/0.0%)
+    # otherwise. Prefer the "dangerous" lift (the one that would have driven
+    # cause selection) if there is one, else the first detected lift.
+    if throttle_lifts:
+        lift = next(
+            (tl for tl in throttle_lifts if tl.severity == "dangerous"),
+            throttle_lifts[0],
+        )
+        placeholders["throttle_drop_pct"] = lift.drop_pct
+        placeholders["lift_duration_s"] = lift.drop_duration_s
+        placeholders["weight_shift_kg"] = lift.weight_shift_estimate_kg
+        if lift.yaw_rate_change_dps is not None:
+            placeholders["yaw_spike"] = abs(lift.yaw_rate_change_dps)
+
+    # NOTE: `pct_increase` (peak brake-pressure / steering-angle deficit vs.
+    # a reference lap) has no corresponding analyzer output anywhere in this
+    # codebase today. It is deliberately left out of `placeholders` rather
+    # than hardcoded to 0.0 — a template that needs it renders "—%" via
+    # `_SafeDict` instead of a fabricated measurement.
 
     return placeholders
 
