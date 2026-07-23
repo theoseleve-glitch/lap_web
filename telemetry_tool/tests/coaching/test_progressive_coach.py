@@ -1,9 +1,9 @@
 """Tests for progressive coach — goals, warm-up, late apex reset."""
 import pytest
-from telemetry_tool.coaching.composers.progressive_coach import (
+from coaching.composers.progressive_coach import (
     generate_warm_up, generate_next_session_goals, generate_late_apex_reset,
 )
-from telemetry_tool.coaching.models import FocusArea, WarmUpProtocol, CornerTrend
+from coaching.models import FocusArea, WarmUpProtocol, CornerTrend
 
 
 def _fa(rank, category, corners, steps=None):

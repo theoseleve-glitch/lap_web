@@ -1,7 +1,7 @@
 """Tests for focus limiter — max 2 focus areas per session."""
 import pytest
-from telemetry_tool.coaching.composers.focus_limiter import limit_focus_areas
-from telemetry_tool.coaching.models import FocusArea
+from coaching.composers.focus_limiter import limit_focus_areas
+from coaching.models import FocusArea
 
 
 def _fa(rank, category, time_loss):

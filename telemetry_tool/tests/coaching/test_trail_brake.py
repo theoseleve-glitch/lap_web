@@ -2,8 +2,8 @@
 import pytest
 import numpy as np
 import pandas as pd
-from telemetry_tool.coaching.analyzers.trail_brake import analyze_trail_braking
-from telemetry_tool.coaching.models import TrailBrakeAssessment, BrakingBlock
+from coaching.analyzers.trail_brake import analyze_trail_braking
+from coaching.models import TrailBrakeAssessment, BrakingBlock
 
 
 def _make_corner_lap(has_trail=True, has_pedal_channels=True):

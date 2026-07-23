@@ -1,6 +1,6 @@
 """Tests for CauseTaxonomy — JSON loading, Pydantic validation, lookup."""
 import pytest
-from telemetry_tool.coaching.taxonomy.causes import CauseTaxonomy
+from coaching.taxonomy.causes import CauseTaxonomy
 
 
 class TestCauseTaxonomyLoading:

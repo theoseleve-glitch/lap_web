@@ -1,6 +1,6 @@
 """Tests for coaching.models — all dataclasses and to_dict() serialization."""
 import pytest
-from telemetry_tool.coaching.models import (
+from coaching.models import (
     BrakingBlock, TrailBrakeAssessment, ExitSpeedCascade, TractionBudget,
     ThrottleLiftEvent, Symptom, SymptomDetection, WeightTransferInsight,
     CornerTrend, CornerCoachingDetail, WarmUpProtocol,

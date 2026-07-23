@@ -1,8 +1,8 @@
 """Tests for session composer — full assembly."""
 import pytest
-from telemetry_tool.coaching.composers.session_composer import compose_session_coaching
-from telemetry_tool.coaching.models import SessionCoaching
-from telemetry_tool.coaching.taxonomy.causes import CauseTaxonomy
+from coaching.composers.session_composer import compose_session_coaching
+from coaching.models import SessionCoaching
+from coaching.taxonomy.causes import CauseTaxonomy
 
 
 def _corner_perfs(n=5):

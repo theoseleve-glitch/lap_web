@@ -5,8 +5,8 @@ from telemetry_tool.pipeline.stages.s13_coaching_v3 import (
     run_coaching_analyzers, run_multi_session_lookup, run_enhanced_coaching,
     persist_coaching_v3,
 )
-from telemetry_tool.coaching.composers.session_composer import compose_session_coaching
-from telemetry_tool.coaching.taxonomy.causes import CauseTaxonomy
+from coaching.composers.session_composer import compose_session_coaching
+from coaching.taxonomy.causes import CauseTaxonomy
 
 
 class TestRunCoachingAnalyzers:

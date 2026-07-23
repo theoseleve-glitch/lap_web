@@ -1,7 +1,7 @@
 """Tests for weight transfer analyzer."""
 import pytest
-from telemetry_tool.coaching.analyzers.weight_transfer import compute_weight_transfer
-from telemetry_tool.coaching.models import WeightTransferInsight
+from coaching.analyzers.weight_transfer import compute_weight_transfer
+from coaching.models import WeightTransferInsight
 
 
 class TestWeightTransfer:

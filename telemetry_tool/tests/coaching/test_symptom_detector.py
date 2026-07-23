@@ -2,8 +2,8 @@
 import pytest
 import numpy as np
 import pandas as pd
-from telemetry_tool.coaching.analyzers.symptom_detector import detect_symptoms
-from telemetry_tool.coaching.models import SymptomDetection
+from coaching.analyzers.symptom_detector import detect_symptoms
+from coaching.models import SymptomDetection
 
 
 def _make_early_apex_lap():

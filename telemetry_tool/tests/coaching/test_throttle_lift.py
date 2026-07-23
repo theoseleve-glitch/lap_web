@@ -2,8 +2,8 @@
 import pytest
 import numpy as np
 import pandas as pd
-from telemetry_tool.coaching.analyzers.throttle_lift import detect_throttle_lifts
-from telemetry_tool.coaching.models import ThrottleLiftEvent
+from coaching.analyzers.throttle_lift import detect_throttle_lifts
+from coaching.models import ThrottleLiftEvent
 
 
 def _make_lift_lap(drop_pct=60, lat_grip_pct=75):

@@ -2,8 +2,8 @@
 import pytest
 import numpy as np
 import pandas as pd
-from telemetry_tool.coaching.analyzers.traction_budget import analyze_traction_budget
-from telemetry_tool.coaching.models import TractionBudget
+from coaching.analyzers.traction_budget import analyze_traction_budget
+from coaching.models import TractionBudget
 
 
 class TestTractionBudget:

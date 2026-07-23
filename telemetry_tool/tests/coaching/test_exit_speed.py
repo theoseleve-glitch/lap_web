@@ -2,8 +2,8 @@
 import pytest
 import numpy as np
 import pandas as pd
-from telemetry_tool.coaching.analyzers.exit_speed import analyze_exit_cascades
-from telemetry_tool.coaching.models import ExitSpeedCascade
+from coaching.analyzers.exit_speed import analyze_exit_cascades
+from coaching.models import ExitSpeedCascade
 
 
 def _make_corners():

@@ -1,6 +1,6 @@
 """Tests for confidence framer — strength rewriting."""
 import pytest
-from telemetry_tool.coaching.composers.confidence_framer import reframe_strengths
+from coaching.composers.confidence_framer import reframe_strengths
 
 
 class TestConfidenceFramer:

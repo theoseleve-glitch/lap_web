@@ -1,11 +1,11 @@
 """Tests for template coverage — every cause×severity×vehicle must have a template."""
 import pytest
-from telemetry_tool.coaching.taxonomy.causes import CauseTaxonomy
-from telemetry_tool.coaching.templates.corner_tips import CORNER_TIPS
-from telemetry_tool.coaching.templates.drills import DRILL_LIBRARY
-from telemetry_tool.coaching.templates.narratives import SESSION_NARRATIVES
-from telemetry_tool.coaching.templates.confidence_frames import CONFIDENCE_FRAMES
-from telemetry_tool.coaching.templates.mental_imagery import MENTAL_IMAGERY
+from coaching.taxonomy.causes import CauseTaxonomy
+from coaching.templates.corner_tips import CORNER_TIPS
+from coaching.templates.drills import DRILL_LIBRARY
+from coaching.templates.narratives import SESSION_NARRATIVES
+from coaching.templates.confidence_frames import CONFIDENCE_FRAMES
+from coaching.templates.mental_imagery import MENTAL_IMAGERY
 
 
 class TestCornerTipCoverage:

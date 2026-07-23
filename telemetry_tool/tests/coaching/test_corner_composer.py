@@ -1,10 +1,10 @@
 """Tests for corner composer — builds CornerCoachingDetail from analyzer outputs."""
 import pytest
-from telemetry_tool.coaching.composers.corner_composer import compose_corner_coaching
-from telemetry_tool.coaching.models import (
+from coaching.composers.corner_composer import compose_corner_coaching
+from coaching.models import (
     CornerCoachingDetail, SymptomDetection, Symptom,
 )
-from telemetry_tool.coaching.taxonomy.causes import CauseTaxonomy
+from coaching.taxonomy.causes import CauseTaxonomy
 
 
 def _corner_perf(**overrides):
