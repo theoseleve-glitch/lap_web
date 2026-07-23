@@ -24,8 +24,9 @@ Usage::
 from __future__ import annotations
 
 import logging
-from dataclasses import dataclass, field
 from typing import Any, Optional
+
+from coaching.models import FocusArea, Drill, ProgressionInsight, SessionCoaching
 
 logger = logging.getLogger(__name__)
 
@@ -33,101 +34,12 @@ logger = logging.getLogger(__name__)
 # ---------------------------------------------------------------------------
 # Data structures
 # ---------------------------------------------------------------------------
-
-@dataclass
-class FocusArea:
-    """A ranked area where time is being lost."""
-
-    rank: int
-    category: str          # "braking" | "apex_speed" | "exit_traction" | "consistency" | "line"
-    time_loss_s: float
-    corner_ids: list[int]
-    summary: str           # e.g. "Exit traction: 0.45s lost across corners 3, 5, 7"
-    advice: str            # e.g. "Get on throttle earlier — progressive application"
-
-
-@dataclass
-class Drill:
-    """A targeted practice exercise for the next session."""
-
-    rank: int
-    title: str
-    description: str
-    focus_corners: list[int]
-    target_metric: str     # e.g. "throttle_onset_delay_m"
-    target_improvement: str  # e.g. "Reduce by 5m"
-    lap_count: int         # Suggested number of practice laps
-
-
-@dataclass
-class ProgressionInsight:
-    """Lap-to-lap improvement trend."""
-
-    metric: str            # "lap_time_s" | "consistency" | "corner_speed"
-    trend: str             # "improving" | "degrading" | "stable" | "inconsistent"
-    detail: str            # Human-readable description
-    early_value: float
-    late_value: float
-    change_pct: float
-
-
-@dataclass
-class SessionCoaching:
-    """Complete coaching output for a session."""
-
-    session_theme: str               # 1-sentence session characterization
-    narrative: str                   # Multi-sentence debrief narrative
-    strengths: list[str]             # What went well
-    weaknesses: list[str]            # What needs work
-    focus_areas: list[FocusArea]     # Ranked time-loss categories
-    drills: list[Drill]              # Practice exercises
-    progression: list[ProgressionInsight]  # Lap-to-lap trends
-    next_session_goals: list[str]    # 3 actionable goals
-    confidence: float                # Overall data quality confidence
-
-    def to_dict(self) -> dict[str, Any]:
-        return {
-            "session_theme": self.session_theme,
-            "narrative": self.narrative,
-            "strengths": self.strengths,
-            "weaknesses": self.weaknesses,
-            "focus_areas": [
-                {
-                    "rank": fa.rank,
-                    "category": fa.category,
-                    "time_loss_s": round(fa.time_loss_s, 3),
-                    "corner_ids": fa.corner_ids,
-                    "summary": fa.summary,
-                    "advice": fa.advice,
-                }
-                for fa in self.focus_areas
-            ],
-            "drills": [
-                {
-                    "rank": d.rank,
-                    "title": d.title,
-                    "description": d.description,
-                    "focus_corners": d.focus_corners,
-                    "target_metric": d.target_metric,
-                    "target_improvement": d.target_improvement,
-                    "lap_count": d.lap_count,
-                }
-                for d in self.drills
-            ],
-            "progression": [
-                {
-                    "metric": p.metric,
-                    "trend": p.trend,
-                    "detail": p.detail,
-                    "early_value": round(p.early_value, 3),
-                    "late_value": round(p.late_value, 3),
-                    "change_pct": round(p.change_pct, 1),
-                }
-                for p in self.progression
-            ],
-            "next_session_goals": self.next_session_goals,
-            "confidence": round(self.confidence, 2),
-        }
+#
+# FocusArea / Drill / ProgressionInsight / SessionCoaching now come from the
+# canonical coaching/models.py — this engine only builds them from their base
+# fields (see docstrings there); the V3-only fields default to None and are
+# still emitted by the shared to_dict(), so callers of GET /sessions/<id>/coaching
+# see one contract regardless of which engine produced the result.
 
 
 # ---------------------------------------------------------------------------
