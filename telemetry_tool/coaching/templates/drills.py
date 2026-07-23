@@ -4,7 +4,7 @@ from __future__ import annotations
 DRILL_LIBRARY: dict[str, dict] = {
     "brake_point_consistency": {
         "title": "Brake Point Anchor Drill",
-        "applicable_causes": ["early_braking_confidence", "late_braking_aggressive", "inconsistent_brake_point"],
+        "applicable_causes": ["early_braking_confidence", "late_braking_aggressive", "inconsistent_brake_point", "insufficient_brake_pressure"],
         "difficulty_levels": {
             "beginner": {
                 "description": "Pick one corner. Choose a fixed brake marker (cone, kerb edge, crack in tarmac). Brake at exactly that point for 5 laps. Don't worry about speed — just hit the marker.",

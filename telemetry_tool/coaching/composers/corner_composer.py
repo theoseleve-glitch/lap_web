@@ -168,7 +168,7 @@ def _resolve_cause(
     # 5. Speed-based: find largest time loss phase
     phases = {
         "time_loss_braking_s": "insufficient_brake_pressure",
-        "time_loss_apex_speed_s": "low_apex_speed",
+        "time_loss_apex_speed_s": "mid_corner_speed_loss",
         "time_loss_exit_s": "late_throttle_application",
     }
     best_phase = None
@@ -183,7 +183,7 @@ def _resolve_cause(
         return best_phase, best_loss
 
     # 6. Fallback
-    return "low_apex_speed", corner_perf.get("time_loss_s", 0.1) or 0.1
+    return "mid_corner_speed_loss", corner_perf.get("time_loss_s", 0.1) or 0.1
 
 
 def _build_placeholders(

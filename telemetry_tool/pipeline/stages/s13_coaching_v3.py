@@ -169,6 +169,16 @@ def run_enhanced_coaching(
     if not corner_perfs or not scores:
         return coaching_v2
 
+    # Fail-loud (but non-fatal) vocabulary drift guard: every cause id that
+    # _resolve_cause can emit must exist in BOTH the taxonomy and DRILL_LIBRARY,
+    # else corners silently collapse to "Unknown cause". Log it, never kill a
+    # real session. The hard CI gate is test_cause_vocabulary.py.
+    try:
+        from coaching.vocabulary_check import assert_cause_vocabulary_integrity
+        assert_cause_vocabulary_integrity()
+    except ValueError as exc:
+        logger.error("coaching vocabulary drift: %s", exc)
+
     try:
         from coaching.composers.session_composer import compose_session_coaching
         from coaching.taxonomy.causes import CauseTaxonomy
