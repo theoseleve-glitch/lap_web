@@ -1523,17 +1523,17 @@ def run_full_analysis(
         _record("13g_coaching_v3", _coaching_v3, err)
         if _coaching_v3:
             summary["coaching_v3"] = _coaching_v3
-
-        _safe_step(
-            "13g2_persist_coaching", s13_coaching_v3.persist_coaching_v3,
-            coaching_dict=_coaching_v3,
-            analysis_json=summary.get("_analysis_json_blob", {}),
-            conn=None,
-            session_id=meta.get("session_id"),
-            driver_id=_drv_id if '_drv_id' in dir() else None,
-            track_id=meta.get("track_id"),
-            corner_coaching=(_coaching_v3 or {}).get("corner_coaching"),
-        )
+        # NOTE: no separate "persist" step here. `13g2_persist_coaching`
+        # (s13_coaching_v3.persist_coaching_v3) was a no-op in this call
+        # path -- it wrote into a fresh, always-empty `{}` (nothing in
+        # `summary` ever populates "_analysis_json_blob") and was always
+        # called with conn=None, so its DB-persistence branch never ran
+        # either. Real persistence of coaching_v3 happens via
+        # `summary["coaching_v3"]` above, which `_build_analysis_blob()`
+        # (tasks/pipeline_tasks.py) reads into the `sessions.analysis_json`
+        # column. `persist_coaching_v3` itself is kept (see
+        # tests/coaching/test_pipeline_integration.py) but is no longer
+        # wired into this orchestrator path.
 
     # ── Step 13h: Gamification — XP, streaks, achievements ─────
     # skip_gamification is set by the SaaS pipeline, where

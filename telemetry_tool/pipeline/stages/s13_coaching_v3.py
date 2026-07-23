@@ -167,7 +167,10 @@ def run_enhanced_coaching(
     Falls back to coaching_v2 on any exception.
     """
     if not corner_perfs or not scores:
-        return coaching_v2
+        return (
+            {**coaching_v2, "engine": "v2_fallback"}
+            if coaching_v2 is not None else None
+        )
 
     # Fail-loud (but non-fatal) vocabulary drift guard: every cause id that
     # _resolve_cause can emit must exist in BOTH the taxonomy and DRILL_LIBRARY,
@@ -196,11 +199,16 @@ def run_enhanced_coaching(
             driver_history=driver_history,
             previous_goals=previous_goals,
         )
-        return result.to_dict()
+        d = result.to_dict()
+        d["engine"] = "v3"
+        return d
     except Exception:
         logger.warning("Enhanced coaching assembly failed, falling back to V2",
                         exc_info=True)
-        return coaching_v2
+        return (
+            {**coaching_v2, "engine": "v2_fallback"}
+            if coaching_v2 is not None else None
+        )
 
 
 def persist_coaching_v3(

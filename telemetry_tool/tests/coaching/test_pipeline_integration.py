@@ -89,6 +89,8 @@ class TestRunEnhancedCoaching:
         assert "corner_coaching" in result
 
     def test_falls_back_on_missing_scores(self):
+        # Fallback must be tagged "engine": "v2_fallback" (not a silent,
+        # indistinguishable-from-v3 v2 payload) -- see test_coaching_engine_tag.py.
         fallback = {"old": "coaching"}
         result = run_enhanced_coaching(
             corner_perfs=[{"corner_id": 1}],
@@ -96,7 +98,7 @@ class TestRunEnhancedCoaching:
             lap_metrics=None, driving_style=None,
             analyzer_bundle={}, driver_history=None,
         )
-        assert result == fallback
+        assert result == {**fallback, "engine": "v2_fallback"}
 
     def test_falls_back_on_missing_corners(self):
         fallback = {"old": "coaching"}
@@ -106,7 +108,7 @@ class TestRunEnhancedCoaching:
             driving_style=None, analyzer_bundle={},
             driver_history=None,
         )
-        assert result == fallback
+        assert result == {**fallback, "engine": "v2_fallback"}
 
 
 class TestPersistCoachingV3:
