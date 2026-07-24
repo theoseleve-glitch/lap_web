@@ -1251,7 +1251,14 @@ def run_full_analysis(
                 sum(1 for s in v2_sections if s.get("corner_type") == "user_defined"),
             )
 
-    # ── Step S10h: Corner diagnosis grid ──────────────────────────
+    # ── Step S10h: Corner diagnosis — runs for EVERY session with detected
+    # corners (previously gated on operator-drawn `user_corners`, a rare path,
+    # which meant most customers never got a diagnosis; it also never received
+    # the real curvature profile). Operator-drawn corners, when present, are
+    # preferred over the AUTO-detected set (they carry operator-corrected
+    # boundaries); otherwise this falls back to the auto-detected `corners` so
+    # diagnosis is available for all customers. Always passes the REAL
+    # `curvature_profile` — that's the whole point of the honesty gate.
     user_corner_rows = None
     _ucr, _err = _safe_step(
         "S10h_fetch_user_corners",
@@ -1261,24 +1268,24 @@ def run_full_analysis(
     if _ucr is not None:
         user_corner_rows = _ucr
 
-    if user_corner_rows:
-        from coaching.corner_diagnosis import classify_all_corners as _classify_corners
+    _diagnosis_corners = user_corner_rows or corners
+    if _diagnosis_corners:
+        from pipeline.stages import s10h_diagnosis
 
-        corner_labels, _err = _safe_step(
-            "S10h_corner_labels",
-            lambda: _classify_corners(
-                resampled_laps=resampled_laps,
-                theoretical_lap=theoretical_lap,
-                user_corners=user_corner_rows,
-                vehicle_class=meta.get("vehicle_class", "car"),
-                valid_lap_numbers=[k for k in resampled_laps if k not in excluded_laps],
-                curvature_profile=curvature_profile,
-                mrp_events=summary.get("mrp_events_v2"),
-            ),
+        corner_diagnosis, _err = _safe_step(
+            "S10h_corner_diagnosis",
+            s10h_diagnosis.run_corner_diagnosis,
+            _diagnosis_corners,
+            resampled_laps,
+            curvature_profile,
+            theoretical_lap,
+            meta.get("vehicle_class", "car"),
+            [k for k in resampled_laps if k not in excluded_laps],
+            mrp_events=summary.get("mrp_events_v2"),
         )
-        _record("S10h_corner_labels", corner_labels, _err)
-        if corner_labels is not None:
-            summary["corner_labels"] = corner_labels
+        _record("S10h_corner_diagnosis", corner_diagnosis, _err)
+        if corner_diagnosis is not None:
+            summary["corner_diagnosis"] = corner_diagnosis
 
     # ══════════════════════════════════════════════════════════════
     # PHASE 4b: Track Surface Reconstruction (step 10d)
