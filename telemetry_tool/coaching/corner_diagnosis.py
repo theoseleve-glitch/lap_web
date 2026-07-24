@@ -156,6 +156,54 @@ def _tier_has_reliable_yaw(tier: str) -> bool:
     return tier in _YAW_RELIABLE_TIERS
 
 
+def _yaw_channel_is_valid(lap_df: pd.DataFrame) -> bool:
+    """Conservatively check the heading channel that yaw labels derive from is
+    not CLEARLY corrupt (present-but-garbage).
+
+    The tier / curvature-profile gate handles a *missing* yaw source. This closes
+    the complementary gap: a channel whose COLUMN exists (so presence checks
+    pass) but whose VALUES are dead -- e.g. a kart gyro/heading that fails
+    calibration, as on the SLK dataset. A frozen heading is especially dangerous
+    here: with a curvature profile it makes `yaw_measured ~= 0` while
+    `yaw_expected != 0`, fabricating a strong, sustained (false) understeer/
+    oversteer residual that would otherwise be reported HIGH confidence.
+
+    Flags only unambiguous corruption -- NaN/inf-heavy, or frozen/constant while
+    the car is actually covering ground -- so a healthy channel is never
+    mislabelled low-confidence. (A noisy-but-live channel is intentionally NOT
+    flagged: random garbage tends to surface as `scrappy`, not a clean yaw call,
+    and a magnitude cross-check against lat_g false-flags legitimate segments
+    that only turn briefly -- kept out on purpose to stay conservative.)
+    """
+    if _COL_HEADING not in lap_df.columns:
+        # Absence is handled by the tier gate, not treated as "corruption".
+        return True
+
+    heading = np.asarray(lap_df[_COL_HEADING].values, dtype=float)
+    if len(heading) < 5:
+        return True  # too short to judge; leave to the other gates
+
+    finite = np.isfinite(heading)
+    if finite.mean() < 0.8:
+        return False  # NaN/inf-heavy -> corrupt
+
+    h = heading[finite]
+
+    # Frozen / constant heading while the car is actually moving -> dead sensor.
+    # A real user corner turns through a non-trivial angle; a stuck channel does
+    # not. Guard on distance so a genuinely stationary/degenerate slice is not
+    # mistaken for a frozen sensor.
+    moving = True
+    if _COL_DIST in lap_df.columns:
+        dist = np.asarray(lap_df[_COL_DIST].values, dtype=float)
+        dist = dist[np.isfinite(dist)]
+        moving = len(dist) >= 2 and (float(dist.max()) - float(dist.min())) > 10.0
+    if moving and float(np.std(h)) < 1e-3:
+        return False
+
+    return True
+
+
 # ---------------------------------------------------------------------------
 # Segment extraction and metrics
 # ---------------------------------------------------------------------------
@@ -725,11 +773,15 @@ def classify_all_corners(
     Returns {lap_num_str: {corner_index_str: {"label": str|None, "confidence": "high"|"low"}}}.
 
     `confidence` is "low" when the cell's label is a yaw-residual label
-    (`_YAW_RESIDUAL_LABELS`: entry/mid-corner/exit under- or oversteer) AND either
-    no `curvature_profile` was supplied or the lap's detection tier lacks a
-    reliable yaw-corroboration channel (see `_tier_has_reliable_yaw`). A cell with
-    no label at all (metrics extraction failed) is also reported as low confidence.
-    Every other cell is "high".
+    (`_YAW_RESIDUAL_LABELS`: entry/mid-corner/exit under- or oversteer) AND any of:
+      - no `curvature_profile` was supplied; OR
+      - the lap's detection tier lacks a reliable yaw-corroboration channel
+        (see `_tier_has_reliable_yaw`); OR
+      - the lap's heading channel is present but clearly corrupt
+        (see `_yaw_channel_is_valid`) -- so a dead/frozen gyro that fabricates a
+        false understeer/oversteer residual is not reported as high confidence.
+    A cell with no label at all (metrics extraction failed) is also reported as
+    low confidence. Every other cell is "high".
     """
     if not user_corners or not valid_lap_numbers:
         return {}
@@ -751,6 +803,9 @@ def classify_all_corners(
             continue
 
         tier = _detect_tier(set(lap_df.columns))
+        # Corrupt-but-present yaw source (dead/frozen heading) is assessed once
+        # per lap: it is a property of the channel, not of an individual corner.
+        yaw_channel_ok = _yaw_channel_is_valid(lap_df)
         lap_labels: dict[str, dict[str, str | None]] = {}
 
         for corner in user_corners:
@@ -773,7 +828,11 @@ def classify_all_corners(
 
             lbl = _resolve_and_pick(all_candidates)
             is_yaw_label = lbl in _YAW_RESIDUAL_LABELS
-            unreliable = curvature_profile is None or not _tier_has_reliable_yaw(tier)
+            unreliable = (
+                curvature_profile is None
+                or not _tier_has_reliable_yaw(tier)
+                or not yaw_channel_ok
+            )
             conf = "low" if (is_yaw_label and unreliable) else "high"
             lap_labels[str(cid)] = {"label": lbl, "confidence": conf}
 

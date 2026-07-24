@@ -21,6 +21,7 @@ import pandas as pd
 from coaching.corner_diagnosis import (
     _YAW_RESIDUAL_LABELS,
     _tier_has_reliable_yaw,
+    _yaw_channel_is_valid,
     classify_all_corners,
 )
 
@@ -185,3 +186,50 @@ class TestYawResidualConfidenceRule:
         assert cell["label"] == "entry_overspeed"
         assert cell["label"] not in _YAW_RESIDUAL_LABELS
         assert cell["confidence"] == "high"
+
+
+class TestCorruptButPresentYaw:
+    """The confidence gate must catch a corrupt-but-PRESENT yaw channel, not just
+    a missing one -- a dead/frozen heading on a reliable tier with a curvature
+    profile would otherwise fabricate a HIGH-confidence understeer/oversteer.
+    """
+
+    def test_frozen_heading_yaw_label_is_low_confidence(self):
+        """Constant/frozen heading + accel cols (reliable tier) + curvature_profile.
+
+        With a curvature profile the frozen heading makes yaw_measured ~= 0 while
+        yaw_expected != 0, producing a strong sustained (false) understeer. Under
+        the channel-presence-only rule this scored "high"; the corrupt-yaw gate
+        must now score it "low".
+        """
+        # total_angle_rad=0.0 -> Heading column is all-zeros: present but dead.
+        lap_df = _make_yaw_heavy_lap_df(total_angle_rad=0.0, has_accel=True)
+        corner = _make_corner(s_entry=50.0, s_apex=100.0, s_exit=150.0, corner_index=1)
+        curvature = _make_curvature_profile(s_start=0.0, s_end=200.0)
+
+        out = classify_all_corners(
+            resampled_laps={2: lap_df},
+            theoretical_lap=None,
+            user_corners=[corner],
+            vehicle_class="car",
+            valid_lap_numbers=[2],
+            curvature_profile=curvature,
+        )
+        cell = out["2"]["1"]
+        # Sanity: the dead heading really did fabricate a yaw-residual label.
+        assert cell["label"] in _YAW_RESIDUAL_LABELS
+        assert cell["confidence"] == "low"
+
+    def test_yaw_channel_validity_helper(self):
+        # Live, genuinely-turning heading -> valid.
+        good = _make_yaw_heavy_lap_df()
+        assert _yaw_channel_is_valid(good) is True
+
+        # Frozen/constant heading over a moving lap -> corrupt.
+        frozen = _make_yaw_heavy_lap_df(total_angle_rad=0.0)
+        assert _yaw_channel_is_valid(frozen) is False
+
+        # NaN-heavy heading -> corrupt.
+        nan_df = _make_yaw_heavy_lap_df()
+        nan_df["Heading (rad)"] = np.nan
+        assert _yaw_channel_is_valid(nan_df) is False
