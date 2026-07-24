@@ -51,6 +51,18 @@ SCRAPPY = "scrappy"
 # Safety labels get highest priority
 _SAFETY_LABELS = {EXIT_OVERSTEER, ENTRY_OVERSTEER}
 
+# Labels derived from the yaw-residual computation. These are unreliable without a
+# real curvature profile (the "uniform curvature" fallback badly mis-estimates the
+# expected yaw rate) or on a tier that lacks a physical yaw-corroboration channel
+# (e.g. a corrupt-gyro kart, or bearing-only GPS heading). Phase 2 honesty-gates
+# these behind a per-label confidence -- see `_tier_has_reliable_yaw` and
+# `classify_all_corners`.
+_YAW_RESIDUAL_LABELS = frozenset({
+    ENTRY_UNDERSTEER, ENTRY_OVERSTEER,
+    MID_CORNER_UNDERSTEER, MID_CORNER_OVERSTEER,
+    EXIT_UNDERSTEER, EXIT_OVERSTEER,
+})
+
 # ---------------------------------------------------------------------------
 # Causal chains: child -> parent (root cause)
 # ---------------------------------------------------------------------------
@@ -125,6 +137,23 @@ def _detect_tier(columns: set[str]) -> str:
     if columns & _ACCEL_COLS:
         return "accel"
     return "gps"
+
+
+# Tiers with a physical accelerometer channel (lat_g) corroborating the yaw
+# residual. "gps" tier derives yaw purely from bearing/heading drift with no
+# independent corroboration -- the spec itself distrusts GPS bearing for
+# exit-phase calls ("too noisy post-apex under power"), and it is exactly the
+# kind of channel that goes silently corrupt on some karts (gyro/heading fails
+# calibration -- see project memory on the SLK dataset). Confidence-gating
+# extends that same distrust to entry/apex yaw calls on "gps" tier.
+_YAW_RELIABLE_TIERS = frozenset({"full", "accel"})
+
+
+def _tier_has_reliable_yaw(tier: str) -> bool:
+    """Whether `tier` has a yaw-rate signal trustworthy enough to back an
+    under/oversteer call without independent curvature-profile validation.
+    """
+    return tier in _YAW_RELIABLE_TIERS
 
 
 # ---------------------------------------------------------------------------
@@ -690,10 +719,17 @@ def classify_all_corners(
     valid_lap_numbers: list[int],
     curvature_profile: pd.DataFrame | None = None,
     mrp_events: dict[int, dict] | None = None,
-) -> dict[str, dict[str, str | None]]:
+) -> dict[str, dict[str, dict[str, str | None]]]:
     """Classify driving symptoms for each user corner on every valid lap.
 
-    Returns {lap_num_str: {corner_index_str: label}}.
+    Returns {lap_num_str: {corner_index_str: {"label": str|None, "confidence": "high"|"low"}}}.
+
+    `confidence` is "low" when the cell's label is a yaw-residual label
+    (`_YAW_RESIDUAL_LABELS`: entry/mid-corner/exit under- or oversteer) AND either
+    no `curvature_profile` was supplied or the lap's detection tier lacks a
+    reliable yaw-corroboration channel (see `_tier_has_reliable_yaw`). A cell with
+    no label at all (metrics extraction failed) is also reported as low confidence.
+    Every other cell is "high".
     """
     if not user_corners or not valid_lap_numbers:
         return {}
@@ -707,7 +743,7 @@ def classify_all_corners(
         cid = corner["corner_index"]
         theo_per_corner[cid] = _extract_theo_metrics(theoretical_lap, corner)
 
-    result: dict[str, dict[str, str]] = {}
+    result: dict[str, dict[str, dict[str, str | None]]] = {}
 
     for lap_num in valid_lap_numbers:
         lap_df = resampled_laps.get(lap_num)
@@ -715,7 +751,7 @@ def classify_all_corners(
             continue
 
         tier = _detect_tier(set(lap_df.columns))
-        lap_labels: dict[str, str] = {}
+        lap_labels: dict[str, dict[str, str | None]] = {}
 
         for corner in user_corners:
             cid = corner["corner_index"]
@@ -724,7 +760,7 @@ def classify_all_corners(
 
             metrics = _extract_corner_metrics(lap_df, corner, curvature_profile, mrp_event)
             if metrics is None:
-                lap_labels[str(cid)] = None
+                lap_labels[str(cid)] = {"label": None, "confidence": "low"}
                 continue
 
             # Run all phase checkers
@@ -735,7 +771,11 @@ def classify_all_corners(
             overall = _check_overall(metrics, theo, thresholds, all_phase)
             all_candidates = all_phase + overall
 
-            lap_labels[str(cid)] = _resolve_and_pick(all_candidates)
+            lbl = _resolve_and_pick(all_candidates)
+            is_yaw_label = lbl in _YAW_RESIDUAL_LABELS
+            unreliable = curvature_profile is None or not _tier_has_reliable_yaw(tier)
+            conf = "low" if (is_yaw_label and unreliable) else "high"
+            lap_labels[str(cid)] = {"label": lbl, "confidence": conf}
 
         result[str(lap_num)] = lap_labels
 

@@ -540,7 +540,7 @@ class TestClassifyAllCorners:
         )
         assert "2" in result
         assert "1" in result["2"]
-        assert isinstance(result["2"]["1"], str)
+        assert isinstance(result["2"]["1"]["label"], str)
 
     def test_multiple_laps_and_corners(self):
         from coaching.corner_diagnosis import classify_all_corners
@@ -560,7 +560,7 @@ class TestClassifyAllCorners:
             valid_lap_numbers=[2, 3],
         )
         assert "2" in result and "3" in result
-        assert result["2"]["1"] == "entry_overspeed"
+        assert result["2"]["1"]["label"] == "entry_overspeed"
 
     def test_empty_corners_returns_empty(self):
         from coaching.corner_diagnosis import classify_all_corners
@@ -609,7 +609,7 @@ class TestClassifyAllCorners:
             vehicle_class="car",
             valid_lap_numbers=[2],
         )
-        assert result_kart["2"]["1"] == "entry_overspeed"
+        assert result_kart["2"]["1"]["label"] == "entry_overspeed"
 
 
 class TestOrchestratorWiring:
