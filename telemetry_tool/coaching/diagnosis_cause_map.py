@@ -27,12 +27,13 @@ P2-Task-3 report).
 The 26-id taxonomy is coarser than the 22-label (excl. GOOD) physics-based
 diagnosis vocabulary, so a few roots legitimately share a taxonomy id:
 - `excess_steering_angle` ("...indicating understeer or over-rotation") is the
-  best existing match for THREE roots: `entry_understeer` (the "understeer"
-  reading), `mid_corner_oversteer` (the "over-rotation" reading), and
-  `early_throttle` (the taxonomy has no "throttle applied too early" exit-
-  category cause; the closest available captures early_throttle's documented
-  downstream consequence, `exit_understeer` -- this is the weakest/least clean
-  mapping in this table, see the report).
+  best existing match for THREE roots: `entry_understeer` (reached via the
+  `early_apex` label, whose `_CAUSAL_PARENT` root is `entry_understeer` --
+  the "understeer" reading), `mid_corner_oversteer` (the "over-rotation"
+  reading), and `early_throttle` (the taxonomy has no "throttle applied too
+  early" exit-category cause; the closest available captures early_throttle's
+  documented downstream consequence, `exit_understeer` -- this is the
+  weakest/least clean mapping in this table, see the report).
 - `late_apex_excessive` covers both `late_apex` and `late_rotation` (both
   describe the car completing its direction change later than ideal, just via
   different metrics -- apex-speed position vs. MRP delta).
