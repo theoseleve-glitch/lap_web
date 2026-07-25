@@ -177,8 +177,17 @@ def run_enhanced_coaching(
     driver_history: dict | None,
     vehicle_class: str = "car",
     previous_goals: list[str] | None = None,
+    corner_diagnosis: dict | None = None,
 ) -> dict | None:
     """S13g: Assemble full V3 coaching output.
+
+    `corner_diagnosis` (Phase 2, Task 5) is the orchestrator's
+    `summary.get("corner_diagnosis")` -- the S10h classifier's per-lap
+    per-corner grid, if that stage ran. Threaded straight through to
+    `compose_session_coaching`, which aggregates it per corner and routes
+    drill selection through it when confidence is high. `None` (classifier
+    didn't run / feature not wired at a call site) preserves Phase-1
+    behavior exactly.
 
     Falls back to coaching_v2 on any exception.
     """
@@ -214,6 +223,7 @@ def run_enhanced_coaching(
             vehicle_class=vehicle_class,
             driver_history=driver_history,
             previous_goals=previous_goals,
+            corner_diagnosis=corner_diagnosis,
         )
         d = result.to_dict()
         d["engine"] = "v3"

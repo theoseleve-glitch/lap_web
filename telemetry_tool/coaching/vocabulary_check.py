@@ -26,6 +26,19 @@ Note: `_SYMPTOM_TO_CAUSE` also maps symptom_id "understeer_entry" -> cause_id
 "understeer_entry" can therefore never actually be returned and is correctly
 excluded from this set — do not add it back without also adding a taxonomy
 entry for it and verifying it can be returned.
+
+P2-Task 5 (diagnosis-routed causes): `_resolve_cause`'s new BRANCH 0 (highest
+priority) can also return any value of
+`diagnosis_cause_map.DIAGNOSIS_LABEL_TO_CAUSE` when a HIGH-confidence
+corner-diagnosis cell is present. Those ids are unioned into
+`assert_cause_vocabulary_integrity`'s guard automatically (it already reads
+`DIAGNOSIS_LABEL_TO_CAUSE.values()` directly), but the ones NEW vs. the
+symptom/metric set above are listed here too for completeness/documentation:
+"corner_entry_too_fast", "excess_steering_angle", "late_apex_excessive",
+"hesitant_throttle", "poor_exit_speed", "mid_corner_correction". (The
+remaining diagnosis-map values -- "early_braking_confidence",
+"late_braking_aggressive", "no_trail_braking", "mid_corner_lift",
+"mid_corner_speed_loss" -- were already resolvable via the metric path above.)
 """
 from __future__ import annotations
 
@@ -34,6 +47,9 @@ RESOLVABLE_CAUSE_IDS = frozenset({
     "early_braking_confidence", "late_braking_aggressive", "no_trail_braking",
     "mid_corner_lift", "insufficient_brake_pressure", "mid_corner_speed_loss",
     "late_throttle_application",
+    # Diagnosis-routed (Phase 2, Task 5) — new vs. the symptom/metric set above.
+    "corner_entry_too_fast", "excess_steering_angle", "late_apex_excessive",
+    "hesitant_throttle", "poor_exit_speed", "mid_corner_correction",
 })
 
 

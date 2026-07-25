@@ -12,6 +12,7 @@ Orchestration order:
 """
 from __future__ import annotations
 
+import math
 import statistics
 from typing import Any
 
@@ -42,8 +43,18 @@ def compose_session_coaching(
     vehicle_class: str = "car",
     driver_history: dict | None = None,
     previous_goals: list[str] | None = None,
+    corner_diagnosis: dict | None = None,
 ) -> SessionCoaching:
-    """Assemble the full V3 coaching output for a session."""
+    """Assemble the full V3 coaching output for a session.
+
+    `corner_diagnosis`, when given, is the classifier's raw per-LAP
+    per-corner grid (`{lap_str: {corner_str: {"label", "confidence"}}}` — see
+    `coaching.corner_diagnosis.classify_all_corners` /
+    `pipeline.stages.s10h_diagnosis`). It is collapsed to one aggregated cell
+    per corner via `_aggregate_corner_diagnosis` and threaded into
+    `compose_corner_coaching` as `diagnosis=`. `None` (no classifier run, or
+    nothing to diagnose) preserves Phase-1 behavior exactly.
+    """
 
     # ── 1. Build per-corner coaching ──
     corner_coaching: list[CornerCoachingDetail] = []
@@ -55,6 +66,7 @@ def compose_session_coaching(
         symptoms = _get_for_corner(analyzer_results.get("symptoms"), cid)
         lifts = _get_lifts_for_corner(analyzer_results.get("throttle_lifts"), cid)
         wt = _get_for_corner(analyzer_results.get("weight_transfers"), cid)
+        diagnosis = _aggregate_corner_diagnosis(corner_diagnosis, cid, lap_metrics)
 
         detail = compose_corner_coaching(
             corner_perf=cp,
@@ -67,6 +79,7 @@ def compose_session_coaching(
             taxonomy=taxonomy,
             vehicle_class=vehicle_class,
             driver_history=driver_history,
+            diagnosis=diagnosis,
         )
         corner_coaching.append(detail)
 
@@ -164,6 +177,107 @@ def _get_for_corner(items: list | dict | None, corner_id: int):
             if cid == corner_id:
                 return item
     return None
+
+
+def _best_lap_number(lap_metrics: list | None) -> int | None:
+    """Identify the driver's best (fastest, finite-time) lap number from
+    `lap_metrics`, if lap-level data with an identifiable lap_number + time is
+    available. Returns `None` when it isn't — callers then fall back to modal
+    aggregation across all laps instead of a single representative one."""
+    if not lap_metrics:
+        return None
+
+    best_num = None
+    best_time = None
+    for lm in lap_metrics:
+        if not isinstance(lm, dict):
+            continue
+        lap_num = lm.get("lap_number")
+        lap_time = lm.get("lap_time_s")
+        if lap_time is None:
+            lap_time = lm.get("lap_time")
+        if lap_num is None or lap_time is None:
+            continue
+        try:
+            lap_time = float(lap_time)
+        except (TypeError, ValueError):
+            continue
+        if not math.isfinite(lap_time):
+            continue
+        if best_time is None or lap_time < best_time:
+            best_time = lap_time
+            best_num = lap_num
+
+    return best_num
+
+
+def _aggregate_corner_diagnosis(
+    corner_diagnosis: dict | None,
+    corner_id: int,
+    lap_metrics: list | None,
+) -> dict | None:
+    """Collapse the classifier's per-LAP per-corner grid to one cell for
+    *corner_id* — the shape `compose_corner_coaching` (-> `_resolve_cause`)
+    consumes.
+
+    Aggregation (documented per the P2-Task-5 design):
+    1. BEST LAP: if a best/representative lap is identifiable from
+       `lap_metrics` (`_best_lap_number` — the fastest lap with a finite
+       time) AND that lap has a recorded cell for this corner, use that cell
+       as-is. It's the single most representative sample of how the driver
+       actually took the corner on their best effort, so no further
+       aggregation across other laps is needed.
+    2. MODAL FALLBACK: otherwise (no identifiable best lap, or that lap has
+       no cell for this corner — e.g. metrics extraction failed for it),
+       fall back to the most-frequent ("modal") non-None/non-"good" label
+       across every lap that has a cell for this corner. The returned
+       `confidence` is "high" only when a MAJORITY (>50%) of the laps
+       carrying that modal label recorded it "high" — one lucky high-
+       confidence read surrounded by low-confidence noise should not be
+       enough to override the metric-based branches.
+    Returns `None` when there is nothing to aggregate: no map, no cells for
+    this corner, or every recorded cell is "good" (no issue) / label-less.
+    """
+    if not corner_diagnosis:
+        return None
+
+    corner_key = str(corner_id)
+    cells: list[tuple[str, dict]] = []
+    for lap_key, corner_map in corner_diagnosis.items():
+        if not isinstance(corner_map, dict):
+            continue
+        cell = corner_map.get(corner_key)
+        if cell and cell.get("label"):
+            cells.append((str(lap_key), cell))
+
+    if not cells:
+        return None
+
+    # 1. Best/representative lap, if identifiable.
+    best_lap_num = _best_lap_number(lap_metrics)
+    if best_lap_num is not None:
+        match = next((cell for lap_key, cell in cells if lap_key == str(best_lap_num)), None)
+        if match is not None:
+            if match["label"] == "good":
+                return None
+            return {"label": match["label"], "confidence": match.get("confidence", "low")}
+        # No cell for the best lap on this corner -- fall through to modal.
+
+    # 2. Modal fallback across non-"good" labels.
+    non_good = [cell for _, cell in cells if cell["label"] != "good"]
+    if not non_good:
+        return None
+
+    by_label: dict[str, list[dict]] = {}
+    for cell in non_good:
+        by_label.setdefault(cell["label"], []).append(cell)
+
+    modal_label = max(by_label, key=lambda lbl: len(by_label[lbl]))
+    modal_cells = by_label[modal_label]
+    high_count = sum(1 for c in modal_cells if c.get("confidence") == "high")
+    confidence = "high" if high_count > len(modal_cells) / 2 else "low"
+
+    return {"label": modal_label, "confidence": confidence}
 
 
 def _get_lifts_for_corner(items: list | dict | None, corner_id: int) -> list:

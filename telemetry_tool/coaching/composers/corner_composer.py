@@ -1,12 +1,21 @@
 """Corner composer — builds CornerCoachingDetail from analyzer outputs.
 
 Resolution order:
-1. Symptom-based diagnosis (highest confidence symptom wins)
+0. Diagnosis-based (Phase 2, Task 5): a HIGH-confidence corner-diagnosis
+   classifier label (the physics-derived root cause) wins outright — this is
+   the new PRIMARY driver of drill selection. A missing diagnosis, or one
+   whose confidence is "low" (unreliable yaw labels — see
+   `coaching.corner_diagnosis._YAW_RESIDUAL_LABELS`), does not participate
+   here and falls through to the branches below, which stay byte-for-byte
+   Phase-1 behavior.
+1. Symptom-based diagnosis (highest confidence symptom wins) — fallback
 2. Metric-based: braking point delta → speed deltas → fallback to largest time_loss phase
 3. Template lookup from CORNER_TIPS[(cause, severity, vehicle)]
 """
 from __future__ import annotations
 
+from coaching import corner_diagnosis as cd
+from coaching.diagnosis_cause_map import DIAGNOSIS_LABEL_TO_CAUSE
 from coaching.models import (
     CornerCoachingDetail, ExitSpeedCascade, SymptomDetection,
     TractionBudget, TrailBrakeAssessment, WeightTransferInsight,
@@ -22,6 +31,30 @@ _SYMPTOM_TO_CAUSE = {
     "mid_corner_speed_loss": "mid_corner_lift",
 }
 
+# Diagnosis-routed cause → corner_perf time-loss key it's most semantically
+# tied to. Reuses the same three phase buckets (braking / apex / exit) branch
+# 2's metric path already keys off of — used only to size the cause's
+# severity delta; a cause with no matching real measurement here falls back
+# to `_DIAGNOSIS_DEFAULT_DELTA` rather than fabricating one.
+_CAUSE_TIME_LOSS_KEY = {
+    "corner_entry_too_fast": "time_loss_braking_s",
+    "early_braking_confidence": "time_loss_braking_s",
+    "late_braking_aggressive": "time_loss_braking_s",
+    "no_trail_braking": "time_loss_braking_s",
+    "excess_steering_angle": "time_loss_apex_speed_s",
+    "mid_corner_speed_loss": "time_loss_apex_speed_s",
+    "late_apex_excessive": "time_loss_apex_speed_s",
+    "hesitant_throttle": "time_loss_apex_speed_s",
+    "mid_corner_correction": "time_loss_apex_speed_s",
+    "mid_corner_lift": "time_loss_exit_s",
+    "poor_exit_speed": "time_loss_exit_s",
+}
+
+# Moderate-severity default used when a diagnosis-routed cause has no
+# corresponding real time_loss measurement on corner_perf (mirrors the
+# moderate-threshold default the symptom branch already falls back to).
+_DIAGNOSIS_DEFAULT_DELTA = 10.0
+
 
 def compose_corner_coaching(
     corner_perf: dict,
@@ -34,8 +67,15 @@ def compose_corner_coaching(
     taxonomy: CauseTaxonomy,
     vehicle_class: str,
     driver_history: dict | None = None,
+    diagnosis: dict | None = None,
 ) -> CornerCoachingDetail:
-    """Resolve primary cause for a corner and build full coaching detail."""
+    """Resolve primary cause for a corner and build full coaching detail.
+
+    `diagnosis`, when given, is this corner's aggregated corner-diagnosis
+    cell (`{"label": str, "confidence": "high"|"low"}` — see
+    `session_composer._aggregate_corner_diagnosis`). It is `None` for callers
+    that never ran the classifier (Phase-1 behavior, unchanged).
+    """
 
     corner_id = corner_perf["corner_id"]
     corner_name = f"T{corner_id}"
@@ -43,6 +83,7 @@ def compose_corner_coaching(
     # ── 1. Resolve primary cause ──
     cause_id, delta_value = _resolve_cause(
         corner_perf, symptoms, trail_brake, throttle_lifts, taxonomy,
+        diagnosis=diagnosis,
     )
 
     # ── 2. Get severity ──
@@ -130,8 +171,24 @@ def _resolve_cause(
     trail_brake: TrailBrakeAssessment | None,
     throttle_lifts: list[ThrottleLiftEvent],
     taxonomy: CauseTaxonomy,
+    diagnosis: dict | None = None,
 ) -> tuple[str, float]:
-    """Return (cause_id, delta_value) using symptom → metric → fallback priority."""
+    """Return (cause_id, delta_value) using diagnosis → symptom → metric → fallback priority."""
+
+    # 0. Diagnosis-based (Phase 2, Task 5): a HIGH-confidence corner-diagnosis
+    # label is the physics-derived root cause and outranks every branch below.
+    # Low-confidence cells (unreliable yaw labels — the honesty gate) and a
+    # missing diagnosis both fall straight through, unchanged.
+    if diagnosis and diagnosis.get("confidence") == "high":
+        label = diagnosis.get("label")
+        if label:
+            root_label = cd._CAUSAL_PARENT.get(label, label)
+            diag_cause_id = DIAGNOSIS_LABEL_TO_CAUSE.get(root_label)
+            if diag_cause_id and taxonomy.get_cause(diag_cause_id):
+                time_loss_key = _CAUSE_TIME_LOSS_KEY.get(diag_cause_id)
+                delta = corner_perf.get(time_loss_key) if time_loss_key else None
+                delta = abs(delta) if delta else _DIAGNOSIS_DEFAULT_DELTA
+                return diag_cause_id, delta
 
     # 1. Symptom-based: highest confidence symptom
     if symptoms and symptoms.symptoms:

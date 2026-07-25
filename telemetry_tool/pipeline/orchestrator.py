@@ -1526,6 +1526,7 @@ def run_full_analysis(
             driver_history=_driver_history,
             vehicle_class=meta.get("vehicle_class", "car"),
             previous_goals=None,
+            corner_diagnosis=summary.get("corner_diagnosis"),
         )
         _record("13g_coaching_v3", _coaching_v3, err)
         if _coaching_v3:
