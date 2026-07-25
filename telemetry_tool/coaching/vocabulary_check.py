@@ -1,6 +1,7 @@
 """Fail-loud guard: every cause id _resolve_cause can emit must exist in BOTH
 the taxonomy and DRILL_LIBRARY, so vocabulary drift can never silently collapse
-every corner to 'Unknown cause'.
+every corner to 'Unknown cause'. Also covers `diagnosis_cause_map`'s ids so the
+same drift can't silently break the corner-diagnosis -> drill-selection path.
 
 RESOLVABLE_CAUSE_IDS is the full, real set of cause ids that
 `coaching.composers.corner_composer._resolve_cause` can return, verified by
@@ -39,12 +40,14 @@ RESOLVABLE_CAUSE_IDS = frozenset({
 def assert_cause_vocabulary_integrity() -> None:
     from coaching.taxonomy.causes import CauseTaxonomy
     from coaching.templates.drills import DRILL_LIBRARY
+    from coaching.diagnosis_cause_map import DIAGNOSIS_LABEL_TO_CAUSE
     tax = CauseTaxonomy()
     drill_causes: set[str] = set()
     for d in DRILL_LIBRARY.values():
         drill_causes.update(d.get("applicable_causes", []))
+    all_cause_ids = set(RESOLVABLE_CAUSE_IDS) | set(DIAGNOSIS_LABEL_TO_CAUSE.values())
     missing = [
-        cid for cid in RESOLVABLE_CAUSE_IDS
+        cid for cid in sorted(all_cause_ids)
         if tax.get_cause(cid) is None or cid not in drill_causes
     ]
     if missing:
