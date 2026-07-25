@@ -56,6 +56,30 @@ _CAUSE_TIME_LOSS_KEY = {
 _DIAGNOSIS_DEFAULT_DELTA = 10.0
 
 
+def _diagnosis_cause_id(diagnosis: dict | None, taxonomy: CauseTaxonomy) -> str | None:
+    """Resolve a corner-diagnosis cell to the taxonomy cause it routes to, or
+    `None` when it does not participate in routing.
+
+    Returns a cause id only when `diagnosis` is a HIGH-confidence cell whose
+    label resolves (via `_CAUSAL_PARENT` → `DIAGNOSIS_LABEL_TO_CAUSE`) to a
+    cause that actually exists in the taxonomy. Returns `None` for a missing
+    diagnosis, a low-confidence (honesty-gated) cell, a label-less cell, or a
+    mapping to a cause the taxonomy doesn't know. Shared by `_resolve_cause`
+    (branch 0) and `compose_corner_coaching` (severity handling) so the two
+    can never disagree on whether a cause was diagnosis-routed.
+    """
+    if not diagnosis or diagnosis.get("confidence") != "high":
+        return None
+    label = diagnosis.get("label")
+    if not label:
+        return None
+    root_label = cd._CAUSAL_PARENT.get(label, label)
+    cause_id = DIAGNOSIS_LABEL_TO_CAUSE.get(root_label)
+    if cause_id and taxonomy.get_cause(cause_id):
+        return cause_id
+    return None
+
+
 def compose_corner_coaching(
     corner_perf: dict,
     trail_brake: TrailBrakeAssessment | None,
@@ -87,7 +111,23 @@ def compose_corner_coaching(
     )
 
     # ── 2. Get severity ──
-    severity = taxonomy.get_severity(cause_id, delta_value)
+    # Diagnosis-routed (branch-0) causes need special handling: the `delta_value`
+    # returned above is a TIME (seconds), sized from corner_perf's phase
+    # time-loss — but the taxonomy `severity_thresholds` for these causes are in
+    # that cause's OWN unit (km/h / m / deg / pct / correction-counts). Feeding a
+    # ~0.3 s time into `get_severity` collapses almost every diagnosis-routed
+    # cause to "mild", systematically under-stating the tip tone on what is now
+    # the PRIMARY selection path. Until the deferred "magnitude & severity
+    # wiring" task sources a real right-unit magnitude per diagnosis-routed
+    # cause, use a neutral middle band ("moderate") here rather than a
+    # false-precise, biased-low one. `delta_value` is still carried through for
+    # display / focus-area ranking.
+    # TODO(magnitude-severity-wiring): replace this "moderate" default with a
+    # severity derived from a right-unit magnitude for the diagnosed cause.
+    if _diagnosis_cause_id(diagnosis, taxonomy) == cause_id:
+        severity = "moderate"
+    else:
+        severity = taxonomy.get_severity(cause_id, delta_value)
     cause_def = taxonomy.get_cause(cause_id)
     root_cause = cause_def["root_cause"] if cause_def else "technique"
     diagnosis_text = cause_def["diagnosis"] if cause_def else "Unknown cause"
@@ -179,16 +219,15 @@ def _resolve_cause(
     # label is the physics-derived root cause and outranks every branch below.
     # Low-confidence cells (unreliable yaw labels — the honesty gate) and a
     # missing diagnosis both fall straight through, unchanged.
-    if diagnosis and diagnosis.get("confidence") == "high":
-        label = diagnosis.get("label")
-        if label:
-            root_label = cd._CAUSAL_PARENT.get(label, label)
-            diag_cause_id = DIAGNOSIS_LABEL_TO_CAUSE.get(root_label)
-            if diag_cause_id and taxonomy.get_cause(diag_cause_id):
-                time_loss_key = _CAUSE_TIME_LOSS_KEY.get(diag_cause_id)
-                delta = corner_perf.get(time_loss_key) if time_loss_key else None
-                delta = abs(delta) if delta else _DIAGNOSIS_DEFAULT_DELTA
-                return diag_cause_id, delta
+    diag_cause_id = _diagnosis_cause_id(diagnosis, taxonomy)
+    if diag_cause_id is not None:
+        time_loss_key = _CAUSE_TIME_LOSS_KEY.get(diag_cause_id)
+        delta = corner_perf.get(time_loss_key) if time_loss_key else None
+        # `is not None` (not truthiness): a genuine 0.0 s phase loss is a real
+        # measurement, not "missing" — only an absent field falls back to the
+        # moderate default.
+        delta = abs(delta) if delta is not None else _DIAGNOSIS_DEFAULT_DELTA
+        return diag_cause_id, delta
 
     # 1. Symptom-based: highest confidence symptom
     if symptoms and symptoms.symptoms:

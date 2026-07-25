@@ -790,6 +790,14 @@ def _update_downstream(conn, session_id, result, result_dict, analysis_json,
                     lap_metrics=None, driving_style=driving_style,
                     analyzer_bundle=analyzer_bundle, driver_history=None,
                     vehicle_class=vehicle_class,
+                    # Phase-2 Task 5: route drill selection through the persisted
+                    # corner-diagnosis map, same as the orchestrator's 13g call.
+                    # The S10h classifier output is persisted into analysis_json
+                    # (see _build_analysis_blob), so the OCP-recompute path reads
+                    # it back from there. `lap_metrics=None` here means best-lap
+                    # aggregation isn't available, so it falls back to the modal
+                    # per-corner label (see _aggregate_corner_diagnosis).
+                    corner_diagnosis=analysis_json.get("corner_diagnosis"),
                 )
                 if coaching_v3:
                     analysis_json["coaching_v3"] = coaching_v3
