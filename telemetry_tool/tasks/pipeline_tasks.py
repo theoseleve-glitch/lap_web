@@ -608,6 +608,11 @@ def _build_analysis_blob(result: dict) -> dict:
     if cv3 and isinstance(cv3, dict):
         blob["coaching_v3"] = cv3
 
+    # Corner diagnosis (per-lap/per-corner root-cause labels + confidence, Phase 2)
+    cdiag = result.get("corner_diagnosis")
+    if cdiag and isinstance(cdiag, dict):
+        blob["corner_diagnosis"] = cdiag
+
     # Gamification (XP, level, achievements, streak)
     gam = result.get("gamification")
     if gam and isinstance(gam, dict):
