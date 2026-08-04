@@ -1241,6 +1241,7 @@ def run_full_analysis(
         v2_handling, err = _safe_step(
             "10g3_handling_v2", s10b_corners.run_handling_analysis_v2,
             v2_sections, best_lap_df, available_columns=_avail_cols,
+            best_lap_number=best_lap_key,
         )
         _record("10g3_handling_v2", v2_handling, err)
 

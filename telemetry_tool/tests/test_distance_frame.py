@@ -649,3 +649,81 @@ def test_data_quality_report_survives_the_persistence_gate(tmp_path):
         "the isinstance(dq, dict) gate dropped the raw dataclass"
     )
     assert blob["data_quality_summary"] == dq
+
+
+# ── Task 13: best_lap_number must reach the v2 handling ensemble ───────────
+#
+# s10b_corners.run_handling_analysis_v2 defaults best_lap_number to 1 when
+# not supplied. The orchestrator's Step 10g3 call never supplied it, even
+# though best_lap_df passed alongside it is the ACTUAL best lap (from
+# select_best_lap). So the 17-detector handling ensemble silently masked
+# lap 1's telemetry against best_lap_df's data whenever the real best lap
+# was not lap 1.
+
+
+def test_handling_v2_receives_the_real_best_lap_number(tmp_path):
+    """Drives the real orchestrator (same fixture shape as
+    test_data_quality_report_survives_the_persistence_gate) with lap 2 built
+    to be the faster lap, so lap 2 - not lap 1 - is the real best lap.
+    Asserts run_handling_analysis_v2 is called with best_lap_number=2, not
+    left to fall back to the callee's own hardcoded default of 1.
+    """
+    from unittest.mock import MagicMock, patch
+
+    import pipeline
+    from pipeline.stages import s10b_corners
+
+    n = 500
+    half = n // 2
+    laps = np.repeat([1, 2], half)
+    # Lap 1 spans 60s (slow); lap 2 spans 40s (fast) - lap 2 is the real
+    # best lap, deliberately NOT lap 1.
+    time = np.concatenate([
+        np.linspace(0.0, 60.0, half),
+        np.linspace(0.0, 40.0, half),
+    ])
+    speed = np.random.default_rng(42).uniform(10, 30, n)
+    dist = np.concatenate([
+        np.cumsum(speed[:half] * np.diff(np.concatenate([[0.0], time[:half]]))),
+        np.cumsum(speed[half:] * np.diff(np.concatenate([[0.0], time[half:]]))),
+    ])
+    lat = np.linspace(45.0, 45.001, n)
+    lon = np.linspace(9.0, 9.001, n)
+
+    df = pd.DataFrame({
+        "Lap #": laps,
+        "Time (s)": time,
+        "Speed (m/s)": speed,
+        "Distance (m)": dist,
+        "Latitude (deg)": lat,
+        "Longitude (deg)": lon,
+    })
+    csv_path = tmp_path / "handling_best_lap.csv"
+    df.to_csv(csv_path, index=False)
+
+    # Force the v2-sections gate open (Step 10g3 is skipped entirely when
+    # v2_sections is falsy) without depending on real corner detection.
+    fake_sections = [
+        {"corner_id": 1, "corner_type": "auto", "s_start": 10.0, "s_end": 20.0},
+    ]
+    handling_mock = MagicMock(return_value=None)
+
+    with patch.object(
+        s10b_corners, "run_track_decomposition_v2", return_value=fake_sections
+    ), patch.object(s10b_corners, "run_handling_analysis_v2", handling_mock):
+        summary = pipeline.run_full_analysis(str(csv_path), {})
+
+    assert summary.get("best_lap_key") == 2, (
+        "fixture setup invalid - expected lap 2 (the faster lap) to be "
+        f"selected as best lap, got {summary.get('best_lap_key')!r}"
+    )
+    handling_mock.assert_called_once()
+    _, kwargs = handling_mock.call_args
+    assert kwargs.get("best_lap_number") == 2, (
+        "run_handling_analysis_v2 was not called with the real best lap "
+        f"number (2) - got kwargs={kwargs!r}. The callee silently defaults "
+        "missing best_lap_number to 1, which is the bug this test guards "
+        "against: the 17-detector handling ensemble would mask lap 1's "
+        "telemetry against best_lap_df's data whenever the real best lap "
+        "wasn't lap 1."
+    )
