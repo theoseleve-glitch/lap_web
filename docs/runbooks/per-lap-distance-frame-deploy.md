@@ -229,7 +229,7 @@ curl -fsS -H "Authorization: Bearer $TOKEN" \
 
 ```bash
 ssh root@46.225.227.24 "cd /opt/lap-api && docker compose -f docker-compose.prod.yml exec -T postgres \
-  psql -U lap -d lap -c \"SELECT lap_number, count(*), count(throttle_onset_m) FROM corner_metrics \
+  psql -U telemetry -d telemetry -c \"SELECT lap_number, count(*), count(throttle_onset_m) FROM corner_metrics \
   WHERE session_id='<SESSION_ID>' GROUP BY 1 ORDER BY 1;\""
 ```
 
