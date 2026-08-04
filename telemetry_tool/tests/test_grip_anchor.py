@@ -40,3 +40,58 @@ def test_reserved_reasons_exist_for_phase_2_prerequisites():
 
     assert ga.REASON_CONDITION_UNKNOWN == "condition_unknown"
     assert ga.REASON_CORNER_IDENTITY_UNSTABLE == "corner_identity_unstable"
+
+
+def test_channel_trust_ratio_is_one_for_a_perfectly_consistent_channel():
+    """If a_lat exactly equals v^2 * kappa, the ratio must be 1.0."""
+    import grip_anchor as ga
+
+    v = np.full(200, 20.0)
+    kappa = np.full(200, 0.02)          # v^2*kappa = 8.0 m/s^2, well above the gate
+    a_lat = v ** 2 * kappa
+
+    assert ga.channel_trust_ratio(a_lat, v, kappa) == pytest.approx(1.0)
+
+
+def test_channel_trust_ratio_detects_a_systematically_low_channel():
+    import grip_anchor as ga
+
+    v = np.full(200, 20.0)
+    kappa = np.full(200, 0.02)
+    a_lat = 0.85 * v ** 2 * kappa       # reads 15% low
+
+    assert ga.channel_trust_ratio(a_lat, v, kappa) == pytest.approx(0.85)
+
+
+def test_channel_trust_ratio_ignores_near_straight_samples():
+    """Straights are v^2*kappa ~ 0, so the ratio there is noise over noise.
+    Averaging them in is exactly what makes the persisted sensor_quality
+    signal read 0.531 instead of ~0.96."""
+    import grip_anchor as ga
+
+    v = np.full(400, 20.0)
+    kappa = np.concatenate([np.full(200, 0.02), np.full(200, 1e-5)])
+    a_lat = np.concatenate([
+        v[:200] ** 2 * kappa[:200],          # honest cornering samples
+        np.full(200, 5.0),                    # garbage on the straight
+    ])
+
+    # Only the cornering half is admitted, so the garbage cannot move it.
+    assert ga.channel_trust_ratio(a_lat, v, kappa) == pytest.approx(1.0)
+
+
+def test_channel_trust_ratio_returns_none_when_too_few_samples():
+    import grip_anchor as ga
+
+    v = np.full(5, 20.0)
+    kappa = np.full(5, 0.02)
+    assert ga.channel_trust_ratio(v ** 2 * kappa, v, kappa) is None
+
+
+def test_channel_trust_ratio_returns_none_on_all_nan():
+    import grip_anchor as ga
+
+    n = 200
+    v = np.full(n, 20.0)
+    kappa = np.full(n, 0.02)
+    assert ga.channel_trust_ratio(np.full(n, np.nan), v, kappa) is None

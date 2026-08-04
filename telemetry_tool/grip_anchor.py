@@ -59,3 +59,47 @@ def is_quotable_as_physics(tier: str | None) -> bool:
     an absolute claim about the car's limit. Everything else — including an
     unknown tier — is relative or nothing."""
     return tier in _PHYSICS_TIERS
+
+
+def channel_trust_ratio(
+    a_lat_mps2: np.ndarray,
+    speed_mps: np.ndarray,
+    curvature_1pm: np.ndarray,
+    *,
+    min_geo_accel: float = 2.0,
+    min_samples: int = 20,
+) -> float | None:
+    """Median |a_lat| / (v^2 * kappa) over genuinely-cornering samples.
+
+    1.0 means the measured lateral channel agrees with the path geometry.
+    Returns None when there is not enough cornering to judge — which is a
+    refusal, not a pass.
+
+    ``min_geo_accel`` (m/s^2) is the whole point: on a straight, v^2*kappa is
+    ~0 and the ratio is noise divided by noise. Averaging those in is what
+    drags the persisted sensor_quality figure to 0.531. Restricted to real
+    cornering, real kart data measures 0.961.
+    """
+    a = np.abs(np.asarray(a_lat_mps2, dtype=float))
+    v = np.asarray(speed_mps, dtype=float)
+    k = np.abs(np.asarray(curvature_1pm, dtype=float))
+
+    a_geo = v ** 2 * k
+    usable = np.isfinite(a) & np.isfinite(a_geo) & (a_geo > min_geo_accel)
+    if int(usable.sum()) < min_samples:
+        return None
+
+    ratio = float(np.nanmedian(a[usable] / a_geo[usable]))
+    return ratio if np.isfinite(ratio) else None
+
+
+# Band within which the lateral channel is trusted for an absolute claim.
+# Real kart data measures 0.961; the production frontend uses [0.80, 1.20]
+# after filtering zeros (TrackSurfacePanel.tsx:513).
+TRUST_BAND_LOW: Final = 0.80
+TRUST_BAND_HIGH: Final = 1.25
+
+
+def channel_is_trusted(ratio: float | None) -> bool:
+    """Fail-safe: None (not measurable) is NOT trusted."""
+    return ratio is not None and TRUST_BAND_LOW <= ratio <= TRUST_BAND_HIGH
