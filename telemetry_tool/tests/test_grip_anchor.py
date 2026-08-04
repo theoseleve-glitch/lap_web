@@ -303,20 +303,32 @@ def test_build_friction_model_reports_fitted_when_boundary_data_is_sufficient():
 
 
 class _FakeFriction:
-    """Minimal stand-in with the real FrictionCircle accessor names."""
+    """Minimal stand-in with the real FrictionCircle accessor names.
+
+    Speed-sensitive via a tiny 2-point flat-extrapolating grid (np.interp),
+    mirroring the real FrictionCircle. An out-of-range speed -- including
+    inf -- does NOT come back as NaN here: it silently flat-extrapolates to
+    the boundary grid value, exactly the real danger the speed-finiteness
+    guard in ellipse_fill_pct exists to catch. A fake that ignored its speed
+    argument entirely could never make that guard's removal observable
+    (every accessor would return the same constant regardless), which is
+    exactly how all 6 original tests kept passing with the guard deleted.
+    """
+
+    _V_GRID = np.array([5.0, 45.0])
 
     def __init__(self, lat=12.0, brake=9.0, traction=3.0, exponent=2.0):
         self._lat, self._brake, self._trac, self.exponent = lat, brake, traction, exponent
         self.exponent_source = "fitted"
 
     def lateral_max(self, speed):
-        return np.asarray(self._lat, dtype=float)
+        return np.asarray(np.interp(speed, self._V_GRID, [self._lat, self._lat]), dtype=float)
 
     def braking_max(self, speed):
-        return np.asarray(self._brake, dtype=float)
+        return np.asarray(np.interp(speed, self._V_GRID, [self._brake, self._brake]), dtype=float)
 
     def traction_max(self, speed):
-        return np.asarray(self._trac, dtype=float)
+        return np.asarray(np.interp(speed, self._V_GRID, [self._trac, self._trac]), dtype=float)
 
 
 def test_ellipse_fill_is_100_at_the_pure_lateral_boundary():
@@ -369,3 +381,64 @@ def test_ellipse_fill_returns_none_on_a_degenerate_envelope():
 
     assert ga.ellipse_fill_pct(5.0, 0.0, 25.0, _FakeFriction(lat=0.0)) is None
     assert ga.ellipse_fill_pct(np.nan, 0.0, 25.0, _FakeFriction()) is None
+
+
+def test_ellipse_fill_does_not_raise_on_an_overflowing_tiny_limit():
+    """A finite, strictly-positive, but vanishingly small envelope limit is
+    NOT caught by the `<= 0` guard (it's not exactly zero, NaN, or inf).
+    Reviewer's exact reproducer: raising a ~1e150 ratio to the exponent
+    overflows float64 range. Python's native `float ** float` RAISES
+    OverflowError there; only doing the arithmetic in numpy float64 (which
+    silently saturates to inf) lets the existing isfinite(frac) guard run
+    instead of the exception propagating. Reachable in production because
+    FrictionCircle.from_dict() reconstructs a model WITHOUT re-applying
+    build_friction_model's _FLOOR, so a corrupted/partial persisted envelope
+    can supply a value this small without ever being exactly 0.
+    """
+    import grip_anchor as ga
+
+    f = _FakeFriction(traction=1e-150, exponent=3.0)
+    assert ga.ellipse_fill_pct(0.0, 1.0, 25.0, f) is None
+
+
+def test_ellipse_fill_respects_a_non_default_exponent_1_6():
+    """The real kart exponent is ~1.6, not the FrictionCircle default of 2.0.
+    Uses a COMBINED sample (both axes active) because a pure-axis sample
+    returns 100.0 at every p and would not discriminate a hardcoded p=2 --
+    exactly the gap the brief warned about by name.
+
+    rx = |a_long|/ax_max = 4.5/9.0 = 0.5, ry = a_lat/ay_max = 6.0/12.0 = 0.5
+    frac = 0.5**1.6 + 0.5**1.6 = 0.659754...
+    pct  = 100 * frac**(1/1.6) = 77.1105...  (a hardcoded p=2 would read 70.71)
+    """
+    import grip_anchor as ga
+
+    f = _FakeFriction(lat=12.0, brake=9.0, exponent=1.6)
+    assert ga.ellipse_fill_pct(6.0, -4.5, 25.0, f) == pytest.approx(77.11, abs=0.01)
+
+
+def test_ellipse_fill_respects_a_non_default_exponent_3_0():
+    """Same combined sample as the 1.6 case above, at a sharper exponent.
+
+    rx = ry = 0.5
+    frac = 0.5**3.0 + 0.5**3.0 = 0.25
+    pct  = 100 * frac**(1/3.0) = 62.996...  (a hardcoded p=2 would read 70.71)
+    """
+    import grip_anchor as ga
+
+    f = _FakeFriction(lat=12.0, brake=9.0, exponent=3.0)
+    assert ga.ellipse_fill_pct(6.0, -4.5, 25.0, f) == pytest.approx(63.00, abs=0.01)
+
+
+def test_ellipse_fill_returns_none_for_a_non_finite_speed():
+    """A non-finite speed must be refused before it ever reaches the friction
+    model. Against a REAL FrictionCircle, np.interp flat-extrapolates an
+    out-of-range speed to the boundary grid value instead of NaN, so without
+    this guard an infinite speed would silently produce a plausible-but-wrong
+    percentage rather than a refusal. `_FakeFriction` mirrors that same
+    flat-extrapolation via np.interp, so this test is only green because the
+    guard fires before the fake is ever called.
+    """
+    import grip_anchor as ga
+
+    assert ga.ellipse_fill_pct(5.0, 0.0, float("inf"), _FakeFriction()) is None
