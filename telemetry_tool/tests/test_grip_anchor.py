@@ -4,7 +4,10 @@ The anchor answers "you used X% of the available grip here" and ALWAYS says
 what "available" was measured against. Fail-safe: any doubt degrades toward
 the lower tier; an unknown signal never yields a physics tier.
 """
+import math
+
 import numpy as np
+import pandas as pd
 import pytest
 
 
@@ -165,3 +168,135 @@ def test_friction_circle_reports_whether_its_exponent_was_fitted():
     )
     # Default construction has not fitted anything.
     assert fc.exponent_source == "hint"
+
+
+def _make_boundary_saturating_laps(n_laps=8, n_pts=500, seed=42):
+    """Synthetic laps with a genuine combined braking+cornering zone, so
+    `_fit_ellipse_exponent` collects >= 20 qualifying boundary samples and
+    takes its grid-search ("fitted") path rather than falling back to the
+    hint. Shape borrowed from friction_model.py's own inline self-test
+    fixture (`_make_circular_laps` inside `_run_tests`), since that fixture
+    is the one already known to exercise the fit (its p lands at ~2.4, not
+    the 2.0 hint)."""
+    rng = np.random.default_rng(seed)
+    radius = 50.0
+    mu_lat, mu_trac, mu_brake = 1.2, 0.8, 1.5
+    g = 9.80665
+    a_lat_max = mu_lat * g
+    a_trac_max = mu_trac * g
+    a_brake_max = mu_brake * g
+    v_corner = math.sqrt(a_lat_max * radius)
+    track_len = 2 * math.pi * radius
+
+    laps = {}
+    for lap_num in range(1, n_laps + 1):
+        dist = np.linspace(0, track_len, n_pts, endpoint=False)
+        zone_len = track_len / 4
+        zone = (dist / zone_len).astype(int) % 4
+
+        speed = np.full(n_pts, v_corner)
+        a_long = np.zeros(n_pts)
+        a_lat = np.zeros(n_pts)
+
+        # Pure cornering near the limit
+        mask0 = zone == 0
+        a_lat[mask0] = a_lat_max * (0.90 + 0.10 * rng.random(mask0.sum()))
+
+        # Acceleration + some lateral
+        mask1 = zone == 1
+        n1 = int(mask1.sum())
+        speed[mask1] = v_corner * (1.0 + np.linspace(0, 0.3, n1))
+        a_long[mask1] = a_trac_max * (0.75 + 0.25 * rng.random(n1))
+        a_lat[mask1] = a_lat_max * 0.3 * rng.random(n1)
+
+        # Cornering near the limit again
+        mask2 = zone == 2
+        a_lat[mask2] = a_lat_max * (0.85 + 0.15 * rng.random(mask2.sum()))
+
+        # Combined heavy braking + cornering -- this is the zone that
+        # populates the boundary mask (both axes active at once).
+        mask3 = zone == 3
+        n3 = int(mask3.sum())
+        speed[mask3] = v_corner * (1.3 - np.linspace(0, 0.3, n3))
+        a_long[mask3] = -a_brake_max * (0.65 + 0.35 * rng.random(n3))
+        a_lat[mask3] = a_lat_max * (0.3 + 0.4 * rng.random(n3))
+
+        a_long += rng.normal(0, 0.05 * g, n_pts)
+        a_lat += rng.normal(0, 0.05 * g, n_pts)
+
+        dt = np.diff(dist) / np.maximum(speed[:-1], 1.0)
+        t = np.concatenate([[0.0], np.cumsum(dt)])
+
+        laps[lap_num] = pd.DataFrame({
+            "Distance (m)":     dist,
+            "Speed (m/s)":      speed,
+            "accel_long_mps2":  a_long,
+            "accel_lat_mps2":   a_lat,
+            "Time (s)":         t,
+        })
+    return laps
+
+
+def _make_pure_lateral_laps(n_laps=4, n_pts=200, seed=7):
+    """Synthetic laps with lateral load only -- longitudinal accel is
+    exactly zero throughout. `_fit_ellipse_exponent`'s boundary mask
+    requires BOTH axes active (rx > 0.1 and ry > 0.1); with a_long == 0.0
+    everywhere, rx is always 0.0, so n_boundary is guaranteed to be 0 --
+    well under the ~20 needed to fit -- deterministically forcing the
+    "hint" fallback path."""
+    rng = np.random.default_rng(seed)
+    laps = {}
+    for lap_num in range(1, n_laps + 1):
+        dist = np.linspace(0, 300.0, n_pts, endpoint=False)
+        speed = np.full(n_pts, 20.0) + rng.normal(0, 0.1, n_pts)
+        a_long = np.zeros(n_pts)
+        a_lat = 9.0 + rng.normal(0, 0.2, n_pts)
+        t = np.linspace(0, 15.0, n_pts)
+        laps[lap_num] = pd.DataFrame({
+            "Distance (m)":     dist,
+            "Speed (m/s)":      speed,
+            "accel_long_mps2":  a_long,
+            "accel_lat_mps2":   a_lat,
+            "Time (s)":         t,
+        })
+    return laps
+
+
+def test_build_friction_model_reports_hint_when_boundary_data_is_insufficient():
+    """Drives the real production entry point (`build_friction_model`), not
+    just the dataclass default. This is the "hint" branch of
+    `_fit_ellipse_exponent`: a pure-lateral dataset can never populate the
+    boundary mask, so the fit is skipped and the hint is returned verbatim.
+
+    The isinstance check is deliberate: a swapped tuple unpack at the
+    `_fit_ellipse_exponent` call site (`exp_source, fitted_exp = ...`
+    instead of `fitted_exp, exp_source = ...`) would put the string label
+    into `.exponent`. A bare `== "hint"` on `exponent_source` alone would
+    NOT catch that swap (it would just also be wrong in a way that could
+    coincidentally look right), so the isinstance guard is what actually
+    verifies the unpack order.
+    """
+    import friction_model as fm
+
+    laps = _make_pure_lateral_laps()
+    model = fm.build_friction_model(laps, speed_bins=4, min_samples_per_bin=5)
+
+    assert model.exponent_source == "hint"
+    assert isinstance(model.exponent, float)
+    assert model.exponent == 2.0  # untouched default hint (kart_traction_floor=False)
+
+
+def test_build_friction_model_reports_fitted_when_boundary_data_is_sufficient():
+    """The "fitted" branch: a dataset with a genuine combined
+    braking+cornering zone gives `_fit_ellipse_exponent` >= 20 boundary
+    samples, so it actually runs the grid search instead of returning the
+    hint unchanged.
+    """
+    import friction_model as fm
+
+    laps = _make_boundary_saturating_laps()
+    model = fm.build_friction_model(laps, speed_bins=10, percentile=95.0)
+
+    assert model.exponent_source == "fitted"
+    assert isinstance(model.exponent, float)
+    assert 1.0 <= model.exponent <= 4.0

@@ -877,6 +877,12 @@ def apply_kart_traction_floor(
             n_lat_clamped, len(lat), lateral_floor_g, lat_floor_mps2,
         )
 
+    # The floor is a non-uniform clamp -- it can change the relative shape
+    # between axes, so a `p` fitted pre-floor may no longer be the best
+    # descriptor of the post-floor envelope. We still carry the source
+    # forward because the field records *provenance* of the number (was it
+    # ever genuinely fitted, at all), not a live claim that the fit remains
+    # optimal after this transform.
     return FrictionCircle(
         v_grid=friction_model.v_grid.copy(),
         traction_vals=np.maximum(trac.copy(), floor_mps2),
