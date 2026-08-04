@@ -149,3 +149,19 @@ def test_channel_is_trusted_comprehensive():
     assert ga.channel_is_trusted(0.90) is True
     assert ga.channel_is_trusted(1.10) is True
     assert ga.channel_is_trusted(1.20) is True
+
+
+def test_friction_circle_reports_whether_its_exponent_was_fitted():
+    """A fitted p that happens to land near 2.0 must be distinguishable from
+    a silent fallback to the 2.0 hint — otherwise a 'fitted ellipse' tier is
+    a claim we cannot support."""
+    from friction_model import FrictionCircle
+
+    fc = FrictionCircle(
+        v_grid=np.linspace(5.0, 40.0, 8),
+        traction_vals=np.full(8, 3.0),
+        braking_vals=np.full(8, 9.0),
+        lateral_vals=np.full(8, 12.0),
+    )
+    # Default construction has not fitted anything.
+    assert fc.exponent_source == "hint"

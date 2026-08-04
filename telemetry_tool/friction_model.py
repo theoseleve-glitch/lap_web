@@ -275,6 +275,9 @@ class FrictionCircle:
         Max lateral acceleration (|a_y|) at each knot [m/s²].
     exponent : float
         Friction ellipse shape exponent (2.0 = true ellipse).
+    exponent_source : str
+        "fitted" if `exponent` was estimated from boundary data, "hint" if
+        it is the unfitted default/hint value.
     """
 
     v_grid:        np.ndarray
@@ -282,6 +285,10 @@ class FrictionCircle:
     braking_vals:  np.ndarray
     lateral_vals:  np.ndarray
     exponent:      float = _DEFAULT_ELLIPSE_EXP
+    # "fitted" when _fit_ellipse_exponent had enough boundary samples to
+    # actually fit p; "hint" when it silently fell back to the default.
+    # In-memory only -- this object is never persisted, so no migration.
+    exponent_source: str = "hint"
 
     # Interpolators (built post-init)
 
@@ -448,6 +455,7 @@ class FrictionCircle:
             braking_vals=self.braking_vals * factor,
             lateral_vals=self.lateral_vals * factor,
             exponent=self.exponent,
+            exponent_source=self.exponent_source,
         )
 
 
@@ -647,7 +655,7 @@ def build_friction_model(
     # Fit ellipse exponent from data.
     # For karts, use a squarer ellipse (p=1.6) as the default hint.
     exp_hint = _KART_ELLIPSE_EXP if kart_traction_floor else exponent
-    fitted_exp = _fit_ellipse_exponent(
+    fitted_exp, exp_source = _fit_ellipse_exponent(
         speeds, a_long, a_lat, v_grid,
         traction_env, braking_env, lateral_env,
         exponent_hint=exp_hint,
@@ -659,6 +667,7 @@ def build_friction_model(
         braking_vals=braking_env,
         lateral_vals=lateral_env,
         exponent=fitted_exp,
+        exponent_source=exp_source,
     )
 
     logger.info(
@@ -684,7 +693,7 @@ def _fit_ellipse_exponent(
     lateral_env: np.ndarray,
     *,
     exponent_hint: float = 2.0,
-) -> float:
+) -> tuple[float, str]:
     """
     Estimate the ellipse shape exponent *p* from data by testing which
     exponent best describes the observed boundary.
@@ -694,6 +703,13 @@ def _fit_ellipse_exponent(
     boundary points is selected from a grid [1.2, 1.4, ..., 3.0].
 
     Falls back to *exponent_hint* if insufficient boundary data.
+
+    Returns
+    -------
+    tuple[float, str]
+        The exponent value, and its source: "fitted" if the grid search
+        ran on enough boundary samples, "hint" if it fell back to
+        *exponent_hint* unchanged.
     """
     # Interpolate limits at each sample's speed
 
@@ -733,7 +749,7 @@ def _fit_ellipse_exponent(
             "Only %d boundary samples for exponent fit; using hint=%.2f",
             n_boundary, exponent_hint,
         )
-        return exponent_hint
+        return exponent_hint, "hint"
 
     rx_b = rx[boundary]
     ry_b = ry[boundary]
@@ -757,7 +773,7 @@ def _fit_ellipse_exponent(
         "Ellipse exponent fit: p=%.1f (from %d boundary samples, MSE=%.4f)",
         best_p, n_boundary, best_err,
     )
-    return best_p
+    return best_p, "fitted"
 
 
 # -- -
@@ -867,6 +883,7 @@ def apply_kart_traction_floor(
         braking_vals=friction_model.braking_vals.copy(),
         lateral_vals=np.maximum(lat.copy(), lat_floor_mps2),
         exponent=friction_model.exponent,
+        exponent_source=friction_model.exponent_source,
     )
 
 
