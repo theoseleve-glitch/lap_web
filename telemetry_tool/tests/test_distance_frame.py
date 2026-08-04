@@ -827,3 +827,172 @@ def test_invalidate_session_cache_still_prefers_the_app_context_client():
     from_url.assert_not_called()
     app_redis.delete.assert_called_once_with("chart:sess-y:corners:default")
     assert deleted == 1
+
+
+# ── Final review I2: the drop warning must not fire on a HEALTHY session ───
+#
+# np.linspace/np.digitize put a sample sitting exactly on the last bin edge
+# (the reference lap's own final sample, d == d_max) at index n_bins - out of
+# range - so the Task 7 warning fired on every correctly-framed session.
+# Measured on real data: 1/953, 7/935, 2/948, 3/951 dropped, i.e. four WARNING
+# lines per healthy session across five worker services. A real frame
+# regression drops ~100% of a lap's samples, so the signal is distinguishable
+# - but the noise would get the alarm filtered out inside a week, defeating
+# Task 7 entirely.
+
+
+def _healthy_grip_laps(rng) -> dict:
+    """Three correctly-framed laps: all 0-based, spans differing by ~1%.
+
+    Mirrors real data - OK_R4's per-lap spans are 1202.5 / 1218.0 / 1210.3 /
+    1212.8 / 1198.6 m, so laps genuinely run a little past the reference lap's
+    final edge and a handful of samples are legitimately dropped.
+    """
+    def _grip_lap(distances: np.ndarray) -> pd.DataFrame:
+        return pd.DataFrame({
+            "Distance (m)": distances,
+            "Lateral acceleration (G) *calc": 0.9 + rng.normal(
+                0.0, 0.01, len(distances)
+            ),
+        })
+
+    return {
+        1: _grip_lap(np.linspace(0.0, 1202.5, 500)),
+        2: _grip_lap(np.linspace(0.0, 1218.0, 500)),
+        3: _grip_lap(np.linspace(0.0, 1198.6, 500)),
+    }
+
+
+def _grip_map_warnings(caplog) -> list[str]:
+    return [
+        r.getMessage() for r in caplog.records
+        if r.name == "grip_map" and r.levelno >= 30
+    ]
+
+
+def test_healthy_session_logs_no_grip_map_drop_warning(caplog):
+    """Lateral-accel branch: a correctly-framed session must be silent."""
+    import logging
+
+    import grip_map
+
+    laps = _healthy_grip_laps(np.random.default_rng(0))
+
+    with caplog.at_level(logging.WARNING, logger="grip_map"):
+        result = grip_map.compute_grip_map(laps, n_bins=20)
+
+    assert not result.is_global_fallback
+    assert _grip_map_warnings(caplog) == [], (
+        "a healthy, correctly-framed session must produce ZERO drop warnings - "
+        "otherwise alarm fatigue buries the real frame-regression signal"
+    )
+
+
+def test_reference_lap_right_edge_sample_is_binned_not_dropped():
+    """The exact d == d_max sample is legitimately in frame and must land in
+    the last bin. np.digitize's half-open intervals put it at index n_bins,
+    which the naive range check dropped - one spurious drop per lap, per site.
+    """
+    import grip_map
+
+    n = 500
+
+    def _grip_lap(distances: np.ndarray) -> pd.DataFrame:
+        # Constant mu on purpose: bin_stats.sample_count is len(clean), i.e.
+        # POST-_iqr_reject, so any noise would let outlier rejection remove
+        # samples too and this test could no longer attribute a shortfall to
+        # the binning. With zero spread the IQR fence is degenerate and keeps
+        # everything, making the count a pure measure of what got binned.
+        return pd.DataFrame({
+            "Distance (m)": distances,
+            "Lateral acceleration (G) *calc": np.full(n, 0.9),
+        })
+
+    # Every lap spans exactly the same 0-based range, so NOTHING is out of
+    # frame and the total binned sample count must be exactly 3 x 500.
+    laps = {k: _grip_lap(np.linspace(0.0, 1202.5, n)) for k in (1, 2, 3)}
+
+    result = grip_map.compute_grip_map(laps, n_bins=20)
+
+    assert not result.is_global_fallback
+    total_binned = sum(s.sample_count for s in result.bin_stats)
+    assert total_binned == 3 * n, (
+        f"{3 * n - total_binned} sample(s) dropped from a session where every "
+        "lap shares one frame - the exact right-edge sample (d == d_max) is "
+        "being treated as out of range"
+    )
+
+
+def test_healthy_session_logs_no_grip_map_drop_warning_curvature_branch(caplog):
+    """Same guarantee through grip_map's OTHER binning site: the
+    curvature/speed branch, reached only when no lap carries a lateral-accel
+    column and a curvature_profile is supplied."""
+    import logging
+
+    import grip_map
+
+    curvature_profile = pd.DataFrame({
+        "distance_m": [0.0, 1300.0],
+        "curvature_1pm": [0.01, 0.01],
+    })
+
+    def _speed_lap(distances: np.ndarray) -> pd.DataFrame:
+        return pd.DataFrame({
+            "Distance (m)": distances,
+            "Speed (m/s)": np.full(len(distances), 20.0),
+        })
+
+    laps = {
+        1: _speed_lap(np.linspace(0.0, 1202.5, 500)),
+        2: _speed_lap(np.linspace(0.0, 1218.0, 500)),
+        3: _speed_lap(np.linspace(0.0, 1198.6, 500)),
+    }
+
+    with caplog.at_level(logging.WARNING, logger="grip_map"):
+        result = grip_map.compute_grip_map(
+            laps, curvature_profile=curvature_profile, n_bins=20
+        )
+
+    assert result.source == "curvature_speed", (
+        f"test fell through to source={result.source!r} instead of "
+        "exercising the curvature/speed branch"
+    )
+    assert not result.is_global_fallback
+    assert _grip_map_warnings(caplog) == [], (
+        "a healthy, correctly-framed session must produce ZERO drop warnings "
+        "on the curvature branch either"
+    )
+
+
+def test_out_of_frame_lap_still_warns(caplog):
+    """The threshold must not silence the case Task 7 exists for: a lap that
+    is entirely out of frame drops ~100% of its samples and must be loud."""
+    import logging
+
+    import grip_map
+
+    rng = np.random.default_rng(2)
+
+    def _grip_lap(distances: np.ndarray) -> pd.DataFrame:
+        return pd.DataFrame({
+            "Distance (m)": distances,
+            "Lateral acceleration (G) *calc": 0.9 + rng.normal(
+                0.0, 0.01, len(distances)
+            ),
+        })
+
+    laps = {
+        1: _grip_lap(np.linspace(0.0, 1202.5, 500)),
+        # Never rebased - still carrying cumulative session distance.
+        2: _grip_lap(np.linspace(4997.9, 6196.5, 500)),
+        3: _grip_lap(np.linspace(6196.5, 7395.1, 500)),
+    }
+
+    with caplog.at_level(logging.WARNING, logger="grip_map"):
+        grip_map.compute_grip_map(laps, n_bins=20)
+
+    warnings = _grip_map_warnings(caplog)
+    assert len(warnings) == 2, (
+        f"both out-of-frame laps must warn, got {warnings}"
+    )
+    assert all("500/500 samples (100.0%)" in w for w in warnings), warnings
