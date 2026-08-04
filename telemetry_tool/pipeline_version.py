@@ -13,7 +13,11 @@ from __future__ import annotations
 
 from typing import Optional
 
-PIPELINE_VERSION: int = 2
+# 3: distance frame rebased to 0-based per-lap metres in
+#    resampling.resample_lap_by_distance. All prior sessions carry corner
+#    spans, grip maps and reference lines built in the old absolute frame
+#    and must be reprocessed.
+PIPELINE_VERSION: int = 3
 
 
 def is_stale(session_version: Optional[int]) -> bool:

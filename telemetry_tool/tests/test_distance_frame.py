@@ -184,3 +184,15 @@ def test_corner_coaching_spans_are_persisted_verbatim(test_db):
         "s_start was rewritten by the theo_d0 rebase (would be -30.0) "
         "instead of being persisted verbatim"
     )
+
+
+def test_pipeline_version_bumped_for_the_frame_change():
+    """The structural hash digests step NAMES only, so a change inside
+    resampling.py is invisible to it. Without a manual bump, every pre-fix
+    session reports itself current forever and nothing gets reprocessed."""
+    from pipeline_version import PIPELINE_VERSION, is_stale
+
+    assert PIPELINE_VERSION >= 3
+    assert is_stale(2) is True
+    assert is_stale(None) is True
+    assert is_stale(PIPELINE_VERSION) is False

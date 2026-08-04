@@ -11,7 +11,7 @@ class TestPipelineVersion:
         assert PIPELINE_VERSION > 0
 
     def test_current_value(self):
-        assert PIPELINE_VERSION == 2
+        assert PIPELINE_VERSION == 3
 
 
 class TestIsStale:
