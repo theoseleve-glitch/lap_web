@@ -200,9 +200,25 @@ def resample_lap_by_distance(
 
     d_min = float(np.nanmin(dist_raw))
     d_max = float(np.nanmax(dist_raw))
+    span = d_max - d_min
 
-    dist_grid = np.linspace(d_min, d_max, n_points)
-    dist_norm = (dist_grid - d_min) / (d_max - d_min)   # 0.0 – 1.0
+    # Canonical frame: every resampled lap is 0-based per-lap metres.
+    #
+    # RaceChrono's "Distance (m)" is cumulative SESSION distance, so lap 5 of a
+    # ten-lap session starts near 5 km.  Corners are detected on one lap only
+    # (s07_resample.py:82-83) and carry that lap's span, so without this rebase
+    # every (dist >= s_start) & (dist <= s_end) mask is empty on all other laps.
+    #
+    # Shift dist_raw here, BEFORE _interp_channel below, or np.interp compares an
+    # absolute x-array against a 0-based grid and clamps every channel flat.
+    #
+    # The absolute origin is deliberately kept out of the returned frame — a
+    # column carrying it would be picked up by the loose first-match distance
+    # sniffers elsewhere in the codebase and silently restore the old frame.
+    dist_raw = dist_raw - d_min
+
+    dist_grid = np.linspace(0.0, span, n_points)
+    dist_norm = dist_grid / span   # 0.0 – 1.0
 
     out: dict[str, np.ndarray] = {
         _COL_DIST:      dist_grid,
