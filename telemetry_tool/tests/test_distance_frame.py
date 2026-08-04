@@ -101,3 +101,26 @@ def test_corner_mask_populates_on_every_lap():
                 f"lap {lap_no} corner {ci}: {n} samples - "
                 "corner_diagnosis bails below 5"
             )
+
+
+def test_reference_grid_covers_all_laps_not_just_the_median_one():
+    """Under the old frame the common grid sat in the middle lap's absolute
+    window, so _interpolate_lap_onto_grid NaN'd every other lap entirely and
+    np.nanmedian silently reduced a 10-lap reference to 1 lap."""
+    from resampling import resample_lap_by_distance
+    from reference_line import _build_common_grid, _interpolate_lap_onto_grid
+
+    starts = [153.9, 1356.5, 2574.6, 3784.9, 4997.9]
+    ends = [1356.4, 2574.5, 3784.9, 4997.7, 6196.5]
+    laps = {
+        i + 1: resample_lap_by_distance(_lap(s, e, i + 1), n_points=500)
+        for i, (s, e) in enumerate(zip(starts, ends))
+    }
+
+    grid = _build_common_grid(laps)
+    assert grid[0] == pytest.approx(0.0, abs=1.0)
+
+    for lap_no, lap in laps.items():
+        vals = _interpolate_lap_onto_grid(lap, grid, "Speed (m/s)")
+        nan_frac = float(np.isnan(vals).mean())
+        assert nan_frac < 0.05, f"lap {lap_no}: {nan_frac:.0%} NaN on the grid"
