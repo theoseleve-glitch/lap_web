@@ -347,6 +347,14 @@ def run_per_lap_corner_metrics(
 
     results: list[dict[str, Any]] = []
     _failed_laps: list = []
+    # Laps that completed the loop body WITHOUT raising and contributed at
+    # least one metric. Deliberately not derived from `results`: a lap that
+    # raises after appending some metrics is a failed lap, so counting it as
+    # covered too would put it in both tallies below and could push the
+    # coverage numerator above its own denominator. Its partial metrics stay
+    # in `results` - discarding them would be a data change, and this is a
+    # logging fix.
+    _covered_laps: set[int] = set()
     _attempted = 0
     sorted_keys = sorted(resampled_laps.keys())
 
@@ -362,6 +370,7 @@ def run_per_lap_corner_metrics(
         # to be analyzed, whether or not analysis then raises or comes back
         # empty.
         _attempted += 1
+        _results_before = len(results)
         try:
             perfs = ca_mod.analyze_corners(
                 corners, lap_df, theoretical_lap, friction_model,
@@ -384,6 +393,10 @@ def run_per_lap_corner_metrics(
                 # Enrich with raw telemetry metrics
                 _enrich_corner_telemetry(d, lap_df)
                 results.append(d)
+            # Reached only if nothing above raised. A lap that raised part-way
+            # is counted as failed, never as covered - see _covered_laps.
+            if len(results) > _results_before:
+                _covered_laps.add(int(lap_num))
         except Exception as exc:
             _failed_laps.append(lap_num)
             logger.debug("Corner analysis for lap %s: %s", lap_num, exc)
@@ -394,13 +407,14 @@ def run_per_lap_corner_metrics(
         # above), not laps that legitimately produced zero metrics via
         # excluded_laps or the too-short-lap_df skip - those are intentional
         # and would make this warning fire on every ordinary session.
-        # "attempted" is len(sorted_keys) - the laps this function actually
-        # looped over - rather than reconstructed from results + failures,
-        # so it can't drift out of sync.
+        # Denominator is _attempted, the same denominator the coverage
+        # warning below builds on: laps that cleared both legitimate-skip
+        # checks and genuinely entered analysis. len(sorted_keys) would also
+        # count the skipped laps this warning explicitly excludes.
         logger.warning(
             "Per-lap corner metrics: %d/%d laps raised an exception during "
             "corner analysis and were skipped (first few: %s)",
-            len(_failed_laps), len(sorted_keys), _failed_laps[:5],
+            len(_failed_laps), _attempted, _failed_laps[:5],
         )
 
     # Second, independent signal: coverage. This is the actual regression
@@ -409,18 +423,20 @@ def run_per_lap_corner_metrics(
     # falls back / returns empty rather than raising on a degenerate mask).
     # The exception warning above could never have caught that.
     #
-    # Denominator excludes laps already counted in _failed_laps: those are
-    # explained by the warning above, and mixing them in here would let this
-    # message's "(no exceptions raised)" claim go false when a run has both
-    # some exceptions and separately-low coverage. This keeps the two
-    # signals honestly non-overlapping rather than merged.
-    _covered_laps = len(set(m["lap_number"] for m in results))
+    # Both numerator and denominator exclude laps counted in _failed_laps:
+    # those are explained by the warning above, and mixing them in here would
+    # let this message's "(no exceptions raised)" claim go false when a run
+    # has both some exceptions and separately-low coverage. _covered_laps is
+    # accumulated in the loop rather than recomputed from `results` precisely
+    # so a lap that raised after appending partial metrics cannot appear on
+    # both sides. This keeps the two signals honestly non-overlapping.
+    _n_covered = len(_covered_laps)
     _no_exception_attempts = _attempted - len(_failed_laps)
-    if _no_exception_attempts and _covered_laps < _no_exception_attempts / 2:
+    if _no_exception_attempts and _n_covered < _no_exception_attempts / 2:
         logger.warning(
             "Per-lap corner metrics cover only %d/%d attempted laps that "
             "did not raise (no exceptions raised) - check the distance frame",
-            _covered_laps, _no_exception_attempts,
+            _n_covered, _no_exception_attempts,
         )
 
     if results:

@@ -996,3 +996,70 @@ def test_out_of_frame_lap_still_warns(caplog):
         f"both out-of-frame laps must warn, got {warnings}"
     )
     assert all("500/500 samples (100.0%)" in w for w in warnings), warnings
+
+
+# ── Final review M2: the two warnings' denominators must agree ─────────────
+#
+# The exception warning divided by len(sorted_keys) (every lap in the dict,
+# including ones legitimately skipped) while the coverage warning divided by
+# _attempted, and the comment claimed they were the same. Worse, a lap that
+# raised AFTER appending some metrics landed in _failed_laps AND in the
+# coverage numerator (which was recomputed from `results`), so the numerator
+# could exceed its own denominator.
+
+
+def test_per_lap_corner_warning_denominators_exclude_skipped_and_failed_laps(caplog):
+    """Both warnings must count only laps that genuinely entered analysis,
+    and a lap that raises must never also be counted as covered."""
+    import logging
+    import types
+    from unittest.mock import patch
+
+    from pipeline.stages import s10b_corners
+
+    laps = {n: _lap(0.0, 100.0, n) for n in range(1, 9)}   # 8 laps present
+    excluded = frozenset({7, 8})                           # 2 legitimately skipped
+    corners = [{"corner_id": 1, "s_start": 10.0, "s_end": 20.0}]
+
+    def fake_analyze_corners(corners_arg, driver_lap, theoretical_result, friction):
+        lap_no = int(driver_lap["Lap #"].iloc[0])
+        if lap_no == 1:
+            # One usable metric, then a value the loop cannot convert
+            # (dict(object()) raises TypeError). Lap 1 therefore RAISES while
+            # having already appended partial output to `results`.
+            return [{"time_loss_s": 0.1, "corner_id": 1}, object()]
+        # Laps 2..6: no exception, but nothing to show for it - the shape of
+        # the historical distance-frame incident.
+        return []
+
+    fake_ca_mod = types.SimpleNamespace(analyze_corners=fake_analyze_corners)
+
+    with patch.object(s10b_corners, "lazy_import", return_value=fake_ca_mod), \
+         caplog.at_level(logging.WARNING):
+        results = s10b_corners.run_per_lap_corner_metrics(
+            corners, laps, excluded_laps=excluded,
+        )
+
+    # Partial output from the failed lap is retained - dropping it would be a
+    # data change, and this is a logging fix.
+    assert {r["lap_number"] for r in results} == {1}
+
+    # 6 laps were attempted (8 minus the 2 excluded), 1 of them raised.
+    assert "1/6" in caplog.text, (
+        "exception warning must divide by attempted laps (6), not by every "
+        f"lap in the dict (8): {caplog.text}"
+    )
+    assert "1/8" not in caplog.text, (
+        f"exception warning is still counting legitimately skipped laps: {caplog.text}"
+    )
+
+    # 5 laps did not raise; NONE of them produced a metric. Lap 1 produced one
+    # but raised, so it belongs to the exception tally only.
+    assert "0/5" in caplog.text, (
+        "coverage warning must report 0 covered of the 5 laps that did not "
+        f"raise: {caplog.text}"
+    )
+    assert "1/5" not in caplog.text, (
+        "the lap that raised is being double-counted as covered, which is how "
+        f"the coverage numerator could exceed its denominator: {caplog.text}"
+    )
