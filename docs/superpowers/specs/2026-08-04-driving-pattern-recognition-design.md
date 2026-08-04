@@ -1,7 +1,7 @@
 # Driving Pattern Recognition — design
 
 **Date:** 2026-08-04
-**Branch:** `feat/driving-pattern-recognition` (worktree `C:/Users/Admin/lap_web-wt-patterns`), forked from `feat/adaptive-coaching` @ `476a889`
+**Branch:** `feat/driving-pattern-recognition` (worktree `C:/Users/Admin/lap_web-wt-patterns`), originally forked from `feat/adaptive-coaching` @ `476a889` — **must be rebased onto `fix/per-lap-distance-frame` before Phase 1 implementation** (see §11)
 **Status:** design approved, plan pending
 **Hard dependency:** the per-lap corner coordinate fix, split out as a standalone shippable change (see §11)
 
@@ -155,15 +155,26 @@ def decide_anchor(corner, lap, session) -> Anchor
 
 | Tier | Source | Gate |
 |---|---|---|
-| `physics` | `FrictionEnvelope` bin at the corner's speed | `median(sensor_quality.curvature_agreement)` within `[0.80, 1.25]` **and** the bin is not fabricated |
-| `driver_best` | driver's own best execution of that corner, from `corner_metrics` | that corner has ≥1 prior clean execution |
+| `physics_ellipse_fitted` | in-scope `FrictionCircle`, fitted exponent | bin provenance passes **and** inline channel-trust ratio in band **and** the exponent was genuinely fitted |
+| `physics_ellipse_default_p2` | same, but the exponent fell back to the hint | as above, exponent not fitted — a true ellipse claim would be false |
+| `driver_best_session` | that driver's best execution of that corner **in this session** | ≥2 laps produced a usable window for that corner |
 | `refused` | none | always available; carries a machine-readable reason |
 
 Ordered fail-safe downgrade, vocabulary constants and a single consumer guard, copied literally from `track_surface/honesty.py:13-75`.
 
-**Fabricated-bin detection**, available today with no new code: a `FrictionBin` is synthetic when `confidence == 0.0`, `sample_count < 8`, or `accel_max_g == global * 0.6` (`friction_envelope.py:229`). Tier 1 must not quote a floored bin as a measurement.
+Five corrections from verification, each of which invalidated an earlier draft of this section:
 
-Measured gate outcome on real kart data: **0.961 → PASS**.
+**The gate is NOT `sensor_quality.curvature_agreement`.** That signal is wrong on three axes at once: its bins are ~0.5 m *distance* bins along the centerline (`builder.py:270`, `frenet.py:126-127`) while the envelope is *speed*-binned; it admits samples down to `0.05 G ≈ 0.49 m/s²` (`sensor_quality.py:243`), the near-straight regime the committed report measures at `cal_bias` **0.531** — so the 0.961 figure in §4 is not a number that signal ever sees; and it is produced at step `10e_sensor_quality` (`orchestrator.py:1349-1355`), *after* the hook, so an anchor would read `None` and fail-safe to refused on every session. It is also all-zeros on any session with ≤3 usable laps, with `0.0` doubling as the "not measured" sentinel (`sensor_quality.py:266`, `:279`). **Instead:** compute the trust ratio inline over our own corner mask, restricted to `v²κ > 2 m/s²` — the condition under which 0.961 was actually measured. ~15 lines over arrays already in hand.
+
+**Tier 1 uses the in-scope `FrictionCircle`, not the persisted `FrictionEnvelope`.** `FrictionCircle` holds the fitted ellipse exponent and is never persisted — but it is already passed into the hook stage as `friction_model=summary.get("friction_model")` (`orchestrator.py:1178`). So the fitted ellipse is free and the "persist the ellipse" workstream disappears. The persisted `FrictionEnvelope` hardcodes p=2 (`friction_envelope.py:98-108`); quoting it under a `physics` label would be a false provenance claim.
+
+**Units.** `FrictionCircle` is m/s²; `FrictionBin`/`GripMap` μ are G. The existing path is already unit-correct — `_resolve_accel_lat` (`corner_analysis.py:316-324`) converts to m/s² and compares against `FrictionCircle.lateral_max`, also m/s². The 9.8× hazard is *created* the moment a baseline is read from the envelope. Keep the arithmetic in m/s², convert at one named boundary, and name the persisted column `grip_anchor_baseline_g` so a reviewer catches an unconverted value.
+
+**Fabricated-bin detection** reduces to one exact test: `confidence == 0.0` ⟺ `sample_count < 8` (`friction_envelope.py:221-234`, `:248`). Drop the `accel_max_g == global * 0.6` proxy — `round(g*0.6, 4)` vs `round(g, 4)*0.6` (`:229` vs `:268`) makes it fail most of the time.
+
+**Never cap at 100%.** The legacy `grip_utilisation_pct` does (`corner_analysis.py:665`). The lateral envelope is a *percentile*, not a maximum (`friction_model.py:465`, `:549-568`), so exceeding it is expected — and exceedance is the single most diagnostic value available, both for over-driving and for detecting that the envelope or the channel is wrong. Capping destroys it.
+
+`is_feasible` is not used: it tests a circle with 5–10% slack (`friction_envelope.py:69-83`), deliberate solver headroom for `lap_simulation`, which would inflate every percentage by 5–10 points.
 
 ### 5.4 Shape primitives
 
@@ -263,7 +274,11 @@ These were open during design and are now decided, so implementation has no disc
 
 **Envelope use is two distinct numbers, both stored.** `envelope_use_pct` is *instantaneous*: the sample's combined-g magnitude as a fraction of the fitted-ellipse boundary **along that sample's own combined-g direction**. The exploitation map instead aggregates `envelope_fill_area` — the fraction of the reachable ellipse sector swept during the phase. A single number cannot serve both: instantaneous use answers "did you exceed the limit at this instant", area fill answers "did you use the whole envelope through this corner". A driver can score 100% instantaneous and 40% area by touching the limit once and coasting the rest.
 
-**Tier 2 is scoped by track *and* condition bucket.** The same driver's peak lateral goes 1.42 g dry to 0.85 g wet, so a condition-blind personal reference would systematically label every wet session as under-driving. When the condition is unknown, tier 2 is still used but the event's `confidence` is reduced and `anchor_reason` records `condition_unknown`. It never silently compares across conditions.
+**Tier 2 is session-scoped in Phase 1, and named `driver_best_session` to say so.** Cross-session "your best at this corner" is not buildable yet and must not be attempted: `corner_id` is a positional index over curvature regions found in *one lap of one session* (`corner_detection.py:709-717`), an adaptive retry can renumber every corner after it (`:721-734`), and `corner_persistence.match_corners`/`resolve_corners` — written to solve exactly this — has zero production callers. Corner 4 in session A and corner 4 in session B are not guaranteed to be the same piece of tarmac.
+
+Condition cannot carry the partition either: `sessions.track_state` is `NOT NULL DEFAULT 'dry'` (`db/schema.py:63`), the upload UI never sends it, and the weather classifier overwrites it — so `dry` frequently means "nobody said". Pooling under that is the same class of error the anchor exists to prevent.
+
+The Phase 1 value is still real and honest: *"you used 84% of your own best through here today."* Naming the tier `driver_best_session` now means cross-session becomes a **new** tier value (`driver_best_track`) in Phase 2 rather than a silent redefinition — the discipline `honesty.py`'s `TIERS` frozenset enforces. Reserve `condition_unknown` and `corner_identity_unstable` in the reason taxonomy now, so whoever attempts the cross-session lookup must handle both deliberately.
 
 **Spatial join tolerance for `handling/` events is 50% span overlap**, computed in the canonical per-lap coordinate. Below that the handling event is attached to the *lap* rather than to a corner, rather than being force-fitted to the nearest corner.
 
@@ -285,7 +300,13 @@ Measured: **9 of 10 laps return zero corner samples; all 10 return ~273 after re
 
 A complication the fix must handle: `distance_integrity` rebuilds distance from zero via `cumsum` **only for laps that fail its monotonicity gate**, so within one session some laps can be 0-based and others cumulative. A single session-wide offset is therefore not valid; the fix must normalise per lap.
 
-Fix option selection, exact change list, backward-compatibility and reprocessing are determined by a separate blast-radius analysis and written up in that deliverable's own plan.
+**STATUS: BUILT.** Branch `fix/per-lap-distance-frame` (worktree `C:/Users/Admin/lap_web-wt-distframe`), 26 commits, plan `docs/superpowers/plans/2026-08-04-per-lap-distance-frame-fix.md`, runbook `docs/runbooks/per-lap-distance-frame-deploy.md`. Whole-branch review clean after one fix wave. Not deployed — deploy-gated.
+
+The blast-radius analysis found **five** mutually incompatible coordinate frames in production, not one. The fix rebases `Distance (m)` in place at `resampling.py`, which collapses all five at once because resampling runs unconditionally and sits downstream of every producer of frame heterogeneity.
+
+**This is a hard dependency for Phase 1, not merely a prerequisite in principle.** Phase 1's verification named "per-lap corner windows may be empty on real customer data" as its single biggest risk — and that is precisely this bug: every gate Phase 1 builds would pass, and the anchor would confidently label a number computed over one lap as `physics`. That is the honesty layer delivering the exact failure it exists to prevent.
+
+So `feat/driving-pattern-recognition` must be rebased onto `fix/per-lap-distance-frame` before any Phase 1 code is written. Building Phase 1 on the `476a889` base would produce a tier-1 anchor that is confidently wrong on 9 of 10 laps.
 
 **Also folded into that deliverable** (both are silent-failure fixes of the same character, both prerequisites for trustworthy aggregates):
 
