@@ -593,6 +593,35 @@ def test_per_lap_corner_coverage_warning_does_not_fire_when_all_laps_covered(cap
     )
 
 
+# ── Shared: isolate real-pipeline tests from the tracked tracks.json ───────
+#
+# Any test that drives pipeline.run_full_analysis() reaches Step 05's
+# track-detection stage (pipeline/stages/s05_track.py -> track_detection.
+# register_or_match_track), which fingerprints the session and - since
+# synthetic test data never matches an existing fingerprint - APPENDS a new
+# "Unknown Track" entry and persists it. Unpatched, that write lands on
+# track_detection._default_db_path(), which resolves to the real, GIT-
+# TRACKED telemetry_tool/models/tracks.json: every local/CI run of these
+# tests would dirty the working tree and permanently accumulate junk
+# low-confidence entries in a tracked repo file.
+#
+# The fix patches only the module's own path-resolution seam
+# (_default_db_path) so register_or_match_track / load_track_database /
+# save_track_database all still run for real - just against a throwaway
+# tmp_path file instead of the tracked one.
+
+
+@pytest.fixture
+def _isolated_track_registry(tmp_path, monkeypatch):
+    """Redirect track_detection's tracks.json registry to a throwaway path
+    for the duration of one test."""
+    import track_detection
+
+    fake_path = tmp_path / "tracks_isolated.json"
+    monkeypatch.setattr(track_detection, "_default_db_path", lambda: fake_path)
+    return fake_path
+
+
 # ── Task 12: data_quality persists as a dict, not the raw dataclass ────────
 #
 # orchestrator.py stored summary["data_quality"] as the raw DataQualityReport
@@ -603,7 +632,7 @@ def test_per_lap_corner_coverage_warning_does_not_fire_when_all_laps_covered(cap
 # the actual persistence-blob builder - not a source-text grep.
 
 
-def test_data_quality_report_survives_the_persistence_gate(tmp_path):
+def test_data_quality_report_survives_the_persistence_gate(tmp_path, _isolated_track_registry):
     """A DataQualityReport produced by the real pipeline must land in
     summary["data_quality"] as a dict, and that dict must still be present
     after _build_analysis_blob() - the same builder the Celery finalize path
@@ -661,7 +690,7 @@ def test_data_quality_report_survives_the_persistence_gate(tmp_path):
 # was not lap 1.
 
 
-def test_handling_v2_receives_the_real_best_lap_number(tmp_path):
+def test_handling_v2_receives_the_real_best_lap_number(tmp_path, _isolated_track_registry):
     """Drives the real orchestrator (same fixture shape as
     test_data_quality_report_survives_the_persistence_gate) with lap 2 built
     to be the faster lap, so lap 2 - not lap 1 - is the real best lap.
