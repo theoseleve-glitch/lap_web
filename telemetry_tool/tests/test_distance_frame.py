@@ -147,3 +147,40 @@ def test_999m_lap_is_not_mistaken_for_row_index_distances():
     # - a source-grep counting call sites was tried here first and
     # replaced because it would pass even for a dead/unreachable call or
     # one whose boolean result is discarded.
+
+
+def test_corner_coaching_spans_are_persisted_verbatim(test_db):
+    """theoretical_repo must not re-rebase corner_coaching spans that are
+    already 0-based in the canonical per-lap frame.
+
+    Regression guard for the theo_d0 rebase: it used the theoretical lap's
+    (possibly non-zero, pre-Task-1) first distance to shift every persisted
+    corner span, silently mutating them into a fifth coordinate frame. Post
+    Task 1 the theoretical lap is always 0-based so the rebase is always a
+    no-op in production - but a stale/legacy-shaped theoretical_lap with a
+    non-zero first distance must still not perturb the persisted spans.
+    """
+    from web.repos import theoretical_repo
+
+    theo_lap = pd.DataFrame({
+        "distance_m": [150.0, 160.0, 170.0],
+        "speed_mps": [30.0, 31.0, 32.0],
+    })
+    summary = {
+        "theoretical_metrics": {"best_s": 55.0, "simulation_method": "envelope"},
+        "theoretical_lap": theo_lap,
+        "corner_coaching": [
+            {"corner_id": 1, "corner_name": "T1", "s_start": 120.0,
+             "s_end": 130.0, "s_apex": 125.0, "direction": "left"},
+        ],
+    }
+
+    theoretical_repo.insert_theoretical_data(test_db, "s_distframe", summary)
+    test_db.commit()
+
+    stored = theoretical_repo.get_theoretical_data(test_db, "s_distframe")
+    assert stored is not None
+    assert stored["corner_coaching"][0]["s_start"] == pytest.approx(120.0), (
+        "s_start was rewritten by the theo_d0 rebase (would be -30.0) "
+        "instead of being persisted verbatim"
+    )

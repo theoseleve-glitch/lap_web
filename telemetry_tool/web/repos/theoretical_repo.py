@@ -88,23 +88,11 @@ def insert_theoretical_data(
     if best_time and actual_best and best_time > 0:
         gap_pct = round((actual_best - best_time) / best_time * 100, 2)
 
-    # Serialize new kart_envelope fields
-    # Normalize corner_coaching distances to per-lap 0-based
+    # Corner spans arrive already in the canonical 0-based per-lap frame
+    # established in resampling.resample_lap_by_distance, so they are persisted
+    # verbatim.  A second rebase here previously produced a distinct fifth
+    # coordinate frame in the database.
     corner_coaching = summary.get("corner_coaching")
-    if corner_coaching and distance_json:
-        # Use the theoretical lap's distance offset for normalization
-        theo_d0 = 0.0
-        if theo_lap is not None and hasattr(theo_lap, "columns") and dist_col:
-            raw = theo_lap[dist_col].values
-            if len(raw) > 0:
-                theo_d0 = float(raw[0])
-        if theo_d0 != 0:
-            for cc in corner_coaching:
-                for key in ("s_start", "s_end", "s_apex", "distance_start",
-                            "distance_end", "distance_apex", "apex_distance_m"):
-                    v = cc.get(key)
-                    if v is not None and isinstance(v, (int, float)):
-                        cc[key] = round(v - theo_d0, 4)
     corner_coaching_json = _json_dumps(corner_coaching) if corner_coaching else None
     session_scalars = summary.get("session_scalars")
     session_scalars_json = _json_dumps(session_scalars) if session_scalars else None
