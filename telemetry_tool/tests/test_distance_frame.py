@@ -507,3 +507,87 @@ def test_per_lap_corner_success_produces_no_failure_warning(caplog):
         "no lap failed, so no per-lap-failure warning should have fired: "
         f"{caplog.text}"
     )
+
+
+# ── Task 11 fix round 1: coverage signal for the silent-fallback case ──────
+#
+# The exception warning above cannot catch the actual historical incident:
+# corner_analysis.analyze_corners does not raise on a degenerate/zero-sample
+# mask - it falls back or returns nothing for that lap. That is precisely
+# the shape of the coordinate-frame bug this branch fixes (corner spans
+# detected on lap 1 didn't intersect laps 2..N), and it produced NO
+# exception - it was only found by a standalone script counting samples.
+# A second, independent signal is needed: how many of the laps that were
+# actually attempted (not excluded, not too-short) ended up represented in
+# results at all - regardless of whether anything raised.
+
+
+def test_per_lap_corner_coverage_warning_fires_on_the_historical_incident_shape(caplog):
+    """Regression guard for the real incident: laps are attempted, nothing
+    raises, but corner spans only intersect one lap out of five - so
+    `results` covers just that one lap. The exception-based warning cannot
+    see this (there are zero exceptions); the coverage warning must."""
+    import logging
+    import types
+    from unittest.mock import patch
+
+    from pipeline.stages import s10b_corners
+
+    laps = {n: _lap(0.0, 100.0, n) for n in (1, 2, 3, 4, 5)}
+    corners = [{"corner_id": 1, "s_start": 10.0, "s_end": 20.0}]
+
+    def fake_analyze_corners(corners_arg, driver_lap, theoretical_result, friction):
+        lap_no = int(driver_lap["Lap #"].iloc[0])
+        if lap_no == 1:
+            return [{"time_loss_s": 0.1, "corner_id": 1}]
+        # Spans detected on lap 1 don't intersect this lap - no exception,
+        # analyze_corners just comes back with nothing for it.
+        return []
+
+    fake_ca_mod = types.SimpleNamespace(analyze_corners=fake_analyze_corners)
+
+    with patch.object(s10b_corners, "lazy_import", return_value=fake_ca_mod), \
+         caplog.at_level(logging.WARNING):
+        results = s10b_corners.run_per_lap_corner_metrics(corners, laps)
+
+    # Only lap 1 is represented - 4 of 5 attempted laps produced nothing,
+    # and none of them raised.
+    assert {r["lap_number"] for r in results} == {1}
+    assert any(rec.levelno == logging.WARNING for rec in caplog.records), (
+        "near-total coverage loss with zero exceptions must still surface "
+        "a warning - this is the actual historical incident shape"
+    )
+    assert "1/5" in caplog.text, "coverage warning must report covered/attempted"
+    assert "no exceptions raised" in caplog.text.lower(), (
+        "coverage warning must state it is independent of the exception count"
+    )
+    # And the exception-count warning specifically must NOT have fired -
+    # there were no exceptions, only empty results.
+    assert "raised an exception" not in caplog.text
+
+
+def test_per_lap_corner_coverage_warning_does_not_fire_when_all_laps_covered(caplog):
+    """A healthy session where every attempted lap is represented must not
+    trip the coverage warning."""
+    import logging
+    import types
+    from unittest.mock import patch
+
+    from pipeline.stages import s10b_corners
+
+    laps = {n: _lap(0.0, 100.0, n) for n in (1, 2, 3, 4, 5)}
+    corners = [{"corner_id": 1, "s_start": 10.0, "s_end": 20.0}]
+
+    def fake_analyze_corners(corners_arg, driver_lap, theoretical_result, friction):
+        return [{"time_loss_s": 0.1, "corner_id": 1}]
+
+    fake_ca_mod = types.SimpleNamespace(analyze_corners=fake_analyze_corners)
+
+    with patch.object(s10b_corners, "lazy_import", return_value=fake_ca_mod), \
+         caplog.at_level(logging.WARNING):
+        results = s10b_corners.run_per_lap_corner_metrics(corners, laps)
+
+    assert {r["lap_number"] for r in results} == {1, 2, 3, 4, 5}
+    assert not any(rec.levelno == logging.WARNING for rec in caplog.records), (
+        f"all 5 attempted laps were covered, no warning should fire: {caplog.text}"
+    )

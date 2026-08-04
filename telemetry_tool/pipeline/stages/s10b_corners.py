@@ -347,6 +347,7 @@ def run_per_lap_corner_metrics(
 
     results: list[dict[str, Any]] = []
     _failed_laps: list = []
+    _attempted = 0
     sorted_keys = sorted(resampled_laps.keys())
 
     for lap_num in sorted_keys:
@@ -356,6 +357,11 @@ def run_per_lap_corner_metrics(
         if lap_df is None or len(lap_df) < 10:
             continue
 
+        # Counted here, not reconstructed afterward: this is a lap that
+        # cleared both legitimate-skip checks above and is genuinely about
+        # to be analyzed, whether or not analysis then raises or comes back
+        # empty.
+        _attempted += 1
         try:
             perfs = ca_mod.analyze_corners(
                 corners, lap_df, theoretical_lap, friction_model,
@@ -395,6 +401,26 @@ def run_per_lap_corner_metrics(
             "Per-lap corner metrics: %d/%d laps raised an exception during "
             "corner analysis and were skipped (first few: %s)",
             len(_failed_laps), len(sorted_keys), _failed_laps[:5],
+        )
+
+    # Second, independent signal: coverage. This is the actual regression
+    # guard for the historical incident - corner spans from lap 1 matching
+    # nothing on laps 2..N - which raised NO exception (analyze_corners
+    # falls back / returns empty rather than raising on a degenerate mask).
+    # The exception warning above could never have caught that.
+    #
+    # Denominator excludes laps already counted in _failed_laps: those are
+    # explained by the warning above, and mixing them in here would let this
+    # message's "(no exceptions raised)" claim go false when a run has both
+    # some exceptions and separately-low coverage. This keeps the two
+    # signals honestly non-overlapping rather than merged.
+    _covered_laps = len(set(m["lap_number"] for m in results))
+    _no_exception_attempts = _attempted - len(_failed_laps)
+    if _no_exception_attempts and _covered_laps < _no_exception_attempts / 2:
+        logger.warning(
+            "Per-lap corner metrics cover only %d/%d attempted laps that "
+            "did not raise (no exceptions raised) - check the distance frame",
+            _covered_laps, _no_exception_attempts,
         )
 
     if results:
