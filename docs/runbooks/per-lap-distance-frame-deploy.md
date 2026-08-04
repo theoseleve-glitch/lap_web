@@ -22,7 +22,7 @@ VPS = `root@46.225.227.24:/opt/lap-api`.
 
 ### Why the blast radius is larger than "one override"
 
-`run_track_decomposition_v2` (`telemetry_tool/pipeline/stages/s10b_corners.py:614-619`) documents its own priority order:
+`run_track_decomposition_v2` (`telemetry_tool/pipeline/stages/s10b_corners.py:617-620`) documents its own priority order:
 
 ```
 1. User-defined corners from ``user_corners`` table
@@ -30,7 +30,7 @@ VPS = `root@46.225.227.24:/opt/lap-api`.
 3. Fallback: convert step-06b corners into v2 sections
 ```
 
-The `user_corners` branch **returns early** — `s10b_corners.py:634` is `return _user_corners_to_sections(rows, best_lap_df, td_mod)`, so the autonomous `decompose_track(best_lap_df)` at `:650` never runs. One stale row set does not merely override a corner list; it **replaces the entire v2 section list**, which is the input to:
+The `user_corners` branch **returns early** — `s10b_corners.py:635` is `return _user_corners_to_sections(rows, best_lap_df, td_mod)`, so the autonomous `decompose_track(best_lap_df)` at `:650` never runs. One stale row set does not merely override a corner list; it **replaces the entire v2 section list**, which is the input to:
 
 - MRP detection (`run_mrp_detection_v2`)
 - the 17-detector handling ensemble (`run_handling_analysis_v2`)
@@ -56,7 +56,7 @@ The only in-repo writer is `lap-website/src/components/app/charts/CornerDefiner.
 ```bash
 # Count first. Do not guess.
 ssh root@46.225.227.24 "cd /opt/lap-api && docker compose -f docker-compose.prod.yml exec -T postgres \
-  psql -U lap -d lap -c 'SELECT workspace_id, count(*) FROM user_corners GROUP BY 1 ORDER BY 2 DESC;'"
+  psql -U telemetry -d telemetry -c 'SELECT workspace_id, count(*) FROM user_corners GROUP BY 1 ORDER BY 2 DESC;'"
 ```
 
 - **Zero rows** → nothing to do. Record the count in the deploy log and continue.
@@ -71,10 +71,12 @@ Jobs paused at `awaiting_corner_selection` hold old-frame corners in Redis (7200
 
 ```bash
 ssh root@46.225.227.24 "cd /opt/lap-api && docker compose -f docker-compose.prod.yml exec -T redis \
-  sh -c 'for p in \"pipeline:corners:*\" \"pipeline:layout:*\" \"pipeline:ctx:*\"; do redis-cli --scan --pattern \"\$p\" | xargs -r redis-cli DEL; done'"
+  sh -c 'for p in \"pipeline:corners:*\" \"pipeline:layout:*\" \"pipeline:ctx:*\"; do redis-cli -a \"$REDIS_PASSWORD\" --scan --pattern \"\$p\" | xargs -r redis-cli -a \"$REDIS_PASSWORD\" DEL; done'"
 ```
 
 All **three** patterns matter:
+
+> **Drain verification:** The `--scan` on an unauthenticated redis-cli fails to stderr, causing `xargs -r` to silently no-op. A non-silent drain is mandatory to prove old-frame state was removed. Confirm the key count drops before and after this step.
 
 - `pipeline:corners:*` and `pipeline:layout:*` — the paused-job corner/layout payloads.
 - `pipeline:ctx:*` — **easy to miss.** The serialised `PipelineContext` carries `ctx.custom_corners` / `ctx.selected_corner_ids`, and the intermediate-state-expired fallback at `telemetry_tool/tasks/pipeline_tasks.py:993-1002` feeds them straight back into a **full re-run** as `_fallback_corners`. That path would inject old-frame user spans into a brand-new-frame analysis.
@@ -82,7 +84,7 @@ All **three** patterns matter:
 Confirm the queues are idle before deploying:
 
 ```bash
-ssh root@46.225.227.24 "cd /opt/lap-api && docker compose -f docker-compose.prod.yml exec -T redis redis-cli LLEN pipeline"
+ssh root@46.225.227.24 "cd /opt/lap-api && docker compose -f docker-compose.prod.yml exec -T redis redis-cli -a \"$REDIS_PASSWORD\" LLEN pipeline"
 ```
 
 ---
@@ -256,7 +258,7 @@ python -m pytest telemetry_tool/tests/test_distance_frame.py \
                  telemetry_tool/tests/test_grip_pipeline.py -v --continue-on-collection-errors
 ```
 
-There are also **4 pre-existing test failures** in the wider tree, all verified against the branch base and none caused by this work: `TestTheoreticalEndpoint::test_returns_theoretical_data`, `TestCornerPositionsEndpoint::test_returns_from_theoretical`, `test_phase3_integration.py::TestPipelineChainFlow::test_full_chain_happy_path` ("Worker entitlement denied"), and `test_post_launch_regression.py::TestEntitlements::test_free_plan_has_limited_analyses`.
+There are **3 pre-existing test failures** in the wider tree verified against the branch base (commit 014d300) and none caused by this work: `TestTheoreticalEndpoint::test_returns_theoretical_data`, `TestCornerPositionsEndpoint::test_returns_from_theoretical`, and `test_phase3_integration.py::TestPipelineChainFlow::test_full_chain_happy_path` ("Worker entitlement denied"). A fourth, `test_post_launch_regression.py::TestEntitlements::test_free_plan_has_limited_analyses`, was observed but not base-verified.
 
 ---
 
