@@ -19,6 +19,7 @@ All model functions are mocked -- no real DB interaction.
 from __future__ import annotations
 
 import json
+import math
 import sys
 from pathlib import Path
 from unittest.mock import MagicMock, patch
@@ -465,6 +466,144 @@ class TestGGData:
         assert resp.status_code == 200
         data = resp.get_json()["data"]
         assert data["available"] is False
+
+
+# ══════════════════════════════════════════════════════════════════
+# Regression: the row-index distance guard must fire (or not fire)
+# identically at ALL THREE haversine-substitution call sites in
+# data_v2.py (speed-trace, gps-trace, gg-data) - not just the first
+# one a plan happened to name. See task-4-report.md.
+# ══════════════════════════════════════════════════════════════════
+
+
+def _meridian_lat_lon(n_points: int, total_m: float,
+                       base_lat_deg: float = 45.0, lon_deg: float = 7.0):
+    """Points moving due north along a meridian (constant longitude).
+
+    With dlon == 0 the endpoint's own haversine formula collapses exactly
+    to arc length = R * delta-latitude (sin/cos cancel to c == dlat), so
+    the cumulative distance the endpoint computes lands on `total_m` to
+    floating-point precision - no approximation or tolerance needed to
+    hit a known GPS-derived length.
+    """
+    _R = 6_371_000.0
+    total_rad = total_m / _R
+    step_rad = total_rad / (n_points - 1)
+    base_lat_rad = math.radians(base_lat_deg)
+    lats = [math.degrees(base_lat_rad + i * step_rad) for i in range(n_points)]
+    lons = [lon_deg] * n_points
+    return lats, lons
+
+
+def _real_999m_lap_trace():
+    """CASE A fixture: a genuine ~999 m lap. 1000 points, stored distances
+    are the exact 0..999 span (post-Task-1 every lap is 0-based), and the
+    GPS track independently sums to ~999.4 m - realistic GPS/odometer
+    noise, well inside the guard's 10% tolerance, so this is NOT the
+    legacy row-index bug.
+
+    Deliberately NOT exactly 999.0 m: if the GPS trace summed to bit-
+    identical 999.0 m, an unconditional (unguarded) haversine
+    reconstruction would independently land on the same linear values as
+    the stored array by construction, and a test comparing the two could
+    pass even with the guard removed - defeating the bite-check. The 0.4 m
+    gap makes "stored" and "reconstructed" genuinely distinguishable
+    arrays while staying far under the 10% mismatch threshold.
+    """
+    n = 1000
+    distances = [i * (999.0 / 999) for i in range(n)]
+    lats, lons = _meridian_lat_lon(n, total_m=999.4)
+    return {
+        "latitudes": lats,
+        "longitudes": lons,
+        "distances": distances,
+        "speeds": [20.0] * n,
+        "accel_lat": [0.5] * n,
+        "accel_long": [0.3] * n,
+    }
+
+
+def _row_index_bug_trace():
+    """CASE B fixture: the genuine legacy bug. Stored distances are literal
+    row indices (0..999, gps_repo.py:67's np.arange), but the GPS track
+    independently sums to ~1240 m of real movement - a >10% disagreement
+    that must still trigger the haversine reconstruction."""
+    n = 1000
+    distances = [float(i) for i in range(n)]
+    lats, lons = _meridian_lat_lon(n, total_m=1240.0)
+    return {
+        "latitudes": lats,
+        "longitudes": lons,
+        "distances": distances,
+        "speeds": [20.0] * n,
+        "accel_lat": [0.5] * n,
+        "accel_long": [0.3] * n,
+    }
+
+
+class TestRowIndexDistanceGuardAtEveryEndpoint:
+    """A source-grep counting call sites can't tell a live guard from a
+    dead/unreachable one or a discarded boolean. These tests drive the
+    real Flask routes end-to-end (models mocked, guard logic real) and
+    assert on what each endpoint actually returns for `distances`."""
+
+    @pytest.mark.parametrize("path", ["speed-trace", "gps-trace", "gg-data"])
+    def test_genuine_999m_lap_is_not_haversine_reconstructed(self, client, path):
+        """CASE A: GPS agrees with the stored ~999 m length -> the endpoint
+        must return the STORED distances unchanged, not a reconstruction."""
+        trace = _real_999m_lap_trace()
+        with patch("web.routes.data_v2.get_db_connection") as mock_db, \
+             patch("web.routes.data_v2.models") as mock_models:
+            mock_db.return_value = MagicMock()
+            mock_models.get_session_by_id.return_value = _sample_session()
+            mock_models.get_gps_trace.return_value = trace
+
+            resp = client.get(f"/api/v1/sessions/case-a/{path}?lap=1")
+
+        assert resp.status_code == 200
+        data = resp.get_json()["data"]
+        returned = data["distances"]
+        assert len(returned) == 1000, f"{path}: expected 1000 distance samples"
+        # Unambiguous regardless of any per-lap rebase applied after the
+        # substitution point: the stored array is untouched, value for
+        # value - not the recomputed haversine `cum` list.
+        assert returned == pytest.approx(trace["distances"]), (
+            f"{path}: stored distances were replaced even though GPS "
+            f"agreed with the stored ~999 m length"
+        )
+        assert returned[-1] == pytest.approx(999.0, abs=0.5), (
+            f"{path}: expected the untouched stored span of ~999 m"
+        )
+
+    @pytest.mark.parametrize("path", ["speed-trace", "gps-trace", "gg-data"])
+    def test_row_index_bug_is_still_haversine_reconstructed(self, client, path):
+        """CASE B: stored distances are row indices but GPS says ~1240 m -
+        the genuine legacy bug must still be repaired by substitution."""
+        trace = _row_index_bug_trace()
+        with patch("web.routes.data_v2.get_db_connection") as mock_db, \
+             patch("web.routes.data_v2.models") as mock_models:
+            mock_db.return_value = MagicMock()
+            mock_models.get_session_by_id.return_value = _sample_session()
+            mock_models.get_gps_trace.return_value = trace
+
+            resp = client.get(f"/api/v1/sessions/case-b/{path}?lap=1")
+
+        assert resp.status_code == 200
+        data = resp.get_json()["data"]
+        returned = data["distances"]
+        assert len(returned) == 1000, f"{path}: expected 1000 distance samples"
+        # Unambiguous discriminator regardless of any per-lap rebase: row
+        # indices would end at 999.0; the haversine reconstruction of
+        # these meridian points ends near 1240.0 - a span, not a value,
+        # so it survives whatever post-processing the endpoint applies.
+        assert returned[-1] == pytest.approx(1240.0, rel=0.02), (
+            f"{path}: expected the haversine reconstruction (~1240 m "
+            f"span), got a span of {returned[-1]}"
+        )
+        assert returned != trace["distances"], (
+            f"{path}: row-index distances were returned unchanged - the "
+            f"legacy bug was not repaired"
+        )
 
 
 # ══════════════════════════════════════════════════════════════════
