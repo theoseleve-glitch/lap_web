@@ -1788,6 +1788,16 @@ def pipeline_finalize(self, job_id: Optional[str]) -> Optional[str]:
                 pass
             logger.warning("Failed to update processing_version for session %s", ctx.session_id, exc_info=True)
 
+        # The distance frame (and everything derived from it) changes on
+        # reprocess; chart endpoints (/corners, /speed-trace, /gps-trace,
+        # /delta) are @chart_cached for an hour and would otherwise keep
+        # serving the previous frame until the TTL expires.
+        try:
+            from web.chart_cache import invalidate_session_cache
+            invalidate_session_cache(ctx.session_id)
+        except Exception:
+            logger.warning("Chart-cache invalidation failed for session %s", ctx.session_id, exc_info=True)
+
         _update_job_progress(
             job_id=job_id, status="completed",
             stage_name="finalize_complete", stage_index=15, stage_total=15,

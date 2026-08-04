@@ -7405,6 +7405,17 @@ def recoach_session(session_id: str) -> tuple[dict, int]:
             }
         models.insert_analysis_json(conn, session_id, analysis)
         conn.commit()
+
+        # The distance frame (and everything derived from it) changes on
+        # reprocess; chart endpoints (/corners, /speed-trace, /gps-trace,
+        # /delta) are @chart_cached for an hour and would otherwise keep
+        # serving the previous frame. recoach rewrites analysis_json
+        # independently of the pipeline, so it must invalidate too.
+        try:
+            from web.chart_cache import invalidate_session_cache
+            invalidate_session_cache(session_id)
+        except Exception:
+            logger.warning("Chart-cache invalidation failed after recoach for session %s", session_id, exc_info=True)
     except Exception:
         logger.exception("Failed to persist recoach results for session %s", session_id)
 

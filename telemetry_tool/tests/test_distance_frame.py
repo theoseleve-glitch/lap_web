@@ -286,3 +286,156 @@ def test_pipeline_version_bumped_for_the_frame_change():
     assert is_stale(2) is True
     assert is_stale(None) is True
     assert is_stale(PIPELINE_VERSION) is False
+
+
+# ── Task 10: chart cache invalidation on reprocess ─────────────────────────
+#
+# /corners, /speed-trace, /gps-trace and /delta are @chart_cached(ttl=3600).
+# Reprocessing a session rebuilds it in the new 0-based distance frame (this
+# file), but nothing invalidated the chart cache afterwards - a reprocessed
+# session kept serving the OLD frame from cache for up to an hour. Two
+# independent writers touch a session's results and both must invalidate:
+# the Celery finalize stage (every first-time process + every reprocess) and
+# the /recoach endpoint (rewrites analysis_json outside the pipeline).
+
+
+def test_pipeline_finalize_invalidates_the_chart_cache():
+    """pipeline_finalize is the choke point EVERY pipeline run passes
+    through - first-time processing and every reprocess alike."""
+    from unittest.mock import MagicMock, patch
+
+    from tasks import pipeline_tasks
+
+    ctx = MagicMock()
+    ctx.session_id = "sess-finalize-1"
+    ctx.workspace_id = 7
+    ctx.current_stage = "finalize"
+    conn = MagicMock()
+
+    with patch.object(pipeline_tasks, "_get_redis", return_value=MagicMock()), \
+         patch.object(pipeline_tasks, "PipelineContext") as mock_ctx_cls, \
+         patch.object(pipeline_tasks, "_open_task_conn", return_value=conn), \
+         patch.object(pipeline_tasks, "_return_pg_connection"), \
+         patch.object(pipeline_tasks, "acquire_workspace_lock", return_value=True), \
+         patch.object(pipeline_tasks, "release_workspace_lock"), \
+         patch.object(pipeline_tasks, "_update_job_progress"), \
+         patch.object(pipeline_tasks, "_run_finalize_stages"), \
+         patch.object(pipeline_tasks, "check_worker_memory", return_value=False), \
+         patch.object(pipeline_tasks, "_increment_batch_counter"), \
+         patch("web.chart_cache.invalidate_session_cache") as mock_invalidate:
+        mock_ctx_cls.load.return_value = ctx
+
+        result = pipeline_tasks.pipeline_finalize("job-finalize-1")
+
+    assert result == "job-finalize-1"
+    mock_invalidate.assert_called_once_with("sess-finalize-1")
+
+
+def test_pipeline_finalize_swallows_chart_cache_invalidation_failure(caplog):
+    """A cache-invalidation failure must never fail the pipeline run - the
+    session's real results are already persisted at this point."""
+    import logging
+    from unittest.mock import MagicMock, patch
+
+    from tasks import pipeline_tasks
+
+    ctx = MagicMock()
+    ctx.session_id = "sess-finalize-2"
+    ctx.workspace_id = 7
+    ctx.current_stage = "finalize"
+    conn = MagicMock()
+
+    with patch.object(pipeline_tasks, "_get_redis", return_value=MagicMock()), \
+         patch.object(pipeline_tasks, "PipelineContext") as mock_ctx_cls, \
+         patch.object(pipeline_tasks, "_open_task_conn", return_value=conn), \
+         patch.object(pipeline_tasks, "_return_pg_connection"), \
+         patch.object(pipeline_tasks, "acquire_workspace_lock", return_value=True), \
+         patch.object(pipeline_tasks, "release_workspace_lock"), \
+         patch.object(pipeline_tasks, "_update_job_progress"), \
+         patch.object(pipeline_tasks, "_run_finalize_stages"), \
+         patch.object(pipeline_tasks, "check_worker_memory", return_value=False), \
+         patch.object(pipeline_tasks, "_increment_batch_counter"), \
+         patch(
+             "web.chart_cache.invalidate_session_cache",
+             side_effect=RuntimeError("redis down"),
+         ) as mock_invalidate, \
+         caplog.at_level(logging.WARNING):
+        mock_ctx_cls.load.return_value = ctx
+
+        result = pipeline_tasks.pipeline_finalize("job-finalize-2")
+
+    # The call completed and returned normally - the exception did not propagate.
+    assert result == "job-finalize-2"
+    mock_invalidate.assert_called_once_with("sess-finalize-2")
+    assert "Chart-cache invalidation failed" in caplog.text
+
+
+def test_recoach_invalidates_the_chart_cache(seeded_db):
+    """recoach rewrites analysis_json independently of the pipeline, so it
+    must invalidate the chart cache too."""
+    from unittest.mock import patch
+
+    from flask import Flask
+
+    from web.routes.data_v2 import bp
+
+    app = Flask(__name__)
+    app.config["TESTING"] = True
+    app.register_blueprint(bp)
+    client = app.test_client()
+
+    fake_sections = [
+        {"corner_id": 1, "corner_type": "auto", "s_start": 100.0, "s_end": 200.0},
+    ]
+
+    with patch("web.routes.data_v2.get_db_connection", return_value=seeded_db), \
+         patch(
+             "pipeline.stages.s10b_corners.run_track_decomposition_v2",
+             return_value=fake_sections,
+         ), \
+         patch("pipeline.stages.s10b_corners.run_mrp_detection_v2", return_value=[]), \
+         patch("pipeline.stages.s10b_corners.run_coaching_v2", return_value=[]), \
+         patch("web.chart_cache.invalidate_session_cache") as mock_invalidate:
+        resp = client.post("/api/v1/sessions/s1/recoach")
+
+    assert resp.status_code == 200, resp.get_json()
+    mock_invalidate.assert_called_once_with("s1")
+
+
+def test_recoach_swallows_chart_cache_invalidation_failure(seeded_db, caplog):
+    """A cache-invalidation failure must never fail the /recoach request -
+    the analysis_json rewrite already committed at this point."""
+    import logging
+    from unittest.mock import patch
+
+    from flask import Flask
+
+    from web.routes.data_v2 import bp
+
+    app = Flask(__name__)
+    app.config["TESTING"] = True
+    app.register_blueprint(bp)
+    client = app.test_client()
+
+    fake_sections = [
+        {"corner_id": 1, "corner_type": "auto", "s_start": 100.0, "s_end": 200.0},
+    ]
+
+    with patch("web.routes.data_v2.get_db_connection", return_value=seeded_db), \
+         patch(
+             "pipeline.stages.s10b_corners.run_track_decomposition_v2",
+             return_value=fake_sections,
+         ), \
+         patch("pipeline.stages.s10b_corners.run_mrp_detection_v2", return_value=[]), \
+         patch("pipeline.stages.s10b_corners.run_coaching_v2", return_value=[]), \
+         patch(
+             "web.chart_cache.invalidate_session_cache",
+             side_effect=RuntimeError("redis down"),
+         ) as mock_invalidate, \
+         caplog.at_level(logging.WARNING):
+        resp = client.post("/api/v1/sessions/s1/recoach")
+
+    # The request completed with 200 - the exception did not propagate.
+    assert resp.status_code == 200, resp.get_json()
+    mock_invalidate.assert_called_once_with("s1")
+    assert "Chart-cache invalidation failed after recoach" in caplog.text
