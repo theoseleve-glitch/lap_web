@@ -124,3 +124,17 @@ def test_reference_grid_covers_all_laps_not_just_the_median_one():
         vals = _interpolate_lap_onto_grid(lap, grid, "Speed (m/s)")
         nan_frac = float(np.isnan(vals).mean())
         assert nan_frac < 0.05, f"lap {lap_no}: {nan_frac:.0%} NaN on the grid"
+
+
+def test_999m_lap_is_not_mistaken_for_row_index_distances():
+    """A 1000-point trace spanning 999 m is a REAL lap, not the legacy
+    row-index bug. Before Task 1 the distances[0] == 0 clause hid this;
+    after it, every lap starts at 0 and only the length discriminates."""
+    from web.routes.data_v2 import _looks_like_row_index_distances
+
+    real = [i * (999.0 / 999) for i in range(1000)]      # a genuine 999 m lap
+    # consistent GPS: ~999 m of real movement
+    assert _looks_like_row_index_distances(real, haversine_total=999.4) is False
+
+    # the genuine legacy bug: distances are row indices, GPS says 1240 m
+    assert _looks_like_row_index_distances(real, haversine_total=1240.0) is True

@@ -130,6 +130,30 @@ def _get_lap_param(conn: Any, session_id: str) -> int | None:
     return _resolve_lap_number(conn, session_id)
 
 
+def _looks_like_row_index_distances(
+    distances: list[float],
+    haversine_total: float | None,
+) -> bool:
+    """True when a stored distance array is really row indices (0,1,2,...).
+
+    The legacy bug is gps_repo.py:67 writing ``np.arange(len(df))``.  Shape
+    alone is not enough to identify it: since every resampled lap is now
+    0-based, a genuine ~999 m lap at n_points=1000 has the same shape.  So
+    require the GPS-derived length to disagree with the stored length.
+    """
+    if not distances or len(distances) <= 2:
+        return False
+    if distances[0] != 0:
+        return False
+    if abs(distances[-1] - (len(distances) - 1)) >= 1.0:
+        return False
+    if haversine_total is None or haversine_total <= 0:
+        return False
+    # Row indices coincidentally matching the real distance is not a bug worth
+    # "fixing" - only substitute when the two genuinely disagree.
+    return abs(haversine_total - distances[-1]) / haversine_total > 0.10
+
+
 # ══════════════════════════════════════════════════════════════════
 # 0. GET /api/v1/dashboard/stats — Dashboard aggregate stats
 # ══════════════════════════════════════════════════════════════════
@@ -600,7 +624,11 @@ def get_speed_trace(session_id: str) -> tuple[dict, int]:
                      + math.cos(lat1) * math.cos(lat2)
                      * math.sin(dlon / 2) ** 2)
                 cum.append(cum[-1] + _R * 2 * math.atan2(math.sqrt(a), math.sqrt(1 - a)))
-            distances = cum
+            # Shape alone no longer discriminates: every resampled lap is now
+            # 0-based, so a genuine ~999 m lap at n_points=1000 has the same
+            # shape as row indices. Only substitute when GPS actually disagrees.
+            if _looks_like_row_index_distances(distances, cum[-1] if cum else None):
+                distances = cum
 
     # Normalize per-lap distances to start from 0 (stored as
     # session-cumulative, e.g. Lap 6 might be 5000–6200m).
