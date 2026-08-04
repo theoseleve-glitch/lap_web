@@ -20,6 +20,13 @@ Cache key: ``chart:{session_id}:{endpoint}:{sorted_query_string}``
 TTL: 1 hour default (data is immutable after analysis).
 Invalidation: call ``invalidate_session_cache(session_id)`` on delete/update.
 Graceful: if Redis is unavailable, the decorator is a no-op.
+
+.. warning::
+   ``chart_cached``'s WRITE path is currently broken and nothing is ever
+   cached — see the comment in :func:`chart_cached`.  Repairing it is
+   deliberately out of scope for the distance-frame branch because it would
+   start caching live endpoints.  The read and invalidation paths below are
+   correct and are exercised by tests.
 """
 
 from __future__ import annotations
@@ -38,14 +45,44 @@ _CACHE_PREFIX = "chart"
 
 
 def _get_redis() -> Any | None:
-    """Reuse the app's existing Redis connection (same one rate_limit.py uses)."""
-    r = getattr(g, "_redis", None)
-    if r is not None:
-        return r
+    """Return a Redis client, with or without a Flask application context.
+
+    Inside a request this reuses the app's existing connection (the same one
+    ``rate_limit.py`` uses).  Outside one it builds a client directly.
+
+    The app-context probe MUST be guarded by ``has_app_context()``:
+    ``getattr(g, "_redis", None)`` looks safe but its default only swallows
+    ``AttributeError``, and Flask's ``g`` raises ``RuntimeError`` when there is
+    no application context.  Celery workers have none (see
+    ``tasks/pipeline_tasks.py`` and ``celery_app.py``), so every call from a
+    task used to raise, get swallowed by the caller's try/except, and clear
+    nothing at all — the invalidation on reprocess was inert.
+
+    The no-context fallback deliberately mirrors
+    ``tasks.pipeline_tasks._get_redis`` (``redis.Redis.from_url(Config.REDIS_URL)``)
+    so both sides of the pipeline resolve the same Redis instance from the same
+    env var.
+    """
+    from flask import has_app_context
+
+    if has_app_context():
+        r = getattr(g, "_redis", None)
+        if r is not None:
+            return r
+        try:
+            from flask import current_app
+            return current_app.extensions.get("redis")
+        except Exception:
+            return None
+
+    # No application context (Celery worker, CLI script): construct a client.
     try:
-        from flask import current_app
-        return current_app.extensions.get("redis")
+        import redis as _redis
+
+        from web.config import Config
+        return _redis.Redis.from_url(Config.REDIS_URL)
     except Exception:
+        logger.debug("chart_cache: no Redis client available outside app context")
         return None
 
 
@@ -98,6 +135,24 @@ def chart_cached(ttl: int = 3600) -> Callable:
                 if status == 200:
                     key = _build_key(session_id, fn.__name__)
                     try:
+                        # KNOWN BROKEN — DELIBERATELY OUT OF SCOPE FOR THIS BRANCH.
+                        #
+                        # The comment below is wrong: every decorated endpoint
+                        # returns via api_utils.api_response, which returns
+                        # (jsonify(body), status) — a Flask *Response*, not a
+                        # dict. So `isinstance(body, dict)` is False, `payload`
+                        # is the Response object, redis.setex rejects it, and
+                        # the failure is swallowed at debug level below.
+                        # Nothing has ever been written to this cache; there is
+                        # currently no chart cache at all.
+                        #
+                        # Not repaired here on purpose: making it actually cache
+                        # would START caching on live endpoints — a behaviour
+                        # change that must not ride inside a correctness fix,
+                        # the same reason this branch declined to fix
+                        # apply_kart_traction_floor's dropped return. Fix it on
+                        # its own branch with its own review.
+                        #
                         # Flask jsonify returns a Response; api_response returns (dict, int).
                         # We cache the dict (before jsonify).
                         payload = json.dumps(body) if isinstance(body, dict) else body

@@ -756,3 +756,74 @@ def test_handling_v2_receives_the_real_best_lap_number(tmp_path, _isolated_track
         "telemetry against best_lap_df's data whenever the real best lap "
         "wasn't lap 1."
     )
+
+
+# ── Final review I1: the Celery-side cache invalidation must actually run ──
+#
+# pipeline_finalize invalidates the chart cache (Task 10), but chart_cache's
+# _get_redis started with `getattr(g, "_redis", None)`. getattr's default only
+# swallows AttributeError, and Flask's `g` raises RuntimeError when there is
+# no application context. Celery workers have none, so the invalidation raised,
+# was swallowed by its own try/except in pipeline_tasks, and cleared nothing.
+# These tests exercise invalidate_session_cache with NO app context and assert
+# the Redis scan/delete path was genuinely reached.
+
+
+def test_invalidate_session_cache_reaches_redis_without_a_flask_app_context():
+    """The Celery-worker path: no app context, so _get_redis must construct a
+    client directly instead of exploding on flask.g."""
+    from unittest.mock import MagicMock, patch
+
+    import flask
+
+    from web import chart_cache
+
+    assert not flask.has_app_context(), (
+        "this test is only meaningful outside a Flask application context"
+    )
+
+    fake_redis = MagicMock()
+    fake_redis.scan_iter.return_value = iter(["chart:sess-x:corners:default",
+                                              "chart:sess-x:speed_trace:default"])
+    fake_redis.delete.return_value = 2
+
+    with patch("redis.Redis.from_url", return_value=fake_redis) as from_url:
+        deleted = chart_cache.invalidate_session_cache("sess-x")
+
+    from_url.assert_called_once()
+    fake_redis.scan_iter.assert_called_once()
+    assert fake_redis.scan_iter.call_args.kwargs["match"] == "chart:sess-x:*", (
+        "invalidation ran against the wrong key pattern"
+    )
+    fake_redis.delete.assert_called_once_with(
+        "chart:sess-x:corners:default", "chart:sess-x:speed_trace:default"
+    )
+    assert deleted == 2, (
+        "invalidate_session_cache returned 0 - the Redis path was never "
+        "reached (a RuntimeError from flask.g was silently swallowed)"
+    )
+
+
+def test_invalidate_session_cache_still_prefers_the_app_context_client():
+    """Inside a request the pooled client is still reused - the no-context
+    fallback must not bypass it and open a second connection."""
+    from unittest.mock import MagicMock, patch
+
+    from flask import Flask
+
+    from web import chart_cache
+
+    app_redis = MagicMock()
+    app_redis.scan_iter.return_value = iter(["chart:sess-y:corners:default"])
+    app_redis.delete.return_value = 1
+
+    app = Flask(__name__)
+    app.extensions["redis"] = app_redis
+
+    with app.app_context():
+        with patch("redis.Redis.from_url") as from_url:
+            deleted = chart_cache.invalidate_session_cache("sess-y")
+
+    from_url.assert_not_called()
+    app_redis.delete.assert_called_once_with("chart:sess-y:corners:default")
+    assert deleted == 1
