@@ -3,7 +3,7 @@
 **Date:** 2026-08-04
 **Branch:** `feat/driving-pattern-recognition` (worktree `C:/Users/Admin/lap_web-wt-patterns`), forked from `feat/adaptive-coaching` @ `476a889`
 **Status:** design approved, plan pending
-**Hard dependency:** the per-lap corner coordinate fix, split out as a standalone shippable change (see §10)
+**Hard dependency:** the per-lap corner coordinate fix, split out as a standalone shippable change (see §11)
 
 ---
 
@@ -37,7 +37,7 @@ These are four **views of one record**, not four features. Building them separat
 - Not computer vision over rendered chart images. "Pattern recognition in the graphics" means reading the signals the graphics are drawn from.
 - Not a replacement for the OCP solver or racing-line work.
 - Not a fix for the theoretical lap's known under-estimation (it currently serves optimal laps *slower* than the driver's actual best — 71 s vs 61.7 s on real kart data). This design routes around it rather than depending on it.
-- Not the per-lap coordinate fix — that ships separately (§10).
+- Not the per-lap coordinate fix — that ships separately (§11).
 
 ## 4. Evidence base
 
@@ -47,9 +47,10 @@ Probe: `scratchpad/probe_corner_slice.py`, read-only.
 
 | Question | Measurement | Consequence for the design |
 |---|---|---|
-| Do per-lap corner slices return data? | **9 of 10 laps return ZERO corner samples.** Rebasing each lap to `d − d_min` returns ~273 samples on all 10. | Blocking prerequisite. §10. |
+| Do per-lap corner slices return data? | **9 of 10 laps return ZERO corner samples.** Rebasing each lap to `d − d_min` returns ~273 samples on all 10. | Blocking prerequisite. §11. |
 | Distance-grid resolution inside a corner | 1.204 m/sample; at apex speed (10.8–13.9 m/s) that is 86–111 ms/sample → **~3 samples per 0.3 s**, but **25–79 samples per corner**. | Phase segmentation, plateau, trough and envelope fill are all viable on the existing grid. Only sub-second ramp/oscillation primitives are grid-limited. The time grid is a late, narrow phase — not a foundation. |
 | Is the lateral-g channel trustworthy? | Median `\|a_lat\| / (v²κ)` = **0.961**, per-lap range 0.951–0.975, n≈650/lap, measured only where `v²κ > 2 m/s²` (i.e. in corners). | **Tier-1 physics anchor is viable on real kart data.** |
+| What is the *true* native rate? | Row rate 250 Hz (median `dt` 4.0 ms) but `Device update rate (Hz)` is a flat **25.0** — the row grid is mostly interpolation. Raw IMU (`*acc`, `*gyro`) changes on ~223 k of 211 k rows → genuinely ~100 Hz. | Anything GPS-derived, **including `Speed (m/s)`**, is limited to 40 ms regardless of grid. Only the IMU carries sub-40 ms information. Restructures Phase 4 — see §4.2. |
 
 ### 4.1 A correction to the prior validation report
 
@@ -57,7 +58,22 @@ Probe: `scratchpad/probe_corner_slice.py`, read-only.
 
 That figure is a division artifact. On a straight `v²κ ≈ 0`, so the ratio is noise divided by noise. Restricted to samples that are actually in corners — the only place a grip anchor is used — agreement is **96%, stable to ±1.2% across all ten laps**. The channel is fit for this purpose.
 
-### 4.2 Facts that constrain the architecture
+### 4.2 A ~100 Hz IMU is being dropped at ingest
+
+Every RaceChrono export carries six high-rate channels — `X/Y/Z acceleration (G) *acc` and `X/Y/Z rate of rotation (deg/s) *gyro`, both ~100 Hz. **LAP discards all six on every upload.**
+
+The discovery patterns are `Accel.*X` and `Gyro.*X` (`column_discovery.py:116-121`); the actual headers put the axis letter *first* (`X acceleration`, `X rate of rotation`), so the regexes can never match and the columns fall through as "custom". The `racechrono_adapter._COLUMN_MAP` maps only the GPS-derived `*calc` lateral/longitudinal channels (`racechrono_adapter.py:70-76`).
+
+Two consequences:
+
+1. **The only sub-40 ms information in the file is in these channels.** `Speed (m/s)` is GPS-derived at a hard 25 Hz, so no regridding can recover finer speed-trace detail than 40 ms. A 0.3 s brake release is ~7.5 independent GPS samples versus ~3 on the current distance grid — a 2.5× gain, not the order of magnitude a naive reading of the 250 Hz row rate suggests. Accel-derived shape, by contrast, would go to ~30 samples.
+2. **This explains the dead attitude-correction chain.** `sensor_quality._run_attitude_corrections` is gated on `accel_x_mps2`, which the earlier audit found "no module produces". Nothing produces it *because the ingest mapping never matches*. A single column-mapping fix would light up both the high-rate IMU and the orphaned `phone_mount_estimator → road_attitude_estimator → attitude_correction` chain.
+
+**This is a candidate, not a promise.** Raw phone IMU is in the handset frame, contains gravity, and has failed calibration on real data before (the SLK kart gyro fails a yaw-ratio gate outright). It must be validated before any detector depends on it, and it must never silently replace the `*calc` channels that measure at 0.961 agreement today.
+
+Phase 4 is therefore restructured (§6): the cheap, high-value half is **ingesting the IMU**; the expensive half is the time grid, which is only worth doing for channels that carry sub-40 ms information.
+
+### 4.3 Facts that constrain the architecture
 
 - **Production runs the pipeline as two separate Celery calls.** In the resume phase `raw_df = None` (`orchestrator.py:341`), `lap_dict` is never assigned, and `trimmed_df` is a concatenation of the *resampled* laps (`orchestrator.py:349-353`). All corner and coaching stages run in that phase. **No native-rate data exists in production when detection runs.**
 - `handling/` is session-level, string-keyed (`runner.py:225-240`), best-lap-only (`runner.py:123-127`), and its corner ids are 0-based from its own `|a_lat| > 0.25 G` detector, unrelated to `corner_detection`'s 1-based ids. Its consumers look it up by int section id against string keys (`coaching_basic.py:403`, `coaching_advanced.py:235`) and have never matched.
@@ -81,7 +97,7 @@ class DrivingEvent:
     corner_id: int | None      # None for straight-line events
     corner_phase: str | None   # "entry" | "mid" | "exit"
 
-    # location, in the canonical per-lap coordinate (§10)
+    # location, in the canonical per-lap coordinate (§11)
     s_start_m: float           # 0-based per-lap metres
     s_end_m: float
     s_norm_start: float        # 0..1, lap-length invariant
@@ -213,11 +229,12 @@ Note an existing asymmetry to resolve: `get_driver_corner_trends` **is** live (`
 
 | Phase | Content | Rationale |
 |---|---|---|
-| **0** | *Separate deliverable* — per-lap coordinate fix (§10) | Everything below aggregates per-lap corner data, which is currently empty on laps 2..N |
+| **0** | *Separate deliverable* — per-lap coordinate fix (§11) | Everything below aggregates per-lap corner data, which is currently empty on laps 2..N |
 | **1** | Tiered anchor + trust gate, on the existing distance grid | Every downstream number is quoted against this, and it is the piece most likely to fail on real data — so it goes first |
 | **2** | Per-lap phase segmentation, `DrivingEvent`, migration 085, detector registry, the ✓ detector set | The spine. None of it needs the time grid. |
 | **3** | Mistake tape + exploitation map in the webapp | One visible surface proves the events mean something; draw primitives already exist |
-| **4** | Time grid + `ramp` / `oscillation` primitives | Only change touching the Celery two-phase contract and the pipeline hash. Payoff is 12–16×, not unbounded. Native-rate **corner windows** persisted from phase A, not whole laps. |
+| **4a** | **Ingest the dropped IMU** (§4.2): fix the column patterns, validate the six channels against the trusted `*calc` ones, and gate them behind a calibration check. Additive — never replaces `*calc`. | Cheap (a mapping fix), high value (the only sub-40 ms information in the file), and it also unblocks the orphaned attitude-correction chain. Must precede 4b: regridding channels that carry no sub-40 ms information buys ~2.5×. |
+| **4b** | Time grid + `ramp` / `oscillation` primitives, **only for channels proven to carry sub-40 ms information** | Only change touching the Celery two-phase contract and the pipeline hash. Native-rate **corner windows** persisted from phase A, not whole laps. Scope is decided by 4a's outcome. |
 | **5** | Cross-session signature | Gated on wiring `corner_persistence.resolve_corners`; corner identity across sessions is an independent risk and must not block the per-session product |
 
 ## 7. Validation
@@ -240,12 +257,23 @@ No human-labelled corner exists anywhere in the repo, so precision/recall is unm
 | **Envelope provenance.** No flag distinguishes measured bins from floored ones. | Use the three proxies in §5.3 now; add a real flag in Phase 1. |
 | Adding a genuinely new cause requires a `causes.json` entry, 6 `CORNER_TIPS` entries and a drill, or the composer degrades to a generic string. | Map new event types onto existing causes first; add causes only with the full set. |
 
-## 9. Open questions
+## 9. Resolved ambiguities
 
-- Whether `envelope_use_pct` should be reported against the ellipse boundary along the *current* combined-g direction, or as area fill over the phase. (Leaning: both — instantaneous for the tape, area for the map.)
-- Whether tier-2's "driver's own best" is scoped per track only, or per track *and* condition. Wet vs dry changes peak lateral from 1.42 g to 0.85 g on the same driver, so a shared reference would systematically mislabel wet sessions as under-driving.
+These were open during design and are now decided, so implementation has no discretion.
 
-## 10. Split-out prerequisite: per-lap corner coordinate fix
+**Envelope use is two distinct numbers, both stored.** `envelope_use_pct` is *instantaneous*: the sample's combined-g magnitude as a fraction of the fitted-ellipse boundary **along that sample's own combined-g direction**. The exploitation map instead aggregates `envelope_fill_area` — the fraction of the reachable ellipse sector swept during the phase. A single number cannot serve both: instantaneous use answers "did you exceed the limit at this instant", area fill answers "did you use the whole envelope through this corner". A driver can score 100% instantaneous and 40% area by touching the limit once and coasting the rest.
+
+**Tier 2 is scoped by track *and* condition bucket.** The same driver's peak lateral goes 1.42 g dry to 0.85 g wet, so a condition-blind personal reference would systematically label every wet session as under-driving. When the condition is unknown, tier 2 is still used but the event's `confidence` is reduced and `anchor_reason` records `condition_unknown`. It never silently compares across conditions.
+
+**Spatial join tolerance for `handling/` events is 50% span overlap**, computed in the canonical per-lap coordinate. Below that the handling event is attached to the *lap* rather than to a corner, rather than being force-fitted to the nearest corner.
+
+**`min_samples_per_corner` defaults to 20**, grounded in the measurement that real corners carry 25–79 samples on the distance grid (§4). `ramp` and `oscillation` override it upward and are consequently dark until Phase 4.
+
+## 10. Scope note
+
+Each phase gets its own implementation plan. This spec is the shared contract between them — principally the `DrivingEvent` shape (§5.1), the detector protocol (§5.2) and the anchor tiers (§5.3). Phases 1–3 are one coherent deliverable; 4 and 5 are independently schedulable and neither blocks customer-visible value.
+
+## 11. Split-out prerequisite: per-lap corner coordinate fix
 
 **Shipped separately, independently deployable.** Own branch, own plan.
 
