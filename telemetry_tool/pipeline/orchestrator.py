@@ -923,7 +923,15 @@ def run_full_analysis(
         fusion_confidence=_fc,
     )
     _record("09e_data_quality", data_quality_rpt, err)
-    summary["data_quality"] = data_quality_rpt
+    # Persistence gates on isinstance(dq, dict) in both pipeline_tasks.py and
+    # sessions_v2.py, so the summary carries the serialised form.  The local
+    # data_quality_rpt stays an object - s10_theoretical and the scoring stages
+    # reach into it by attribute.
+    summary["data_quality"] = (
+        data_quality_rpt.to_dict()
+        if data_quality_rpt is not None and hasattr(data_quality_rpt, "to_dict")
+        else data_quality_rpt
+    )
 
     # Step 09f — Progressive physics
     _data_tier = summary.get("data_tier", 1)

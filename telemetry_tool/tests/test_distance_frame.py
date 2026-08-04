@@ -591,3 +591,61 @@ def test_per_lap_corner_coverage_warning_does_not_fire_when_all_laps_covered(cap
     assert not any(rec.levelno == logging.WARNING for rec in caplog.records), (
         f"all 5 attempted laps were covered, no warning should fire: {caplog.text}"
     )
+
+
+# ── Task 12: data_quality persists as a dict, not the raw dataclass ────────
+#
+# orchestrator.py stored summary["data_quality"] as the raw DataQualityReport
+# dataclass, while both persistence paths (tasks/pipeline_tasks.py:562-563
+# and web/routes/sessions_v2.py:269-270) gate storage on isinstance(dq, dict).
+# So analysis_json.data_quality_summary was never written. Proven end-to-end
+# below - a real pipeline run producing a real DataQualityReport, fed through
+# the actual persistence-blob builder - not a source-text grep.
+
+
+def test_data_quality_report_survives_the_persistence_gate(tmp_path):
+    """A DataQualityReport produced by the real pipeline must land in
+    summary["data_quality"] as a dict, and that dict must still be present
+    after _build_analysis_blob() - the same builder the Celery finalize path
+    uses to populate analysis_json.data_quality_summary.
+    """
+    import pipeline
+    from tasks import pipeline_tasks
+
+    n = 500
+    laps = np.repeat([1, 2], n // 2)
+    time = np.linspace(0, 60, n)
+    speed = np.random.default_rng(42).uniform(10, 30, n)
+    dist = np.cumsum(speed * np.diff(np.concatenate([[0], time])))
+    lat = np.linspace(45.0, 45.001, n)
+    lon = np.linspace(9.0, 9.001, n)
+
+    df = pd.DataFrame({
+        "Lap #": laps,
+        "Time (s)": time,
+        "Speed (m/s)": speed,
+        "Distance (m)": dist,
+        "Latitude (deg)": lat,
+        "Longitude (deg)": lon,
+    })
+    csv_path = tmp_path / "quality.csv"
+    df.to_csv(csv_path, index=False)
+
+    summary = pipeline.run_full_analysis(str(csv_path), {})
+
+    dq = summary.get("data_quality")
+    assert isinstance(dq, dict), (
+        f"summary['data_quality'] is a {type(dq).__name__}, not a dict - "
+        "both persistence paths gate on isinstance(dq, dict) and would "
+        "silently drop it"
+    )
+    assert "overall_confidence" in dq
+    assert isinstance(dq["overall_confidence"], (int, float))
+    assert isinstance(dq.get("warnings"), list)
+
+    blob = pipeline_tasks._build_analysis_blob(summary)
+    assert "data_quality_summary" in blob, (
+        "data_quality_summary was never written to the persisted blob - "
+        "the isinstance(dq, dict) gate dropped the raw dataclass"
+    )
+    assert blob["data_quality_summary"] == dq
