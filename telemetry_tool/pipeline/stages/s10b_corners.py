@@ -346,6 +346,7 @@ def run_per_lap_corner_metrics(
         return []
 
     results: list[dict[str, Any]] = []
+    _failed_laps: list = []
     sorted_keys = sorted(resampled_laps.keys())
 
     for lap_num in sorted_keys:
@@ -378,8 +379,23 @@ def run_per_lap_corner_metrics(
                 _enrich_corner_telemetry(d, lap_df)
                 results.append(d)
         except Exception as exc:
+            _failed_laps.append(lap_num)
             logger.debug("Corner analysis for lap %s: %s", lap_num, exc)
             continue
+
+    if _failed_laps:
+        # Counts laps whose corner analysis raised an exception (caught
+        # above), not laps that legitimately produced zero metrics via
+        # excluded_laps or the too-short-lap_df skip - those are intentional
+        # and would make this warning fire on every ordinary session.
+        # "attempted" is len(sorted_keys) - the laps this function actually
+        # looped over - rather than reconstructed from results + failures,
+        # so it can't drift out of sync.
+        logger.warning(
+            "Per-lap corner metrics: %d/%d laps raised an exception during "
+            "corner analysis and were skipped (first few: %s)",
+            len(_failed_laps), len(sorted_keys), _failed_laps[:5],
+        )
 
     if results:
         logger.info(

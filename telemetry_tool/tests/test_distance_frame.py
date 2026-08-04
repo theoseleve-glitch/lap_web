@@ -439,3 +439,71 @@ def test_recoach_swallows_chart_cache_invalidation_failure(seeded_db, caplog):
     assert resp.status_code == 200, resp.get_json()
     mock_invalidate.assert_called_once_with("s1")
     assert "Chart-cache invalidation failed after recoach" in caplog.text
+
+
+# ── Task 11: per-lap corner failures must be audible, not swallowed ────────
+#
+# run_per_lap_corner_metrics used to log per-lap exceptions at DEBUG only,
+# which is invisible in production. A total failure of every lap produced
+# silence - exactly how the coordinate-frame bug this branch fixes survived
+# undetected (9 of 10 laps returned zero corner samples, nothing said so).
+
+
+def test_per_lap_corner_failures_are_reported_at_warning_level(caplog):
+    """A per-lap exception during corner analysis must surface at WARNING."""
+    import logging
+    import types
+    from unittest.mock import patch
+
+    from pipeline.stages import s10b_corners
+
+    laps = {n: _lap(0.0, 100.0, n) for n in (1, 2, 3)}
+    corners = [{"corner_id": 1, "s_start": 10.0, "s_end": 20.0}]
+
+    def fake_analyze_corners(corners_arg, driver_lap, theoretical_result, friction):
+        lap_no = int(driver_lap["Lap #"].iloc[0])
+        if lap_no == 2:
+            raise RuntimeError("synthetic corner-analysis failure")
+        return [{"time_loss_s": 0.1, "corner_id": 1}]
+
+    fake_ca_mod = types.SimpleNamespace(analyze_corners=fake_analyze_corners)
+
+    with patch.object(s10b_corners, "lazy_import", return_value=fake_ca_mod), \
+         caplog.at_level(logging.WARNING):
+        results = s10b_corners.run_per_lap_corner_metrics(corners, laps)
+
+    # Lap 2 raised - its corner never made it into results, but 1 and 3 did.
+    assert {r["lap_number"] for r in results} == {1, 3}
+    assert any(rec.levelno == logging.WARNING for rec in caplog.records), (
+        "a per-lap corner-analysis exception must be logged at WARNING, "
+        "not left invisible at DEBUG"
+    )
+    assert "1/3" in caplog.text, "warning must report failed-count/attempted-count"
+    assert "[2]" in caplog.text, "warning must name the failed lap(s)"
+
+
+def test_per_lap_corner_success_produces_no_failure_warning(caplog):
+    """When every lap succeeds, the per-lap-failure warning must not fire."""
+    import logging
+    import types
+    from unittest.mock import patch
+
+    from pipeline.stages import s10b_corners
+
+    laps = {n: _lap(0.0, 100.0, n) for n in (1, 2, 3)}
+    corners = [{"corner_id": 1, "s_start": 10.0, "s_end": 20.0}]
+
+    def fake_analyze_corners(corners_arg, driver_lap, theoretical_result, friction):
+        return [{"time_loss_s": 0.1, "corner_id": 1}]
+
+    fake_ca_mod = types.SimpleNamespace(analyze_corners=fake_analyze_corners)
+
+    with patch.object(s10b_corners, "lazy_import", return_value=fake_ca_mod), \
+         caplog.at_level(logging.WARNING):
+        results = s10b_corners.run_per_lap_corner_metrics(corners, laps)
+
+    assert {r["lap_number"] for r in results} == {1, 2, 3}
+    assert not any(rec.levelno == logging.WARNING for rec in caplog.records), (
+        "no lap failed, so no per-lap-failure warning should have fired: "
+        f"{caplog.text}"
+    )
