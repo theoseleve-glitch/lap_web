@@ -138,3 +138,29 @@ def test_999m_lap_is_not_mistaken_for_row_index_distances():
 
     # the genuine legacy bug: distances are row indices, GPS says 1240 m
     assert _looks_like_row_index_distances(real, haversine_total=1240.0) is True
+
+
+def test_row_index_guard_is_applied_at_every_haversine_substitution_site():
+    """data_v2.py has THREE structurally identical row-index shape heuristics
+    (speed-trace, gps-trace, gg-data), each ending in an `distances = cum`
+    haversine substitution. The plan that produced this fix named only the
+    first; guarding just one still ships silent ~999 m corruption on the
+    other two. Assert the value-check helper gates the substitution at all
+    three call sites, not just one."""
+    import inspect
+
+    import web.routes.data_v2 as data_v2_module
+
+    source = inspect.getsource(data_v2_module)
+    # Exclude the `def _looks_like_row_index_distances(` line itself - we
+    # want call sites, not the definition.
+    call_sites = [
+        line for line in source.splitlines()
+        if "_looks_like_row_index_distances(" in line
+        and not line.strip().startswith("def ")
+    ]
+    assert len(call_sites) >= 3, (
+        f"expected the helper called at all 3 haversine-substitution sites "
+        f"(speed-trace, gps-trace, gg-data), found {len(call_sites)} call "
+        f"site(s) in the module source: {call_sites}"
+    )

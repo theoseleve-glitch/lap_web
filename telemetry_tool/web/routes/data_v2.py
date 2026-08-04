@@ -755,7 +755,11 @@ def get_gps_trace(session_id: str) -> tuple[dict, int]:
                  + math.cos(lat1) * math.cos(lat2)
                  * math.sin(dlon / 2) ** 2)
             cum.append(cum[-1] + _R * 2 * math.atan2(math.sqrt(a), math.sqrt(1 - a)))
-        distances = cum
+        # Shape alone no longer discriminates: every resampled lap is now
+        # 0-based, so a genuine ~999 m lap at n_points=1000 has the same
+        # shape as row indices. Only substitute when GPS actually disagrees.
+        if _looks_like_row_index_distances(distances, cum[-1] if cum else None):
+            distances = cum
 
     # Normalize to per-lap 0-based distances (stored values are
     # session-cumulative).  Other chart endpoints do the same so
@@ -853,7 +857,11 @@ def get_gg_data(session_id: str) -> tuple[dict, int]:
                  + math.cos(lat1) * math.cos(lat2)
                  * math.sin(dlon / 2) ** 2)
             cum.append(cum[-1] + _R * 2 * math.atan2(math.sqrt(a), math.sqrt(1 - a)))
-        distances = cum
+        # Shape alone no longer discriminates: every resampled lap is now
+        # 0-based, so a genuine ~999 m lap at n_points=1000 has the same
+        # shape as row indices. Only substitute when GPS actually disagrees.
+        if _looks_like_row_index_distances(distances, cum[-1] if cum else None):
+            distances = cum
 
     # Normalize per-lap distances to 0-based
     if distances and len(distances) > 1 and distances[0] != 0:
