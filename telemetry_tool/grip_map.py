@@ -227,8 +227,16 @@ def compute_grip_map(
             valid = np.isfinite(mu) & np.isfinite(d) & (mu > 0.01)
             d_valid, mu_valid = d[valid], mu[valid]
             bin_idx = np.digitize(d_valid, bin_edges) - 1
-            bin_idx = np.clip(bin_idx, 0, n_bins - 1)
-            for i, m in zip(bin_idx, mu_valid):
+            # Drop rather than clip: clipping dumps every out-of-frame sample
+            # into the terminal bin, silently converting a coordinate-frame bug
+            # into a plausible-looking grip map.
+            _in_range = (bin_idx >= 0) & (bin_idx < n_bins)
+            if not _in_range.all():
+                logger.warning(
+                    "grip_map: dropping %d/%d samples outside the bin range",
+                    int((~_in_range).sum()), int(_in_range.size),
+                )
+            for i, m in zip(bin_idx[_in_range], mu_valid[_in_range]):
                 bin_samples[i].append(float(m))
     elif curvature_profile is not None and _COL_CURVATURE in curvature_profile.columns:
         source = "curvature_speed"
@@ -247,8 +255,16 @@ def compute_grip_map(
             valid = np.isfinite(mu) & np.isfinite(d) & (mu > 0.01) & (np.abs(curv) > 0.001)
             d_valid, mu_valid = d[valid], mu[valid]
             bin_idx = np.digitize(d_valid, bin_edges) - 1
-            bin_idx = np.clip(bin_idx, 0, n_bins - 1)
-            for i, m in zip(bin_idx, mu_valid):
+            # Drop rather than clip: clipping dumps every out-of-frame sample
+            # into the terminal bin, silently converting a coordinate-frame bug
+            # into a plausible-looking grip map.
+            _in_range = (bin_idx >= 0) & (bin_idx < n_bins)
+            if not _in_range.all():
+                logger.warning(
+                    "grip_map: dropping %d/%d samples outside the bin range",
+                    int((~_in_range).sum()), int(_in_range.size),
+                )
+            for i, m in zip(bin_idx[_in_range], mu_valid[_in_range]):
                 bin_samples[i].append(float(m))
     else:
         source = "global_fallback"

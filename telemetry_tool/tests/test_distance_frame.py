@@ -186,6 +186,44 @@ def test_corner_coaching_spans_are_persisted_verbatim(test_db):
     )
 
 
+def test_grip_map_bins_are_not_poisoned_by_out_of_range_samples():
+    """np.clip silently dumps every out-of-frame sample into the last bin,
+    which is how a coordinate-frame bug produced a plausible-looking grip
+    map. Build laps where lap 2/3 fall entirely outside lap 1's distance
+    range (the exact shape of the old frame bug) and assert the terminal
+    bin isn't swamped relative to the rest.
+    """
+    import grip_map
+
+    rng = np.random.default_rng(0)
+
+    def _grip_lap(distances: np.ndarray) -> pd.DataFrame:
+        mu = 0.9 + rng.normal(0.0, 0.01, len(distances))
+        return pd.DataFrame({
+            "Distance (m)": distances,
+            "Lateral acceleration (G) *calc": mu,
+        })
+
+    n_bins = 10
+    # Lap 1 sets bin_edges over [0, 99].
+    laps = {1: _grip_lap(np.linspace(0.0, 99.0, 100))}
+    # Laps 2 and 3 are entirely outside that range - simulating laps that
+    # were never rebased into lap 1's frame.
+    out_of_range = np.linspace(500.0, 599.0, 100)
+    laps[2] = _grip_lap(out_of_range)
+    laps[3] = _grip_lap(out_of_range)
+
+    result = grip_map.compute_grip_map(laps, n_bins=n_bins)
+
+    assert not result.is_global_fallback
+    counts = [s.sample_count for s in result.bin_stats]
+    mean_count = sum(counts) / len(counts)
+    assert max(counts) <= 3 * mean_count, (
+        f"bin sample counts {counts} (mean={mean_count:.1f}) show the "
+        "terminal bin absorbing out-of-range samples instead of dropping them"
+    )
+
+
 def test_pipeline_version_bumped_for_the_frame_change():
     """The structural hash digests step NAMES only, so a change inside
     resampling.py is invisible to it. Without a manual bump, every pre-fix
