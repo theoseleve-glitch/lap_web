@@ -88,19 +88,14 @@ export function TheoreticalBestPanel({
 
     const { s_start, s_end } = corner;
 
-    /* ── Distance alignment ──────────────────────────────── */
-    // Corner s_start/s_end are session-cumulative (e.g., 5806m).
-    // Theoretical distances are also cumulative → slice directly.
-    // GPS trace distances are per-lap (e.g., 0-1200m) → need modulo mapping.
-    //
-    // Strategy: use cumulative corner range as the common chart axis.
-    // Theoretical trace slices directly. GPS trace gets mapped.
+    // Corner spans are 0-based per-lap metres (canonical frame, see
+    // resampling.resample_lap_by_distance). No offset compensation needed.
 
     const axis = commonAxis(s_start, s_end, N_POINTS);
     const theoDists = theoretical.distances;
     const gpsDists = gpsTrace?.distances ?? [];
 
-    /* Slice + interpolate theoretical trace (cumulative → cumulative, direct) */
+    /* Slice + interpolate theoretical trace */
     let theoSpeeds: number[] | null = null;
     if (theoDists.length > 1 && theoretical.speeds.length > 1) {
       const [lo, hi] = sliceIndices(theoDists, s_start, s_end);
@@ -112,33 +107,24 @@ export function TheoreticalBestPanel({
       }
     }
 
-    /* Slice + interpolate actual GPS trace (per-lap → remap to cumulative) */
+    /* Slice + interpolate actual GPS trace */
     let actualSpeeds: number[] | null = null;
     if (gpsTrace && gpsDists.length > 1 && gpsTrace.speeds.length > 1) {
       const gpsMax = gpsDists[gpsDists.length - 1];
       const gpsMin = gpsDists[0];
-      const lapLen = gpsMax - gpsMin;
 
-      if (lapLen > 0) {
-        // Use same lap offset for both start and end to avoid wrap-around split.
-        // Compute which lap s_start falls on, subtract that offset.
-        const lapOffset = Math.floor((s_start - gpsMin) / lapLen) * lapLen;
-        const perLapStart = s_start - lapOffset;
-        const perLapEnd = s_end - lapOffset;
-
+      if (gpsMax > gpsMin) {
         // Clamp to GPS range
-        const clampedStart = Math.max(gpsMin, perLapStart);
-        const clampedEnd = Math.min(gpsMax, perLapEnd);
+        const clampedStart = Math.max(gpsMin, s_start);
+        const clampedEnd = Math.min(gpsMax, s_end);
 
         if (clampedEnd > clampedStart) {
           const [lo, hi] = sliceIndices(gpsDists, clampedStart, clampedEnd);
           if (hi > lo) {
             const slicedDist = gpsDists.slice(lo, hi + 1);
             const slicedSpd = gpsTrace.speeds.slice(lo, hi + 1);
-            // Remap GPS distances back to cumulative for chart axis alignment
-            const remappedDist = slicedDist.map((d) => d + lapOffset);
             const slicedKmh = slicedSpd.map((v) => v * 3.6);
-            actualSpeeds = interpolateOnto(remappedDist, slicedKmh, axis);
+            actualSpeeds = interpolateOnto(slicedDist, slicedKmh, axis);
           }
         }
       }

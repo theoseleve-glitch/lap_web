@@ -35,20 +35,11 @@ function interpolateCornerPositions(
   const n = distances.length;
   const result: DerivedCornerPos[] = [];
 
-  // Compute per-lap distance range for normalizing session-cumulative s_apex values
-  const dMin = distances[0];
-  const dMax = distances[n - 1];
-  const lapLen = dMax - dMin;
-
   for (const c of corners) {
-    let apex = c.s_apex ?? (c.s_start != null && c.s_end != null ? (c.s_start + c.s_end) / 2 : null);
+    const apex = c.s_apex ?? (c.s_start != null && c.s_end != null ? (c.s_start + c.s_end) / 2 : null);
     if (apex == null) continue;
 
-    // Normalize session-cumulative distance to per-lap range
-    // s_apex values may be multi-lap cumulative (e.g., 5608m for a 1200m lap)
-    if (lapLen > 0 && apex > dMax) {
-      apex = dMin + ((apex - dMin) % lapLen);
-    }
+    // s_apex is 0-based per-lap metres; no wrap needed.
 
     // Binary search for the closest distance index
     let lo = 0;
