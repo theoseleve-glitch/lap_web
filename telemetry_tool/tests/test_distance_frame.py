@@ -69,3 +69,35 @@ def test_distance_norm_still_spans_zero_to_one():
 
     assert out["distance_norm"].iloc[0] == pytest.approx(0.0)
     assert out["distance_norm"].iloc[-1] == pytest.approx(1.0)
+
+
+def test_corner_mask_populates_on_every_lap():
+    """The headline bug: corner spans come from ONE lap, masks run on ALL laps.
+
+    Asserts on sample COUNTS, not on the absence of exceptions - the production
+    call sites swallow failures (s10b_corners.py:380-382) and return None
+    (corner_diagnosis.py:238-241), so an exception-based test passes against
+    the bug.
+    """
+    from resampling import resample_lap_by_distance
+
+    starts = [153.9, 1356.5, 2574.6, 3784.9, 4997.9]      # measured, OK_R4
+    ends = [1356.4, 2574.5, 3784.9, 4997.7, 6196.5]
+    laps = {
+        i + 1: resample_lap_by_distance(_lap(s, e, i + 1), n_points=1000)
+        for i, (s, e) in enumerate(zip(starts, ends))
+    }
+
+    # corner spans as corner_detection would emit them: taken from ONE lap
+    detection_lap = laps[min(laps)]
+    d_det = detection_lap["Distance (m)"].values
+    corner_spans = [(d_det[100], d_det[160]), (d_det[400], d_det[470])]
+
+    for lap_no, lap in laps.items():
+        dist = lap["Distance (m)"].values
+        for ci, (s0, s1) in enumerate(corner_spans):
+            n = int(((dist >= s0) & (dist <= s1)).sum())
+            assert n >= 5, (
+                f"lap {lap_no} corner {ci}: {n} samples - "
+                "corner_diagnosis bails below 5"
+            )
