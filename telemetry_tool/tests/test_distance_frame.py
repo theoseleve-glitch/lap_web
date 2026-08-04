@@ -224,6 +224,58 @@ def test_grip_map_bins_are_not_poisoned_by_out_of_range_samples():
     )
 
 
+def test_grip_map_curvature_branch_bins_are_not_poisoned_by_out_of_range_samples():
+    """Same terminal-bin-poisoning regression as the lateral-accel test
+    above, but exercised through grip_map's OTHER clip site: the
+    curvature/speed branch. That branch is only reached when no lap in the
+    first three carries a lateral-acceleration column (has_lat_accel stays
+    False) and a curvature_profile with a "curvature_1pm" column is
+    supplied - see compute_grip_map's branch selection in grip_map.py.
+    """
+    import grip_map
+
+    n_bins = 10
+    # Constant curvature across the whole distance span used below, so mu
+    # = v^2 * |curv| / g is deterministic and every sample clears the
+    # (mu > 0.01) & (|curv| > 0.001) validity filter.
+    curvature_profile = pd.DataFrame({
+        "distance_m": [0.0, 600.0],
+        "curvature_1pm": [0.01, 0.01],
+    })
+
+    def _speed_lap(distances: np.ndarray) -> pd.DataFrame:
+        # Deliberately no "Lateral acceleration (G) *calc" / "accel_lat_mps2"
+        # column - this is what forces has_lat_accel to False.
+        return pd.DataFrame({
+            "Distance (m)": distances,
+            "Speed (m/s)": np.full(len(distances), 20.0),
+        })
+
+    # Lap 1 sets bin_edges over [0, 99].
+    laps = {1: _speed_lap(np.linspace(0.0, 99.0, 100))}
+    # Laps 2 and 3 are entirely outside that range - simulating laps that
+    # were never rebased into lap 1's frame.
+    out_of_range = np.linspace(500.0, 599.0, 100)
+    laps[2] = _speed_lap(out_of_range)
+    laps[3] = _speed_lap(out_of_range)
+
+    result = grip_map.compute_grip_map(
+        laps, curvature_profile=curvature_profile, n_bins=n_bins
+    )
+
+    assert result.source == "curvature_speed", (
+        f"test fell through to source={result.source!r} instead of "
+        "exercising the curvature/speed branch"
+    )
+    assert not result.is_global_fallback
+    counts = [s.sample_count for s in result.bin_stats]
+    mean_count = sum(counts) / len(counts)
+    assert max(counts) <= 3 * mean_count, (
+        f"bin sample counts {counts} (mean={mean_count:.1f}) show the "
+        "terminal bin absorbing out-of-range samples instead of dropping them"
+    )
+
+
 def test_pipeline_version_bumped_for_the_frame_change():
     """The structural hash digests step NAMES only, so a change inside
     resampling.py is invisible to it. Without a manual bump, every pre-fix
