@@ -94,8 +94,9 @@ def channel_trust_ratio(
 
 
 # Band within which the lateral channel is trusted for an absolute claim.
-# Real kart data measures 0.961; the production frontend uses [0.80, 1.20]
-# after filtering zeros (TrackSurfacePanel.tsx:513).
+# Real kart data measures 0.961. The production frontend uses a tighter band
+# [0.80, 1.20] for conservatism; we allow slightly more headroom here to reflect
+# measurement uncertainty while still rejecting obviously-broken channels.
 TRUST_BAND_LOW: Final = 0.80
 TRUST_BAND_HIGH: Final = 1.25
 

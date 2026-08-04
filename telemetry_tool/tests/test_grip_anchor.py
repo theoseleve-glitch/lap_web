@@ -95,3 +95,57 @@ def test_channel_trust_ratio_returns_none_on_all_nan():
     v = np.full(n, 20.0)
     kappa = np.full(n, 0.02)
     assert ga.channel_trust_ratio(np.full(n, np.nan), v, kappa) is None
+
+
+def test_channel_trust_ratio_median_rejects_outliers():
+    """Median is chosen for robustness to outliers among cornering samples.
+    100 honest samples at ratio 1.0 plus 10 extreme outliers at 50.0 must yield
+    ~1.0 (median), not ~5.5 (mean). This protects against transient sensor spikes.
+    """
+    import grip_anchor as ga
+
+    v = np.full(110, 20.0)
+    kappa = np.full(110, 0.02)  # All above the min_geo_accel gate
+    a_geo = v ** 2 * kappa
+
+    # 100 honest samples, 10 extreme outliers
+    a_lat = np.concatenate([
+        np.full(100, a_geo[0]),       # ratio = 1.0
+        np.full(10, 50.0 * a_geo[0]), # ratio = 50.0 (outliers)
+    ])
+
+    # Median must reject outliers and return ~1.0
+    result = ga.channel_trust_ratio(a_lat, v, kappa)
+    assert result == pytest.approx(1.0, abs=0.01)
+
+
+def test_channel_is_trusted_comprehensive():
+    """The fail-safe guard: None (not measurable) is NOT trusted.
+    Guards against regressing to `None -> True` which would bypass later logic.
+    """
+    import grip_anchor as ga
+
+    # None is the fail-safe: refusal to measure is not a pass
+    assert ga.channel_is_trusted(None) is False
+
+    # NaN is also a refusal
+    assert ga.channel_is_trusted(float("nan")) is False
+
+    # Real-data value (0.961 from kart data) is trusted
+    assert ga.channel_is_trusted(0.96) is True
+
+    # Near-straight-contaminated value (0.531 from sensor_quality) is not trusted
+    assert ga.channel_is_trusted(0.531) is False
+
+    # Band edges are inclusive
+    assert ga.channel_is_trusted(0.80) is True
+    assert ga.channel_is_trusted(1.25) is True
+
+    # Just outside the band is not trusted
+    assert ga.channel_is_trusted(0.799) is False
+    assert ga.channel_is_trusted(1.251) is False
+
+    # Typical good ranges
+    assert ga.channel_is_trusted(0.90) is True
+    assert ga.channel_is_trusted(1.10) is True
+    assert ga.channel_is_trusted(1.20) is True
