@@ -13,7 +13,7 @@ Shape copied from ``track_surface/honesty.py``; values are our own.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Final
+from typing import Any, Final
 
 import numpy as np
 
@@ -104,3 +104,45 @@ TRUST_BAND_HIGH: Final = 1.25
 def channel_is_trusted(ratio: float | None) -> bool:
     """Fail-safe: None (not measurable) is NOT trusted."""
     return ratio is not None and TRUST_BAND_LOW <= ratio <= TRUST_BAND_HIGH
+
+
+def _scalar(x: Any) -> float:
+    """FrictionCircle accessors return 0-d or 1-element arrays."""
+    return float(np.asarray(x).reshape(-1)[0])
+
+
+def ellipse_fill_pct(
+    a_lat_mps2: float,
+    a_long_mps2: float,
+    speed_mps: float,
+    friction: Any,
+) -> float | None:
+    """Percentage of the friction ellipse used, along this sample's own
+    combined-g direction. NOT capped at 100 — see the module docstring.
+
+    Superellipse: |ax/ax_max|^p + |ay/ay_max|^p = 1, so the fraction of the
+    boundary reached is that sum raised to 1/p.
+    """
+    a_lat = abs(float(a_lat_mps2))
+    a_long = float(a_long_mps2)
+    if not (np.isfinite(a_lat) and np.isfinite(a_long) and np.isfinite(speed_mps)):
+        return None
+
+    try:
+        ay_max = _scalar(friction.lateral_max(speed_mps))
+        # Asymmetric axes: decelerating is bounded by braking grip, not traction.
+        ax_max = _scalar(
+            friction.braking_max(speed_mps) if a_long < 0
+            else friction.traction_max(speed_mps)
+        )
+        p = float(friction.exponent)
+    except Exception:
+        return None
+
+    if not (np.isfinite(ay_max) and np.isfinite(ax_max)) or ay_max <= 0 or ax_max <= 0 or p <= 0:
+        return None
+
+    frac = (abs(a_long) / ax_max) ** p + (a_lat / ay_max) ** p
+    if not np.isfinite(frac):
+        return None
+    return 100.0 * frac ** (1.0 / p)

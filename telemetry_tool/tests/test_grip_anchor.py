@@ -300,3 +300,72 @@ def test_build_friction_model_reports_fitted_when_boundary_data_is_sufficient():
     assert model.exponent_source == "fitted"
     assert isinstance(model.exponent, float)
     assert 1.0 <= model.exponent <= 4.0
+
+
+class _FakeFriction:
+    """Minimal stand-in with the real FrictionCircle accessor names."""
+
+    def __init__(self, lat=12.0, brake=9.0, traction=3.0, exponent=2.0):
+        self._lat, self._brake, self._trac, self.exponent = lat, brake, traction, exponent
+        self.exponent_source = "fitted"
+
+    def lateral_max(self, speed):
+        return np.asarray(self._lat, dtype=float)
+
+    def braking_max(self, speed):
+        return np.asarray(self._brake, dtype=float)
+
+    def traction_max(self, speed):
+        return np.asarray(self._trac, dtype=float)
+
+
+def test_ellipse_fill_is_100_at_the_pure_lateral_boundary():
+    import grip_anchor as ga
+
+    f = _FakeFriction(lat=12.0)
+    assert ga.ellipse_fill_pct(12.0, 0.0, 25.0, f) == pytest.approx(100.0)
+
+
+def test_ellipse_fill_is_100_at_the_pure_braking_boundary():
+    import grip_anchor as ga
+
+    f = _FakeFriction(brake=9.0)
+    assert ga.ellipse_fill_pct(0.0, -9.0, 25.0, f) == pytest.approx(100.0)
+
+
+def test_ellipse_fill_uses_the_braking_axis_for_deceleration():
+    """Braking and traction limits are asymmetric (9.0 vs 3.0 here). Using the
+    wrong axis silently mis-scales the longitudinal term."""
+    import grip_anchor as ga
+
+    f = _FakeFriction(brake=9.0, traction=3.0)
+    braking = ga.ellipse_fill_pct(0.0, -3.0, 25.0, f)
+    accelerating = ga.ellipse_fill_pct(0.0, 3.0, 25.0, f)
+
+    assert braking == pytest.approx(100.0 * 3.0 / 9.0)
+    assert accelerating == pytest.approx(100.0)
+
+
+def test_ellipse_fill_combines_both_axes():
+    import grip_anchor as ga
+
+    f = _FakeFriction(lat=12.0, brake=9.0, exponent=2.0)
+    # Half of each axis: sqrt(0.5^2 + 0.5^2) = 0.7071
+    assert ga.ellipse_fill_pct(6.0, -4.5, 25.0, f) == pytest.approx(70.71, abs=0.01)
+
+
+def test_ellipse_fill_is_NOT_capped_at_100():
+    """The envelope is a percentile, not a maximum, so exceeding it is expected
+    and is the most diagnostic value we can report. Capping destroys the one
+    signal that reveals over-driving or a wrong envelope."""
+    import grip_anchor as ga
+
+    f = _FakeFriction(lat=12.0)
+    assert ga.ellipse_fill_pct(18.0, 0.0, 25.0, f) == pytest.approx(150.0)
+
+
+def test_ellipse_fill_returns_none_on_a_degenerate_envelope():
+    import grip_anchor as ga
+
+    assert ga.ellipse_fill_pct(5.0, 0.0, 25.0, _FakeFriction(lat=0.0)) is None
+    assert ga.ellipse_fill_pct(np.nan, 0.0, 25.0, _FakeFriction()) is None
