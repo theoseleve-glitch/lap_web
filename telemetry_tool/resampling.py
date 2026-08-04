@@ -153,8 +153,14 @@ def resample_lap_by_distance(
     Interpolate all numeric channels of *lap_df* onto a uniform distance grid.
 
     The output DataFrame has exactly *n_points* rows, one per equally-spaced
-    distance step from ``lap_df[Distance (m)].min()`` to
-    ``lap_df[Distance (m)].max()``.
+    distance step from ``0.0`` to the lap's span
+    (``lap_df[Distance (m)].max() - lap_df[Distance (m)].min()``).
+
+    The returned ``Distance (m)`` is therefore the canonical 0-based PER-LAP
+    frame, not the input's absolute frame: RaceChrono exports cumulative
+    session distance, so lap 5 of a session arrives starting near 5 km and
+    leaves starting at 0. See the rebase comment in the body for why every
+    lap must share one origin.
 
     Parameters
     ----------
