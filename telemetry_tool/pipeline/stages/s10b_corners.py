@@ -13,6 +13,7 @@ from typing import Any, Optional
 import numpy as np
 import pandas as pd
 
+import driving_events as de
 from pipeline.helpers import lazy_import
 
 logger = logging.getLogger(__name__)
@@ -346,6 +347,11 @@ def run_per_lap_corner_metrics(
         return []
 
     results: list[dict[str, Any]] = []
+    # (lap_number, metric dict, apex index into that lap's arrays) for every
+    # corner-lap the loop below produces. Fed to _assign_throttle_onsets
+    # afterwards, because the onset threshold is a per-corner aggregate over
+    # every admissible lap and cannot be known inside the loop.
+    _onset_pending: list[tuple[int, dict[str, Any], Optional[int]]] = []
     _failed_laps: list = []
     # Laps that completed the loop body WITHOUT raising and contributed at
     # least one metric. Deliberately not derived from `results`: a lap that
@@ -391,7 +397,8 @@ def run_per_lap_corner_metrics(
                     d["grip_utilization"] = d["grip_utilization"] / 100.0
 
                 # Enrich with raw telemetry metrics
-                _enrich_corner_telemetry(d, lap_df)
+                _apex_idx = _enrich_corner_telemetry(d, lap_df)
+                _onset_pending.append((int(lap_num), d, _apex_idx))
                 results.append(d)
             # Reached only if nothing above raised. A lap that raised part-way
             # is counted as failed, never as covered - see _covered_laps.
@@ -439,6 +446,17 @@ def run_per_lap_corner_metrics(
             _n_covered, _no_exception_attempts,
         )
 
+    # Throttle onset, session-wide. Deliberately AFTER the per-lap loop and
+    # after the failure/coverage logging above: it needs every admissible
+    # lap's apex speed at each corner before it can fix that corner's one
+    # threshold. Guarded independently so an unanticipated failure costs the
+    # onsets only, not the brake points / apex speeds / time losses this
+    # function already computed -- _safe_step discards the whole step.
+    try:
+        _assign_throttle_onsets(_onset_pending, resampled_laps, corners)
+    except Exception:
+        logger.exception("Throttle-onset assignment failed; onsets omitted")
+
     if results:
         logger.info(
             "Per-lap corner metrics: %d entries across %d laps",
@@ -448,8 +466,21 @@ def run_per_lap_corner_metrics(
     return results
 
 
-def _enrich_corner_telemetry(d: dict[str, Any], lap_df: pd.DataFrame) -> None:
-    """Add throttle_onset_m, exit_accel_mps2, brake_intensity from raw data."""
+def _enrich_corner_telemetry(d: dict[str, Any], lap_df: pd.DataFrame) -> Optional[int]:
+    """Add exit_accel_mps2 and brake_intensity from raw data.
+
+    Returns this corner-lap's apex index INTO THE FULL LAP ARRAY, or None
+    when no apex could be located. ``throttle_onset_m`` is deliberately NOT
+    computed here -- it needs a per-corner threshold aggregated over every
+    admissible lap, which does not exist until this whole loop has run. See
+    ``_assign_throttle_onsets``.
+
+    On a locatable apex the caller must go on to call
+    ``_assign_throttle_onsets``; on None this function has already recorded
+    the reason (or deliberately recorded nothing, when the derivation never
+    ran at all -- see the ``throttle_onset_status`` contract in
+    driving_events.py).
+    """
     try:
         s_start = d.get("s_start", 0)
         s_end = d.get("s_end", 0)
@@ -476,7 +507,9 @@ def _enrich_corner_telemetry(d: dict[str, Any], lap_df: pd.DataFrame) -> None:
                 break
 
         if not (dist_col and spd_col):
-            return
+            # The derivation never ran: leave throttle_onset_status absent
+            # rather than inventing a refusal reason for it.
+            return None
 
         dist_arr = pd.to_numeric(lap_df[dist_col], errors="coerce").values
         spd_arr = pd.to_numeric(lap_df[spd_col], errors="coerce").values
@@ -485,17 +518,13 @@ def _enrich_corner_telemetry(d: dict[str, Any], lap_df: pd.DataFrame) -> None:
         mask = (dist_arr >= s_start) & (dist_arr <= s_end)
         corner_idx = np.where(mask)[0]
         if len(corner_idx) <= 2:
-            return
+            d["throttle_onset_m"] = None
+            d["throttle_onset_status"] = de.ONSET_NO_APEX
+            return None
 
         corner_spd = spd_arr[corner_idx]
         apex_local = np.nanargmin(corner_spd)
-        apex_idx = corner_idx[apex_local]
-
-        # Throttle onset: first distance after apex where speed increases
-        for k in range(apex_idx + 1, min(apex_idx + 50, len(spd_arr) - 2)):
-            if spd_arr[k] > spd_arr[apex_idx] + 0.5 and spd_arr[k + 1] > spd_arr[k]:
-                d["throttle_onset_m"] = float(dist_arr[k])
-                break
+        apex_idx = int(corner_idx[apex_local])
 
         # Exit acceleration (avg accel in exit half)
         exit_start = corner_idx[len(corner_idx) // 2]
@@ -522,8 +551,241 @@ def _enrich_corner_telemetry(d: dict[str, Any], lap_df: pd.DataFrame) -> None:
                 valid = pre_accel[np.isfinite(pre_accel)]
                 if len(valid) > 0:
                     d["brake_intensity"] = round(float(np.min(valid)), 3)
+        return apex_idx
     except Exception:
-        pass  # Non-critical enrichment
+        # Non-critical enrichment. No throttle_onset_status either: an
+        # unanticipated failure here is "the derivation never ran", not a
+        # named refusal we can stand behind.
+        return None
+
+
+# ── Throttle onset (second pass over the whole session) ────────────────
+#
+# `throttle_onset_m` answers "where did this lap get back on the power out of
+# this corner". There is no throttle channel in this data, so it is a
+# speed-derivative PROXY and its only honest use is comparing one lap against
+# another AT THE SAME CORNER. That comparison means nothing unless every lap
+# is measured against the SAME speed.
+#
+# THE DEFECT THIS REPLACES (fixed 2026-08-05). The threshold used to be
+# `spd_arr[apex_idx] + 0.5` -- THIS LAP'S OWN apex speed. A faster lap enters
+# the corner carrying more speed, so it had to reach a HIGHER ABSOLUTE speed
+# before the threshold tripped, and its onset came out LATER. The metric was
+# anti-correlated with corner performance: it penalised the driver for going
+# fast. Measured on data/raw/OK_R4.csv (9 laps x 8 corners):
+#
+#                                          before      after
+#   median within-corner corr(apex, onset)  +0.552     -0.683
+#   corr(corner_time, onset) negative on     6 of 8      0 of 8
+#   late_throttle events on the FASTEST
+#     pass through their own corner          8 of 59     5 of 60
+#   corners whose reference onset was held
+#     by the SLOWEST lap                     4 of 8      0 of 8
+#
+# The single largest magnitude in the whole session used to be 40.5 m at
+# corner 1 lap 7 -- the FASTEST corner-1 lap of the session (apex 19.58 m/s,
+# corner time 2.166 s), flagged against a reference held by lap 1, the
+# slowest (apex 13.93 m/s, corner time 3.051 s). It is now 42.2 m at corner 1
+# lap 1: the slowest lap, costing a measured 0.885 s.
+#
+# WHY THE SESSION MEDIAN, NOT THE SESSION BEST. Every candidate below has the
+# property that actually matters (one fixed speed per corner, identical for
+# every lap); the median won on measurement, not taste. Same fixture, same
+# geometric bound, only the threshold basis varied:
+#
+#   threshold basis          med corr(apex,onset)  corr(ctime,onset)<0  censored
+#   session median + 0.5           -0.683               0 of 8            0
+#   session best   + 0.5           -0.404               1 of 8            1
+#   1.03 x session best            -0.400               0 of 8            1
+#   session worst  + 0.5           +0.045               4 of 8            0
+#   per-lap apex + 0.5 (shipped)   +0.552               6 of 8            0
+#
+# The session best sits at or above the top of a corner's apex-speed
+# distribution, so a slow lap must climb the entire spread (5.6 m/s at corner
+# 1) before crossing -- which lands its onset far down the exit where the
+# laps' speed traces have already converged, or past the search bound
+# entirely (that is the one censored lap). The median sits INSIDE the
+# distribution, so every lap crosses on the exit-acceleration ramp, which is
+# exactly where the laps differ most. The session worst sits below every
+# lap's apex, so nearly every lap crosses on the first post-apex sample and
+# the metric stops discriminating at all.
+#
+# 0.5 m/s is carried over unchanged from the shipped code so this fix
+# introduces no newly-tuned constant; only its reference point moved, from
+# "above THIS lap's apex" to "above THIS CORNER's session-median apex".
+_ONSET_THRESHOLD_MARGIN_MPS = 0.5
+
+
+def _lap_distance_speed(
+    lap_df: Optional[pd.DataFrame],
+) -> tuple[Optional[np.ndarray], Optional[np.ndarray]]:
+    """(distance, speed) for a whole lap, resolved by the same column
+    precedence ``_enrich_corner_telemetry`` uses, or (None, None)."""
+    if lap_df is None or not isinstance(lap_df, pd.DataFrame) or lap_df.empty:
+        return None, None
+    dist_col = next((c for c in ("Distance (m)", "distance_m", "dist_m")
+                     if c in lap_df.columns), None)
+    spd_col = next((c for c in ("Speed (m/s)", "speed_mps")
+                    if c in lap_df.columns), None)
+    if dist_col is None or spd_col is None:
+        return None, None
+    return (pd.to_numeric(lap_df[dist_col], errors="coerce").values,
+            pd.to_numeric(lap_df[spd_col], errors="coerce").values)
+
+
+def _onset_search_limit_m(
+    corner: dict[str, Any], corners: list[dict[str, Any]],
+) -> Optional[float]:
+    """How far past a corner an onset scan may look, in the same absolute-
+    metre frame as ``s_start``/``s_end``. None for degenerate geometry.
+
+    Replaces a bare ``apex_idx + 50`` samples, which was a sample COUNT
+    standing in for a distance and was wrong in BOTH directions on the real
+    fixture. At this session's 1.20 m/sample it reached past ``s_end`` by
+    35-53 m on corners 1-5 and 8, but stopped 9.3 m SHORT of ``s_end`` on
+    corner 7 -- the corner with the longest exit, i.e. the one where a late
+    onset matters most. It also silently rescales with any change to the
+    resampler's ``n_points``, which has nothing to do with track geometry.
+
+    ``s_end + one corner length`` is the exit span proper: a corner's exit is
+    on the same scale as the corner itself. The next corner's ``s_start`` is
+    the hard stop -- an onset located inside the NEXT corner is not this
+    corner's exit at all. The min of the two keeps both guarantees.
+    """
+    try:
+        s_start = float(corner.get("s_start"))
+        s_end = float(corner.get("s_end"))
+    except (TypeError, ValueError):
+        return None
+    length = s_end - s_start
+    if not np.isfinite(length) or length <= 0:
+        return None
+
+    limit = s_end + length
+    for other in corners or []:
+        if not isinstance(other, dict):
+            continue
+        try:
+            other_start = float(other.get("s_start"))
+        except (TypeError, ValueError):
+            continue
+        if np.isfinite(other_start) and other_start > s_end:
+            limit = min(limit, other_start)
+    return limit
+
+
+def _scan_onset(
+    dist_arr: np.ndarray,
+    spd_arr: np.ndarray,
+    apex_idx: int,
+    threshold_mps: float,
+    limit_m: float,
+) -> Optional[float]:
+    """First sample after the apex, and no further than ``limit_m``, that is
+    above ``threshold_mps`` AND still climbing. None when there is no such
+    sample -- an honest "did not cross", never a fabricated distance.
+
+    ``threshold_mps`` is a SESSION-FIXED, per-corner speed: the identical
+    number for every lap at this corner. That is the whole fix -- see the
+    block comment above.
+    """
+    for k in range(apex_idx + 1, len(spd_arr) - 1):
+        d_k = dist_arr[k]
+        # A non-finite distance means the position frame is lost, so neither
+        # the bound nor the reported onset would mean anything past here.
+        if not np.isfinite(d_k) or d_k > limit_m:
+            return None
+        if spd_arr[k] > threshold_mps and spd_arr[k + 1] > spd_arr[k]:
+            return float(d_k)
+    return None
+
+
+def _assign_throttle_onsets(
+    pending: list[tuple[int, dict[str, Any], Optional[int]]],
+    resampled_laps: dict[int, pd.DataFrame],
+    corners: list[dict[str, Any]],
+) -> None:
+    """Fill ``throttle_onset_m`` + ``throttle_onset_status`` on every metric
+    dict, in place, using a per-corner SESSION-FIXED speed threshold.
+
+    Runs as a second pass because the threshold is an aggregate over every
+    admissible lap at a corner, and no per-corner-lap function can see that.
+    ``pending`` carries exactly the corner-laps the first pass produced, so
+    the threshold's basis is exactly the admissible set (excluded and
+    too-short laps never enter it).
+
+    The caller wraps this in its own try/except rather than this function
+    swallowing failures itself: the whole stage runs under ``_safe_step``,
+    where a raise discards every corner metric for the session, so an
+    unanticipated failure here must cost the onsets and nothing else.
+    """
+    by_lap: dict[Any, list[tuple[dict[str, Any], int]]] = {}
+    for lap_num, metric, apex_idx in pending:
+        if apex_idx is None:
+            continue    # first pass already recorded why (or deliberately not)
+        by_lap.setdefault(lap_num, []).append((metric, apex_idx))
+    if not by_lap:
+        return
+
+    arrays = {lap_num: _lap_distance_speed((resampled_laps or {}).get(lap_num))
+              for lap_num in by_lap}
+
+    # Pass A: the per-corner apex-speed distribution, read at the SAME index
+    # the scan starts from, so the threshold and the scan share one notion of
+    # "the apex".
+    apex_speeds: dict[Any, list[float]] = {}
+    for lap_num, entries in by_lap.items():
+        _, spd_arr = arrays[lap_num]
+        if spd_arr is None:
+            continue
+        for metric, apex_idx in entries:
+            if apex_idx >= len(spd_arr):
+                continue
+            v = float(spd_arr[apex_idx])
+            if np.isfinite(v):
+                apex_speeds.setdefault(metric.get("corner_id"), []).append(v)
+
+    thresholds = {
+        cid: float(np.median(vals)) + _ONSET_THRESHOLD_MARGIN_MPS
+        for cid, vals in apex_speeds.items() if vals
+    }
+    limits = {
+        c.get("corner_id"): _onset_search_limit_m(c, corners)
+        for c in (corners or []) if isinstance(c, dict)
+    }
+
+    # Pass B: the scan itself, every lap at a corner against that corner's
+    # one threshold.
+    n_refused = 0
+    for lap_num, entries in by_lap.items():
+        dist_arr, spd_arr = arrays[lap_num]
+        for metric, apex_idx in entries:
+            cid = metric.get("corner_id")
+            metric["throttle_onset_m"] = None
+            if dist_arr is None or spd_arr is None or apex_idx >= len(spd_arr):
+                metric["throttle_onset_status"] = de.ONSET_NO_MEASUREMENT
+            elif cid not in thresholds:
+                metric["throttle_onset_status"] = de.ONSET_NO_SESSION_THRESHOLD
+            elif limits.get(cid) is None:
+                metric["throttle_onset_status"] = de.ONSET_NO_SEARCH_WINDOW
+            else:
+                onset = _scan_onset(
+                    dist_arr, spd_arr, apex_idx, thresholds[cid], limits[cid],
+                )
+                if onset is None:
+                    metric["throttle_onset_status"] = de.ONSET_NO_SPEED_CROSSING
+                else:
+                    metric["throttle_onset_m"] = onset
+                    metric["throttle_onset_status"] = de.ONSET_MEASURED
+            if metric["throttle_onset_status"] != de.ONSET_MEASURED:
+                n_refused += 1
+
+    if n_refused:
+        logger.info(
+            "Throttle onset: %d of %d corner-laps could not be measured "
+            "(reported as not_measurable, not dropped)",
+            n_refused, sum(len(v) for v in by_lap.values()),
+        )
 
 
 # ── Step 10e: Endurance analytics ──────────────────────────────────────

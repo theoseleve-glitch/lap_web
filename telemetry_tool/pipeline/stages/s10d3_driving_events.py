@@ -58,12 +58,21 @@ corner is missing a field entirely, EVERY admissible lap's window at that
 corner independently has that same field as None, because both are read via
 the identical `_finite_float(metric.get(...))` call on the identical metric
 dict. So `over_slowing`'s `requires={"apex_speed_mps", "corner_time_s"}`
-and `late_throttle`'s `requires={"throttle_onset_m", "corner_time_s"}`
-already fail on their OWN window-native fields in exactly the scenario that
+already fails on its OWN window-native fields in exactly the scenario that
 used to need the corner-wide skip -- no separate reference-emptiness check
 is needed, and `re_braking`/`envelope_under_use` are no longer collateral
 damage. `_build_windows` still computes `corners_without_reference` and
 logs it once, but purely as a diagnostic -- it no longer gates anything.
+
+`late_throttle` reaches the same outcome by a different route since the
+2026-08-05 onset fix: it requires `throttle_onset_status` rather than
+`throttle_onset_m`, precisely so that "the onset derivation ran and found
+no speed crossing" can surface as an explicit `not_measurable` event naming
+its cause instead of vanishing. `corner_time_s` is still in its `requires`,
+so the total-reference-gap scenario above still reads "insufficient" for it
+-- that is what the paired test asserts. A metric dict that never went
+through `s10b_corners._assign_throttle_onsets` carries no status at all and
+is likewise gated out as "insufficient", never as "looked, found nothing".
 """
 from __future__ import annotations
 
@@ -151,6 +160,15 @@ def _build_references(
     stage's notion of "the reference" survives even when 10d2_grip_anchor
     itself failed for this session -- the anchor is decoration on top of
     10d's metrics, not a dependency of this stage's own comparison logic.
+
+    ``best_onset`` can only be a minimum over the laps whose onset was
+    actually measurable, which is a censored subset whenever any lap's scan
+    came back empty. That censoring is not hidden: every such corner-lap
+    still produces a `late_throttle` event, with ``validity="not_measurable"``
+    and a named reason, so the size and location of the censored set is
+    readable off the output rather than inferable only from a missing row.
+    On the real fixture the censored set is currently empty (72 of 72
+    corner-laps measurable).
     """
     best_apex: dict[Any, float] = {}
     best_onset: dict[Any, float] = {}
@@ -251,6 +269,12 @@ def _build_one_window(
         s_norm_apex=s_norm_apex,
         corner_time_s=_finite_float(metric.get("corner_time_s")),
         throttle_onset_m=_finite_float(metric.get("throttle_onset_m")),
+        # Passed through as-is, NOT coerced: this is the upstream
+        # derivation's own record of whether it ran and what it found. A
+        # metric dict without the key (an older run, a caller that builds
+        # metrics by hand) leaves it None, which `late_throttle`'s
+        # `requires` reads as "the derivation never ran" -> insufficient.
+        throttle_onset_status=metric.get("throttle_onset_status"),
         reference=dict(reference),
         grip_anchor_pct=_finite_float(metric.get("grip_anchor_pct")),
     )

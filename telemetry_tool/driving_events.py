@@ -16,7 +16,7 @@ worse than no number at all.
 """
 import logging
 from dataclasses import dataclass
-from typing import Iterable, Protocol
+from typing import Final, Iterable, Protocol
 
 import numpy as np
 
@@ -31,6 +31,56 @@ VALIDITIES = frozenset({
     VALIDITY_INSUFFICIENT_SAMPLES,
     VALIDITY_NOT_MEASURABLE,
 })
+
+# ── throttle-onset status taxonomy (machine-readable) ─────────────────────
+#
+# `throttle_onset_m` is derived upstream (s10b_corners._assign_throttle_onsets)
+# by scanning forward from the apex for the first sample above a per-corner,
+# session-fixed speed. That scan can legitimately come back empty, and the
+# whole point of this vocabulary is that "empty" gets NAMED rather than
+# collapsed into a missing value. `CornerWindow.throttle_onset_status` carries
+# exactly one of these for every corner-lap the derivation actually ran on;
+# it is None only when the derivation never ran at all (an absent distance or
+# speed column, an upstream stage failure), which is the case `late_throttle`'s
+# `requires` still gates out as "insufficient".
+#
+# Same discipline as grip_anchor.py's REASON_* taxonomy: a reason that names
+# the wrong cause is worse than no reason, so each value below is reserved for
+# one cause and `_LateThrottle.detect` maps anything it does not recognise to
+# the last-resort value rather than passing an unknown string through to the
+# customer-visible `DrivingEvent.reason`.
+ONSET_MEASURED: Final = "measured"
+# The scan ran over the full bounded window and speed never rose above the
+# corner's session-fixed onset threshold while still climbing. A real,
+# located refusal: this lap never got back to the reference speed inside the
+# corner's own exit.
+ONSET_NO_SPEED_CROSSING: Final = "onset_no_speed_crossing"
+# No admissible lap at this corner produced a finite apex speed, so no
+# session-fixed threshold could be established for any lap. Distinct from
+# ONSET_NO_SPEED_CROSSING: there was nothing to cross, not a failure to cross.
+ONSET_NO_SESSION_THRESHOLD: Final = "onset_no_session_threshold"
+# This corner-lap's own window had no locatable apex (fewer than three
+# samples inside the corner, or an all-NaN speed slice), so the scan had no
+# start point.
+ONSET_NO_APEX: Final = "onset_no_apex"
+# The corner's geometry gives a degenerate search window (s_end <= s_start),
+# so there is no forward span to scan.
+ONSET_NO_SEARCH_WINDOW: Final = "onset_no_search_window"
+# Last resort, mirroring grip_anchor.REASON_NO_MEASUREMENT: the derivation
+# refused and no more specific cause was identifiable.
+ONSET_NO_MEASUREMENT: Final = "onset_no_measurement"
+
+ONSET_STATUSES: Final = frozenset({
+    ONSET_MEASURED,
+    ONSET_NO_SPEED_CROSSING,
+    ONSET_NO_SESSION_THRESHOLD,
+    ONSET_NO_APEX,
+    ONSET_NO_SEARCH_WINDOW,
+    ONSET_NO_MEASUREMENT,
+})
+
+ONSET_REFUSAL_REASONS: Final = ONSET_STATUSES - {ONSET_MEASURED}
+"""The closed set a `late_throttle` event's `reason` may ever carry."""
 
 EVENT_TYPES = frozenset({
     "over_slowing",
@@ -106,6 +156,17 @@ class CornerWindow:
     ``Detector.requires`` so the registry can tell "not present" apart from
     "present but nothing found".
 
+    ``throttle_onset_status`` is the companion to ``throttle_onset_m`` and
+    the field ``late_throttle`` actually gates on. It is one of
+    ``ONSET_STATUSES`` whenever the upstream derivation RAN for this
+    corner-lap -- ``ONSET_MEASURED`` when it found an onset, one of the
+    refusal reasons when it looked and found none -- and None only when it
+    never ran at all. That split is what lets a failed-but-attempted
+    measurement surface as an explicit ``not_measurable`` event carrying the
+    named cause, while a derivation that never ran still reads
+    "insufficient" through ``requires``. Gating on ``throttle_onset_m``
+    alone could not express the difference: both cases leave it None.
+
     ``apex_idx`` is an index into this window's own arrays (``speed_mps``,
     ``a_lat_mps2``, ``a_long_mps2``, ``dist_m``) -- e.g. a post-apex detector
     like re_braking slices ``a_long_mps2[apex_idx:]`` directly rather than
@@ -130,6 +191,7 @@ class CornerWindow:
     s_norm_apex: float | None
     corner_time_s: float | None
     throttle_onset_m: float | None
+    throttle_onset_status: str | None
     reference: dict
     grip_anchor_pct: float | None
 
@@ -394,13 +456,28 @@ OVER_SLOWING = _OverSlowing()
 # Compares this lap's throttle-onset distance against this driver's own
 # best onset at the SAME corner (``reference["throttle_onset_m"]``).
 # ``throttle_onset_m`` is a speed-derivative PROXY, not a real throttle
-# channel (``pipeline/stages/s10b_corners.py:494-498``: the first post-apex
-# sample where speed exceeds apex+0.5 m/s and keeps rising) -- as an
+# channel (``pipeline/stages/s10b_corners.py``'s
+# ``_assign_throttle_onsets``: the first post-apex sample above the
+# corner's session-fixed onset speed that is still climbing) -- as an
 # absolute claim the metres number is fiction. Comparing this lap to this
 # driver's own best pass through the SAME corner is what makes it usable:
 # the proxy's bias appears on both sides of the comparison and cancels.
-# Measured to fire on 68% of corner-laps -- same "only one lap holds the
-# record" arithmetic as over_slowing, so this ranks rather than flags.
+#
+# THAT CANCELLATION IS A PROPERTY OF THE UPSTREAM DERIVATION, NOT A GIVEN.
+# Until 2026-08-05 the onset threshold was THIS LAP'S OWN apex speed plus
+# 0.5 m/s, so a faster lap had to reach a higher ABSOLUTE speed before the
+# threshold tripped and its onset was reported LATER. The bias did not
+# cancel: it was anti-correlated with performance. Measured on
+# data/raw/OK_R4.csv, median within-corner corr(apex_speed, onset) was
+# +0.552, corr(corner_time, onset) was NEGATIVE on 6 of 8 corners, and 8 of
+# 59 events fired on the FASTEST pass through their own corner -- including
+# the session's largest magnitude (40.5 m, corner 1 lap 7, the fastest
+# corner-1 lap of the session). The threshold is now per-corner and
+# SESSION-FIXED, so every lap at a corner is measured against the same
+# absolute speed; the same measurements now read -0.683, 0 of 8, and the
+# reference is no longer held by the slowest lap anywhere. Any future change
+# to that derivation has to preserve the session-fixed property or this
+# detector goes back to penalising the driver for going fast.
 
 # Measured probe: throttle-onset deltas at or below 2 m did not separate
 # from proxy noise on the real session. Emit strictly above it.
@@ -414,7 +491,14 @@ class _LateThrottle:
     this is never read downstream as a real throttle measurement."""
 
     name = "late_throttle"
-    requires = frozenset({"throttle_onset_m", "corner_time_s"})
+    # Gates on the STATUS, not on the value. `throttle_onset_m` is None both
+    # when the derivation ran and found nothing and when it never ran, and
+    # those two must not produce the same answer -- see CornerWindow's
+    # docstring. With the status required instead, an attempted-but-empty
+    # measurement reaches `detect` and becomes an explicit `not_measurable`
+    # event naming its cause, while a derivation that never ran leaves the
+    # status None and is still gated out as "insufficient".
+    requires = frozenset({"throttle_onset_status", "corner_time_s"})
     # Same measured floor as over_slowing: real corner windows on this grid
     # measured 25-79 samples (review probe, fix round 1), so 5 is a
     # deliberately permissive floor pending any detector-specific tuning,
@@ -427,6 +511,30 @@ class _LateThrottle:
         corner_time = w.corner_time_s
         ref_onset = reference.get("throttle_onset_m")
         ref_corner_time = reference.get("corner_time_s")
+        status = w.throttle_onset_status
+
+        if status != ONSET_MEASURED:
+            # The derivation LOOKED and came back empty. Say so, located and
+            # named, rather than dropping the corner-lap: a dropped window
+            # would still be counted out of the per-corner reference, biasing
+            # that reference toward the subset of laps where the scan happened
+            # to succeed. `reason` is clamped to the closed vocabulary so an
+            # unrecognised upstream string can never reach a customer.
+            return DrivingEvent(
+                event_type="late_throttle",
+                lap_number=w.lap_number,
+                corner_id=w.corner_id,
+                s_norm_start=w.s_norm_start,
+                s_norm_end=w.s_norm_end,
+                magnitude=None,
+                magnitude_unit="m",
+                time_cost_s=None,
+                validity=VALIDITY_NOT_MEASURABLE,
+                reason=(status if status in ONSET_REFUSAL_REASONS
+                        else ONSET_NO_MEASUREMENT),
+                n_samples_in_window=w.n_samples,
+                evidence={"source": "speed_derivative_proxy"},
+            )
 
         # Refuse rather than guess: no onset found on this lap, no reference
         # onset to compare against, or either value non-finite, means no

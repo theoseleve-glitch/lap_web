@@ -642,6 +642,245 @@ class TestDrivingEventsIdorGuard:
 
 
 # ══════════════════════════════════════════════════════════════════
+# Task 12 — throttle onset: one threshold per corner, not one per lap
+# ══════════════════════════════════════════════════════════════════
+#
+# The defect: `throttle_onset_m` used to be the first post-apex sample above
+# THIS LAP'S OWN apex speed + 0.5 m/s. Because dv/ds = a/v on a constant-
+# acceleration exit, a lap carrying MORE apex speed needs MORE distance to
+# gain that same 0.5 m/s -- so the faster lap's onset was reported LATER and
+# the metric was anti-correlated with corner performance. The threshold is
+# now per-corner and session-fixed.
+
+_ONSET_ACCEL_MPS2 = 3.0
+_ONSET_APEX_M = 150.0
+_ONSET_CRUISE_MPS = 30.0
+_ONSET_LAP_M = 600.0
+_ONSET_STEP_M = 0.5
+
+
+def _exit_lap(apex_speed_mps):
+    """A lap frame whose speed dips to `apex_speed_mps` at `_ONSET_APEX_M`
+    and accelerates out of it at a constant `_ONSET_ACCEL_MPS2`.
+
+    ``v(s) = sqrt(v_apex^2 + 2*a*|s - s_apex|)`` is the real shape of a
+    constant-acceleration exit, and using it rather than a straight line is
+    load-bearing: it is what makes the removed per-lap rule measurably
+    invert, so this fixture actually exhibits the defect being fixed.
+    """
+    d = np.arange(0.0, _ONSET_LAP_M, _ONSET_STEP_M)
+    v = np.minimum(
+        _ONSET_CRUISE_MPS,
+        np.sqrt(apex_speed_mps ** 2
+                + 2 * _ONSET_ACCEL_MPS2 * np.abs(d - _ONSET_APEX_M)),
+    )
+    return pd.DataFrame({
+        "Distance (m)": d,
+        "distance_norm": d / _ONSET_LAP_M,
+        "Speed (m/s)": v,
+    })
+
+
+def _onsets_for(apex_speeds, corners=None):
+    """Run the real two-pass derivation over one synthetic lap per entry in
+    `apex_speeds`, all through the same corner. Returns {lap_number: metric}.
+    """
+    from pipeline.stages import s10b_corners as s10b
+
+    corners = corners or [{"corner_id": 1, "s_start": 100.0, "s_end": 200.0}]
+    laps, metrics, pending = {}, {}, []
+    for lap_number, apex in enumerate(apex_speeds, start=1):
+        lap_df = _exit_lap(apex)
+        laps[lap_number] = lap_df
+        m = dict(lap_number=lap_number, corner_id=1,
+                 s_start=corners[0]["s_start"], s_end=corners[0]["s_end"])
+        apex_idx = s10b._enrich_corner_telemetry(m, lap_df)
+        metrics[lap_number] = m
+        pending.append((lap_number, m, apex_idx))
+    s10b._assign_throttle_onsets(pending, laps, corners)
+    return metrics
+
+
+def _onset_under_the_removed_rule(lap_df, apex_idx):
+    """The rule this task deleted, reproduced verbatim so the fixture can be
+    shown to exhibit the defect. This is a fixture property, not a second
+    implementation of anything that ships -- the code it mirrors no longer
+    exists, so it cannot drift out of step with production."""
+    v = lap_df["Speed (m/s)"].values
+    d = lap_df["Distance (m)"].values
+    for k in range(apex_idx + 1, min(apex_idx + 50, len(v) - 2)):
+        if v[k] > v[apex_idx] + 0.5 and v[k + 1] > v[k]:
+            return float(d[k])
+    return None
+
+
+def test_the_removed_onset_rule_really_did_report_the_faster_lap_as_later():
+    """Guards the FIXTURE, not the fix. Every assertion in the next test is
+    worthless if these three laps do not actually exhibit the inversion, so
+    prove it here: under the removed per-lap rule, onset RISES with apex
+    speed -- the faster the lap, the later it is reported."""
+    from pipeline.stages import s10b_corners as s10b
+
+    old = []
+    for apex in (14.0, 17.0, 20.0):
+        lap_df = _exit_lap(apex)
+        m = {"corner_id": 1, "s_start": 100.0, "s_end": 200.0}
+        apex_idx = s10b._enrich_corner_telemetry(m, lap_df)
+        old.append(_onset_under_the_removed_rule(lap_df, apex_idx))
+
+    assert None not in old
+    assert old[0] < old[1] < old[2], (
+        f"the fixture does not exhibit the defect: onsets {old} do not rise "
+        f"with apex speed under the removed rule")
+
+
+def test_the_onset_threshold_is_session_fixed_so_the_faster_lap_is_earlier():
+    """Three laps, apex speeds 14 / 17 / 20 m/s through one corner.
+
+    The session-fixed threshold is median(14, 17, 20) + 0.5 = 17.5 m/s, so
+    every lap is measured against the SAME absolute speed and each onset is
+    analytically predictable from v(s) = sqrt(v_apex^2 + 2*a*(s - s_apex)).
+    Pinning all three to that one number is what proves a single shared
+    threshold governed them -- a per-lap threshold cannot produce this set.
+    """
+    import driving_events as de
+
+    metrics = _onsets_for([14.0, 17.0, 20.0])
+    onsets = [metrics[i]["throttle_onset_m"] for i in (1, 2, 3)]
+    assert all(m["throttle_onset_status"] == de.ONSET_MEASURED
+               for m in metrics.values())
+
+    # THE PROPERTY: faster apex -> earlier onset. The exact inversion of what
+    # the removed rule produced (previous test).
+    assert onsets[2] < onsets[1] < onsets[0], (
+        f"onset must fall as apex speed rises, got {onsets}")
+
+    # And each one lands on the 17.5 m/s crossing, within one sample.
+    threshold = 17.5
+    for apex, onset in zip((14.0, 17.0, 20.0), onsets):
+        gain = max(threshold ** 2 - apex ** 2, 0.0)
+        expected = _ONSET_APEX_M + gain / (2 * _ONSET_ACCEL_MPS2)
+        assert abs(onset - expected) <= _ONSET_STEP_M, (
+            f"apex {apex}: onset {onset} is not the 17.5 m/s crossing "
+            f"(expected ~{expected})")
+
+
+def _slow_exit_lap():
+    """Speed sits at 10 m/s from the corner all the way to 260 m, then rises.
+    The only crossing of a ~10.5 m/s threshold is at ~260 m -- past a
+    neighbouring corner at 250 m, and inside the search window without one.
+    """
+    d = np.arange(0.0, _ONSET_LAP_M, _ONSET_STEP_M)
+    v = np.full_like(d, _ONSET_CRUISE_MPS)
+    v[(d >= 100.0) & (d < 260.0)] = 10.0
+    tail = d >= 260.0
+    v[tail] = np.minimum(_ONSET_CRUISE_MPS, 10.0 + 0.2 * (d[tail] - 260.0))
+    return pd.DataFrame({
+        "Distance (m)": d,
+        "distance_norm": d / _ONSET_LAP_M,
+        "Speed (m/s)": v,
+    })
+
+
+def _run_onset_pass(lap_dfs, corners):
+    from pipeline.stages import s10b_corners as s10b
+
+    laps, metrics, pending = {}, {}, []
+    for lap_number, lap_df in enumerate(lap_dfs, start=1):
+        laps[lap_number] = lap_df
+        m = dict(lap_number=lap_number, corner_id=1,
+                 s_start=corners[0]["s_start"], s_end=corners[0]["s_end"])
+        apex_idx = s10b._enrich_corner_telemetry(m, lap_df)
+        metrics[lap_number] = m
+        pending.append((lap_number, m, apex_idx))
+    s10b._assign_throttle_onsets(pending, laps, corners)
+    return metrics
+
+
+def test_the_onset_search_stops_at_the_next_corner():
+    """The bound is geometric, not a sample count.
+
+    Identical telemetry, identical threshold; the ONLY difference is whether
+    a neighbouring corner starts at 250 m. With one, the crossing at ~260 m
+    is inside the NEXT corner and is not this corner's exit at all, so the
+    scan must refuse rather than report it.
+    """
+    import driving_events as de
+
+    lone = [{"corner_id": 1, "s_start": 100.0, "s_end": 200.0}]
+    with_neighbour = lone + [{"corner_id": 2, "s_start": 250.0, "s_end": 300.0}]
+    laps = [_slow_exit_lap(), _slow_exit_lap()]
+
+    free = _run_onset_pass(laps, lone)[1]
+    bounded = _run_onset_pass(laps, with_neighbour)[1]
+
+    assert free["throttle_onset_status"] == de.ONSET_MEASURED
+    # threshold = median apex + 0.5 = 10.5 m/s, reached 2.5 m into the
+    # 0.2 m/s-per-metre ramp that starts at 260 m.
+    assert free["throttle_onset_m"] == pytest.approx(262.5, abs=_ONSET_STEP_M)
+
+    assert bounded["throttle_onset_m"] is None
+    assert bounded["throttle_onset_status"] == de.ONSET_NO_SPEED_CROSSING
+
+
+def test_a_corner_lap_whose_scan_found_nothing_is_reported_not_dropped():
+    """The metric row survives with a named reason. Dropping it would remove
+    the lap from the pool the per-corner reference is a minimum over --
+    censoring the reference toward the laps whose scan happened to succeed.
+    """
+    import driving_events as de
+
+    corners = [{"corner_id": 1, "s_start": 100.0, "s_end": 200.0},
+               {"corner_id": 2, "s_start": 250.0, "s_end": 300.0}]
+    metrics = _run_onset_pass([_slow_exit_lap()], corners)
+
+    assert set(metrics) == {1}, "the corner-lap disappeared"
+    assert metrics[1]["throttle_onset_m"] is None
+    assert metrics[1]["throttle_onset_status"] in de.ONSET_REFUSAL_REASONS
+
+
+def test_a_corner_too_short_to_hold_an_apex_names_its_own_reason():
+    """`onset_no_apex` is reserved for exactly this: the scan had no start
+    point. It must not be reported as `onset_no_speed_crossing`, which would
+    send someone hunting a driving problem in a geometry problem."""
+    import driving_events as de
+
+    corners = [{"corner_id": 1, "s_start": 100.0, "s_end": 100.6}]
+    metrics = _run_onset_pass([_exit_lap(14.0)], corners)
+
+    assert metrics[1]["throttle_onset_m"] is None
+    assert metrics[1]["throttle_onset_status"] == de.ONSET_NO_APEX
+
+
+def test_the_onset_search_limit_is_the_tighter_of_the_two_bounds():
+    from pipeline.stages import s10b_corners as s10b
+
+    corner = {"corner_id": 1, "s_start": 100.0, "s_end": 200.0}   # 100 m long
+
+    # No neighbour: s_end + one corner length.
+    assert s10b._onset_search_limit_m(corner, [corner]) == pytest.approx(300.0)
+
+    # A near neighbour wins over s_end + length.
+    near = [corner, {"corner_id": 2, "s_start": 250.0, "s_end": 300.0}]
+    assert s10b._onset_search_limit_m(corner, near) == pytest.approx(250.0)
+
+    # A far neighbour does not: s_end + length still wins.
+    far = [corner, {"corner_id": 2, "s_start": 500.0, "s_end": 550.0}]
+    assert s10b._onset_search_limit_m(corner, far) == pytest.approx(300.0)
+
+    # A corner BEHIND this one is not a bound at all.
+    behind = [corner, {"corner_id": 0, "s_start": 10.0, "s_end": 50.0}]
+    assert s10b._onset_search_limit_m(corner, behind) == pytest.approx(300.0)
+
+    # Degenerate geometry has no search window, and says so rather than
+    # guessing a span.
+    assert s10b._onset_search_limit_m(
+        {"corner_id": 1, "s_start": 200.0, "s_end": 200.0}, []) is None
+    assert s10b._onset_search_limit_m(
+        {"corner_id": 1, "s_start": "x", "s_end": 200.0}, []) is None
+
+
+# ══════════════════════════════════════════════════════════════════
 # Task 11 — real-data acceptance. This is the gate.
 # ══════════════════════════════════════════════════════════════════
 
@@ -678,7 +917,7 @@ _REAL_CSV = "telemetry_tool/data/raw/OK_R4.csv"
 # 3x headroom below the measured 72 costs nothing in sensitivity.
 _MIN_CORNER_LAPS = 24
 
-# MEASURED: 142 events. Catches the "142 events collapse to 4" mutation.
+# MEASURED: 143 events. Catches the "events collapse to 4" mutation.
 # With four detectors over >= 24 corner-laps, and the two reference-comparison
 # detectors structurally able to fire on up to 8 of every 9 laps per corner
 # (only the record-holding lap is silent), a functioning session cannot come
@@ -686,7 +925,7 @@ _MIN_CORNER_LAPS = 24
 # measured value while being ~7x above the collapse case.
 _MIN_EVENTS = 30
 
-# MEASURED: 142/142 = 100% of events are validity="measured".
+# MEASURED: 143/143 = 100% of events are validity="measured".
 # Catches every wholesale validity flip. Deliberately NOT pinned at 1.0:
 # the spec explicitly wants a future detector to be able to emit an honest
 # `Insufficient` on windows where a channel is missing, and pinning 100%
@@ -704,15 +943,21 @@ _MIN_MEASURED_SHARE = 0.80
 _MIN_DISTINCT_CORNERS = 4
 _MIN_DISTINCT_LAPS = 4
 
-# MEASURED: 103 of 142 events carry a time_cost_s (over_slowing +
+# MEASURED: 104 of 143 events carry a time_cost_s (over_slowing +
 # late_throttle; re_braking and envelope_under_use carry None by design).
 # Catches "every time_cost_s = None". time_cost_s is the ranking key -- it
 # is the entire reason the ranked read surface exists -- so a session that
 # produces events but no costs has silently lost the product feature while
 # staying green. 20 leaves ~5x headroom.
+#
+# Task 12 note: a `late_throttle` event whose onset was NOT measurable
+# carries no cost by construction (a not_measurable event may not carry
+# numbers at all), so this floor is also the guard against the onset
+# derivation degrading wholesale into refusals. On this fixture 0 of 72
+# corner-laps refuse, so all 60 late_throttle events are costed.
 _MIN_COSTED_EVENTS = 20
 
-# MEASURED: median cost 0.138 s, max 0.885 s.
+# MEASURED: median cost 0.163 s, max 0.885 s.
 # Catches "costs uniformly 4.9 s" -- which the old body's `<= 5.0` per-event
 # bound waved straight through. A median corner-time gap above 1.0 s means
 # the driver is losing ~8 s a lap to corner execution against their OWN best
@@ -730,6 +975,104 @@ _MAX_MEDIAN_COST_S = 1.0
 # The plan's own composite-lap figure (0.121 s) is the smallest spread this
 # session's geometry can produce. 0.10 s keeps ~9x headroom under 0.885.
 _MIN_WORST_COST_S = 0.10
+
+# ── Task 12: the anti-inversion floors ────────────────────────────────────
+#
+# These two exist because `late_throttle` shipped for a while on an onset
+# metric that was anti-correlated with corner performance: the threshold was
+# THIS LAP'S OWN apex speed + 0.5 m/s, so a faster lap had to reach a higher
+# ABSOLUTE speed before it tripped and its onset came out LATER. Nothing in
+# the gate above could see it -- every count, share, spread and cost bound
+# was satisfied while the detector told the driver they were late on throttle
+# precisely when they went fast. A defect that a full-strength gate cannot
+# observe needs its own assertion, measured on the same real fixture.
+#
+# MEASURED (after the fix): corr(corner_time_s, throttle_onset_m) is POSITIVE
+# on all 8 corners -- a slower pass through a corner is reported with a LATER
+# onset, which is the only orientation that makes the metric mean anything.
+# Range +0.185 (corner 7) to +0.925 (corner 1). BEFORE the fix it was
+# NEGATIVE on 6 of 8. A floor of 2 tolerates one or two genuinely
+# uninformative corners (corner 7's +0.185 is already nearly noise, and its
+# sign could flip on another session) while failing instantly on the systemic
+# inversion, which drives 6+ corners negative at once.
+_MAX_NEGATIVELY_CORRELATED_CORNERS = 2
+
+# MEASURED (after the fix): median within-corner corr(apex_speed_mps,
+# throttle_onset_m) = -0.683; before, +0.552. The sign is the whole claim:
+# carrying MORE apex speed must not push the reported onset LATER. -0.20 sits
+# far below the measured -0.683 and far above the +0.552 it exists to catch,
+# and deliberately does not pin the strength -- a session where the driver's
+# apex speeds barely vary would legitimately show a weak correlation.
+_MAX_MEDIAN_APEX_ONSET_CORR = -0.20
+
+
+def _pearson(xs, ys):
+    """Pearson r, or None when it is undefined (too few points, or either
+    series constant -- np.corrcoef returns NaN there and a NaN silently
+    defeats every comparison it is fed to)."""
+    if len(xs) < 3:
+        return None
+    if np.std(xs) == 0 or np.std(ys) == 0:
+        return None
+    r = float(np.corrcoef(xs, ys)[0, 1])
+    return r if np.isfinite(r) else None
+
+
+def _assert_onset_is_not_inverted(plcm):
+    """`throttle_onset_m` must move WITH corner time and AGAINST apex speed.
+
+    See _MAX_NEGATIVELY_CORRELATED_CORNERS / _MAX_MEDIAN_APEX_ONSET_CORR for
+    the measured basis. Correlations are computed per corner and only over
+    corner-laps whose onset was actually measured -- a refused onset is not a
+    late one, and folding it in as a missing value would be a made-up number.
+    """
+    rows = [m for m in plcm if isinstance(m, dict)]
+    by_corner = {}
+    for m in rows:
+        onset = m.get("throttle_onset_m")
+        apex = m.get("apex_speed_mps")
+        ctime = m.get("corner_time_s")
+        if None in (onset, apex, ctime):
+            continue
+        if not all(np.isfinite(v) for v in (onset, apex, ctime)):
+            continue
+        by_corner.setdefault(m.get("corner_id"), []).append((onset, apex, ctime))
+
+    apex_corrs, negative_corners, n_time_corrs = [], [], 0
+    for cid, vals in by_corner.items():
+        onsets = [v[0] for v in vals]
+        apexes = [v[1] for v in vals]
+        times = [v[2] for v in vals]
+        ra = _pearson(apexes, onsets)
+        if ra is not None:
+            apex_corrs.append(ra)
+        rt = _pearson(times, onsets)
+        if rt is not None:
+            n_time_corrs += 1
+            if rt < 0:
+                negative_corners.append((cid, round(rt, 3)))
+
+    # Below this the measurement itself is not meaningful, and silently
+    # passing on two corners would be the "assertion that cannot fail" this
+    # gate exists to avoid.
+    assert n_time_corrs >= 4 and len(apex_corrs) >= 4, (
+        f"only {n_time_corrs}/{len(apex_corrs)} corners produced a usable "
+        f"onset correlation -- too few to judge the inversion")
+
+    assert len(negative_corners) <= _MAX_NEGATIVELY_CORRELATED_CORNERS, (
+        f"corr(corner_time, throttle_onset) is NEGATIVE on "
+        f"{len(negative_corners)}/{n_time_corrs} corners {negative_corners} "
+        f"-- a SLOWER pass through a corner is being reported with an EARLIER "
+        f"throttle onset. That is the pre-2026-08-05 per-lap-threshold "
+        f"inversion returning, not driving.")
+
+    median_apex_corr = sorted(apex_corrs)[len(apex_corrs) // 2]
+    assert median_apex_corr <= _MAX_MEDIAN_APEX_ONSET_CORR, (
+        f"median within-corner corr(apex_speed, throttle_onset) is "
+        f"{median_apex_corr:+.3f} (must be <= "
+        f"{_MAX_MEDIAN_APEX_ONSET_CORR}) -- carrying more apex speed is "
+        f"pushing the reported onset LATER, i.e. the metric is penalising "
+        f"the driver for going fast")
 
 
 def _assert_driving_events_gate(summary):
@@ -756,6 +1099,21 @@ def _assert_driving_events_gate(summary):
         f"(floor {_MIN_CORNER_LAPS}); "
         f"{len({c for _, c in corner_laps})} corners x "
         f"{len({lap for lap, _ in corner_laps})} laps")
+
+    # ── Task 12: the onset derivation ran, and named every refusal ────
+    # Wiring AND vocabulary in one assertion: a corner-lap with no status at
+    # all means `_assign_throttle_onsets` never reached it (late_throttle
+    # would silently read "insufficient" for that lap), and a status outside
+    # the closed set means some caller invented a reason string.
+    statuses = Counter(m.get("throttle_onset_status")
+                       for m in plcm if isinstance(m, dict))
+    stray = {s: n for s, n in statuses.items() if s not in de.ONSET_STATUSES}
+    assert not stray, (
+        f"{sum(stray.values())} corner-laps carry no / an unknown "
+        f"throttle_onset_status: {stray}")
+
+    # ── Task 12: the onset metric is not anti-correlated with pace ────
+    _assert_onset_is_not_inverted(plcm)
 
     # ── events exist, in quantity ─────────────────────────────────────
     assert events, "no driving events produced on real telemetry"
@@ -868,15 +1226,54 @@ def _assert_driving_events_gate(summary):
     }
 
 
+@pytest.fixture(scope="module")
+def _real_summary(tmp_path_factory):
+    """Run the real pipeline ONCE for this module.
+
+    Module-scoped because it costs minutes, and the mutation battery below
+    replays two dozen deliberately degraded copies of its output against the
+    SHIPPED gate helper -- re-running the pipeline per mutation would turn a
+    4-minute test into an hour.
+
+    Track-registry isolation is done by hand rather than through
+    `_isolated_track_registry` only because that fixture is function-scoped
+    (it uses tmp_path/monkeypatch) and pytest forbids a module-scoped fixture
+    from depending on one. Same effect and same reason: keep the pipeline's
+    track-registration write off the tracked models/tracks.json. Restored in
+    a `finally` so a pipeline failure cannot leak the patch into later tests.
+    """
+    if not os.path.exists(_REAL_CSV):
+        pytest.skip("real fixture absent")
+
+    import track_detection
+    from pipeline import run_full_analysis
+
+    fake_path = tmp_path_factory.mktemp("tracks") / "tracks_isolated.json"
+    original = track_detection._default_db_path
+    track_detection._default_db_path = lambda: fake_path
+    try:
+        return run_full_analysis(_REAL_CSV, {})
+    finally:
+        track_detection._default_db_path = original
+
+
 @pytest.mark.skipif(not os.path.exists(_REAL_CSV), reason="real fixture absent")
-def test_driving_events_on_real_kart_telemetry(_isolated_track_registry):
+def test_driving_events_on_real_kart_telemetry(_real_summary):
     """Acceptance: events are emitted in quantity, all four detectors fire,
     every event is measured, located and non-degenerate, and the costs are
     plausible both per-event and in bulk.
 
-    MEASURED on this fixture: 72 corner-laps (9 laps x 8 corners), 142
+    MEASURED on this fixture: 72 corner-laps (9 laps x 8 corners), 143
     events, 100% validity="measured", all four capability values "detected",
-    costs min 0.000 / median 0.138 / max 0.885 s.
+    costs min 0.000 / median 0.163 / max 0.885 s.
+
+    TASK 12 moved these numbers. Fixing `throttle_onset_m`'s per-lap
+    threshold (see s10b_corners._assign_throttle_onsets) changed the
+    late_throttle count 59 -> 60 and hence events 142 -> 143 and costed
+    events 103 -> 104, and the cost median 0.138 -> 0.163 s. No floor moved:
+    every one of them still clears its bound by the same order of magnitude
+    it was set with. The event mix is over_slowing 44, late_throttle 60,
+    envelope_under_use 34, re_braking 5.
 
     THE PROBE BASELINE, CORRECTED (fix round 1). The plan quotes
     "over_slowing 57%, late_throttle 68%, re_braking 7%" from
@@ -908,9 +1305,7 @@ def test_driving_events_on_real_kart_telemetry(_isolated_track_registry):
     `run_driving_events(...)["events"]` straight through, and that is
     `run_registry`'s `list[DrivingEvent]`. Hence attribute access.
     """
-    from pipeline import run_full_analysis
-
-    summary = run_full_analysis(_REAL_CSV, {})
+    summary = _real_summary
     d = _assert_driving_events_gate(summary)
 
     cl = d["corner_laps"]
@@ -923,3 +1318,260 @@ def test_driving_events_on_real_kart_telemetry(_isolated_track_registry):
     costs = d["costs"]
     print(f"cost s: min {costs[0]:.3f} median "
           f"{costs[len(costs) // 2]:.3f} max {costs[-1]:.3f}")
+    print("onset status: "
+          f"{Counter(m.get('throttle_onset_status') for m in summary['per_lap_corner_metrics'])}")
+
+
+# ══════════════════════════════════════════════════════════════════
+# Task 12 — the mutation battery. A bite-check, made permanent.
+# ══════════════════════════════════════════════════════════════════
+#
+# A gate is only worth its runtime if it can FAIL. Fix round 1 found that the
+# original body caught 1 of 16 deliberate degradations, and rewrote it; a
+# later review re-verified the rewrite by replaying mutations by hand -- but
+# that battery lived in a scratch script, so nothing in the repo stopped the
+# gate being hollowed out again. This is that battery, committed.
+#
+# Each entry below takes the REAL pipeline summary and returns one
+# deliberately degraded copy that a functioning gate MUST reject. They are
+# replayed against `_assert_driving_events_gate` itself, not a copy of it, so
+# they exercise exactly the assertions that ship.
+#
+# DELIBERATELY NOT INCLUDED: the calibration probes that sit exactly ON a
+# floor by construction (31 events against a floor of 30, events on exactly 4
+# corners against a floor of 4, costs at 0.99 s against a 1.0 s bound). Those
+# measure where the gate's edge is, which is a review question; asserting they
+# pass would freeze the floors against ever being tightened, and asserting
+# they fail would be asserting something false.
+
+
+def _replace(event, **kw):
+    """`dataclasses.replace`, which RE-RUNS `__post_init__` -- so a mutation
+    built this way is one the record itself considers structurally legal."""
+    import dataclasses
+
+    return dataclasses.replace(event, **kw)
+
+
+def _force(event, **kw):
+    """Mutate a frozen event BYPASSING `__post_init__` -- models the world
+    where validation has been moved out of the dataclass, which is the only
+    world in which the gate's own per-event checks have to do the work."""
+    import copy
+
+    clone = copy.copy(event)
+    for k, v in kw.items():
+        object.__setattr__(clone, k, v)
+    return clone
+
+
+def _summary_with(base, *, events=None, cap=None, plcm=None):
+    return {
+        "driving_events": base["driving_events"] if events is None else events,
+        "driving_events_capability": (
+            base["driving_events_capability"] if cap is None else cap),
+        "per_lap_corner_metrics": (
+            base["per_lap_corner_metrics"] if plcm is None else plcm),
+    }
+
+
+def _all_on_one_corner(base):
+    """Every event moved to corner 1, keeping (type, lap, corner) unique so
+    the duplicate check cannot fire first and mask the spread check."""
+    out, seen = [], set()
+    for i, e in enumerate(base["driving_events"]):
+        if (e.event_type, e.lap_number, 1) in seen:
+            out.append(_replace(e, corner_id=1, lap_number=100 + i))
+            seen.add((e.event_type, 100 + i, 1))
+        else:
+            out.append(_replace(e, corner_id=1))
+            seen.add((e.event_type, e.lap_number, 1))
+    return out
+
+
+def _onset_sign_flipped(base):
+    """Reproduce the pre-2026-08-05 inversion's SIGNATURE exactly: within
+    each corner, replace every onset with (C - onset). A pure reflection
+    leaves the spread untouched and flips both correlations' signs, so this
+    mutation degrades nothing the rest of the gate can see -- which is the
+    entire point, since nothing else in the gate could see the real defect
+    either."""
+    rows = [dict(m) for m in base["per_lap_corner_metrics"]]
+    peak = {}
+    for m in rows:
+        v = m.get("throttle_onset_m")
+        if v is not None:
+            peak[m["corner_id"]] = max(peak.get(m["corner_id"], 0.0), v)
+    for m in rows:
+        v = m.get("throttle_onset_m")
+        if v is not None:
+            m["throttle_onset_m"] = 2 * peak[m["corner_id"]] - v
+    return rows
+
+
+def _flip_share(base, every):
+    """Flip every `every`-th event to insufficient_samples."""
+    import driving_events as de
+
+    return [
+        _replace(e, validity=de.VALIDITY_INSUFFICIENT_SAMPLES,
+                 magnitude=None, time_cost_s=None) if i % every == 0 else e
+        for i, e in enumerate(base["driving_events"])
+    ]
+
+
+def _one_of_each_type(base):
+    import driving_events as de
+
+    return [next(e for e in base["driving_events"] if e.event_type == t)
+            for t in sorted(de.EVENT_TYPES)]
+
+
+def _strip_onset_status(base):
+    rows = [dict(m) for m in base["per_lap_corner_metrics"]]
+    for m in rows:
+        m.pop("throttle_onset_status", None)
+    return rows
+
+
+def _invented_onset_status(base):
+    rows = [dict(m) for m in base["per_lap_corner_metrics"]]
+    for m in rows:
+        m["throttle_onset_status"] = "ok"
+    return rows
+
+
+def _constant_onset(base):
+    rows = [dict(m) for m in base["per_lap_corner_metrics"]]
+    for m in rows:
+        if m.get("throttle_onset_m") is not None:
+            m["throttle_onset_m"] = 100.0
+    return rows
+
+
+# name -> builder(real summary) -> mutated summary. Kept as a dict of
+# callables rather than pre-built objects because the real summary only
+# exists once the module-scoped fixture has run.
+_MUTATIONS = {
+    # ── wholesale validity flips ──────────────────────────────────────
+    "every event insufficient_samples (structurally legal form)":
+        lambda b, de: _summary_with(b, events=[
+            _replace(e, validity=de.VALIDITY_INSUFFICIENT_SAMPLES,
+                     magnitude=None, time_cost_s=None)
+            for e in b["driving_events"]]),
+    "every event insufficient_samples (magnitudes kept, post_init bypassed)":
+        lambda b, de: _summary_with(b, events=[
+            _force(e, validity=de.VALIDITY_INSUFFICIENT_SAMPLES)
+            for e in b["driving_events"]]),
+    "every event not_measurable":
+        lambda b, de: _summary_with(b, events=[
+            _replace(e, validity=de.VALIDITY_NOT_MEASURABLE,
+                     magnitude=None, time_cost_s=None)
+            for e in b["driving_events"]]),
+    "half the events flipped to insufficient (50% measured)":
+        lambda b, de: _summary_with(b, events=_flip_share(b, 2)),
+    "a quarter flipped to insufficient (75% measured)":
+        lambda b, de: _summary_with(b, events=_flip_share(b, 4)),
+
+    # ── the ranking key ───────────────────────────────────────────────
+    "every time_cost_s = 0.0":
+        lambda b, de: _summary_with(b, events=[
+            _replace(e, time_cost_s=0.0) for e in b["driving_events"]]),
+    "every time_cost_s = None":
+        lambda b, de: _summary_with(b, events=[
+            _replace(e, time_cost_s=None) for e in b["driving_events"]]),
+    "costs uniformly 4.9 s":
+        lambda b, de: _summary_with(b, events=[
+            _replace(e, time_cost_s=4.9) if e.time_cost_s is not None else e
+            for e in b["driving_events"]]),
+    "costs uniformly -0.4 s":
+        lambda b, de: _summary_with(b, events=[
+            _replace(e, time_cost_s=-0.4) if e.time_cost_s is not None else e
+            for e in b["driving_events"]]),
+
+    # ── spread and quantity ───────────────────────────────────────────
+    "no events at all":
+        lambda b, de: _summary_with(b, events=[], cap={}),
+    "events collapse to one per detector":
+        lambda b, de: _summary_with(b, events=_one_of_each_type(b)),
+    "all events from ONE corner (keys kept unique)":
+        lambda b, de: _summary_with(b, events=_all_on_one_corner(b)),
+    "all events from ONE corner (naive, duplicates)":
+        lambda b, de: _summary_with(b, events=[
+            _replace(e, corner_id=1) for e in b["driving_events"]]),
+    "events on only 3 corners":
+        lambda b, de: _summary_with(b, events=[
+            e for e in b["driving_events"] if e.corner_id in (1, 2, 3)]),
+    "corner detection regresses 8 -> 2":
+        lambda b, de: _summary_with(
+            b,
+            plcm=[m for m in b["per_lap_corner_metrics"]
+                  if m.get("corner_id") in (1, 2)],
+            events=[e for e in b["driving_events"] if e.corner_id in (1, 2)]),
+    "Task 10 dedupe regressed (every event 5x)":
+        lambda b, de: _summary_with(b, events=b["driving_events"] * 5),
+
+    # ── detectors and the capability record ───────────────────────────
+    "only one detector fires (over_slowing)":
+        lambda b, de: _summary_with(b, events=[
+            e for e in b["driving_events"] if e.event_type == "over_slowing"]),
+    "re_braking silenced (3 of 4 detectors fire)":
+        lambda b, de: _summary_with(b, events=[
+            e for e in b["driving_events"] if e.event_type != "re_braking"]),
+    "all capability values = insufficient":
+        lambda b, de: _summary_with(b, cap={
+            k: de.CAPABILITY_INSUFFICIENT
+            for k in b["driving_events_capability"]}),
+    "all capability values = not_triggered":
+        lambda b, de: _summary_with(b, cap={
+            k: de.CAPABILITY_NOT_TRIGGERED
+            for k in b["driving_events_capability"]}),
+    "ONE capability degraded (re_braking insufficient)":
+        lambda b, de: _summary_with(b, cap={
+            **b["driving_events_capability"],
+            "re_braking": de.CAPABILITY_INSUFFICIENT}),
+
+    # ── per-event structure ───────────────────────────────────────────
+    "every magnitude = 0.0":
+        lambda b, de: _summary_with(b, events=[
+            _replace(e, magnitude=0.0) for e in b["driving_events"]]),
+    "every span collapsed to 0.0":
+        lambda b, de: _summary_with(b, events=[
+            _replace(e, s_norm_start=0.0, s_norm_end=0.0)
+            for e in b["driving_events"]]),
+
+    # ── Task 12: the throttle-onset derivation ────────────────────────
+    "the onset inversion returns (sign of both correlations flipped)":
+        lambda b, de: _summary_with(b, plcm=_onset_sign_flipped(b)),
+    "onset stops discriminating (one constant per corner)":
+        lambda b, de: _summary_with(b, plcm=_constant_onset(b)),
+    "throttle_onset_status never written (second pass unwired)":
+        lambda b, de: _summary_with(b, plcm=_strip_onset_status(b)),
+    "throttle_onset_status invented outside the vocabulary":
+        lambda b, de: _summary_with(b, plcm=_invented_onset_status(b)),
+}
+
+
+@pytest.mark.skipif(not os.path.exists(_REAL_CSV), reason="real fixture absent")
+@pytest.mark.parametrize("mutation", sorted(_MUTATIONS))
+def test_the_real_data_gate_rejects_each_deliberate_degradation(
+    mutation, _real_summary,
+):
+    """Every mutation must make the SHIPPED gate helper raise.
+
+    A green here is a failure report: it names a degradation the gate would
+    ship without noticing.
+    """
+    import driving_events as de
+
+    base = {
+        "driving_events": _real_summary.get("driving_events") or [],
+        "driving_events_capability": (
+            _real_summary.get("driving_events_capability") or {}),
+        "per_lap_corner_metrics": (
+            _real_summary.get("per_lap_corner_metrics") or []),
+    }
+    mutated = _MUTATIONS[mutation](base, de)
+
+    with pytest.raises(AssertionError):
+        _assert_driving_events_gate(mutated)

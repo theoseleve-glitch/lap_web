@@ -18,6 +18,18 @@ def test_vocabularies_are_closed():
     assert de.EVENT_TYPES == frozenset({
         "over_slowing", "late_throttle", "re_braking", "envelope_under_use",
     })
+    assert de.ONSET_STATUSES == frozenset({
+        de.ONSET_MEASURED,
+        de.ONSET_NO_SPEED_CROSSING,
+        de.ONSET_NO_SESSION_THRESHOLD,
+        de.ONSET_NO_APEX,
+        de.ONSET_NO_SEARCH_WINDOW,
+        de.ONSET_NO_MEASUREMENT,
+    })
+    # "measured" is a status, never a refusal reason -- an event whose
+    # `reason` said "measured" would be nonsense.
+    assert de.ONSET_MEASURED not in de.ONSET_REFUSAL_REASONS
+    assert de.ONSET_REFUSAL_REASONS == de.ONSET_STATUSES - {de.ONSET_MEASURED}
 
 
 def test_there_is_no_confidence_field():
@@ -160,6 +172,7 @@ def _window(**over):
         a_long_mps2=np.zeros(40), dist_m=np.linspace(250.0, 350.0, 40),
         apex_speed_mps=12.0, apex_idx=20, s_norm_apex=0.30,
         corner_time_s=8.0, throttle_onset_m=9.0,
+        throttle_onset_status=de.ONSET_MEASURED,
         reference={"apex_speed_mps": 13.5, "corner_time_s": 7.5,
                    "throttle_onset_m": 10.0},
         grip_anchor_pct=95.0,
@@ -387,6 +400,107 @@ def test_late_throttle_refuses_when_this_lap_has_no_onset():
                    "throttle_onset_m": 10.0},
     )
     assert de.LATE_THROTTLE.detect(w) is None
+
+
+# ── the onset scan looked and found nothing: say so, do not vanish ───────
+#
+# Task 12. `throttle_onset_m is None` used to mean the window was skipped
+# entirely (it was in `requires`), so a corner-lap whose onset scan came back
+# empty simply disappeared from the output -- indistinguishable from a
+# corner-lap that was never analysed, and silently removed from the pool the
+# per-corner reference is a minimum over.
+
+def _late_throttle_via_registry(**over):
+    """Drive the refusal through `run_registry`, NOT `detect` directly.
+
+    Bite-check finding: a direct `LATE_THROTTLE.detect(w)` call cannot see
+    `requires`, so every assertion below still passed against a build whose
+    `requires` gated on `throttle_onset_m` -- the exact build in which the
+    refusal event never reaches a caller at all. Routing through the
+    registry is what makes these tests bite.
+    """
+    import driving_events as de
+
+    events, cap = de.run_registry([_window(**over)])
+    lt = [e for e in events if e.event_type == "late_throttle"]
+    return (lt[0] if lt else None), cap
+
+
+def test_late_throttle_emits_not_measurable_when_the_scan_found_no_crossing():
+    import driving_events as de
+
+    w_kwargs = dict(throttle_onset_m=None,
+                    throttle_onset_status=de.ONSET_NO_SPEED_CROSSING)
+    ev, cap = _late_throttle_via_registry(**w_kwargs)
+
+    assert ev is not None, "the corner-lap vanished instead of being reported"
+    assert cap["late_throttle"] == "detected", cap
+    assert ev.validity == de.VALIDITY_NOT_MEASURABLE
+    assert ev.reason == de.ONSET_NO_SPEED_CROSSING
+    # A refusal carries no numbers -- DrivingEvent.__post_init__ enforces
+    # this too, but assert it here so the intent is on the page.
+    assert ev.magnitude is None
+    assert ev.time_cost_s is None
+    # Still located: Phase 3 has to be able to draw it.
+    reference = _window(**w_kwargs)
+    assert ev.s_norm_start == reference.s_norm_start
+    assert ev.s_norm_end == reference.s_norm_end
+
+
+def test_every_onset_refusal_reason_reaches_the_event_unchanged():
+    """The reason is the whole product of a not_measurable event. If any
+    member of the vocabulary were dropped or remapped on the way out, the
+    customer would be told the wrong cause."""
+    import driving_events as de
+
+    for status in sorted(de.ONSET_REFUSAL_REASONS):
+        ev, _ = _late_throttle_via_registry(
+            throttle_onset_m=None, throttle_onset_status=status)
+        assert ev is not None and ev.reason == status, status
+
+
+def test_an_unrecognised_onset_status_is_clamped_to_the_closed_vocabulary():
+    """An upstream typo must not become a customer-visible reason string."""
+    import driving_events as de
+
+    ev, _ = _late_throttle_via_registry(
+        throttle_onset_m=None, throttle_onset_status="typo_from_10b")
+    assert ev is not None
+    assert ev.reason == de.ONSET_NO_MEASUREMENT
+    assert ev.reason in de.ONSET_REFUSAL_REASONS
+
+
+def test_an_onset_derivation_that_never_ran_reads_insufficient_not_measurable():
+    """"Could not look" and "looked and found nothing" must stay different
+    answers. A metric dict that never went through the onset pass carries no
+    status at all -- that is NOT a refusal we can name, so it must gate the
+    detector out rather than produce a not_measurable event with an invented
+    cause."""
+    import driving_events as de
+
+    w = _window(throttle_onset_m=None, throttle_onset_status=None)
+    events, cap = de.run_registry([w])
+
+    assert cap["late_throttle"] == "insufficient", cap
+    assert not [e for e in events if e.event_type == "late_throttle"]
+
+
+def test_a_refused_onset_still_lets_the_other_three_detectors_evaluate():
+    """The onset refusal is scoped to late_throttle. If it ever starved the
+    reference-free detectors the way the corner-wide skip did in fix round 1,
+    a session with a hard exit would lose its re_braking evidence too."""
+    import driving_events as de
+
+    a_long = np.zeros(40)
+    a_long[25:31] = -3.0                # a genuine post-apex re-brake
+    w = _window(throttle_onset_m=None,
+                throttle_onset_status=de.ONSET_NO_SPEED_CROSSING,
+                a_long_mps2=a_long, grip_anchor_pct=70.0)
+    _, cap = de.run_registry([w])
+
+    assert cap["late_throttle"] == "detected"
+    assert cap["re_braking"] == "detected"
+    assert cap["envelope_under_use"] == "detected"
 
 
 # ── fix round 1: NaN must never fabricate a "measured" claim ──────────────
