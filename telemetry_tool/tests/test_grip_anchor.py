@@ -4,6 +4,7 @@ The anchor answers "you used X% of the available grip here" and ALWAYS says
 what "available" was measured against. Fail-safe: any doubt degrades toward
 the lower tier; an unknown signal never yields a physics tier.
 """
+import itertools
 import math
 
 import numpy as np
@@ -305,14 +306,18 @@ def test_build_friction_model_reports_fitted_when_boundary_data_is_sufficient():
 class _FakeFriction:
     """Minimal stand-in with the real FrictionCircle accessor names.
 
-    Speed-sensitive via a tiny 2-point flat-extrapolating grid (np.interp),
-    mirroring the real FrictionCircle. An out-of-range speed -- including
-    inf -- does NOT come back as NaN here: it silently flat-extrapolates to
-    the boundary grid value, exactly the real danger the speed-finiteness
-    guard in ellipse_fill_pct exists to catch. A fake that ignored its speed
-    argument entirely could never make that guard's removal observable
-    (every accessor would return the same constant regardless), which is
-    exactly how all 6 original tests kept passing with the guard deleted.
+    Routed through np.interp over a 2-point grid purely to make a
+    NON-FINITE speed observable -- NOT because it varies by speed value.
+    Both grid endpoints share the same y-value, so every finite speed
+    (in-range or out-of-range) still returns exactly the constructor's
+    constant; only np.interp's flat-extrapolation behaviour at inf matters
+    here. That mirrors the real FrictionCircle, which flat-extrapolates an
+    out-of-range speed to the boundary grid value instead of returning NaN
+    -- exactly the real danger the speed-finiteness guard in
+    ellipse_fill_pct exists to catch. A fake that ignored its speed argument
+    entirely could never make that guard's removal observable (every
+    accessor would return the same constant regardless), which is exactly
+    how all 6 original tests kept passing with the guard deleted.
     """
 
     _V_GRID = np.array([5.0, 45.0])
@@ -442,3 +447,41 @@ def test_ellipse_fill_returns_none_for_a_non_finite_speed():
     import grip_anchor as ga
 
     assert ga.ellipse_fill_pct(5.0, 0.0, float("inf"), _FakeFriction()) is None
+
+
+def test_ellipse_fill_does_not_leak_inf_from_the_second_power():
+    """Reviewer's exact reproducer (round 2): frac itself is finite here
+    (~1.9988 -- two axis ratios of 0.5 raised to a near-zero exponent, so
+    each term is close to 1), but frac ** (1/p) with p=0.0009 means raising
+    it to the ~1111th power, which overflows float64 on its OWN even though
+    frac never did. p=0.0009 passes the `p <= 0` guard (it's not <= 0), and
+    is reachable via FrictionCircle.from_dict()'s unclamped
+    `exponent=d.get("exponent", _DEFAULT_ELLIPSE_EXP)`. Before this fix the
+    function returned a silent `inf` (worse than the original OverflowError
+    crash: this value is destined for a double-precision DB column and a
+    JSON payload) -- it must return None instead.
+    """
+    import grip_anchor as ga
+
+    f = _FakeFriction(lat=12.0, brake=9.0, exponent=0.0009)
+    assert ga.ellipse_fill_pct(6.0, -4.5, 25.0, f) is None
+
+
+def test_ellipse_fill_never_leaks_inf_or_nan_across_extreme_exponents_and_limits():
+    """Property sweep, not just a single point: across a grid of extreme
+    exponents and axis limits, ellipse_fill_pct must never raise and must
+    never return inf or nan -- only None or a finite float. Regression
+    coverage for both leaks found in review: an uncaught OverflowError from
+    the first power (round 1), then a silent inf leaking from the second,
+    unchecked power (round 2).
+    """
+    import grip_anchor as ga
+
+    exponents = [0.0009, 0.01, 1.0, 1.6, 2.0, 3.0, 1e6]
+    limits = [1e-300, 1e-150, 1e-3, 1.0, 12.0]
+
+    for exponent, limit in itertools.product(exponents, limits):
+        f = _FakeFriction(lat=limit, brake=limit, traction=limit, exponent=exponent)
+        result = ga.ellipse_fill_pct(6.0, -4.5, 25.0, f)
+        ok = result is None or (isinstance(result, float) and math.isfinite(result))
+        assert ok, f"exponent={exponent!r} limit={limit!r} -> {result!r}"

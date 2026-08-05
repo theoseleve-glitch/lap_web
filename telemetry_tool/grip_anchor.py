@@ -145,19 +145,28 @@ def ellipse_fill_pct(
     # Do the power arithmetic in numpy float64, not plain Python float. Python's
     # `float ** float` RAISES OverflowError once the result exceeds the
     # representable range, whereas numpy float64 silently saturates to inf --
-    # which is exactly what the isfinite(frac) guard below exists to catch.
-    # A finite, strictly-positive, very small ax_max/ay_max (e.g. a corrupted
+    # which is exactly what the isfinite guards below exist to catch. A
+    # finite, strictly-positive, very small ax_max/ay_max (e.g. a corrupted
     # persisted envelope reconstructed via FrictionCircle.from_dict(), which
     # does not re-apply build_friction_model's _FLOOR) can raise a huge ratio
     # to the exponent and blow past float64 range; that must degrade to None,
-    # not raise.
+    # not raise. The SAME is true of the second power below (frac ** (1/p)):
+    # a finite frac raised to a huge 1/p (from a p close to 0, also
+    # unclamped through from_dict()) can overflow on its own even when frac
+    # itself was perfectly finite -- so its result needs its own isfinite
+    # check, not just frac's.
     rx = np.float64(abs(a_long)) / np.float64(ax_max)
     ry = np.float64(a_lat) / np.float64(ay_max)
     p64 = np.float64(p)
     with np.errstate(over="ignore"):
-        # Overflow here is expected and handled by the isfinite check right
-        # below -- not a real error, so don't let it warn on every call.
+        # Overflow in either power below is expected and handled by the
+        # isfinite checks that follow each one -- not a real error, so
+        # don't let it warn on every call.
         frac = rx ** p64 + ry ** p64
-    if not np.isfinite(frac):
+        if not np.isfinite(frac):
+            return None
+        result = 100.0 * frac ** (1.0 / p64)
+
+    if not np.isfinite(result):
         return None
-    return float(100.0 * frac ** (1.0 / p64))
+    return float(result)
