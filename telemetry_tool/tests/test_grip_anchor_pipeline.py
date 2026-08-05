@@ -289,6 +289,7 @@ def _lap_frame(n=400, a_lat_g=0.9):
     d = np.linspace(0.0, 1200.0, n)
     return pd.DataFrame({
         "Distance (m)": d,
+        "distance_norm": d / 1200.0,
         "Speed (m/s)": np.full(n, 25.0),
         "Lateral acceleration (G) *calc": np.full(n, a_lat_g),
         "accel_long_mps2": np.zeros(n),
@@ -866,3 +867,33 @@ def test_grip_anchor_uses_an_excluded_lap_if_not_told_to_exclude_it():
 
     out = s10d2_grip_anchor.run_grip_anchor(metrics, corners, laps)
     assert out[0]["grip_anchor_pct"] < 60.0     # 0.9 / 2.0
+
+
+def test_corner_window_is_frame_stable_across_laps_of_different_length():
+    """Two laps of the same circuit driven at different measured lengths must
+    yield the same corner window in FRACTION of the lap, not the same window
+    in absolute metres. Real laps on OK_R4 span 1198.7-1218.0 m."""
+    from pipeline.stages import s10d2_grip_anchor
+
+    def _lap_of_length(total_m, n=1000):
+        d = np.linspace(0.0, total_m, n)
+        return pd.DataFrame({
+            "Distance (m)": d,
+            "distance_norm": d / total_m,
+            "Speed (m/s)": np.full(n, 25.0),
+            "Lateral acceleration (G) *calc": np.full(n, 0.9),
+        })
+
+    short, long = _lap_of_length(1000.0), _lap_of_length(1200.0)
+    corner = {"corner_id": 1, "s_start": 250.0, "s_end": 350.0}   # 25%-35%
+
+    m_short = s10d2_grip_anchor._corner_mask(short, corner, short)
+    m_long = s10d2_grip_anchor._corner_mask(long, corner, short)
+
+    assert m_short is not None and m_long is not None
+    # Same FRACTION of each lap -> sample counts within one of each other.
+    assert abs(int(m_short.sum()) - int(m_long.sum())) <= 1
+
+    # And the long lap's window really is further along in metres.
+    d_long = long["Distance (m)"].values[m_long]
+    assert d_long.min() == pytest.approx(300.0, abs=5.0)   # 25% of 1200

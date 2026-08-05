@@ -43,24 +43,31 @@ def _corners_by_id(corners: list[Any] | None) -> dict[Any, dict]:
     return by_id
 
 
-def _corner_mask(lap_df: pd.DataFrame, corner: dict) -> np.ndarray | None:
-    """Distances are 0-based per-lap metres (canonical frame, see
-    resampling.resample_lap_by_distance).
+def _corner_mask(lap_df, corner, detection_lap):
+    """Corner windows are sliced on distance_norm, not absolute metres.
 
-    A MISSING s_start/s_end is fine (``.get`` defaults to 0.0); a
-    non-numeric VALUE (e.g. "abc") must degrade to "no window" rather than
-    raising ValueError out of float().
+    Each lap is rebased to its own span (resampling.py:211-226) and real lap
+    spans vary by ~20 m across a session, so the same tarmac drifts. Measured
+    on OK_R4: absolute-metre slicing shifts corner time by a median of 0.067 s
+    and up to 2.68 s -- larger than the signal we are trying to detect.
     """
-    col = next((c for c in ("Distance (m)", "distance_m") if c in lap_df.columns), None)
-    if col is None:
+    det_col = next((c for c in ("Distance (m)", "distance_m")
+                    if c in detection_lap.columns), None)
+    if det_col is None or "distance_norm" not in lap_df.columns:
+        return None
+    dd = pd.to_numeric(detection_lap[det_col], errors="coerce").values
+    d_min, d_max = float(np.nanmin(dd)), float(np.nanmax(dd))
+    span = d_max - d_min
+    if not np.isfinite(span) or span <= 0:
         return None
     try:
-        s_start = float(corner.get("s_start", 0.0))
-        s_end = float(corner.get("s_end", 0.0))
+        n0 = (float(corner.get("s_start", 0.0)) - d_min) / span
+        n1 = (float(corner.get("s_end", 0.0)) - d_min) / span
     except (TypeError, ValueError):
         return None
-    dist = pd.to_numeric(lap_df[col], errors="coerce").values
-    mask = (dist >= s_start) & (dist <= s_end)
+
+    dn = pd.to_numeric(lap_df["distance_norm"], errors="coerce").values
+    mask = (dn >= n0) & (dn <= n1)
     return mask if mask.sum() >= 3 else None
 
 
@@ -97,23 +104,34 @@ def run_grip_anchor(
 
     corners_by_id = _corners_by_id(corners)
 
+    # The lap corners were detected FROM (s07_resample.py:82-83), and
+    # therefore the lap whose own span the corners' absolute s_start/s_end
+    # are relative to. Derived once here and threaded to every _corner_mask
+    # call so every lap -- detection lap included -- is sliced against the
+    # SAME reference span.
+    resampled_laps = resampled_laps or {}
+    detection_lap = None
+    if resampled_laps:
+        detection_lap = resampled_laps.get(sorted(resampled_laps.keys())[0])
+
     # Peak lateral per (corner, lap), and the session best per corner. Both
     # come from this session only: corner_id is not stable across sessions.
     peak: dict[tuple[Any, Any], float] = {}
-    for lap_num, lap_df in (resampled_laps or {}).items():
-        if lap_num in excluded_laps:
-            continue
-        if lap_df is None or len(lap_df) < 10:
-            continue
-        a_lat = _resolve_accel_lat(lap_df)          # already m/s², already abs
-        for cid, corner in corners_by_id.items():
-            mask = _corner_mask(lap_df, corner)
-            if mask is None:
+    if detection_lap is not None:
+        for lap_num, lap_df in resampled_laps.items():
+            if lap_num in excluded_laps:
                 continue
-            vals = a_lat[mask]
-            vals = vals[np.isfinite(vals)]
-            if vals.size:
-                peak[(cid, lap_num)] = float(np.nanmax(vals))
+            if lap_df is None or len(lap_df) < 10:
+                continue
+            a_lat = _resolve_accel_lat(lap_df)          # already m/s², already abs
+            for cid, corner in corners_by_id.items():
+                mask = _corner_mask(lap_df, corner, detection_lap)
+                if mask is None:
+                    continue
+                vals = a_lat[mask]
+                vals = vals[np.isfinite(vals)]
+                if vals.size:
+                    peak[(cid, lap_num)] = float(np.nanmax(vals))
 
     session_best: dict[Any, float] = {}
     for (cid, _lap), v in peak.items():
