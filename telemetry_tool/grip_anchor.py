@@ -70,11 +70,41 @@ _SESSION_ENVELOPE_TIERS: Final = frozenset({
 })
 
 # -- Reason taxonomy (machine-readable).
+#
+# THE WHOLE POINT OF A REASON IS THAT IT NAMES THE ACTUAL CAUSE. A reason that
+# names the wrong one is worse than no reason at all: it sends an operator
+# hunting a problem that does not exist. Three of these were emitted for the
+# wrong cause before review; the comments below record which, so nobody
+# re-merges them.
+
+# Nothing to measure against. Covers BOTH "no FrictionCircle was supplied"
+# and "no envelope bin existed to inspect" -- the latter is reachable whenever
+# step 09i_grip_map degrades while 09c_friction_model succeeds. That case used
+# to emit REASON_BIN_FABRICATED, which claimed a data-quality problem inside an
+# envelope that was never built at all.
 REASON_NO_ENVELOPE: Final = "no_envelope"
+# An envelope bin EXISTS but is friction_envelope's synthetic fill, not a
+# measurement. Reserved strictly for that; see REASON_NO_ENVELOPE above.
 REASON_BIN_FABRICATED: Final = "bin_fabricated"
 REASON_SPEED_OUT_OF_BINS: Final = "speed_out_of_bins"
 REASON_CHANNEL_UNTRUSTED: Final = "channel_untrusted"
+# The session-relative tier has no baseline for this corner AT ALL.
 REASON_NO_LAP_BASELINE: Final = "no_lap_baseline"
+# The baseline EXISTS but this corner-lap produced no usable |a_lat| (an empty
+# corner window, an all-NaN lateral channel). Distinct from
+# REASON_NO_LAP_BASELINE, which used to absorb it and thereby reported a
+# missing baseline that was sitting right there.
+REASON_NO_LATERAL_SAMPLE: Final = "no_lateral_sample"
+# The friction ellipse has a collapsed axis. Named per axis because the
+# longitudinal one carries NO weight in Phase 1 (the stage passes
+# a_long_mps2=0.0, so the longitudinal term is 0**p == 0 whatever ax_max is) --
+# reporting a degenerate traction axis as a generic "no measurement" told an
+# operator their measurement failed when the axis they actually care about was
+# healthy.
+REASON_DEGENERATE_LATERAL_AXIS: Final = "degenerate_lateral_axis"
+REASON_DEGENERATE_LONGITUDINAL_AXIS: Final = "degenerate_longitudinal_axis"
+# Last resort: the fill genuinely could not be computed and no more specific
+# cause was identifiable.
 REASON_NO_MEASUREMENT: Final = "no_measurement"
 # Reserved for Phase 2 — see the tier comments above.
 REASON_CONDITION_UNKNOWN: Final = "condition_unknown"
@@ -252,17 +282,67 @@ class Anchor:
     baseline_g: float | None
 
 
+def _fill_failure_reason(
+    a_lat_mps2: float,
+    a_long_mps2: float,
+    speed_mps: float,
+    friction: Any,
+) -> str:
+    """Name WHY ``ellipse_fill_pct`` refused — down to which axis collapsed.
+
+    ``REASON_NO_MEASUREMENT`` used to absorb every one of these outcomes,
+    including the case where the LONGITUDINAL axis is degenerate while the
+    lateral axis is perfectly healthy. In Phase 1 the stage passes
+    ``a_long_mps2=0.0``, so the longitudinal term contributes exactly nothing
+    to the answer — telling an operator "no measurement" because
+    ``traction_max`` collapsed, on a session whose lateral channel measured
+    fine, points them at the wrong half of the model.
+
+    Mirrors ``ellipse_fill_pct``'s own guards in the same order, so the two
+    cannot drift into disagreeing about what happened.
+    """
+    try:
+        if not (np.isfinite(float(a_lat_mps2)) and np.isfinite(float(a_long_mps2))):
+            return REASON_NO_LATERAL_SAMPLE
+        if not np.isfinite(float(speed_mps)):
+            return REASON_NO_MEASUREMENT
+        ay_max = _scalar(friction.lateral_max(speed_mps))
+        ax_max = _scalar(
+            friction.braking_max(speed_mps) if float(a_long_mps2) < 0
+            else friction.traction_max(speed_mps)
+        )
+    except Exception:
+        return REASON_NO_MEASUREMENT
+
+    if not np.isfinite(ay_max) or ay_max <= 0:
+        return REASON_DEGENERATE_LATERAL_AXIS
+    if not np.isfinite(ax_max) or ax_max <= 0:
+        return REASON_DEGENERATE_LONGITUDINAL_AXIS
+    return REASON_NO_MEASUREMENT
+
+
 def _session_best_anchor(
     a_lat_mps2: float, session_best_lat_mps2: float | None, reason: str,
 ) -> Anchor:
-    """Tier 2: relative to the driver's own best in THIS session."""
+    """Tier 2: relative to the driver's own best in THIS session.
+
+    The two refusal branches below name DIFFERENT causes and must not be
+    re-merged. No baseline means this corner has no session-best to compare
+    against at all — the tier's own prerequisite is missing. No lateral sample
+    means the baseline is right there but THIS corner-lap produced no usable
+    ``|a_lat|``. Collapsing the second into the first, as this used to, reports
+    a missing baseline that exists. The baseline is checked first because it is
+    the tier's prerequisite: when neither is available, "no baseline" is the
+    fact that has to be fixed first.
+    """
     if (
         session_best_lat_mps2 is None
         or not np.isfinite(session_best_lat_mps2)
         or session_best_lat_mps2 <= 0
-        or not np.isfinite(a_lat_mps2)
     ):
         return Anchor(TIER_REFUSED, REASON_NO_LAP_BASELINE, None, None)
+    if not np.isfinite(a_lat_mps2):
+        return Anchor(TIER_REFUSED, REASON_NO_LATERAL_SAMPLE, None, None)
     return Anchor(
         TIER_DRIVER_BEST_SESSION,
         reason,
@@ -284,9 +364,12 @@ def decide_anchor(
 ) -> Anchor:
     """Decide what this corner-lap's grip usage may honestly be quoted against.
 
-    Fail-SAFE, strongest doubt first: an absent envelope, an unmeasurable
-    sample, a fabricated bin or an untrusted channel each drop us to the
-    session-relative tier; if even that is unavailable we refuse.
+    Fail-SAFE, strongest doubt first: an absent envelope, an out-of-range
+    speed, a fabricated bin, an untrusted channel or an uncomputable fill each
+    drop us to the session-relative tier; if even that is unavailable we
+    refuse. Every degradation carries the reason that ACTUALLY caused it —
+    see the reason taxonomy above for the three that used to name the wrong
+    cause.
 
     ``bin_out_of_range`` lets the caller say "I looked for a bin near this
     speed and every candidate was too far away to trust" -- distinct from
@@ -300,6 +383,14 @@ def decide_anchor(
     if bin_out_of_range:
         return _session_best_anchor(a_lat_mps2, session_best_lat_mps2, REASON_SPEED_OUT_OF_BINS)
 
+    if envelope_bin is None:
+        # There was no bin to inspect AT ALL -- typically because no
+        # FrictionEnvelope exists (step 09i_grip_map degraded while
+        # 09c_friction_model succeeded, a genuinely reachable split). Calling
+        # that "bin_fabricated", as this used to, blames a data-quality
+        # problem on an envelope that was never built.
+        return _session_best_anchor(a_lat_mps2, session_best_lat_mps2, REASON_NO_ENVELOPE)
+
     if not bin_is_measured(envelope_bin):
         return _session_best_anchor(a_lat_mps2, session_best_lat_mps2, REASON_BIN_FABRICATED)
 
@@ -308,7 +399,11 @@ def decide_anchor(
 
     pct = ellipse_fill_pct(a_lat_mps2, a_long_mps2, speed_mps, friction)
     if pct is None:
-        return _session_best_anchor(a_lat_mps2, session_best_lat_mps2, REASON_NO_MEASUREMENT)
+        return _session_best_anchor(
+            a_lat_mps2,
+            session_best_lat_mps2,
+            _fill_failure_reason(a_lat_mps2, a_long_mps2, speed_mps, friction),
+        )
 
     try:
         baseline_g = _scalar(friction.lateral_max(speed_mps)) / _G

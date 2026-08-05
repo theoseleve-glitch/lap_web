@@ -665,15 +665,108 @@ def test_decide_anchor_names_speed_out_of_bins_over_a_measured_bin():
     assert a.baseline_g == pytest.approx(10.0 / 9.80665)
 
 
-def test_decide_anchor_names_no_measurement_for_a_degenerate_envelope():
+def test_decide_anchor_names_the_lateral_axis_when_the_lateral_axis_collapses():
     """Isolates the LAST precedence rung: friction present, bin measured,
     channel trusted, but ellipse_fill_pct itself returns None. Reached via a
     friction object whose lateral_max is 0.0 -- a degenerate envelope --
     while the bin and trust arguments are independently healthy, so only
-    ellipse_fill_pct's own guard can be responsible for the None."""
+    ellipse_fill_pct's own guard can be responsible for the None.
+
+    The reason must name WHICH axis collapsed. A bare "no_measurement" here
+    is what the sibling test below shows to be actively misleading."""
     import grip_anchor as ga
 
     f = _FakeFriction(lat=0.0)
     a = ga.decide_anchor(**_args(friction=f, envelope_bin=_measured_bin()))
     assert a.tier == ga.TIER_DRIVER_BEST_SESSION
-    assert a.reason == ga.REASON_NO_MEASUREMENT
+    assert a.reason == ga.REASON_DEGENERATE_LATERAL_AXIS
+
+
+def test_decide_anchor_names_the_longitudinal_axis_when_only_traction_collapses():
+    """The exact reproduction from review: traction_max == 0 with a perfectly
+    healthy lateral axis used to emit ``no_measurement``.
+
+    That is doubly wrong. The lateral channel WAS measured -- it is the only
+    channel Phase 1 loads, because the stage passes ``a_long_mps2=0.0``, so
+    the longitudinal term is ``0**p == 0`` no matter what ``traction_max``
+    says. An operator reading "no measurement" would go looking at the
+    lateral channel and find nothing wrong with it. The reason must name the
+    longitudinal axis so the search starts in the right half of the model.
+    """
+    import grip_anchor as ga
+
+    f = _FakeFriction(lat=12.0, traction=0.0)
+    a = ga.decide_anchor(**_args(friction=f, a_long_mps2=0.0, envelope_bin=_measured_bin()))
+    assert a.tier == ga.TIER_DRIVER_BEST_SESSION
+    assert a.reason == ga.REASON_DEGENERATE_LONGITUDINAL_AXIS
+
+
+def test_decide_anchor_names_no_envelope_when_there_is_no_bin_to_inspect():
+    """The exact reproduction from review: a friction model IS present but no
+    envelope bin was found (``friction_envelope=None``, i.e. step 09i_grip_map
+    degraded while 09c_friction_model succeeded -- a genuinely reachable
+    split). This used to emit ``bin_fabricated``, which asserts a
+    data-quality problem inside an envelope that was never built, sending an
+    operator hunting a nonexistent envelope fault across a whole session.
+
+    Everything else here is deliberately healthy (trusted channel, a real
+    session best), so the reason is the only thing under test.
+    """
+    import grip_anchor as ga
+
+    a = ga.decide_anchor(**_args(envelope_bin=None))
+    assert a.tier == ga.TIER_DRIVER_BEST_SESSION
+    assert a.reason == ga.REASON_NO_ENVELOPE
+    assert a.reason != ga.REASON_BIN_FABRICATED
+
+
+def test_decide_anchor_still_says_bin_fabricated_for_a_bin_that_really_is_fabricated():
+    """Guards the other side of the split above: a bin that genuinely EXISTS
+    and is friction_envelope's synthetic fill must keep its own reason. If the
+    no-envelope branch were widened to swallow this case too, the taxonomy
+    would lose the distinction it was just given."""
+    import grip_anchor as ga
+    from friction_envelope import FrictionBin
+
+    fabricated = FrictionBin(
+        speed_center_mps=25.0, combined_g_p95=1.0, lat_max_g=1.0,
+        accel_max_g=0.6, brake_max_g=1.0, sample_count=3, confidence=0.0,
+    )
+    a = ga.decide_anchor(**_args(envelope_bin=fabricated))
+    assert a.reason == ga.REASON_BIN_FABRICATED
+
+
+def test_decide_anchor_names_a_missing_sample_not_a_missing_baseline():
+    """The exact reproduction from review: ``a_lat`` is NaN while
+    ``session_best_lat_mps2`` is a healthy 10.0. This used to emit
+    ``no_lap_baseline`` -- reporting a missing baseline that is sitting right
+    there in the argument list. The truth is the opposite: the baseline
+    exists, THIS corner-lap's lateral sample does not (an empty corner
+    window, an all-NaN channel).
+    """
+    import grip_anchor as ga
+
+    a = ga.decide_anchor(**_args(a_lat_mps2=np.nan, envelope_bin=_measured_bin()))
+    assert a.tier == ga.TIER_REFUSED
+    assert a.reason == ga.REASON_NO_LATERAL_SAMPLE
+    assert a.reason != ga.REASON_NO_LAP_BASELINE
+    assert a.pct is None
+    assert a.baseline_g is None
+
+
+def test_decide_anchor_still_says_no_lap_baseline_when_the_baseline_is_the_missing_thing():
+    """Guards the other side of the split above. With a finite sample and NO
+    session best, the tier's own prerequisite is what is missing, and the
+    reason must keep saying so.
+
+    The untrusted channel is what forces the fall to the session-relative
+    tier in the first place -- with everything healthy this input reaches the
+    top tier and never consults a baseline at all."""
+    import grip_anchor as ga
+
+    a = ga.decide_anchor(**_args(
+        a_lat_mps2=9.0, session_best_lat_mps2=None,
+        trust_ratio=0.42, envelope_bin=_measured_bin(),
+    ))
+    assert a.tier == ga.TIER_REFUSED
+    assert a.reason == ga.REASON_NO_LAP_BASELINE
