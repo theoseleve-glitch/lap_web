@@ -189,3 +189,76 @@ def bin_is_measured(bin_obj: Any) -> bool:
     except (AttributeError, TypeError, ValueError):
         return False
     return confidence > 0.0 and sample_count >= _MIN_MEASURED_SAMPLES
+
+
+_G: Final = 9.80665
+
+
+@dataclass(frozen=True)
+class Anchor:
+    """One corner-lap's grip verdict. ``pct`` is never capped at 100."""
+    tier: str
+    reason: str | None
+    pct: float | None
+    baseline_g: float | None
+
+
+def _session_best_anchor(
+    a_lat_mps2: float, session_best_lat_mps2: float | None, reason: str,
+) -> Anchor:
+    """Tier 2: relative to the driver's own best in THIS session."""
+    if (
+        session_best_lat_mps2 is None
+        or not np.isfinite(session_best_lat_mps2)
+        or session_best_lat_mps2 <= 0
+        or not np.isfinite(a_lat_mps2)
+    ):
+        return Anchor(TIER_REFUSED, REASON_NO_LAP_BASELINE, None, None)
+    return Anchor(
+        TIER_DRIVER_BEST_SESSION,
+        reason,
+        100.0 * abs(a_lat_mps2) / session_best_lat_mps2,
+        session_best_lat_mps2 / _G,
+    )
+
+
+def decide_anchor(
+    *,
+    a_lat_mps2: float,
+    a_long_mps2: float,
+    speed_mps: float,
+    friction: Any,
+    envelope_bin: Any,
+    trust_ratio: float | None,
+    session_best_lat_mps2: float | None,
+) -> Anchor:
+    """Decide what this corner-lap's grip usage may honestly be quoted against.
+
+    Fail-SAFE, strongest doubt first: an absent envelope, an unmeasurable
+    sample, a fabricated bin or an untrusted channel each drop us to the
+    session-relative tier; if even that is unavailable we refuse.
+    """
+    if friction is None:
+        return _session_best_anchor(a_lat_mps2, session_best_lat_mps2, REASON_NO_ENVELOPE)
+
+    if not bin_is_measured(envelope_bin):
+        return _session_best_anchor(a_lat_mps2, session_best_lat_mps2, REASON_BIN_FABRICATED)
+
+    if not channel_is_trusted(trust_ratio):
+        return _session_best_anchor(a_lat_mps2, session_best_lat_mps2, REASON_CHANNEL_UNTRUSTED)
+
+    pct = ellipse_fill_pct(a_lat_mps2, a_long_mps2, speed_mps, friction)
+    if pct is None:
+        return _session_best_anchor(a_lat_mps2, session_best_lat_mps2, REASON_NO_MEASUREMENT)
+
+    try:
+        baseline_g = _scalar(friction.lateral_max(speed_mps)) / _G
+    except Exception:
+        baseline_g = None
+
+    tier = (
+        TIER_PHYSICS_ELLIPSE_FITTED
+        if getattr(friction, "exponent_source", "hint") == "fitted"
+        else TIER_PHYSICS_ELLIPSE_DEFAULT_P2
+    )
+    return Anchor(tier, None, pct, baseline_g)

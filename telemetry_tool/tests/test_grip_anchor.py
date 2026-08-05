@@ -514,3 +514,96 @@ def test_bin_is_measured_is_fail_safe_on_none_or_junk():
 
     assert ga.bin_is_measured(None) is False
     assert ga.bin_is_measured(object()) is False
+
+
+def _args(**over):
+    base = dict(
+        a_lat_mps2=9.0, a_long_mps2=0.0, speed_mps=25.0,
+        friction=_FakeFriction(lat=12.0), envelope_bin=None,
+        trust_ratio=0.96, session_best_lat_mps2=10.0,
+    )
+    base.update(over)
+    return base
+
+
+def _measured_bin():
+    from friction_envelope import FrictionBin
+    return FrictionBin(
+        speed_center_mps=25.0, combined_g_p95=1.3, lat_max_g=1.3,
+        accel_max_g=0.35, brake_max_g=0.62, sample_count=41, confidence=1.0,
+    )
+
+
+def test_decide_anchor_gives_fitted_physics_when_everything_passes():
+    import grip_anchor as ga
+
+    a = ga.decide_anchor(**_args(envelope_bin=_measured_bin()))
+    assert a.tier == ga.TIER_PHYSICS_ELLIPSE_FITTED
+    assert a.reason is None
+    assert a.pct == pytest.approx(75.0)          # 9.0 / 12.0
+    assert a.baseline_g == pytest.approx(12.0 / 9.80665)
+
+
+def test_decide_anchor_flags_a_defaulted_exponent():
+    import grip_anchor as ga
+
+    f = _FakeFriction(lat=12.0)
+    f.exponent_source = "hint"
+    a = ga.decide_anchor(**_args(friction=f, envelope_bin=_measured_bin()))
+    assert a.tier == ga.TIER_PHYSICS_ELLIPSE_DEFAULT_P2
+
+
+def test_decide_anchor_falls_to_session_best_when_the_channel_is_untrusted():
+    import grip_anchor as ga
+
+    a = ga.decide_anchor(**_args(trust_ratio=0.42, envelope_bin=_measured_bin()))
+    assert a.tier == ga.TIER_DRIVER_BEST_SESSION
+    assert a.reason == ga.REASON_CHANNEL_UNTRUSTED
+    assert a.pct == pytest.approx(90.0)          # 9.0 / 10.0
+    assert a.baseline_g == pytest.approx(10.0 / 9.80665)
+
+
+def test_decide_anchor_falls_to_session_best_on_a_fabricated_bin():
+    import grip_anchor as ga
+    from friction_envelope import FrictionBin
+
+    fabricated = FrictionBin(
+        speed_center_mps=25.0, combined_g_p95=1.0, lat_max_g=1.0,
+        accel_max_g=0.6, brake_max_g=1.0, sample_count=3, confidence=0.0,
+    )
+    a = ga.decide_anchor(**_args(envelope_bin=fabricated))
+    assert a.tier == ga.TIER_DRIVER_BEST_SESSION
+    assert a.reason == ga.REASON_BIN_FABRICATED
+
+
+def test_decide_anchor_refuses_when_nothing_is_available():
+    import grip_anchor as ga
+
+    a = ga.decide_anchor(**_args(
+        friction=None, envelope_bin=None, session_best_lat_mps2=None,
+    ))
+    assert a.tier == ga.TIER_REFUSED
+    assert a.reason == ga.REASON_NO_LAP_BASELINE
+    assert a.pct is None
+    assert a.baseline_g is None
+
+
+def test_decide_anchor_is_fail_safe_when_trust_is_unmeasurable():
+    """None trust ratio means 'could not look', which must NOT pass."""
+    import grip_anchor as ga
+
+    a = ga.decide_anchor(**_args(trust_ratio=None, envelope_bin=_measured_bin()))
+    assert a.tier == ga.TIER_DRIVER_BEST_SESSION
+    assert a.reason == ga.REASON_CHANNEL_UNTRUSTED
+
+
+def test_decide_anchor_never_emits_a_tier_outside_the_vocabulary():
+    import grip_anchor as ga
+
+    for kwargs in (
+        _args(envelope_bin=_measured_bin()),
+        _args(trust_ratio=None),
+        _args(friction=None, session_best_lat_mps2=None),
+        _args(a_lat_mps2=np.nan),
+    ):
+        assert ga.decide_anchor(**kwargs).tier in ga.TIERS
