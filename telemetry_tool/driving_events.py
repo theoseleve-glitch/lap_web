@@ -223,8 +223,9 @@ MAGNITUDE_UNITS = frozenset({
 #
 # `over_slowing` is `attributable`: the apex-speed deficit and the corner-time
 # gap are the same physical fact measured two ways.
-# `re_braking` and `envelope_under_use` carry no cost at all, so the question
-# does not arise -- `no_cost` says that rather than implying either answer.
+# `re_braking`, `envelope_under_use` and -- since the 2026-08-06 ruling --
+# `late_throttle` carry no cost at all, so the question does not arise;
+# `no_cost` says that rather than implying either answer.
 ATTRIBUTION_ATTRIBUTABLE = "attributable"
 ATTRIBUTION_CONTEXT = "context"
 ATTRIBUTION_NO_COST = "no_cost"
@@ -237,7 +238,11 @@ ATTRIBUTIONS = frozenset({
 
 TIME_COST_ATTRIBUTION: dict[str, str] = {
     "over_slowing": ATTRIBUTION_ATTRIBUTABLE,
-    "late_throttle": ATTRIBUTION_CONTEXT,
+    # 2026-08-06 RULING: was ATTRIBUTION_CONTEXT, which still let the number
+    # be SHIPPED and merely asked a consumer not to attribute it. It is now
+    # not shipped at all -- `_LateThrottle` emits `time_cost_s=None`. See the
+    # detector's block comment.
+    "late_throttle": ATTRIBUTION_NO_COST,
     "re_braking": ATTRIBUTION_NO_COST,
     "envelope_under_use": ATTRIBUTION_NO_COST,
 }
@@ -248,12 +253,36 @@ A property of the event TYPE, not of the row, which is why it is a map here
 and a derived field at the read surface rather than a stored column: storing
 it would let one row disagree with the detector's own contract.
 
-`context` is a HARD prohibition, not a hint. A `late_throttle` event's metre
-magnitude must never be rendered as a standalone claim ("you got on the power
-N metres late") and its `time_cost_s` must never be presented as the cost OF
-being late on the throttle. Render it as a facet of the corner-lap, alongside
-the apex deficit -- which is the shape `events_repo._dedupe_by_lap_corner`
-already produces via `evidence["also_fired"]`."""
+`context` remains in the vocabulary but has no member today: the 2026-08-06
+ruling took `late_throttle` past it to `no_cost`, because "ship the number and
+ask the consumer not to attribute it" is a weaker guarantee than not shipping
+it. It is kept for a future detector whose cost IS its own but shares a
+denominator with another.
+
+WHETHER THE MAGNITUDE MAY STAND ALONE IS A SEPARATE QUESTION and is answered
+by `MAGNITUDE_STANDALONE_QUOTABLE` below -- `late_throttle` has no cost AND an
+unquotable magnitude, and one does not follow from the other."""
+
+
+MAGNITUDE_STANDALONE_QUOTABLE: dict[str, bool] = {
+    "over_slowing": True,
+    # FALSE, and not derivable from the attribution above. `late_throttle`'s
+    # metres must never be rendered as "you got on the power N metres late":
+    # its added information beyond apex speed is +0.098 (t = 0.81) pooled and
+    # +0.002 (t = 0.02) under lap fixed effects, so most of that N is the apex
+    # deficit `over_slowing` already reported. Render it as a FACET of the
+    # corner-lap alongside the apex deficit -- the shape
+    # `events_repo._dedupe_by_lap_corner` produces via
+    # `evidence["also_fired"]`.
+    "late_throttle": False,
+    "re_braking": True,
+    "envelope_under_use": True,
+}
+"""May this event's `magnitude` be shown as a claim on its own?
+
+Separate from `TIME_COST_ATTRIBUTION` because the two axes are independent:
+`re_braking` has no cost and a perfectly quotable magnitude (a measured
+deceleration); `late_throttle` has neither."""
 
 
 @dataclass(frozen=True)
@@ -838,30 +867,54 @@ OVER_SLOWING = _OverSlowing()
 # the coordinate-frame fix and was largely lap length. See s10b_corners'
 # `_assign_throttle_onsets` block comment for the full before/after table.
 #
+# ══ 2026-08-06 RULING — THIS DETECTOR MEASURES, BUT MAKES NO CLAIM ══
+#
+# The measurement above is what decided this. An earlier revision of this
+# comment argued the detector earned its own ranked slot because "solo
+# late_throttle events carry a median cost of 0.057 s against 0.181 s for
+# co-firing ones, so the ranked view already sinks them". That argument
+# assumed the cost was ITS cost. It never was: `corner_time -
+# reference_corner_time` is the IDENTICAL number `over_slowing` computes for
+# the same corner-lap, and this detector has no independent basis for
+# claiming a time saving at all -- its added information beyond apex speed is
+# +0.098 (t = 0.81), not distinguishable from zero.
+#
+# WHAT SHIPPED CHANGED, in three parts:
+#
+#   1. `time_cost_s` is None. Not "shipped with a caveat" -- ABSENT. Asking a
+#      consumer not to attribute a number you handed them is a weaker
+#      guarantee than not handing it over. `re_braking` already ships
+#      costless; that is the precedent, not a new pattern.
+#   2. Because the ranked surface is ordered and filtered BY cost, this
+#      detector can no longer occupy a slot in "what should I fix next" on
+#      its own. On the real fixture that removes 18 solo keys from that
+#      surface -- deliberately: those are corner-laps whose only finding was
+#      a number we cannot stand behind.
+#   3. It is STILL EMITTED, still persisted, still queryable, and still
+#      appears as a FACET on the ~68% of corner-laps where `over_slowing`
+#      co-fires ("you were 1.4 m/s down at the apex AND 12.4 m later back on
+#      the power"). That sentence is honest and useful and was explicitly
+#      preserved; `events_repo`'s ranked query fetches companion rows BY KEY
+#      precisely so nulling the cost could not silently delete it.
+#
+# WHY NOT DROP THE DETECTOR ENTIRELY, which this branch's own pre-committed
+# rule ("if a longer session also shows t<1 under lap FE, DROP it") called
+# for: one session with n=9 laps per corner cannot separate "no effect" from
+# "underpowered", and the onset is now a correctly-framed measurement worth
+# keeping for the cross-session phase, where n can actually answer the
+# question. Retaining the MEASUREMENT while withdrawing the CLAIM is the only
+# reading of the evidence that does not overstate it in one direction or
+# throw away data in the other.
+#
 # CONSEQUENCES FOR ANY READ SURFACE (Phase 3, read this):
 #
 #   * `late_throttle`'s METRE magnitude must NEVER be rendered as a
-#     standalone claim. On its own it reads as "you got on the power N metres
-#     late", which the evidence above does not support -- a large part of
-#     that N is the apex-speed deficit `over_slowing` already reported.
-#   * It must NEVER be presented as a CAUSE of the event's `time_cost_s`.
-#     The cost is `corner_time - reference_corner_time`, identical to the
-#     cost `over_slowing` reports for the same corner-lap; attributing it to
-#     throttle timing would be attributing one measurement twice.
+#     standalone claim -- see `MAGNITUDE_STANDALONE_QUOTABLE`, which says so
+#     in the payload rather than only here.
+#   * There is no `time_cost_s` to attribute, by construction.
 #   * Render it as a facet OF the corner-lap, alongside the apex deficit --
 #     which is exactly the shape `events_repo._dedupe_by_lap_corner`
 #     produces via `evidence["also_fired"]`.
-#
-# The detector keeps its own event type deliberately: solo `late_throttle`
-# events carry a median cost of 0.057 s against 0.181 s for co-firing ones,
-# so the ranked view (ordered by `time_cost_s` DESC) already sinks them, and
-# the dedupe already prevents double-counting on co-firing keys. Suppressing
-# them outright would discard the ~30% that fire alone to solve a problem the
-# ordering already solves. `over_slowing` and `late_throttle` co-fire on 39
-# of 57 measured late_throttle events (68%) and carry the IDENTICAL
-# `time_cost_s` by construction; the dedupe resolves that pair
-# deterministically (over_slowing wins) rather than letting SQL row order
-# decide which correction a driver is shown.
 
 # Measured probe: throttle-onset deltas at or below 2 m did not separate
 # from proxy noise on the real session. Emit strictly above it.
@@ -948,7 +1001,13 @@ class _LateThrottle:
             magnitude=delta,
             magnitude_unit=MAGNITUDE_UNIT_M,
             anchor_tier=ANCHOR_DRIVER_BEST_SESSION,
-            time_cost_s=corner_time - ref_corner_time,
+            # NO COST. 2026-08-06 ruling -- see the block comment above.
+            # This used to be `corner_time - ref_corner_time`, which is the
+            # IDENTICAL number `over_slowing` computes for the same
+            # corner-lap: shipping it asserted a time saving this detector
+            # has no independent basis for. `re_braking` already ships
+            # costless; that is the precedent followed here.
+            time_cost_s=None,
             validity=VALIDITY_MEASURED,
             reason=None,
             n_samples_in_window=w.n_samples,

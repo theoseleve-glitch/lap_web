@@ -1072,11 +1072,59 @@ INSERT OR REPLACE INTO driving_events (
 # The ORDER BY is fully deterministic (cost, then lap, corner, type) so the
 # truncation point is stable across backends and repeat calls rather than
 # depending on physical row order.
+# ── THE KEYED FETCH (2026-08-06 ruling) ──────────────────────────────────
+#
+# This used to be a flat `WHERE time_cost_s IS NOT NULL` scan, which worked
+# only while TWO detectors carried a cost. The ruling took `late_throttle`'s
+# cost away, and a flat cost filter would then have dropped its rows BEFORE
+# `_dedupe_by_lap_corner` ever ran -- silently deleting the `also_fired`
+# facet ("you were 1.4 m/s down at the apex AND 12.4 m later back on the
+# power") that the ruling explicitly preserved. Verified by execution, not
+# assumed: with the flat filter and a costless late_throttle, `also_fired`
+# comes back empty on every key.
+#
+# So the fetch is now in two parts, in one statement:
+#   * the SUBQUERY picks the top-N cost-bearing (lap, corner) KEYS, ordered
+#     by cost -- that is the ranking, and only cost-bearing rows can define
+#     it, so a costless detector can never claim a slot;
+#   * the JOIN then pulls EVERY row for those keys, cost-bearing or not, so
+#     the companions are present when the dedupe attaches them as facets.
+#
+# THE `GROUP BY` IS LOAD-BEARING, not tidiness. Without it a key with TWO
+# cost-bearing rows appears twice in the subquery, which both wastes a slot
+# (returning fewer than `limit` distinct problems) and duplicates every joined
+# row for that key, so the dedupe records the same facet several times --
+# reproduced by execution before it was fixed. Grouping first makes the
+# subquery return DISTINCT keys by construction, which is why `key_budget` can
+# simply be `limit`: the old `limit*K+2` slack existed only to absorb those
+# duplicates and is no longer needed, nor is the assertion that policed K.
+# `MAX(time_cost_s)` is the right key cost -- rank a corner-lap by its worst
+# finding.
+#
+# STILL BOUNDED, and more tightly than before: `key_budget` distinct keys, and
+# the table's UNIQUE(session_id, lap_number, corner_id, event_type) caps rows
+# per key at one per event type, so the result is at most
+# `limit x len(EVENT_TYPES)` = 40 rows for limit=10 -- against the 22 the old
+# bound allowed and the ~18,000 the unbounded version fetched.
+#
+# `ORDER BY k.k_cost DESC` orders whole KEYS by their cost-bearing row, so
+# every row of one corner-lap stays together and the dedupe's
+# order-preserving pass yields the caller's ranking. `session_id` is bound
+# twice on purpose -- the subquery must be scoped too, or it would rank keys
+# from other sessions and the join would return nothing for them.
 SELECT_RANKED_EVENTS = """
-SELECT * FROM driving_events
-WHERE session_id = :session_id AND time_cost_s IS NOT NULL
-ORDER BY time_cost_s DESC, lap_number, corner_id, event_type
-LIMIT :row_budget;
+SELECT e.* FROM driving_events e
+JOIN (
+    SELECT lap_number AS k_lap, corner_id AS k_corner,
+           MAX(time_cost_s) AS k_cost
+    FROM driving_events
+    WHERE session_id = :session_id AND time_cost_s IS NOT NULL
+    GROUP BY lap_number, corner_id
+    ORDER BY k_cost DESC, k_lap, k_corner
+    LIMIT :key_budget
+) k ON e.lap_number = k.k_lap AND e.corner_id = k.k_corner
+WHERE e.session_id = :session_id
+ORDER BY k.k_cost DESC, e.lap_number, e.corner_id, e.event_type;
 """
 
 # Raw per-event costs for the "where am I unreliable" corner-consistency

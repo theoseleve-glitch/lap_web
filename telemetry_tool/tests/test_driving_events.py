@@ -471,6 +471,52 @@ def test_late_throttle_measures_metres_later_than_the_reference():
         or ev.evidence.get("source") == "speed_derivative_proxy"
 
 
+def test_late_throttle_emits_no_time_cost_at_all():
+    """2026-08-06 ruling, at the source. `time_cost_s` used to be
+    `corner_time - reference_corner_time` -- the IDENTICAL number
+    `over_slowing` computes for the same corner-lap, which this detector has
+    no independent basis for claiming (added information beyond apex speed
+    +0.098, t = 0.81). It is now ABSENT, not caveated.
+
+    The reference corner times are deliberately present and unequal on this
+    window, so a detector that still computed a cost would produce a non-None
+    number here.
+    """
+    import driving_events as de
+
+    w = _window(
+        throttle_onset_m=24.0, corner_time_s=8.6,
+        reference={"apex_speed_mps": 12.0, "corner_time_s": 8.0,
+                   "throttle_onset_m": 10.0},
+    )
+    ev = de.LATE_THROTTLE.detect(w)
+
+    assert ev is not None and ev.validity == de.VALIDITY_MEASURED
+    assert ev.magnitude == pytest.approx(14.0), "the measurement still ships"
+    assert ev.time_cost_s is None, (
+        f"late_throttle emitted a time cost of {ev.time_cost_s} -- that is "
+        f"over_slowing's number, measured once and claimed twice")
+
+    # `re_braking` already ships costless; this follows that precedent, and
+    # the record's own invariant still allows a measured event without a cost.
+    assert de.RE_BRAKING.detect(_window(
+        a_long_mps2=np.array([0.0] * 20 + [-3.0] * 5 + [0.0] * 15),
+        apex_idx=18)).time_cost_s is None
+
+
+def test_the_two_payload_axes_are_independent():
+    """`no_cost` and "magnitude may stand alone" are different questions.
+    Deriving one from the other gets `re_braking` wrong (no cost, perfectly
+    quotable deceleration) or `late_throttle` wrong (neither)."""
+    import driving_events as de
+
+    assert set(de.MAGNITUDE_STANDALONE_QUOTABLE) == de.EVENT_TYPES
+    assert de.TIME_COST_ATTRIBUTION["re_braking"] == de.ATTRIBUTION_NO_COST
+    assert de.MAGNITUDE_STANDALONE_QUOTABLE["re_braking"] is True
+    assert de.TIME_COST_ATTRIBUTION["late_throttle"] == de.ATTRIBUTION_NO_COST
+    assert de.MAGNITUDE_STANDALONE_QUOTABLE["late_throttle"] is False
+
+
 def test_late_throttle_refuses_when_this_lap_has_no_onset():
     """No onset was found -- refuse, do not invent one.
 

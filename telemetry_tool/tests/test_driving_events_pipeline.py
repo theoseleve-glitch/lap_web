@@ -282,12 +282,15 @@ def test_the_anchor_provenance_survives_the_round_trip(seeded_db):
         "was measured against")
 
 
-def test_the_payload_marks_late_throttle_as_non_attributable(seeded_db):
-    """IMPORTANT 4: the prohibition must be IN THE PAYLOAD. Phase 3 will read
-    the response, not the source comment.
+def test_late_throttle_ships_no_time_cost_and_no_quotable_magnitude(seeded_db):
+    """2026-08-06 ruling. IMPORTANT 4 marked the cost `context` and shipped it
+    anyway; the ruling took it away entirely, because asking a consumer not to
+    attribute a number you handed them is a weaker guarantee than not handing
+    it over.
 
-    18 solo `late_throttle` keys reach the ranked API standalone on the real
-    fixture, so the dedupe does not cover this case.
+    The magnitude is a SEPARATE axis and is still unquotable standalone --
+    `re_braking` shows the two do not follow from each other: no cost, but a
+    perfectly quotable deceleration.
     """
     import driving_events as de
     from pipeline.stages import s15_persist
@@ -303,23 +306,23 @@ def test_the_payload_marks_late_throttle_as_non_attributable(seeded_db):
             evidence={"x": 1},
         )
 
+    assert de.TIME_COST_ATTRIBUTION["late_throttle"] == de.ATTRIBUTION_NO_COST
+    assert de.MAGNITUDE_STANDALONE_QUOTABLE["late_throttle"] is False
+    assert de.MAGNITUDE_STANDALONE_QUOTABLE["re_braking"] is True, (
+        "the two axes must stay independent -- re_braking has no cost and a "
+        "perfectly quotable magnitude")
+
     s15_persist._persist_driving_events(seeded_db, "s1", {"driving_events": [
-        _ev("late_throttle", de.MAGNITUDE_UNIT_M, 0.42, 1),
+        _ev("late_throttle", de.MAGNITUDE_UNIT_M, None, 1),
         _ev("over_slowing", de.MAGNITUDE_UNIT_MPS, 0.31, 2),
     ]})
     seeded_db.commit()
 
-    by_type = {e["event_type"]: e
-               for e in events_repo.get_ranked_events(seeded_db, "s1")}
+    ranked = events_repo.get_ranked_events(seeded_db, "s1")
+    assert [e["event_type"] for e in ranked] == ["over_slowing"], (
+        "a costless late_throttle must not occupy a ranked slot on its own")
 
-    lt = by_type["late_throttle"]
-    assert lt["time_cost_attribution"] == de.ATTRIBUTION_CONTEXT, (
-        "a consumer handed event_type/magnitude/time_cost_s in one flat "
-        "object has nothing telling it this cost is not caused by this "
-        "magnitude")
-    assert lt["magnitude_is_standalone_quotable"] is False
-
-    os_ = by_type["over_slowing"]
+    os_ = ranked[0]
     assert os_["time_cost_attribution"] == de.ATTRIBUTION_ATTRIBUTABLE
     assert os_["magnitude_is_standalone_quotable"] is True
 
@@ -416,25 +419,35 @@ def test_both_analysis_blob_writers_carry_the_capability_record():
 # ══════════════════════════════════════════════════════════════════
 
 
-def test_the_ranked_query_is_bounded_and_still_dedupes_before_slicing(test_db):
-    """The bound has to do BOTH jobs: cap the fetch, and still leave enough
-    rows that `limit` DISTINCT (lap, corner) keys survive the dedupe.
+def test_the_ranked_query_is_bounded_and_still_yields_limit_distinct_keys(test_db):
+    """The bound must do BOTH jobs: cap the fetch, and still return `limit`
+    DISTINCT problems.
 
-    Built as the pathological case the unbounded fetch existed for: every
-    (lap, corner) fires BOTH cost-bearing detectors, so a naive `LIMIT limit`
-    would return limit/2 distinct problems while the response looked full.
+    The pathological case moved with the 2026-08-06 ruling. It used to be
+    "two cost-bearing rows per key eat two slots"; now every key carries all
+    FOUR event types, only one of which has a cost, so the join amplifies
+    rows 4x while the ranking must still come out exact.
     """
     import driving_events as de
     from web.repos import events_repo
 
     evs = []
     for lap in range(1, 21):
-        for etype, unit in (("over_slowing", de.MAGNITUDE_UNIT_MPS),
-                            ("late_throttle", de.MAGNITUDE_UNIT_M)):
+        evs.append(de.DrivingEvent(
+            event_type="over_slowing", lap_number=lap, corner_id=1,
+            s_norm_start=0.1, s_norm_end=0.2, magnitude=5.0,
+            magnitude_unit=de.MAGNITUDE_UNIT_MPS,
+            time_cost_s=1.0 - lap * 0.01,
+            validity=de.VALIDITY_MEASURED, reason=None, n_samples_in_window=30,
+            anchor_tier=de.ANCHOR_DRIVER_BEST_SESSION, anchor_reason=None,
+            evidence={"x": 1}))
+        for etype, unit in (("late_throttle", de.MAGNITUDE_UNIT_M),
+                            ("re_braking", de.MAGNITUDE_UNIT_MPS2),
+                            ("envelope_under_use", de.MAGNITUDE_UNIT_PCT)):
             evs.append(de.DrivingEvent(
                 event_type=etype, lap_number=lap, corner_id=1,
-                s_norm_start=0.1, s_norm_end=0.2, magnitude=5.0,
-                magnitude_unit=unit, time_cost_s=1.0 - lap * 0.01,
+                s_norm_start=0.1, s_norm_end=0.2, magnitude=7.0,
+                magnitude_unit=unit, time_cost_s=None,
                 validity=de.VALIDITY_MEASURED, reason=None,
                 n_samples_in_window=30,
                 anchor_tier=de.ANCHOR_DRIVER_BEST_SESSION, anchor_reason=None,
@@ -449,29 +462,53 @@ def test_the_ranked_query_is_bounded_and_still_dedupes_before_slicing(test_db):
             f"bound truncated before the dedupe could run")
         keys = {(e["lap_number"], e["corner_id"]) for e in got}
         assert len(keys) == limit, "duplicate (lap, corner) survived"
-        # And they are the COSTLIEST ones, in order.
+        assert all(e["event_type"] == "over_slowing" for e in got), (
+            "only a cost-bearing detector may define the ranking")
+        for e in got:
+            also = {a["event_type"] for a in e["evidence"]["also_fired"]}
+            assert also == {"late_throttle", "re_braking",
+                            "envelope_under_use"}, also
         assert [e["time_cost_s"] for e in got] == sorted(
             (e["time_cost_s"] for e in got), reverse=True)
     assert got[0]["time_cost_s"] == pytest.approx(0.99)
 
 
-def test_the_row_budget_bound_is_asserted_against_the_detector_set():
-    """`limit*2+2` is arithmetic that depends on at most TWO event types
-    carrying a cost. A fifth detector that starts emitting one must not be
-    able to invalidate it silently."""
+def test_a_key_with_several_cost_bearing_rows_still_consumes_one_slot(test_db):
+    """Defence for the arithmetic the removed assertion used to police.
+
+    If a future detector starts emitting a cost, two rows for one corner-lap
+    become cost-bearing. The subquery GROUPs BY the key, so that must still
+    be ONE ranked entry consuming ONE slot -- not two, and not a duplicated
+    facet list. Reproduced before the GROUP BY landed: the key came back
+    twice and the facet list carried each companion several times.
+    """
     import driving_events as de
     from web.repos import events_repo
 
-    events_repo._assert_cost_bearing_row_bound()   # the shipped set is fine
+    evs = []
+    for lap in (1, 2, 3):
+        for etype, unit, cost in (
+                ("over_slowing", de.MAGNITUDE_UNIT_MPS, 0.9 - lap * 0.1),
+                ("late_throttle", de.MAGNITUDE_UNIT_M, 0.9 - lap * 0.1),
+                ("re_braking", de.MAGNITUDE_UNIT_MPS2, None)):
+            evs.append(de.DrivingEvent(
+                event_type=etype, lap_number=lap, corner_id=2,
+                s_norm_start=0.1, s_norm_end=0.2, magnitude=3.0,
+                magnitude_unit=unit, time_cost_s=cost,
+                validity=de.VALIDITY_MEASURED, reason=None,
+                n_samples_in_window=30,
+                anchor_tier=de.ANCHOR_DRIVER_BEST_SESSION, anchor_reason=None,
+                evidence={"x": 1}))
+    events_repo.insert_driving_events(test_db, "s1", evs)
+    test_db.commit()
 
-    original = dict(de.TIME_COST_ATTRIBUTION)
-    de.TIME_COST_ATTRIBUTION["re_braking"] = de.ATTRIBUTION_ATTRIBUTABLE
-    try:
-        with pytest.raises(AssertionError, match="cost-bearing"):
-            events_repo._assert_cost_bearing_row_bound()
-    finally:
-        de.TIME_COST_ATTRIBUTION.clear()
-        de.TIME_COST_ATTRIBUTION.update(original)
+    got = events_repo.get_ranked_events(test_db, "s1", limit=3)
+    assert len(got) == 3
+    assert len({(e["lap_number"], e["corner_id"]) for e in got}) == 3
+    for e in got:
+        also = [a["event_type"] for a in e["evidence"]["also_fired"]]
+        assert sorted(also) == ["late_throttle", "re_braking"], (
+            f"facets duplicated by the join: {also}")
 
 
 def test_the_consistency_surface_has_its_own_hard_cap():
@@ -1891,23 +1928,34 @@ _MIN_MEASURED_SHARE = 0.80
 _MIN_DISTINCT_CORNERS = 4
 _MIN_DISTINCT_LAPS = 4
 
-# MEASURED: 99 of 140 events carry a time_cost_s (over_slowing +
-# late_throttle; re_braking and envelope_under_use carry None by design).
+# MEASURED: 44 of 140 events carry a time_cost_s -- `over_slowing` ONLY,
+# since the 2026-08-06 ruling took `late_throttle`'s cost away (it was
+# `over_slowing`'s own number, measured once and claimed twice). re_braking
+# and envelope_under_use never had one.
+#
 # Catches "every time_cost_s = None". time_cost_s is the ranking key -- it
 # is the entire reason the ranked read surface exists -- so a session that
 # produces events but no costs has silently lost the product feature while
-# staying green. 20 leaves ~5x headroom.
+# staying green. HEADROOM NARROWED from ~5x to 2.2x when the ruling halved
+# the costed set; 20 still fails instantly on the collapse it exists to
+# catch (which drives this to ZERO, not to "somewhat fewer"), and lowering
+# the floor to restore the old ratio would weaken it for no measured
+# reason.
 #
-# Task 12 note: a `late_throttle` event whose onset was NOT measurable
-# carries no cost by construction (a not_measurable event may not carry
-# numbers at all), so this floor is also the guard against the onset
-# derivation degrading wholesale into refusals. On this fixture 1 of 72
-# corner-laps refuses, so 55 of 56 late_throttle events are costed.
+# The onset-refusal guard this note used to describe moved: with
+# `late_throttle` costless, a wholesale degradation of the onset derivation
+# no longer shows up in THIS floor at all. It is caught instead by the
+# `throttle_onset_status` vocabulary assertion and by
+# `_assert_onset_is_not_inverted`, both above.
 _MIN_COSTED_EVENTS = 20
 
-# MEASURED: median cost 0.163 s, max 0.885 s. Unchanged by the
-# coordinate-frame fix, as it must be: the cost is a corner-TIME gap and
-# never touched the onset's distance frame.
+# MEASURED: median cost 0.176 s, max 0.885 s. The coordinate-frame fix left
+# these untouched, as it must (the cost is a corner-TIME gap and never
+# touched the onset's distance frame). The 2026-08-06 ruling moved the
+# MEDIAN only -- 0.163 -> 0.176 -- and not by changing any cost: it removed
+# 55 `late_throttle` rows that were duplicating `over_slowing`'s number, and
+# the 16 of them with no `over_slowing` partner sat at the cheap end. The max
+# is identical because the costliest corner-lap always had both.
 # Catches "costs uniformly 4.9 s" -- which the old body's `<= 5.0` per-event
 # bound waved straight through. A median corner-time gap above 1.0 s means
 # the driver is losing ~8 s a lap to corner execution against their OWN best
@@ -2408,9 +2456,9 @@ def test_driving_events_on_real_kart_telemetry(_real_summary):
 
     MEASURED on this fixture: 72 corner-laps (9 laps x 8 corners), 140
     events, 88.6% validity="measured", all four capability values "detected",
-    costs min 0.000 / median 0.163 / max 0.885 s. Event mix over_slowing 44 /
-    late_throttle 56 / envelope_under_use 35 (20 measured + 15 refused on a
-    tier-2 anchor) / re_braking 5.
+    44 costed events, costs min 0.000 / median 0.176 / max 0.885 s. Event mix
+    over_slowing 44 / late_throttle 56 / envelope_under_use 35 (20 measured +
+    15 refused on a tier-2 anchor) / re_braking 5.
 
     THE FINAL REVIEW MOVED THESE NUMBERS TWICE, both times by refusing to
     make a claim the data does not support:
@@ -2422,8 +2470,17 @@ def test_driving_events_on_real_kart_telemetry(_real_summary):
         `envelope_under_use` events into 15 `not_measurable` ones, because
         on a `driver_best_session` anchor the 100% floor cannot be exceeded
         and the detector was reporting arithmetic as measurement.
-    Costs are untouched by both (median 0.163 s, max 0.885 s) and must be:
-    the cost is a corner-TIME gap and never touched either mechanism.
+    Costs are untouched by both (max 0.885 s) and must be: the cost is a
+    corner-TIME gap and never touched either mechanism.
+
+    A THIRD change, the 2026-08-06 ruling, removed `late_throttle`'s
+    `time_cost_s` entirely -- it was `over_slowing`'s own number for the same
+    corner-lap, and this detector's added information beyond apex speed is
+    +0.098 (t = 0.81), not distinguishable from zero. Costed events 99 -> 44,
+    median 0.163 -> 0.176 s (composition only: the removed rows were
+    duplicates, and the 16 with no `over_slowing` partner sat at the cheap
+    end). Event COUNT, capability and measured share are all unchanged -- the
+    measurement still ships, only the claim was withdrawn.
 
     THE PRECONDITION THESE CONSTANTS CARRY (fix round 2). Every number above
     holds only for the ADAPTER-REGISTRY ingestion path, which is what

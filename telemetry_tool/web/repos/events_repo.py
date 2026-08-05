@@ -169,11 +169,15 @@ def _row_to_dict(row: Any) -> dict:
     else:
         d["evidence"] = raw or {}
 
-    attribution = de.TIME_COST_ATTRIBUTION.get(
-        d.get("event_type"), de.ATTRIBUTION_CONTEXT)
-    d["time_cost_attribution"] = attribution
+    etype = d.get("event_type")
+    # Two INDEPENDENT axes -- see driving_events. `re_braking` has no cost and
+    # a perfectly quotable magnitude; `late_throttle` has neither. Deriving
+    # one from the other (as the first cut did) gets `late_throttle` wrong the
+    # moment its cost goes away.
+    d["time_cost_attribution"] = de.TIME_COST_ATTRIBUTION.get(
+        etype, de.ATTRIBUTION_NO_COST)
     d["magnitude_is_standalone_quotable"] = (
-        attribution != de.ATTRIBUTION_CONTEXT)
+        de.MAGNITUDE_STANDALONE_QUOTABLE.get(etype, False))
     return d
 
 
@@ -282,6 +286,8 @@ def _dedupe_by_lap_corner(rows: list[dict]) -> list[dict]:
     # types on one key produce two different outputs depending on input order.
     # Failing loudly at import of the first dedupe is far better than shipping
     # a silently arbitrary choice to a driver.
+    import driving_events as de
+
     _assert_dedupe_priority_is_total()
     priority = _DEDUPE_PRIORITY
 
@@ -321,6 +327,23 @@ def _dedupe_by_lap_corner(rows: list[dict]) -> list[dict]:
                     "event_type": l.get("event_type"),
                     "magnitude": l.get("magnitude"),
                     "magnitude_unit": l.get("magnitude_unit"),
+                    # Carried since the 2026-08-06 ruling widened what can
+                    # BE a facet. The keyed fetch now brings every event
+                    # type for the key, including honest refusals whose
+                    # magnitude is None (an `envelope_under_use` that could
+                    # not judge a tier-2 anchor). Without `validity` a
+                    # renderer cannot tell "12.4 m later on the power" from
+                    # "we could not judge this", and would print a null.
+                    "validity": l.get("validity"),
+                    # `and magnitude is not None`: the per-type flag says
+                    # `envelope_under_use`'s percentage MAY stand alone, but
+                    # a refusal row has no percentage, and shipping
+                    # `{"magnitude": null, "quotable": true}` invites a
+                    # renderer to print a null as a finding.
+                    "magnitude_is_standalone_quotable": bool(
+                        de.MAGNITUDE_STANDALONE_QUOTABLE.get(
+                            l.get("event_type"), False)
+                        and l.get("magnitude") is not None),
                 }
                 for l in sorted(losers, key=_rank)
             ]
@@ -342,49 +365,35 @@ def _dedupe_by_lap_corner(rows: list[dict]) -> list[dict]:
 # request, times 32 gunicorn threads. With the bound, the same call peaks at
 # 64 KB.
 
-_MAX_COST_BEARING_ROWS_PER_KEY = 2
-"""How many rows for ONE (lap_number, corner_id) can carry a time_cost_s.
-
-This is what makes the ranked query's `limit*2+2` bound provably safe rather
-than a guess: the table's UNIQUE key caps rows per key at one per event type,
-and only this many event types ever compute a cost. Asserted against
-`driving_events.TIME_COST_ATTRIBUTION` below so a fifth detector that starts
-emitting a cost cannot silently invalidate the arithmetic."""
-
 _CONSISTENCY_ROW_CAP = 20000
 """Hard ceiling for the corner-consistency surface.
 
 It aggregates rather than slices, so there is no caller-supplied N to scale
 from. 20,000 rows is ~8.8 MB peak by the measurement above (this
 surface selects four columns, not the whole row), and it is far beyond any
-plausible session: the real fixture produces 99 cost-bearing rows,
+plausible session: the real fixture produces 44 cost-bearing rows
+(over_slowing only, since the 2026-08-06 ruling),
 and even a 1,000-lap endurance run over 20 corners produces ~40,000 -- which
 is exactly the case that must be capped rather than served. Hitting it is
 logged as a WARNING because the aggregate is then computed over a truncated
 set and is no longer representative."""
 
 
-def _assert_cost_bearing_row_bound() -> None:
-    """The ranked query's LIMIT is arithmetic, not a guess -- keep it true."""
-    import driving_events as de
+def _ranked_key_budget(limit: int) -> int:
+    """How many cost-bearing (lap, corner) KEYS the subquery may take.
 
-    cost_bearing = {t for t, a in de.TIME_COST_ATTRIBUTION.items()
-                    if a != de.ATTRIBUTION_NO_COST}
-    if len(cost_bearing) > _MAX_COST_BEARING_ROWS_PER_KEY:
-        raise AssertionError(
-            f"{len(cost_bearing)} event types now carry a time_cost_s "
-            f"({sorted(cost_bearing)}), but SELECT_RANKED_EVENTS' "
-            f"LIMIT limit*{_MAX_COST_BEARING_ROWS_PER_KEY}+2 assumes at most "
-            f"{_MAX_COST_BEARING_ROWS_PER_KEY} cost-bearing rows per "
-            f"(lap, corner). The bound no longer guarantees `limit` distinct "
-            f"keys survive the dedupe -- raise the factor with it.")
+    Exactly `limit`, and that is provable rather than padded: the subquery
+    GROUPs BY (lap_number, corner_id), so it returns DISTINCT keys and each
+    one survives `_dedupe_by_lap_corner` as exactly one entry.
 
-
-def _ranked_row_budget(limit: int) -> int:
-    """SQL row budget that provably yields >= `limit` distinct (lap, corner)
-    keys after `_dedupe_by_lap_corner`."""
-    _assert_cost_bearing_row_bound()
-    return limit * _MAX_COST_BEARING_ROWS_PER_KEY + 2
+    This replaced a `limit * _MAX_COST_BEARING_ROWS_PER_KEY + 2` budget and
+    the assertion that policed the factor. Both existed only because the old
+    flat query could return several cost-bearing rows for one key; the GROUP
+    BY removes that case at the source, so the arithmetic no longer depends
+    on how many detectors carry a cost -- a stronger guarantee than an
+    assertion checking that it still doesn't.
+    """
+    return max(1, limit)
 
 
 def get_driving_events_capability(
@@ -447,7 +456,7 @@ def get_ranked_events(
     limit = max(1, limit)
     rows = conn.execute(Q.SELECT_RANKED_EVENTS, {
         "session_id": session_id,
-        "row_budget": _ranked_row_budget(limit),
+        "key_budget": _ranked_key_budget(limit),
     }).fetchall()
     events = _dedupe_by_lap_corner([_row_to_dict(r) for r in rows])
     return events[:limit]
