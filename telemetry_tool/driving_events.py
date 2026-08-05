@@ -485,16 +485,32 @@ LATE_THROTTLE = _LateThrottle()
 
 # Measured probe: at ~85-105 ms/sample on this grid, a genuine brake dab
 # spans 2-3 samples; a single sample is noise. Requiring >= 3 consecutive
-# samples is what makes this detector fire at 7% rather than ~60%.
+# samples rejects isolated-sample noise, but by itself does NOT reproduce
+# the measured 7% (see RE_BRAKING_DECEL_FLOOR_MPS2 below: floor 0.0 with
+# this same run-length gate measured 35.6% on real data, not 7%). Getting to
+# 7% needs BOTH gates together -- run length rejects a too-short blip,
+# the magnitude floor rejects a too-shallow one.
 RE_BRAKING_MIN_RUN_SAMPLES = 3
 
-# Sign convention: a_long_mps2 is signed, negative = decelerating. Zero (not
-# a tuned negative floor) is the honest boundary here: any negative sample is
-# decelerating, and it is the RUN-LENGTH requirement above (>= 3 consecutive)
-# that does the real noise rejection, exactly as the brief specifies -- a
-# second, tuned magnitude floor on top would double up on the same job with
-# no measured value to justify it.
-RE_BRAKING_DECEL_FLOOR_MPS2 = 0.0
+# Sign convention: a_long_mps2 is signed, negative = decelerating.
+#
+# -0.5 m/s^2, NOT 0.0 -- measured, not assumed. Fix round 1: the run-length
+# gate alone does NOT do the noise rejection the comment above claims. The
+# reviewer ran the shipped `_longest_run_below` over the REAL post-apex
+# `a_long` from `data/raw/OK_R4.csv` (corners/per-lap frames captured from
+# an actual `run_full_analysis`):
+#     floor -0.5 (the original probe's floor):  4/59 = 6.8%  -- reproduces
+#                                                                the cited 7%
+#     floor  0.0 (what Task 8 first shipped):  21/59 = 35.6% -- 5x too high,
+#                                                                over_slowing/
+#                                                                late_throttle
+#                                                                ranking
+#                                                                territory,
+#                                                                not a flag
+# A magnitude floor of 0.0 lets throttle-off engine-braking / road noise
+# that never truly decelerates hard count as a "re-brake". -0.5 is the
+# measured boundary below which that noise stops dominating.
+RE_BRAKING_DECEL_FLOOR_MPS2 = -0.5
 
 
 def _longest_run_below(values: np.ndarray, floor: float) -> tuple[int, int]:

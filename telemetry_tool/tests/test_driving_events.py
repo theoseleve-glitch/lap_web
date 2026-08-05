@@ -516,6 +516,29 @@ def test_re_braking_refuses_when_the_channel_is_absent():
     assert ev is None or ev.validity != de.VALIDITY_MEASURED
 
 
+# ── re_braking: fix round 1 -- the magnitude floor pins the measured rate ──
+#
+# The run-length gate (>= 3 consecutive samples) alone measured 35.6% on
+# real post-apex a_long from data/raw/OK_R4.csv -- 5x the cited 7%. Only
+# adding the -0.5 m/s^2 magnitude floor back reproduces 6.8% (~7%). This
+# test pins that floor's actual effect: a sustained (3-sample) run shallower
+# than -0.5 must NOT fire, and one deeper than -0.5 must.
+
+def test_re_braking_floor_rejects_shallow_decel_and_fires_on_deep_decel():
+    import driving_events as de
+
+    shallow = np.zeros(40)
+    shallow[20:23] = -0.3               # sustained, but shallower than -0.5
+    assert de.RE_BRAKING.detect(_window(a_long_mps2=shallow)) is None
+
+    deep = np.zeros(40)
+    deep[20:23] = -0.8                  # sustained AND deeper than -0.5
+    ev = de.RE_BRAKING.detect(_window(a_long_mps2=deep))
+    assert ev is not None
+    assert ev.event_type == "re_braking"
+    assert ev.magnitude == pytest.approx(0.8)
+
+
 def test_envelope_under_use_fires_below_the_floor_and_is_silent_above():
     import driving_events as de
 
@@ -568,5 +591,27 @@ def test_re_braking_slices_from_apex_idx_not_from_a_re_derived_minimum():
     a2 = np.zeros(40)
     a2[30:33] = -2.0                   # sustained run after apex_idx=20
     ev = de.RE_BRAKING.detect(_window_with_real_apex(a2))
+    assert ev is not None
+    assert ev.event_type == "re_braking"
+
+
+def test_re_braking_finds_a_run_between_apex_idx_and_a_later_speed_minimum():
+    """Fix round 1: the reviewer showed the two prior slicing cases (before
+    BOTH candidates, after BOTH candidates) pass unchanged against a
+    hand-written wrong implementation (`apex_idx = int(np.nanargmin(w.speed_
+    mps))`), because both candidate start points agree on the verdict for
+    those two windows. This is the discriminating case: a sustained run at
+    indices 21-24 sits strictly AFTER apex_idx=20 but BEFORE the genuine
+    speed minimum at 25. A correct implementation slices post_apex from 20
+    and finds it (fires); a nanargmin-based one slices from 25 and misses it
+    entirely (returns None) -- the two implementations disagree here, which
+    is what makes this a real regression guard rather than reading the
+    source."""
+    import driving_events as de
+
+    a = np.zeros(40)
+    a[21:25] = -2.0                    # indices 21-24: after apex_idx=20,
+                                        # before the real min at 25
+    ev = de.RE_BRAKING.detect(_window_with_real_apex(a))
     assert ev is not None
     assert ev.event_type == "re_braking"
