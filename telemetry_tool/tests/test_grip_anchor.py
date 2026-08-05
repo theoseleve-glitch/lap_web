@@ -607,3 +607,30 @@ def test_decide_anchor_never_emits_a_tier_outside_the_vocabulary():
         _args(a_lat_mps2=np.nan),
     ):
         assert ga.decide_anchor(**kwargs).tier in ga.TIERS
+
+
+def test_decide_anchor_names_no_envelope_when_friction_is_absent():
+    """Isolates the FIRST precedence rung. The bin here is a genuinely
+    MEASURED one and the channel is trusted, so if this reason came back as
+    anything else (e.g. bin_fabricated), that would mean the no-envelope
+    check stopped firing and a later rung caught it instead -- silently
+    mislabelling a missing friction model as a data-quality problem."""
+    import grip_anchor as ga
+
+    a = ga.decide_anchor(**_args(friction=None, envelope_bin=_measured_bin()))
+    assert a.tier == ga.TIER_DRIVER_BEST_SESSION
+    assert a.reason == ga.REASON_NO_ENVELOPE
+
+
+def test_decide_anchor_names_no_measurement_for_a_degenerate_envelope():
+    """Isolates the LAST precedence rung: friction present, bin measured,
+    channel trusted, but ellipse_fill_pct itself returns None. Reached via a
+    friction object whose lateral_max is 0.0 -- a degenerate envelope --
+    while the bin and trust arguments are independently healthy, so only
+    ellipse_fill_pct's own guard can be responsible for the None."""
+    import grip_anchor as ga
+
+    f = _FakeFriction(lat=0.0)
+    a = ga.decide_anchor(**_args(friction=f, envelope_bin=_measured_bin()))
+    assert a.tier == ga.TIER_DRIVER_BEST_SESSION
+    assert a.reason == ga.REASON_NO_MEASUREMENT
