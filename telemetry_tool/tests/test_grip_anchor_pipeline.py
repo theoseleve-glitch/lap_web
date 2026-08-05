@@ -18,6 +18,115 @@ def test_corner_metrics_has_the_grip_anchor_columns(test_db):
     assert "grip_anchor_baseline_g" in cols
 
 
+_PRE_085_CORNER_METRICS_DDL = """
+CREATE TABLE corner_metrics (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    session_id TEXT NOT NULL REFERENCES sessions(session_id),
+    lap_number INTEGER NOT NULL,
+    corner_id INTEGER NOT NULL,
+    brake_point_m REAL,
+    brake_intensity REAL,
+    entry_speed_mps REAL,
+    apex_speed_mps REAL,
+    exit_speed_mps REAL,
+    throttle_onset_m REAL,
+    exit_accel_mps2 REAL,
+    grip_utilization REAL,
+    time_loss_ms REAL,
+    coaching_hint TEXT,
+    UNIQUE(session_id, lap_number, corner_id)
+);
+"""
+
+
+def test_ensure_schema_adds_the_anchor_columns_to_an_existing_database(tmp_path):
+    """The four columns were added ONLY to db/schema.py's CREATE TABLE body,
+    which is `CREATE TABLE IF NOT EXISTS` -- a no-op against a corner_metrics
+    that already exists. db/migrate.py had zero grip_anchor references, so no
+    already-deployed SQLite database ever got the columns, and USE_PG defaults
+    to "0" (web/config.py:60) which makes SQLite the desktop, datalogger and
+    local-dev default.
+
+    The failure is silent AND destructive: ensure_schema returns SCHEMA_VERSION
+    and logs success, then the INSERT (which names the four columns
+    unconditionally) raises OperationalError, and all three writers swallow it
+    -- so the session persists ZERO corner metrics. Brake points,
+    entry/apex/exit speeds, time loss, coaching hints and the legacy
+    grip_utilization are all lost, unrecoverable without reprocessing.
+
+    This starts from a genuine pre-085 table (created here, then handed to the
+    real ensure_schema) rather than a fresh database, because a fresh database
+    takes the CREATE TABLE path and can never observe the bug.
+    """
+    import sqlite3
+
+    from db.migrate import ensure_schema
+    from db.queries import INSERT_CORNER_METRIC
+
+    conn = sqlite3.connect(str(tmp_path / "pre085.db"))
+    conn.row_factory = sqlite3.Row
+    conn.executescript(_PRE_085_CORNER_METRICS_DDL)
+    conn.commit()
+
+    before = {r[1] for r in conn.execute("PRAGMA table_info(corner_metrics)")}
+    assert "grip_anchor_tier" not in before, "premise broken: table is not pre-085"
+
+    ensure_schema(conn)
+
+    after = {r[1] for r in conn.execute("PRAGMA table_info(corner_metrics)")}
+    for col in (
+        "grip_anchor_tier", "grip_anchor_reason",
+        "grip_anchor_pct", "grip_anchor_baseline_g",
+    ):
+        assert col in after, f"{col} missing after ensure_schema on a pre-085 DB"
+
+    # The columns existing is not the deliverable -- the write surviving is.
+    conn.execute(INSERT_CORNER_METRIC, {
+        "session_id": "s1", "lap_number": 1, "corner_id": 1,
+        "brake_point_m": None, "brake_intensity": None,
+        "entry_speed_mps": None, "apex_speed_mps": 25.0, "exit_speed_mps": None,
+        "throttle_onset_m": None, "exit_accel_mps2": None,
+        "grip_utilization": 0.9, "time_loss_ms": 120.0,
+        "coaching_hint": "brake later",
+        "grip_anchor_tier": "session_envelope_ellipse_fitted",
+        "grip_anchor_reason": None,
+        "grip_anchor_pct": 131.07,
+        "grip_anchor_baseline_g": 1.174,
+    })
+    conn.commit()
+
+    row = conn.execute(
+        "SELECT grip_anchor_tier, grip_anchor_pct, coaching_hint, grip_utilization "
+        "FROM corner_metrics WHERE session_id='s1'"
+    ).fetchone()
+    assert row["grip_anchor_tier"] == "session_envelope_ellipse_fitted"
+    assert row["grip_anchor_pct"] == pytest.approx(131.07)
+    # The pre-existing columns are what the swallowed failure was destroying.
+    assert row["coaching_hint"] == "brake later"
+    assert row["grip_utilization"] == pytest.approx(0.9)
+    conn.close()
+
+
+def test_ensure_schema_is_idempotent_on_an_already_migrated_database(tmp_path):
+    """ensure_schema runs on every connection open, so the ALTER block must
+    survive being re-run against a database that already has the columns --
+    the whole reason the surrounding Phase blocks swallow OperationalError."""
+    import sqlite3
+
+    from db.migrate import ensure_schema
+
+    conn = sqlite3.connect(str(tmp_path / "twice.db"))
+    conn.executescript(_PRE_085_CORNER_METRICS_DDL)
+    conn.commit()
+
+    ensure_schema(conn)
+    ensure_schema(conn)          # must not raise
+
+    cols = [r[1] for r in conn.execute("PRAGMA table_info(corner_metrics)")]
+    assert cols.count("grip_anchor_tier") == 1
+    conn.close()
+
+
 def test_insert_corner_metric_carries_the_anchor_columns():
     from db.queries import INSERT_CORNER_METRIC
 

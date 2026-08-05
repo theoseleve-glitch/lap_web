@@ -637,6 +637,44 @@ def ensure_schema(conn: sqlite3.Connection) -> int:
         (35, "Phase 35 schema — driver sleep windows for endurance races (12h+)"),
     )
 
+    # Phase 37 migration: grip anchor columns on corner_metrics (idempotent).
+    #
+    # These columns ALSO appear in db/schema.py's _CORNER_METRICS_TABLE, but
+    # that body is `CREATE TABLE IF NOT EXISTS` — a no-op against a table that
+    # already exists, so it reaches new databases only. An ALTER is the only
+    # thing that reaches an already-deployed one, and USE_PG defaults to "0"
+    # (web/config.py:60), which makes SQLite the desktop, datalogger and
+    # local-dev default.
+    #
+    # Skipping this is silent AND destructive rather than merely incomplete:
+    # ensure_schema would return SCHEMA_VERSION and log success, then
+    # queries.INSERT_CORNER_METRIC — which names all four columns
+    # unconditionally — raises OperationalError, and all three writers swallow
+    # it (pipeline/stages/s15_persist.py, tasks/pipeline_tasks.py,
+    # tasks/endurance_tasks.py). The session then persists ZERO corner metrics:
+    # brake points, entry/apex/exit speeds, time loss, coaching hints and the
+    # legacy grip_utilization go with them, unrecoverable without reprocessing.
+    # The PostgreSQL side of the same hazard is alembic 085; see
+    # docs/runbooks/grip-anchor-085-deploy.md.
+    _GRIP_ANCHOR_COLS = [
+        "grip_anchor_tier TEXT",
+        "grip_anchor_reason TEXT",
+        "grip_anchor_pct REAL",
+        "grip_anchor_baseline_g REAL",
+    ]
+    for col in _GRIP_ANCHOR_COLS:
+        try:
+            cur.execute(f"ALTER TABLE corner_metrics ADD COLUMN {col};")
+            logger.debug("Added column corner_metrics.%s.", col.split()[0])
+        except sqlite3.OperationalError:
+            pass  # Column already exists.
+
+    cur.execute(
+        "INSERT OR IGNORE INTO schema_version (version, description) "
+        "VALUES (?, ?);",
+        (37, "Phase 37 schema — grip anchor columns on corner_metrics"),
+    )
+
     conn.commit()
 
     logger.info("Database schema at version %d.", SCHEMA_VERSION)
