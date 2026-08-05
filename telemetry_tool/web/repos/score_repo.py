@@ -108,6 +108,10 @@ def insert_corner_metrics(
                                             or row.get("grip_utilisation_pct")),
             "time_loss_ms":    _safe_float(row.get("time_loss_ms")),
             "coaching_hint":   row.get("coaching_hint", ""),
+            "grip_anchor_tier":       row.get("grip_anchor_tier"),
+            "grip_anchor_reason":     row.get("grip_anchor_reason"),
+            "grip_anchor_pct":        row.get("grip_anchor_pct"),
+            "grip_anchor_baseline_g": row.get("grip_anchor_baseline_g"),
         })
         count += 1
 
