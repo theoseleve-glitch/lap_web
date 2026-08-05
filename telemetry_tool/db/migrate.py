@@ -655,7 +655,7 @@ def ensure_schema(conn: sqlite3.Connection) -> int:
     # brake points, entry/apex/exit speeds, time loss, coaching hints and the
     # legacy grip_utilization go with them, unrecoverable without reprocessing.
     # The PostgreSQL side of the same hazard is alembic 085; see
-    # docs/runbooks/grip-anchor-085-deploy.md.
+    # docs/runbooks/driving-events-085-086-deploy.md.
     _GRIP_ANCHOR_COLS = [
         "grip_anchor_tier TEXT",
         "grip_anchor_reason TEXT",

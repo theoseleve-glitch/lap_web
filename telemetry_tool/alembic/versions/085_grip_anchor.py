@@ -19,7 +19,7 @@ on real kart telemetry the median is 101.51%.
 DEPLOY ORDER MATTERS. ``db/queries.py``'s INSERT names these four columns
 unconditionally, so code that ships before this revision is applied loses the
 ENTIRE corner_metrics write for every session (all three writers swallow the
-error). See ``docs/runbooks/grip-anchor-085-deploy.md``.
+error). See ``docs/runbooks/driving-events-085-086-deploy.md``.
 """
 from alembic import op
 import sqlalchemy as sa

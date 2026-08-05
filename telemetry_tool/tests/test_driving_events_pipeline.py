@@ -46,6 +46,201 @@ def test_driving_events_has_a_unique_key_so_reprocess_does_not_double(test_db):
     assert n == 1, "reprocess duplicated the row -- unique key missing"
 
 
+# ══════════════════════════════════════════════════════════════════
+# Final review, CRITICAL 3 + deferred minor 5 — the persistence call site
+# ══════════════════════════════════════════════════════════════════
+#
+# All three call sites are `if not events: return` plus a swallow, so a
+# silent zero-write was both the likeliest failure and the only one nothing
+# covered. And on the s15 path the swallow was worse than useless:
+# `run_persist_to_db` is ONE transaction, so a failed write on PostgreSQL
+# aborts it and the later COMMIT silently becomes a ROLLBACK -- taking laps,
+# GPS traces, scores, theoretical data and corner metrics with it.
+
+
+def _one_event():
+    import driving_events as de
+
+    return de.DrivingEvent(
+        event_type="over_slowing", lap_number=3, corner_id=2,
+        s_norm_start=0.25, s_norm_end=0.35, magnitude=1.4,
+        magnitude_unit="m/s", time_cost_s=0.31,
+        validity=de.VALIDITY_MEASURED, reason=None,
+        n_samples_in_window=42,
+        evidence={"apex_speed_mps": 12.0, "reference_apex_speed_mps": 13.4},
+    )
+
+
+def test_the_persist_call_site_actually_writes_a_row(seeded_db):
+    """End to end through the shipped call site, not through the repo
+    function it happens to call. A renamed summary key, a reordered guard or
+    a swallowed bind error all produce a silent zero-write here."""
+    from pipeline.stages import s15_persist
+
+    s15_persist._persist_driving_events(
+        seeded_db, "s1", {"driving_events": [_one_event()]})
+    seeded_db.commit()
+
+    rows = seeded_db.execute(
+        "SELECT * FROM driving_events WHERE session_id='s1'").fetchall()
+    assert len(rows) == 1, "the shipped call site wrote nothing"
+    assert rows[0]["event_type"] == "over_slowing"
+    assert rows[0]["lap_number"] == 3
+    assert rows[0]["magnitude"] == pytest.approx(1.4)
+
+
+class _AbortsLikePostgres:
+    """sqlite3 connection wrapped in PostgreSQL's transaction semantics.
+
+    WHY A FAKE AND NOT JUST sqlite3: SQLite does NOT abort a transaction when
+    a statement fails -- measured, not assumed: a failed INSERT followed by
+    COMMIT still commits everything else. So this whole defect is invisible on
+    SQLite and a test written directly against `seeded_db` PASSES AGAINST THE
+    BROKEN CODE. The first draft of this test did exactly that and was thrown
+    away.
+
+    Modelled on psycopg2's documented behaviour, which is what production
+    runs (web/db_pg.py, no autocommit):
+      * any statement error puts the connection in the aborted state;
+      * every later statement raises InFailedSqlTransaction until the block
+        ends -- EXCEPT `ROLLBACK TO SAVEPOINT`, which is precisely the escape
+        hatch the fix uses;
+      * `COMMIT` inside an aborted block is a SILENT ROLLBACK, which is how
+        an entire session's data disappears behind one WARNING line.
+
+    The fake is proved to reproduce the defect by
+    `test_the_postgres_abort_model_reproduces_the_total_loss` below; without
+    that proof this test would have no teeth either.
+    """
+
+    ABORT_MSG = ("current transaction is aborted, commands ignored until "
+                 "end of transaction block")
+
+    def __init__(self, real):
+        self._c = real
+        self.aborted = False
+        self.silently_rolled_back = False
+
+    def execute(self, sql, params=None):
+        head = " ".join(str(sql).strip().split()).upper()
+        if head.startswith("ROLLBACK TO SAVEPOINT"):
+            self.aborted = False
+            return self._raw(sql, params)
+        if self.aborted:
+            raise RuntimeError(self.ABORT_MSG)
+        return self._raw(sql, params)
+
+    def _raw(self, sql, params):
+        try:
+            return (self._c.execute(sql) if params is None
+                    else self._c.execute(sql, params))
+        except Exception:
+            self.aborted = True
+            raise
+
+    def commit(self):
+        if self.aborted:
+            self._c.rollback()
+            self.aborted = False
+            self.silently_rolled_back = True
+            return
+        self._c.commit()
+
+    def rollback(self):
+        self._c.rollback()
+        self.aborted = False
+
+
+def _session_mid_transaction(seeded_db):
+    """A connection carrying uncommitted session data, with `driving_events`
+    missing -- i.e. code deployed before `alembic upgrade` ran 086."""
+    seeded_db.execute("DROP TABLE driving_events")
+    seeded_db.commit()
+    conn = _AbortsLikePostgres(seeded_db)
+    conn.execute("INSERT INTO laps (session_id, lap_number, lap_time_s, "
+                 "is_valid) VALUES ('s1', 99, 61.0, 1)")
+    return conn
+
+
+def _surviving_laps(seeded_db):
+    return seeded_db.execute(
+        "SELECT count(*) FROM laps WHERE session_id='s1' AND lap_number=99"
+    ).fetchone()[0]
+
+
+def test_the_postgres_abort_model_reproduces_the_total_loss(seeded_db):
+    """Guards the FIXTURE, not the fix. Every assertion in the next test is
+    worthless unless a naive swallow really does lose the session against
+    this connection -- so prove it here, with the swallow written out."""
+    from web.repos.events_repo import insert_driving_events
+
+    conn = _session_mid_transaction(seeded_db)
+
+    try:                                   # the shape s15 used to have
+        insert_driving_events(conn, "s1", [_one_event()])
+    except Exception:
+        pass                               # "logged a warning, continued"
+    conn.commit()
+
+    assert conn.silently_rolled_back, (
+        "the model did not abort the transaction, so it does not reproduce "
+        "the defect and the paired test below proves nothing")
+    assert _surviving_laps(seeded_db) == 0, (
+        "the fixture does not exhibit the total loss")
+
+
+def test_a_failed_driving_events_write_does_not_discard_the_session(seeded_db):
+    """CRITICAL 3: the table is missing, the write fails, and everything ELSE
+    the same transaction was carrying must still commit."""
+    from pipeline.stages import s15_persist
+
+    conn = _session_mid_transaction(seeded_db)
+
+    s15_persist._persist_driving_events(
+        conn, "s1", {"driving_events": [_one_event()]})
+    conn.commit()
+
+    assert not conn.silently_rolled_back, (
+        "COMMIT became a silent ROLLBACK -- the failed driving-events write "
+        "poisoned the outer transaction")
+    assert _surviving_laps(seeded_db) == 1, (
+        "a failed driving-events write discarded the rest of the session: "
+        "laps, GPS traces, scores, theoretical data and corner metrics all "
+        "go with it, behind one WARNING line naming only driving events")
+
+
+def test_without_isolation_the_failure_is_raised_rather_than_swallowed(seeded_db):
+    """If the SAVEPOINT itself cannot be taken there is nothing to contain
+    the failure, and swallowing it is the dangerous branch. A loud failure
+    that rolls the transaction back is strictly better than a silent one
+    that discards the session and reports success."""
+    from pipeline.stages import s15_persist
+
+    conn = _session_mid_transaction(seeded_db)
+    real_execute = conn.execute
+
+    def no_savepoints(sql, params=None):
+        if " ".join(str(sql).split()).upper().startswith("SAVEPOINT"):
+            raise RuntimeError("savepoints unavailable")
+        return real_execute(sql, params)
+
+    conn.execute = no_savepoints
+
+    with pytest.raises(Exception):
+        s15_persist._persist_driving_events(
+            conn, "s1", {"driving_events": [_one_event()]})
+
+
+def test_an_empty_event_list_writes_nothing_and_does_not_raise(seeded_db):
+    from pipeline.stages import s15_persist
+
+    s15_persist._persist_driving_events(seeded_db, "s1", {})
+    s15_persist._persist_driving_events(seeded_db, "s1", {"driving_events": []})
+    seeded_db.commit()
+    assert seeded_db.execute(
+        "SELECT count(*) FROM driving_events").fetchone()[0] == 0
+
+
 def test_driving_events_is_registered_for_retention_and_gdpr():
     """Data that cannot be purged or exported is a compliance defect."""
     from tasks import retention_tasks

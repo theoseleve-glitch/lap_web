@@ -15,6 +15,18 @@ RLS pattern mirrors 081_feeling_competition (itself mirroring
 046_endurance_stints + the 064/069 hardening): workspace_id NOT NULL FK,
 ENABLE + FORCE RLS, tenant_isolation policy on the canonical
 app.current_workspace_id GUC, guarded grants to telemetry_app/telemetry_maint.
+
+⛔ DEPLOY ORDERING IS LOAD-BEARING. `db/queries.py`'s INSERT_DRIVING_EVENT
+names this table unconditionally, so code serving before this revision is
+applied raises UndefinedTable on every session that produces events. On the
+`s15_persist` path that is ONE transaction, so an unguarded failure there
+aborts it and the later COMMIT becomes a silent ROLLBACK -- losing laps, GPS
+traces, scores, theoretical data and corner metrics as well, behind a single
+WARNING line naming only driving events. `_persist_driving_events` now
+contains that with a SAVEPOINT, but the ordering is still mandatory: with
+this table missing, every driving event in the window is lost anyway.
+Procedure: ``docs/runbooks/driving-events-085-086-deploy.md`` (§1b, §3 check
+3, §5). The downgrade DROPS the table and everything in it.
 """
 from alembic import op
 import sqlalchemy as sa

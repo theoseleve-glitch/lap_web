@@ -1,6 +1,8 @@
-# Grip Anchor (085) — Production Deploy Runbook
+# Grip Anchor (085) + Driving Events (086) — Production Deploy Runbook
 
-Authoritative deploy procedure for alembic revision **`085_grip_anchor`** (branch `feat/driving-pattern-recognition`, worktree `C:\Users\Admin\lap_web-wt-patterns`) → the LIVE `lap-coach.racing` platform.
+Authoritative deploy procedure for alembic revisions **`085_grip_anchor`** and **`086_driving_events`** (branch `feat/driving-pattern-recognition`, worktree `C:\Users\Admin\lap_web-wt-patterns`) → the LIVE `lap-coach.racing` platform.
+
+**Both revisions ship together and are deployed together.** 086 is a child of 085 and the code that writes to it ships in the same image. Read "085" anywhere below as "the 085→086 pair" unless a step names one specifically.
 
 > **You run this.** The `ssh`, the `scp` and the `docker compose` calls need your authenticated terminal; a sandboxed agent cannot reach the VPS.
 
@@ -57,6 +59,45 @@ and **all three writers swallow it**:
 
 The session then persists **zero** corner metrics. Not "the grip anchor is missing" — *the whole row is missing*: brake points, entry/apex/exit speeds, throttle onset, exit acceleration, time loss, coaching hints, and the legacy `grip_utilization`. None of it is recoverable without reprocessing the session, and nothing alerts. The user sees a session that uploaded successfully and simply has no corner data.
 
+### 1b — 086 has the SAME ordering hazard, with a WIDER blast radius
+
+`086_driving_events` creates a whole TABLE, and `db/queries.py`'s
+`INSERT_DRIVING_EVENT` names it unconditionally. Code serving before 086 is
+applied therefore raises on every session that produces events:
+
+```
+UndefinedTable: relation "driving_events" does not exist
+```
+
+Where 085's failure loses the corner-metrics ROW, 086's failure can lose
+**the whole session**, because of a transaction-shape difference:
+
+| Writer | Transaction shape | What a failed 086 write costs |
+|---|---|---|
+| `pipeline/stages/s15_persist.py` | **ONE** transaction: a single `conn.commit()` at the end, a single `conn.rollback()` in the handler, and psycopg2 does not autocommit | Laps, GPS traces, score details, condition phases, theoretical data, reference line, corner metrics, driver progression, weather timeline — **all of it** |
+| `tasks/pipeline_tasks.py` step 6b | its own `commit()`/`rollback()` per step | driving events only |
+| `tasks/endurance_tasks.py` step 6b | its own `commit()`/`rollback()` per step | driving events only |
+
+The s15 mechanism: the write fails, PostgreSQL marks the transaction aborted,
+the exception is caught and logged as a WARNING, and the later `COMMIT` in an
+aborted block is a **silent `ROLLBACK`**. The operator sees one warning line
+naming only driving events; the session is empty.
+
+**The code-side half of this is fixed on this branch** —
+`_persist_driving_events` now wraps its write in a `SAVEPOINT` and rolls back
+to it, so an 086-missing failure can no longer poison the outer transaction
+(and if the savepoint itself cannot be taken, the exception is re-raised
+rather than swallowed, so the failure is loud instead of silent). **That is a
+containment, not a licence to deploy out of order.** Run the migration first
+anyway: with 086 missing you still lose every driving event for every session
+processed in the window, unrecoverable without reprocessing.
+
+Note `s15_persist` runs under `USE_PG=0` **or** with `force_persist=True` —
+which is exactly what the endurance path passes. The single-transaction shape
+is therefore reachable in production.
+
+---
+
 ### Four things that make a silent partial deploy possible
 
 1. **`init_pg` swallows migration failures.** `telemetry_tool/web/db_pg.py:421-424` catches every exception from `command.upgrade(cfg, "head")` and logs `"Alembic upgrade failed (app continues)"` at WARNING. The API then starts and serves normally against an unmigrated database. **A healthy-looking API is not evidence that 085 applied.**
@@ -80,7 +121,7 @@ scp docker-compose.prod.yml root@46.225.227.24:/opt/lap-api/
 
 ### 2.2 Stop every writer
 
-Both celery worker sets write `corner_metrics`. Stop all six celery services — not just the pipeline ones — so nothing can attempt a write against a half-migrated schema.
+Both celery worker sets write `corner_metrics` **and `driving_events`**. Stop all six celery services — not just the pipeline ones — so nothing can attempt a write against a half-migrated schema.
 
 ```bash
 ssh root@46.225.227.24 "cd /opt/lap-api && docker compose -f docker-compose.prod.yml stop \
@@ -124,7 +165,7 @@ ssh root@46.225.227.24 "cd /opt/lap-api && docker compose -f docker-compose.prod
   alembic -c telemetry_tool/alembic.ini current"
 ```
 
-Expected: **`085_grip_anchor (head)`**. Anything else — including an empty line — is a failed deploy.
+Expected: **`086_driving_events (head)`**. `085_grip_anchor` alone means the chain stopped half way — the corner-metric columns exist but the driving-events table does not, which is exactly §1b's state. Anything else — including an empty line — is a failed deploy.
 
 ```bash
 # 2. the columns really exist, in the real table
@@ -143,6 +184,26 @@ Expected: exactly four rows —
 | `grip_anchor_tier` | `text` |
 
 Fewer than four rows means a partial apply. Do not start the workers.
+
+```bash
+# 3. the 086 table exists, with its unique key and its RLS policy
+ssh root@46.225.227.24 "cd /opt/lap-api && docker compose -f docker-compose.prod.yml exec -T postgres \
+  psql -U telemetry -d telemetry \
+  -c \"SELECT to_regclass('public.driving_events') AS tbl;\" \
+  -c \"SELECT conname FROM pg_constraint WHERE conrelid='driving_events'::regclass AND contype='u';\" \
+  -c \"SELECT relrowsecurity, relforcerowsecurity FROM pg_class WHERE relname='driving_events';\" \
+  -c \"SELECT polname FROM pg_policy WHERE polrelid='driving_events'::regclass;\""
+```
+
+Expected, all four: `tbl` = `driving_events` (not NULL);
+`uq_driving_events_session_lap_corner_event`; `t | t`;
+`driving_events_tenant_isolation`.
+
+A NULL `tbl` is §1b's failure waiting to happen. A missing unique constraint
+means every reprocess DOUBLES the table (nothing deletes event rows before
+rewriting) and `INSERT OR REPLACE` has no conflict target to translate to on
+PostgreSQL. An `f` in either RLS column, or a missing policy, is a **tenancy**
+defect — stop and fix before starting the workers.
 
 ### Only now, start the workers
 
@@ -174,18 +235,41 @@ What to expect, and what each outcome means:
 | Only `refused` | The anchor is degrading on every corner-lap. Query `grip_anchor_reason` — the taxonomy exists precisely so this is diagnosable. Not a rollback trigger on its own. |
 | **Zero rows at all** | ⛔ Corner metrics are not being written. Check the celery logs for the swallowed exception described in §1 and re-verify §3. |
 
+And the same for 086 — that events are being WRITTEN, not merely writable:
+
+```bash
+ssh root@46.225.227.24 "cd /opt/lap-api && docker compose -f docker-compose.prod.yml exec -T postgres \
+  psql -U telemetry -d telemetry -c \"SELECT event_type, validity, count(*), \
+  round(min(time_cost_s)::numeric,3) AS min_cost, round(max(time_cost_s)::numeric,3) AS max_cost \
+  FROM driving_events GROUP BY 1,2 ORDER BY 3 DESC;\""
+```
+
+| Result | Reading |
+|---|---|
+| Four `event_type` values, nearly all `validity='measured'` | Normal. The `OK_R4.csv` reference session gives over_slowing 44 / late_throttle 56 / envelope_under_use 34 / re_braking 5. |
+| `envelope_under_use` rows with `validity='not_measurable'` | **Expected, not a bug.** That is the deliberate refusal on a self-referential (tier-2) grip anchor; `reason` names it. |
+| `max_cost` above ~1 s on a short circuit | Suspicious — a window/reference defect rather than driving. Not a rollback trigger; investigate. |
+| **Zero rows at all** | ⛔ Either 086 is missing (re-check §3) or every detector read `insufficient`. Query `sessions.analysis_json -> 'driving_events_capability'` for the session: it is exactly the record that tells "clean session" apart from "could not measure". |
+
 Also confirm the writes are not silently failing:
 
 ```bash
 ssh root@46.225.227.24 "cd /opt/lap-api && docker compose -f docker-compose.prod.yml logs --tail=200 \
-  celery-pipeline | grep -i 'corner_metric\|grip_anchor\|UndefinedColumn'"
+  celery-pipeline | grep -i 'corner_metric\|grip_anchor\|driving event\|UndefinedColumn\|UndefinedTable'"
 ```
 
 ---
 
 ## 5 — Rollback
 
-The migration is four **nullable** columns, so `downgrade` is clean — but only if the new code is gone first, since it names the columns unconditionally.
+085's migration is four **nullable** columns and 086's is a new table, so
+both `downgrade`s are clean — but only if the new code is gone first, since it
+names the columns and the table unconditionally.
+
+**⚠ 086's `downgrade` DROPS THE TABLE.** Every driving event written since the
+deploy is destroyed and recoverable only by reprocessing those sessions.
+Decide deliberately which rollback you are doing: code-only (leave the schema
+— old code never names either, so both are inert) or schema as well.
 
 ```bash
 # 1. stop the writers
@@ -193,6 +277,11 @@ ssh root@46.225.227.24 "cd /opt/lap-api && docker compose -f docker-compose.prod
   celery-pipeline celery-pipeline-long celery-default celery-onboarding celery-endurance celery-beat api"
 
 # 2. restore the previous image/code, THEN
+# 3. CODE-ONLY ROLLBACK (preferred): stop here. The schema stays; old code
+#    names neither the grip_anchor columns nor driving_events, so both are
+#    inert and no data is destroyed.
+
+# 3-alt. SCHEMA ROLLBACK TOO — this DESTROYS every driving_events row:
 ssh root@46.225.227.24 "cd /opt/lap-api && docker compose -f docker-compose.prod.yml run --rm api \
   alembic -c telemetry_tool/alembic.ini downgrade 084_merge_chain_ab"
 ```
@@ -203,4 +292,4 @@ Rolling the schema back while the new code is still serving reproduces §1's sil
 
 ## 6 — SQLite is a separate fix, already in this branch
 
-`USE_PG` defaults to `"0"` (`telemetry_tool/web/config.py:60`), so the desktop app, the datalogger and local dev all run SQLite, where alembic is not involved at all. Those databases are migrated by `telemetry_tool/db/migrate.py`'s **Phase 37** ALTER block, added on this branch. Nothing in this runbook applies to them, and no operator action is needed: `ensure_schema` runs on connection open and the block is idempotent.
+`USE_PG` defaults to `"0"` (`telemetry_tool/web/config.py:60`), so the desktop app, the datalogger and local dev all run SQLite, where alembic is not involved at all. Those databases are migrated by `telemetry_tool/db/migrate.py`'s **Phase 37** ALTER block (085's four columns) and by `db/schema.py`'s `PHASE_25_TABLES` `CREATE TABLE IF NOT EXISTS` (086's table), both added on this branch. The split is deliberate and is the lesson 085 paid for: `CREATE TABLE IF NOT EXISTS` in `schema.py` DOES create a new table on an existing database, but it is a **no-op for adding a column to a table that already exists** — which is why 085's columns needed the separate idempotent `ALTER` block in `migrate.py`. A future migration adding a COLUMN must do both; one adding a TABLE needs only `schema.py`. Nothing in this runbook applies to them, and no operator action is needed: `ensure_schema` runs on connection open and the block is idempotent.
