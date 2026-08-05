@@ -79,3 +79,55 @@ def test_insert_corner_metrics_round_trips_anchor_values_uncapped(seeded_db):
     assert row["grip_anchor_reason"] == "no_friction_model"
     assert row["grip_anchor_pct"] == pytest.approx(137.5)
     assert row["grip_anchor_baseline_g"] == pytest.approx(1.42)
+
+
+def _lap_frame(n=400, a_lat_g=0.9):
+    d = np.linspace(0.0, 1200.0, n)
+    return pd.DataFrame({
+        "Distance (m)": d,
+        "Speed (m/s)": np.full(n, 25.0),
+        "Lateral acceleration (G) *calc": np.full(n, a_lat_g),
+        "accel_long_mps2": np.zeros(n),
+    })
+
+
+def test_run_grip_anchor_attaches_a_tier_to_every_metric():
+    from pipeline.stages import s10d2_grip_anchor
+
+    metrics = [
+        {"lap_number": 1, "corner_id": 1, "apex_speed_mps": 25.0},
+        {"lap_number": 2, "corner_id": 1, "apex_speed_mps": 25.0},
+    ]
+    corners = [{"corner_id": 1, "s_start": 100.0, "s_end": 200.0}]
+    laps = {1: _lap_frame(a_lat_g=0.9), 2: _lap_frame(a_lat_g=1.1)}
+
+    out = s10d2_grip_anchor.run_grip_anchor(metrics, corners, laps)
+
+    assert len(out) == 2
+    for m in out:
+        assert "grip_anchor_tier" in m
+        assert m["grip_anchor_tier"] is not None
+
+
+def test_run_grip_anchor_refuses_rather_than_inventing_when_it_has_nothing():
+    """No friction model, no usable laps: it must refuse, not fabricate."""
+    import grip_anchor as ga
+    from pipeline.stages import s10d2_grip_anchor
+
+    metrics = [{"lap_number": 1, "corner_id": 1, "apex_speed_mps": 25.0}]
+    out = s10d2_grip_anchor.run_grip_anchor(metrics, [], {})
+
+    assert out[0]["grip_anchor_tier"] == ga.TIER_REFUSED
+    assert out[0]["grip_anchor_pct"] is None
+
+
+def test_run_grip_anchor_never_raises_on_malformed_input():
+    """This runs inside _safe_step, but a stage that throws loses the whole
+    step; assert on RESULTS, not on the absence of an exception."""
+    from pipeline.stages import s10d2_grip_anchor
+
+    out = s10d2_grip_anchor.run_grip_anchor(
+        [{"lap_number": None, "corner_id": None}], [], {},
+    )
+    assert len(out) == 1
+    assert "grip_anchor_tier" in out[0]
