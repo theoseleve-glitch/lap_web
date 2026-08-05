@@ -294,6 +294,170 @@ def test_corner_consistency_reports_best_median_and_spread(test_db):
                  events_repo.get_corner_consistency(test_db, "s1")}
     assert by_corner[4]["spread_s"] > by_corner[2]["spread_s"]
     assert by_corner[4]["worst_s"] == pytest.approx(0.89)
+    # Fix round 1 (IMPORTANT #2): median_s and best_s were previously
+    # unpinned -- the reviewer swapped median(costs) for a hardcoded
+    # 123.456 and best for -999.0 and this test still passed. sorted(corner
+    # 4) = [0.0, 0.45, 0.89] -> median is the middle value, 0.45; sorted
+    # (corner 2) = [0.0, 0.05, 0.09] -> median 0.05. best_s is min(costs)
+    # for each corner: 0.0 in both cases here (not distinguishing, hence
+    # the separate dedupe test below pins a best_s that isn't 0.0 too).
+    assert by_corner[4]["median_s"] == pytest.approx(0.45)
+    assert by_corner[2]["median_s"] == pytest.approx(0.05)
+    assert by_corner[4]["best_s"] == pytest.approx(0.0)
+    assert by_corner[2]["best_s"] == pytest.approx(0.0)
+
+
+def test_corner_consistency_dedupes_a_lap_that_fired_multiple_detectors(test_db):
+    """Fix round 1, IMPORTANT #1: over_slowing and late_throttle both set
+    time_cost_s = corner_time - reference_corner_time for the SAME
+    (lap, corner) -- see driving_events.py's _OverSlowing/_LateThrottle
+    .detect. Two event rows for the same lap must count as ONE lap's gap,
+    not two, or the median gets pulled toward whichever corner fired the
+    most detectors.
+
+    Concrete failure the reviewer caught: corner 4 with per-lap gaps
+    [0.10, 0.50, 0.90], BOTH over_slowing and late_throttle firing on the
+    lap that measured 0.10. Naive median-of-4-rows ([0.10, 0.10, 0.50,
+    0.90]) gives (0.10+0.50)/2 = 0.30. The honest median-of-3-distinct-laps
+    is 0.50 -- the middle value, since lap 1's duplicate must collapse to
+    one observation before the median is taken.
+    """
+    from web.repos import events_repo
+    import driving_events as de
+
+    evs = [
+        # Lap 1, corner 4: BOTH detectors fire with the same time_cost_s.
+        de.DrivingEvent(
+            event_type="over_slowing", lap_number=1, corner_id=4,
+            s_norm_start=0.2, s_norm_end=0.3, magnitude=1.0,
+            magnitude_unit="m/s", time_cost_s=0.10,
+            validity=de.VALIDITY_MEASURED, reason=None,
+            n_samples_in_window=40, evidence={"x": 1},
+        ),
+        de.DrivingEvent(
+            event_type="late_throttle", lap_number=1, corner_id=4,
+            s_norm_start=0.2, s_norm_end=0.3, magnitude=1.0,
+            magnitude_unit="m", time_cost_s=0.10,
+            validity=de.VALIDITY_MEASURED, reason=None,
+            n_samples_in_window=40, evidence={"x": 1},
+        ),
+        de.DrivingEvent(
+            event_type="over_slowing", lap_number=2, corner_id=4,
+            s_norm_start=0.2, s_norm_end=0.3, magnitude=1.0,
+            magnitude_unit="m/s", time_cost_s=0.50,
+            validity=de.VALIDITY_MEASURED, reason=None,
+            n_samples_in_window=40, evidence={"x": 1},
+        ),
+        de.DrivingEvent(
+            event_type="over_slowing", lap_number=3, corner_id=4,
+            s_norm_start=0.2, s_norm_end=0.3, magnitude=1.0,
+            magnitude_unit="m/s", time_cost_s=0.90,
+            validity=de.VALIDITY_MEASURED, reason=None,
+            n_samples_in_window=40, evidence={"x": 1},
+        ),
+    ]
+    events_repo.insert_driving_events(test_db, "s1", evs)
+    test_db.commit()
+
+    by_corner = {r["corner_id"]: r for r in
+                 events_repo.get_corner_consistency(test_db, "s1")}
+    assert by_corner[4]["median_s"] == pytest.approx(0.50), (
+        "median must be computed over distinct (lap, corner) pairs, not "
+        "event rows -- a duplicated lap must not shift it toward 0.30"
+    )
+    assert by_corner[4]["best_s"] == pytest.approx(0.10)
+    assert by_corner[4]["worst_s"] == pytest.approx(0.90)
+    assert by_corner[4]["spread_s"] == pytest.approx(0.80)
+
+
+def test_ranked_events_dedupes_a_lap_that_fired_multiple_detectors(test_db):
+    """Fix round 1, IMPORTANT #1, ranked-list half. Decision recorded in
+    the fix report: the ranked list also dedupes to ONE entry per distinct
+    (lap_number, corner_id) -- a driver wants N distinct places to work
+    on, not the same corner twice under two labels."""
+    from web.repos import events_repo
+    import driving_events as de
+
+    evs = [
+        de.DrivingEvent(
+            event_type="over_slowing", lap_number=1, corner_id=4,
+            s_norm_start=0.2, s_norm_end=0.3, magnitude=1.0,
+            magnitude_unit="m/s", time_cost_s=0.90,
+            validity=de.VALIDITY_MEASURED, reason=None,
+            n_samples_in_window=40, evidence={"x": 1},
+        ),
+        de.DrivingEvent(
+            event_type="late_throttle", lap_number=1, corner_id=4,
+            s_norm_start=0.2, s_norm_end=0.3, magnitude=1.0,
+            magnitude_unit="m", time_cost_s=0.90,
+            validity=de.VALIDITY_MEASURED, reason=None,
+            n_samples_in_window=40, evidence={"x": 1},
+        ),
+        de.DrivingEvent(
+            event_type="over_slowing", lap_number=2, corner_id=1,
+            s_norm_start=0.2, s_norm_end=0.3, magnitude=1.0,
+            magnitude_unit="m/s", time_cost_s=0.50,
+            validity=de.VALIDITY_MEASURED, reason=None,
+            n_samples_in_window=40, evidence={"x": 1},
+        ),
+    ]
+    events_repo.insert_driving_events(test_db, "s1", evs)
+    test_db.commit()
+
+    got = events_repo.get_ranked_events(test_db, "s1", limit=10)
+    assert len(got) == 2, "the two rows for (lap=1, corner=4) must collapse to one"
+    keys = [(g["lap_number"], g["corner_id"]) for g in got]
+    assert keys == [(1, 4), (2, 1)]
+
+
+def test_ranked_events_limit_applies_after_dedup_not_before(test_db):
+    """Fix round 1: a duplicate detector-pair must not consume two of the
+    limit's slots. Corner 4/lap 1 fires two detectors (the highest cost,
+    0.90) plus two other distinct (lap, corner) pairs -- asking for the
+    top 2 distinct problems must return those 2 distinct pairs, not corner
+    4/lap 1 twice with the third pair silently dropped."""
+    from web.repos import events_repo
+    import driving_events as de
+
+    evs = [
+        de.DrivingEvent(
+            event_type="over_slowing", lap_number=1, corner_id=4,
+            s_norm_start=0.2, s_norm_end=0.3, magnitude=1.0,
+            magnitude_unit="m/s", time_cost_s=0.90,
+            validity=de.VALIDITY_MEASURED, reason=None,
+            n_samples_in_window=40, evidence={"x": 1},
+        ),
+        de.DrivingEvent(
+            event_type="late_throttle", lap_number=1, corner_id=4,
+            s_norm_start=0.2, s_norm_end=0.3, magnitude=1.0,
+            magnitude_unit="m", time_cost_s=0.90,
+            validity=de.VALIDITY_MEASURED, reason=None,
+            n_samples_in_window=40, evidence={"x": 1},
+        ),
+        de.DrivingEvent(
+            event_type="over_slowing", lap_number=2, corner_id=1,
+            s_norm_start=0.2, s_norm_end=0.3, magnitude=1.0,
+            magnitude_unit="m/s", time_cost_s=0.50,
+            validity=de.VALIDITY_MEASURED, reason=None,
+            n_samples_in_window=40, evidence={"x": 1},
+        ),
+        de.DrivingEvent(
+            event_type="over_slowing", lap_number=3, corner_id=2,
+            s_norm_start=0.2, s_norm_end=0.3, magnitude=1.0,
+            magnitude_unit="m/s", time_cost_s=0.30,
+            validity=de.VALIDITY_MEASURED, reason=None,
+            n_samples_in_window=40, evidence={"x": 1},
+        ),
+    ]
+    events_repo.insert_driving_events(test_db, "s1", evs)
+    test_db.commit()
+
+    got = events_repo.get_ranked_events(test_db, "s1", limit=2)
+    keys = [(g["lap_number"], g["corner_id"]) for g in got]
+    assert keys == [(1, 4), (2, 1)], (
+        "limit=2 must return 2 DISTINCT (lap, corner) pairs, not the same "
+        "pair counted twice with the third pair dropped"
+    )
 
 
 def test_insert_is_idempotent_so_reprocess_does_not_double(test_db):
@@ -388,12 +552,29 @@ class TestDrivingEventsIdorGuard:
         """A non-owner (session invisible on the RLS-scoped connection, i.e.
         get_session_by_id returns None) must get 404, and events_repo must
         never be touched -- proves the guard fires before any query, not
-        just that the final response happens to omit foreign data."""
+        just that the final response happens to omit foreign data.
+
+        events_repo's mocked return values are deliberately JSON-serializable
+        (fix round 1, MINOR): a plain MagicMock return value makes a
+        guard-removed regression fail on a 500 (Flask's jsonify choking on
+        the MagicMock) before the load-bearing assert_not_called() ever
+        runs, and before resp.status_code == 404 can distinguish "guard
+        denied" from "guard skipped, then something else broke". With a
+        real list here, removing the guard instead surfaces an explicit
+        200-with-foreign-rows -- the actual thing this test exists to catch.
+        """
         with patch("web.routes.data_v2.get_db_connection") as mock_db, \
                 patch("web.routes.data_v2.models") as mock_models, \
                 patch("web.routes.data_v2.events_repo") as mock_events_repo:
             mock_db.return_value = MagicMock()
             mock_models.get_session_by_id.return_value = None
+            mock_events_repo.get_ranked_events.return_value = [
+                {"lap_number": 1, "corner_id": 1, "time_cost_s": 0.5},
+            ]
+            mock_events_repo.get_corner_consistency.return_value = [
+                {"corner_id": 1, "best_s": 0.0, "worst_s": 0.5,
+                 "median_s": 0.25, "spread_s": 0.5},
+            ]
 
             resp = data_v2_client.get(path)
 

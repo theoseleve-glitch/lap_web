@@ -138,6 +138,45 @@ def _row_to_dict(row: Any) -> dict:
     return d
 
 
+def _dedupe_by_lap_corner(rows: list[dict]) -> list[dict]:
+    """Collapse multiple event rows for the same (lap_number, corner_id)
+    into one (fix round 1, IMPORTANT #1).
+
+    ``over_slowing`` and ``late_throttle`` both set ``time_cost_s =
+    corner_time - reference_corner_time`` for the SAME (lap, corner) --
+    see ``driving_events.py``'s ``_OverSlowing.detect`` (line ~376) and
+    ``_LateThrottle.detect`` (line ~450). So two DIFFERENT ``event_type``
+    rows can carry the IDENTICAL ``time_cost_s`` for one lap's pass through
+    one corner. Treating each row as an independent observation
+    double-counts that lap: a corner-consistency median gets pulled toward
+    whichever corner happened to fire the most detectors rather than
+    reflecting genuine per-lap variance, and a ranked top-N can surface the
+    same (lap, corner) twice under two labels instead of naming two
+    distinct places to fix.
+
+    Decision (recorded per the fix request): both read surfaces dedupe to
+    ONE entry per (lap_number, corner_id) -- a driver wants N distinct
+    places to work on, not the same corner twice with two labels. Keeps the
+    first row seen per key; since duplicates share the same ``time_cost_s``
+    by construction, which specific row survives doesn't change any
+    aggregate or ranking, only which single ``event_type`` label rides
+    along with that (lap, corner) entry.
+
+    Rows must already be in the order the caller wants ties broken by
+    (``SELECT_RANKED_EVENTS`` / ``SELECT_TIME_COSTS_FOR_CONSISTENCY`` are
+    both pre-sorted) -- this function is order-preserving, not re-sorting.
+    """
+    seen: set[tuple[Any, Any]] = set()
+    out = []
+    for r in rows:
+        key = (r.get("lap_number"), r.get("corner_id"))
+        if key in seen:
+            continue
+        seen.add(key)
+        out.append(r)
+    return out
+
+
 def get_ranked_events(
     conn: sqlite3.Connection,
     session_id: str,
@@ -145,14 +184,24 @@ def get_ranked_events(
 ) -> list[dict]:
     """The ranked "what should I fix next" surface: this session's driving
     events ordered by ``time_cost_s`` DESC (biggest gap-to-own-best-time
-    first). See ``SELECT_RANKED_EVENTS`` for why NULL-cost events (
-    re_braking, envelope_under_use) are excluded rather than sorted last.
+    first), one entry per distinct (lap_number, corner_id) -- see
+    ``_dedupe_by_lap_corner``. See ``SELECT_RANKED_EVENTS`` for why
+    NULL-cost events (re_braking, envelope_under_use) are excluded rather
+    than sorted last.
+
+    Dedup happens BEFORE the limit is applied (fix round 1): the query
+    fetches every qualifying row, then this function dedupes the full set
+    and only THEN slices to ``limit``. Limiting first would let a
+    duplicate pair consume two of the caller's requested slots and return
+    fewer than ``limit`` distinct problems while the response still looked
+    full.
     """
     rows = conn.execute(Q.SELECT_RANKED_EVENTS, {
         "session_id": session_id,
-        "limit": _safe_int(limit) or 10,
     }).fetchall()
-    return [_row_to_dict(r) for r in rows]
+    events = _dedupe_by_lap_corner([_row_to_dict(r) for r in rows])
+    limit = _safe_int(limit) or 10
+    return events[:limit]
 
 
 def get_corner_consistency(
@@ -160,7 +209,9 @@ def get_corner_consistency(
     session_id: str,
 ) -> list[dict]:
     """The "where am I unreliable" surface: per corner_id, best/median/
-    worst/spread of ``time_cost_s`` across this session's events.
+    worst/spread of ``time_cost_s`` across this session's events, one
+    observation per distinct (lap_number, corner_id) -- see
+    ``_dedupe_by_lap_corner``.
 
     ``worst_s`` is the largest (costliest) ``time_cost_s`` seen at that
     corner, ``best_s`` the smallest, ``spread_s = worst_s - best_s``. A
@@ -170,12 +221,12 @@ def get_corner_consistency(
     rows = conn.execute(Q.SELECT_TIME_COSTS_FOR_CONSISTENCY, {
         "session_id": session_id,
     }).fetchall()
+    rows = _dedupe_by_lap_corner([dict(r) for r in rows])
 
     by_corner: dict[Any, list[float]] = {}
     for r in rows:
-        d = dict(r)
-        cid = d.get("corner_id")
-        cost = _safe_float(d.get("time_cost_s"))
+        cid = r.get("corner_id")
+        cost = _safe_float(r.get("time_cost_s"))
         if cid is None or cost is None:
             continue
         by_corner.setdefault(cid, []).append(cost)

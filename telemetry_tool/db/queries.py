@@ -1030,11 +1030,18 @@ INSERT OR REPLACE INTO driving_events (
 # PostgreSQL's default is the opposite (DESC puts NULLs first) -- filtering
 # them out sidesteps that cross-dialect difference outright, and a NULL cost
 # can't be ranked by cost anyway.
+#
+# NO `LIMIT` here (fix round 1): over_slowing and late_throttle can both
+# fire on the SAME (lap_number, corner_id) with the IDENTICAL time_cost_s
+# (see events_repo.get_ranked_events / _dedupe_by_lap_corner). Limiting in
+# SQL happens BEFORE that dedup, so a duplicate pair could consume two of
+# the caller's requested N slots and silently return fewer than N distinct
+# problems. events_repo fetches every qualifying row, dedupes, THEN slices
+# to the caller's limit in Python.
 SELECT_RANKED_EVENTS = """
 SELECT * FROM driving_events
 WHERE session_id = :session_id AND time_cost_s IS NOT NULL
-ORDER BY time_cost_s DESC
-LIMIT :limit;
+ORDER BY time_cost_s DESC;
 """
 
 # Raw per-event costs for the "where am I unreliable" corner-consistency
@@ -1042,8 +1049,16 @@ LIMIT :limit;
 # PostgreSQL has percentile_cont for median but SQLite has no built-in
 # median function, so there is no single expression portable across both
 # dialects this repo supports -- see events_repo.get_corner_consistency.
+#
+# `lap_number` is selected alongside `corner_id`/`time_cost_s` (fix round 1)
+# so the repo layer can dedupe by (lap_number, corner_id) before
+# aggregating -- over_slowing and late_throttle both set
+# time_cost_s = corner_time - reference_corner_time for the SAME
+# (lap, corner), so without the dedup a lap that fired both detectors is
+# counted twice and skews median_s toward corners with more detector
+# coverage rather than genuine per-lap variance.
 SELECT_TIME_COSTS_FOR_CONSISTENCY = """
-SELECT corner_id, time_cost_s FROM driving_events
+SELECT lap_number, corner_id, time_cost_s FROM driving_events
 WHERE session_id = :session_id AND time_cost_s IS NOT NULL
-ORDER BY corner_id;
+ORDER BY corner_id, lap_number;
 """
