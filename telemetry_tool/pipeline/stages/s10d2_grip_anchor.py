@@ -163,6 +163,38 @@ def run_grip_anchor(
     return metrics
 
 
+def _bin_attr(bin_obj: Any, name: str) -> Any:
+    """Read a FrictionBin field whether ``bin_obj`` is a live ``FrictionBin``
+    (attribute access) or the ``.to_dict()`` mapping shape (dict key
+    access).
+
+    The pipeline persists ``summary["friction_envelope"]`` as exactly the
+    latter (see ``friction_envelope.FrictionEnvelope.to_dict()``), and that
+    dict form is what a future caller -- or a regression test built the
+    honest way, by calling ``.to_dict()`` on a real envelope -- will
+    plausibly pass in here. A bare ``getattr`` silently returns ``None``
+    for a dict regardless of its contents, which upstream reads as
+    "bin unmeasured" and mislabels a perfectly good measurement as
+    ``bin_fabricated``. That confidently-wrong degradation, not a loud
+    failure, is exactly the failure mode this helper exists to prevent.
+    """
+    if isinstance(bin_obj, dict):
+        return bin_obj.get(name)
+    return getattr(bin_obj, name, None)
+
+
+def _envelope_bins(envelope: Any) -> list[Any] | None:
+    """Read the ``friction_bins`` list whether ``envelope`` is a live
+    ``FrictionEnvelope`` (attribute access) or its ``.to_dict()`` mapping
+    shape (dict key access) -- see ``_bin_attr`` above for why both shapes
+    must be supported here rather than only the object form the original
+    unit-test doubles used.
+    """
+    if isinstance(envelope, dict):
+        return envelope.get("friction_bins")
+    return getattr(envelope, "friction_bins", None)
+
+
 def _bin_tolerance_mps(bins: Any) -> float:
     """Half this envelope's own median bin spacing.
 
@@ -174,7 +206,7 @@ def _bin_tolerance_mps(bins: Any) -> float:
     distinct bin centres exist, i.e. spacing can't be measured at all.
     """
     try:
-        centers = sorted({float(b.speed_center_mps) for b in bins})
+        centers = sorted({float(_bin_attr(b, "speed_center_mps")) for b in bins})
     except (TypeError, ValueError, AttributeError):
         return _FALLBACK_BIN_TOLERANCE_MPS
     if len(centers) < 2:
@@ -197,8 +229,13 @@ def _bin_for_speed(envelope: Any, speed: Any) -> tuple[Any, bool]:
     It is False (with bin=None) for the ordinary "nothing to look at" cases
     -- no envelope, no bins, an unusable speed value -- which decide_anchor
     reports through a different reason (no_envelope / bin_fabricated).
+
+    ``envelope`` -- and each element of its ``friction_bins`` -- may be
+    either a live ``FrictionEnvelope``/``FrictionBin`` or the dict shape
+    ``.to_dict()`` produces (that dict shape is what actually flows through
+    ``summary["friction_envelope"]``); see ``_bin_attr``/``_envelope_bins``.
     """
-    bins = getattr(envelope, "friction_bins", None)
+    bins = _envelope_bins(envelope)
     if not bins or speed is None:
         return None, False
     try:
@@ -209,8 +246,8 @@ def _bin_for_speed(envelope: Any, speed: Any) -> tuple[Any, bool]:
         return None, False
 
     try:
-        nearest = min(bins, key=lambda b: abs(float(b.speed_center_mps) - v))
-        dist = abs(float(nearest.speed_center_mps) - v)
+        nearest = min(bins, key=lambda b: abs(float(_bin_attr(b, "speed_center_mps")) - v))
+        dist = abs(float(_bin_attr(nearest, "speed_center_mps")) - v)
     except (TypeError, ValueError, AttributeError):
         return None, False
 

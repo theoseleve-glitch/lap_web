@@ -1201,7 +1201,7 @@ def run_full_analysis(
             "10d2_grip_anchor", s10d2_grip_anchor.run_grip_anchor,
             _plcm, corners, resampled_laps,
             friction_model=summary.get("friction_model"),
-            friction_envelope=summary.get("friction_envelope"),
+            friction_envelope=_friction_envelope_result,
             curvature_profile=curvature_profile,
         )
         _record("10d2_grip_anchor", _plcm_anchored, err)

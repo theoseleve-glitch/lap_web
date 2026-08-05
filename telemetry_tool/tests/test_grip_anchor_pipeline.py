@@ -267,6 +267,89 @@ def test_run_grip_anchor_refuses_to_borrow_a_distant_envelope_bin():
     assert out[0]["grip_anchor_pct"] == pytest.approx(100.0)   # only lap, is its own session best
 
 
+def test_run_grip_anchor_reaches_physics_off_a_dict_shaped_envelope():
+    """Regression for the Task-10 real-data finding: the orchestrator persists
+    ``summary["friction_envelope"]`` as ``FrictionEnvelope.to_dict()`` (a plain
+    dict) and -- after the Task-10 fix -- still sometimes threads a dict form
+    through, so ``run_grip_anchor`` must accept that shape, not only a live
+    ``FrictionEnvelope`` object.
+
+    Before the fix, ``_bin_for_speed``'s ``getattr(envelope, "friction_bins",
+    None)`` silently read ``None`` off a dict (``getattr`` never sees dict
+    keys), which made ``envelope_bin`` ``None`` for every corner-lap
+    regardless of the envelope's real quality, and ``bin_is_measured``'s own
+    ``getattr(bin_obj, "confidence")`` did the same to a dict-shaped bin. Both
+    degraded silently to ``REASON_BIN_FABRICATED`` -- a confidently WRONG
+    label, not a loud failure, which is why it went unnoticed until Task 10's
+    real-pipeline run: on OK_R4.csv, every one of 72 corner-laps read
+    ``bin_fabricated`` even though the friction envelope built from that
+    session had 15/15 bins at ``confidence=1.0`` with 300-700+ samples each.
+
+    Every existing test double for the envelope in this file (see
+    ``_Envelope`` just above, and ``_FullFriction``'s siblings) is a
+    hand-built object exposing ``.friction_bins`` as an attribute -- never
+    the dict shape ``.to_dict()`` actually produces. That is precisely why
+    those tests could not have caught this: none of them exercises the dict
+    path at all. This test closes that gap by building a REAL
+    ``FrictionEnvelope``/``FrictionBin`` and calling ``.to_dict()`` on it,
+    the same call the orchestrator makes, rather than hand-writing a dict
+    that might not match its real shape.
+    """
+    from pipeline.stages import s10d2_grip_anchor
+    import grip_anchor as ga
+    from friction_envelope import FrictionBin, FrictionEnvelope
+
+    v_full = 25.0   # constant "Speed (m/s)" in _lap_frame -- matches the bin below
+    real_bin = FrictionBin(
+        speed_center_mps=v_full, combined_g_p95=1.3, lat_max_g=1.3,
+        accel_max_g=0.35, brake_max_g=0.62, sample_count=41, confidence=1.0,
+    )
+    envelope_dict = FrictionEnvelope(
+        speed_bins=np.array([v_full]),
+        friction_bins=[real_bin],
+        global_combined_g=1.3,
+        is_reliable=True,
+        warning=None,
+    ).to_dict()   # <-- the exact call orchestrator.py makes into summary[...]
+
+    class _FullFriction:
+        exponent = 2.0
+        exponent_source = "fitted"
+
+        def lateral_max(self, speed_mps):
+            return 20.0
+
+        def traction_max(self, speed_mps):
+            return 20.0
+
+        def braking_max(self, speed_mps):
+            return 20.0
+
+    a_lat_g = 0.9
+    kappa = (a_lat_g * 9.80665) / (v_full ** 2)   # makes trust_ratio exactly 1.0
+    curvature_profile = pd.DataFrame({
+        "distance_m": np.linspace(0.0, 1200.0, 400),
+        "curvature_1pm": np.full(400, kappa),
+    })
+
+    metrics = [{"lap_number": 1, "corner_id": 1, "apex_speed_mps": v_full}]
+    corners = [{"corner_id": 1, "s_start": 100.0, "s_end": 200.0}]
+    laps = {1: _lap_frame(a_lat_g=a_lat_g)}
+
+    out = s10d2_grip_anchor.run_grip_anchor(
+        metrics, corners, laps,
+        friction_model=_FullFriction(),
+        friction_envelope=envelope_dict,   # plain dict, not an object
+        curvature_profile=curvature_profile,
+    )
+    assert out[0]["grip_anchor_tier"] == ga.TIER_PHYSICS_ELLIPSE_FITTED, (
+        f"a dict-shaped envelope with a genuinely measured, in-range bin "
+        f"must still reach a physics tier -- got {out[0]!r}"
+    )
+    assert out[0]["grip_anchor_reason"] is None
+    assert out[0]["grip_anchor_pct"] is not None
+
+
 def _make_pipeline_csv(tmp_path, n_laps=3):
     """Minimal RaceChrono-style CSV, same column shape as the fixture in
     test_grip_pipeline.py / test_pipeline_racing_line_trigger.py, which is

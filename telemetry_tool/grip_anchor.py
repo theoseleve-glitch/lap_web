@@ -181,12 +181,23 @@ _MIN_MEASURED_SAMPLES: Final = 8
 def bin_is_measured(bin_obj: Any) -> bool:
     """True only when this envelope bin is a real measurement.
 
-    Fail-safe: anything we cannot inspect is treated as fabricated.
+    Fail-safe: anything we cannot inspect is treated as fabricated. Accepts
+    either a live ``FrictionBin`` (attribute access) or the dict shape its
+    ``.to_dict()`` produces (dict key access) -- the pipeline persists and
+    threads through the latter (see ``s10d2_grip_anchor._bin_for_speed``),
+    and a bare ``getattr`` used to silently read ``None``/raise for that
+    shape regardless of the bin's real confidence, mislabelling a genuinely
+    measured bin as fabricated. That confident mislabel, not a loud crash,
+    is the failure this needs to guard against.
     """
     try:
-        confidence = float(getattr(bin_obj, "confidence"))
-        sample_count = int(getattr(bin_obj, "sample_count"))
-    except (AttributeError, TypeError, ValueError):
+        if isinstance(bin_obj, dict):
+            confidence = float(bin_obj["confidence"])
+            sample_count = int(bin_obj["sample_count"])
+        else:
+            confidence = float(getattr(bin_obj, "confidence"))
+            sample_count = int(getattr(bin_obj, "sample_count"))
+    except (AttributeError, TypeError, ValueError, KeyError):
         return False
     return confidence > 0.0 and sample_count >= _MIN_MEASURED_SAMPLES
 
