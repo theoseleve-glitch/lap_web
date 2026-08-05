@@ -2036,61 +2036,61 @@ _MAX_MEDIAN_APEX_ONSET_CORR = -0.10
 # the eight corners now exceed |0.80|. The 0.90 bound survives on the median
 # with 0.33 of headroom, but the honest reading is that ~33% of the onset's
 # within-corner variance is apex speed wearing a different hat. See
-# _MIN_POOLED_PARTIAL_ONSET_R below for what is left after that is removed.
+# the block below on the REMOVED added-information floor for what is left
+# once that redundancy is partialled out -- the short answer is: nothing we
+# can distinguish from zero.
 _MAX_ABS_APEX_ONSET_CORR = 0.90
 
-# THE ADDED-INFORMATION FLOOR (fix round 2). The only assertion here that
-# asks whether the onset says anything corner time does not already learn
-# from apex speed: the partial correlation r(corner_time, onset | apex),
-# pooled over all corner-laps with each channel z-scored WITHIN its corner
-# first.
+# ── THE ADDED-INFORMATION FLOOR WAS REMOVED, NOT LOWERED ─────────────────
 #
-# RE-DERIVED DOWNWARD, 0.10 -> 0.02, BY THE FINAL REVIEW'S CRITICAL 1, AND
-# THE REASON MATTERS MORE THAN THE NUMBER.
+# There used to be a `_MIN_POOLED_PARTIAL_ONSET_R` here: a floor under the
+# partial correlation r(corner_time, onset | apex_speed), asserting that the
+# onset says something about corner time that apex speed does not already
+# say. It is gone, and this comment is what replaces it, because a floor that
+# cannot fail is worse than no floor -- it reads as coverage that is not
+# there.
 #
-# The 0.360 this floor was set under was mostly a COORDINATE-FRAME ARTIFACT.
-# `throttle_onset_m` was a raw per-lap absolute metre differenced across laps
-# whose spans differ by ~20 m, so a longer lap reported a later onset; that
-# lap-length term correlates with corner time and inflated the partial. In the
-# canonical frame the same measurement on the same 71 corner-laps reads:
+# WHY IT CANNOT FAIL. It was set at 0.10 when the measurement was +0.360. The
+# +0.360 was mostly a COORDINATE-FRAME ARTIFACT: `throttle_onset_m` was a raw
+# per-lap absolute metre differenced across laps whose spans differ by ~20 m,
+# and that lap-length term correlates with corner time. In the canonical frame
+# the same measurement on the same 71 corner-laps reads:
 #
 #   specification                      partial r      t
 #   pooled, corner z-scored              +0.098      0.81
 #   + lap fixed effects                  +0.002      0.02
+#   corner-cluster bootstrap 95% CI   [-0.265, +0.233]  (28.6% at or below 0)
 #
-# and a corner-cluster bootstrap of the pooled figure gives 95% CI
-# [-0.265, +0.233], with 28.6% of replicates at or below ZERO.
+# The mechanism is confirmed by two independent routes agreeing: the broken
+# frame's LAP-FE partial (+0.0989) and the canonical frame's POOLED partial
+# (+0.0978) are the same number, because a lap's length offset is to first
+# order a lap-level constant that lap dummies already absorbed.
 #
-# THE MECHANISM IS CONFIRMED BY AN INDEPENDENT ROUTE. Before the frame fix
-# the LAP-FIXED-EFFECTS partial was +0.0989; after it, the POOLED partial is
-# +0.0978 -- the same number. Lap dummies were already absorbing the artifact,
-# because a lap's length offset is (to first order) a lap-level constant. The
-# branch's earlier "honest limit" table was therefore already reporting the
-# artifact-free value in its lap-FE rows; every other row was measuring frame.
+# So the honest range for this quantity spans zero. Re-derived downward it
+# would have been 0.02 -- a number with 32% of the bootstrap mass BELOW it,
+# which on this deterministic fixture passes every single run and therefore
+# certifies nothing. Nothing in the mutation battery depended on it either:
+# `onset := -k*apex` makes the partial UNDEFINED (caught by the `is not None`
+# assertion below, which is real) and a constant onset makes the per-corner
+# correlations undefined (caught by the `>= 4 usable corners` assertion).
+# Verified by running all 30 mutations with the floor deleted: every one
+# still fails the gate.
 #
-# WHAT THIS FLOOR NOW DOES, STATED PLAINLY: it asserts only that the onset's
-# residual after the apex fit is not identically zero and not negative on this
-# fixture. IT IS NOT EVIDENCE THAT `late_throttle` MEASURES ANYTHING. On this
-# session the onset's added information beyond apex speed is not
-# distinguishable from zero in ANY specification (t = 0.81 and 0.02), and the
-# detector is retained on the estimator-free grounds only: zero degeneracy,
-# bounded redundancy, and the cost-ordering of its solo events. See
-# `driving_events.py`'s `_LateThrottle` block comment and
-# `TIME_COST_ATTRIBUTION` for the payload-level constraint that follows.
+# ⚠ STATED PLAINLY SO NOBODY ASSUMES OTHERWISE: **"the throttle onset carries
+# information beyond apex speed" is NOT gate-enforced.** It is measured and
+# PRINTED by the acceptance test's diagnostics, so a drift is visible in the
+# log, but nothing fails if it goes to zero. That is a deliberate admission
+# of what one session with 9 laps per corner can support, not an oversight.
+# The 2026-08-06 ruling withdrew the product claim that rested on it
+# (`late_throttle` no longer emits a `time_cost_s` and cannot occupy a ranked
+# slot alone), so what remains is a measurement kept for the cross-session
+# phase, where n can actually answer the question. If a longer session ever
+# does establish the signal, THAT is when a floor becomes defensible.
 #
-# STANDING RECOMMENDATION, recorded rather than acted on: the branch's own
-# rule was "if a longer session also shows t<1 under lap FE, DROP the
-# detector, not the threshold". That condition is now met on THIS session, in
-# every specification. Dropping a shipped detector is a product decision, so
-# it is escalated, not taken here.
-#
-# 0.02 keeps ~4.9x headroom under the measured +0.098 while staying strictly
-# above the zero a signal-free onset produces. No mutation in the battery
-# below depends on this floor: `onset := -k*apex` makes the partial UNDEFINED
-# (caught by the `is not None` assertion) and a constant onset makes the
-# per-corner correlations undefined (caught by the `>= 4 usable corners`
-# assertion). Verified by running the battery after the change.
-_MIN_POOLED_PARTIAL_ONSET_R = 0.02
+# The DEGENERACY assertion below is kept and is not the same thing: it fires
+# when the onset is a perfect linear function of apex speed, i.e. when the
+# partial is not small but MEANINGLESS. That case is real, reachable, and
+# caught.
 
 
 def _median(values):
@@ -2229,19 +2229,21 @@ def _assert_onset_is_not_inverted(plcm):
         f"rescaling of apex speed and carries no throttle information of "
         f"its own")
 
-    # And the only assertion that asks whether it adds anything at all.
+    # DEGENERACY only -- there is deliberately NO floor on the value; see
+    # "THE ADDED-INFORMATION FLOOR WAS REMOVED, NOT LOWERED" above for why.
+    #
+    # `None` means the partial is not small but UNDEFINED: one of the three
+    # channels is a linear function of another, so "what does the onset add
+    # beyond apex speed" has no answer. Exercised by the "corner time
+    # collapses onto apex speed" mutation -- the onset-side route to the same
+    # degeneracy is caught earlier by `_MAX_ABS_APEX_ONSET_CORR`, which is why
+    # this needed a mutation of its own rather than inheriting one.
     pooled_r, n_pooled = _pooled_partial_onset_r(by_corner)
     assert pooled_r is not None, (
         "the onset carries no variance independent of apex speed at all "
         "(its residual after the apex fit is degenerate) -- it is apex "
         "speed under another name")
-    assert pooled_r >= _MIN_POOLED_PARTIAL_ONSET_R, (
-        f"pooled partial corr(corner_time, onset | apex_speed) is "
-        f"{pooled_r:+.3f} over {n_pooled} corner-laps (floor "
-        f"{_MIN_POOLED_PARTIAL_ONSET_R}) -- the onset explains nothing "
-        f"about corner time that apex speed does not already explain, so "
-        f"late_throttle is a relabelling of over_slowing rather than a "
-        f"second measurement")
+    return pooled_r, n_pooled
 
 
 def _assert_driving_events_gate(summary):
@@ -2304,7 +2306,10 @@ def _assert_driving_events_gate(summary):
         f"throttle_onset_status: {stray}")
 
     # ── Task 12: the onset metric is not anti-correlated with pace ────
-    _assert_onset_is_not_inverted(plcm)
+    # Returns the pooled partial for DIAGNOSTICS ONLY -- it is observed and
+    # printed, never asserted on. See the block comment where the floor used
+    # to be.
+    onset_partial = _assert_onset_is_not_inverted(plcm)
 
     # ── events exist, in quantity ─────────────────────────────────────
     assert events, "no driving events produced on real telemetry"
@@ -2414,6 +2419,7 @@ def _assert_driving_events_gate(summary):
         "corner_laps": corner_laps, "events": events, "cap": cap,
         "costs": sorted(costs), "measured_share": share,
         "laps": laps, "corner_ids": corner_ids,
+        "onset_partial": onset_partial,
     }
 
 
@@ -2558,6 +2564,9 @@ def test_driving_events_on_real_kart_telemetry(_real_summary):
     costs = d["costs"]
     print(f"cost s: min {costs[0]:.3f} median "
           f"{costs[len(costs) // 2]:.3f} max {costs[-1]:.3f}")
+    r, n = d["onset_partial"]
+    print(f"onset partial r(corner_time, onset | apex) = {r:+.3f} over {n} "
+          f"corner-laps  [OBSERVED, NOT ASSERTED -- see the removed floor]")
     print("onset status: "
           f"{Counter(m.get('throttle_onset_status') for m in summary['per_lap_corner_metrics'])}")
 
@@ -2720,6 +2729,31 @@ def _onset_is_apex_rescaled(base):
     return rows
 
 
+def _corner_time_is_apex_rescaled(base):
+    """`corner_time := a - b * apex_speed`, exactly, within each corner.
+
+    The ONLY mutation that reaches the partial-correlation DEGENERACY
+    assertion. Everything else that could make that partial undefined is
+    caught earlier: an onset that is a linear function of apex speed trips
+    `_MAX_ABS_APEX_ONSET_CORR` (median |r| = 1.000), and a constant onset
+    trips the "too few usable corners" check. Verified by driving the shipped
+    gate helper against each mutation and reading which assertion fired.
+
+    This one degenerates the OTHER leg: if corner time IS apex speed, then
+    "what does the onset add BEYOND apex speed" has no answer -- the residual
+    it would be measured against is zero. That is a real upstream collapse
+    (two independent measurements landing on one another), and without this
+    mutation the `pooled_r is not None` assertion was never exercised by
+    anything.
+    """
+    rows = [dict(m) for m in base["per_lap_corner_metrics"]]
+    for m in rows:
+        apex = m.get("apex_speed_mps")
+        if apex is not None and m.get("corner_time_s") is not None:
+            m["corner_time_s"] = 40.0 - 2.0 * float(apex)
+    return rows
+
+
 def _constant_onset(base):
     rows = [dict(m) for m in base["per_lap_corner_metrics"]]
     for m in rows:
@@ -2836,6 +2870,8 @@ _MUTATIONS = {
 
     "onset is a pure rescaling of apex speed (no throttle information)":
         lambda b, de: _summary_with(b, plcm=_onset_is_apex_rescaled(b)),
+    "corner time collapses onto apex speed (the partial is undefined)":
+        lambda b, de: _summary_with(b, plcm=_corner_time_is_apex_rescaled(b)),
     "onset stops discriminating (one constant per corner)":
         lambda b, de: _summary_with(b, plcm=_constant_onset(b)),
     "throttle_onset_status never written (second pass unwired)":
