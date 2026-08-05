@@ -703,13 +703,62 @@ def _isolated_track_registry(tmp_path, monkeypatch):
     )
 
 
+# Minimum share of corner-laps that must reach a session-envelope tier on this
+# fixture. MEASURED: 57 of 72 = 79.2%.
+#
+# WHY 25% AND NOT SOMETHING TIGHTER. The value has to survive honest variation
+# and still fail on collapse, and those two pull in opposite directions. The
+# share legitimately moves with the track: the 15 corner-laps that miss here do
+# so for REASON_SPEED_OUT_OF_BINS (apex speeds of 8.9-11.6 m/s against a lowest
+# envelope bin centred at 11.99 m/s -- a genuine coverage gap, correctly
+# refused), and a circuit with more slow corners than OK_R4 would legitimately
+# push that group larger. A floor pinned near the measured 79% would start
+# failing on track shape rather than on defects.
+#
+# 25% leaves a factor of ~3 of headroom below the measured value -- enough that
+# a session would need most of its corners outside envelope coverage before it
+# tripped -- while still being far above the failure mode this exists to catch.
+# Every systemic collapse of this feature drives the share to ZERO, not to
+# something merely low: sabotaging bin_is_measured, or the channel-trust gate,
+# or the envelope threading, takes all 72 corner-laps to driver_best_session at
+# once, because those inputs are session-wide, not per-corner. So the gap
+# between "collapsed" (0%) and "unusually slow track" (still well above 25%) is
+# wide, and the floor sits inside it rather than near either edge.
+_MIN_SESSION_ENVELOPE_SHARE = 0.25
+
+
 @pytest.mark.skipif(not os.path.exists(_REAL_CSV), reason="real fixture absent")
 def test_grip_anchor_on_real_kart_telemetry(_isolated_track_registry):
     """Acceptance: on real data every corner-lap gets a tier from the closed
-    vocabulary, physics-tier percentages are physically plausible, and the
-    trust ratio lands near the 0.961 measured during design."""
+    vocabulary, corner-laps ACTUALLY REACH the session-envelope tier, their
+    percentages are physically plausible, and the channel-trust ratio the
+    pipeline really computed lands inside the trust band.
+
+    THIS TEST USED TO BE UNABLE TO FAIL ON ITS HEADLINE CLAIM. The plausibility
+    assertions all lived inside `for m in physics:`, so an empty `physics` list
+    meant the loop body never ran and the test passed -- green while asserting
+    nothing. Proven by sabotage: forcing `bin_is_measured` to return False
+    yields a tier distribution of `{'driver_best_session': 72}`, zero
+    session-envelope tiers, and the test still PASSED. That is the exact defect
+    caught by hand at Task 10, which would have shipped green. Hence the three
+    assertions the old version lacked: a non-empty result, a floor on the
+    share, and a check on the trust ratio the docstring already claimed.
+
+    The trust ratio is observed by spying on the LIVE stage helper rather than
+    recomputed here, so the number under test is the one the pipeline actually
+    used to make its tier decisions, not a lookalike.
+    """
     import grip_anchor as ga
+    import pipeline.stages.s10d2_grip_anchor as stage
     from pipeline import run_full_analysis
+
+    seen_trust = []
+    real_trust_ratio = stage._session_trust_ratio
+
+    def _spy(*args, **kwargs):
+        value = real_trust_ratio(*args, **kwargs)
+        seen_trust.append(value)
+        return value
 
     # NOTE: the brief's literal call is `run_full_analysis(_REAL_CSV)`, but
     # pipeline.orchestrator.run_full_analysis's `session_meta` is a required
@@ -718,11 +767,15 @@ def test_grip_anchor_on_real_kart_telemetry(_isolated_track_registry):
     # other real-pipeline test in this file already calls it (see
     # test_orchestrator_calls_grip_anchor_with_the_per_lap_metrics_and_friction_model
     # above: `pipeline.run_full_analysis(str(csv_path), {})`).
-    summary = run_full_analysis(_REAL_CSV, {})
+    with patch.object(stage, "_session_trust_ratio", side_effect=_spy):
+        summary = run_full_analysis(_REAL_CSV, {})
+
     metrics = summary.get("per_lap_corner_metrics") or []
     assert metrics, "no per-lap corner metrics produced"
 
     tiers = [m.get("grip_anchor_tier") for m in metrics]
+    reasons = [m.get("grip_anchor_reason") for m in metrics]
+    distribution = {t: tiers.count(t) for t in set(tiers)}
     assert all(t in ga.TIERS for t in tiers), f"tier outside vocabulary: {set(tiers)}"
 
     # Every lap must be represented — the parent branch fixed the bug where
@@ -730,12 +783,43 @@ def test_grip_anchor_on_real_kart_telemetry(_isolated_track_registry):
     laps = {m["lap_number"] for m in metrics}
     assert len(laps) >= 5, f"only {len(laps)} laps produced corner metrics: {laps}"
 
-    physics = [
+    envelope_tier = [
         m for m in metrics
         if ga.is_quotable_as_session_envelope(m.get("grip_anchor_tier"))
         and m.get("grip_anchor_pct") is not None
     ]
-    for m in physics:
+
+    # (1) The headline claim itself. Without this, everything below is vacuous.
+    assert len(envelope_tier) > 0, (
+        "NOT ONE corner-lap reached a session-envelope tier -- Phase 1's "
+        f"headline claim did not survive on real data. tiers={distribution} "
+        f"reasons={ {r: reasons.count(r) for r in set(reasons)} }"
+    )
+
+    # (2) ...and enough of them that a near-total collapse is caught too.
+    share = len(envelope_tier) / len(metrics)
+    assert share >= _MIN_SESSION_ENVELOPE_SHARE, (
+        f"only {len(envelope_tier)}/{len(metrics)} ({share:.1%}) corner-laps "
+        f"reached a session-envelope tier, under the {_MIN_SESSION_ENVELOPE_SHARE:.0%} "
+        f"floor. tiers={distribution} "
+        f"reasons={ {r: reasons.count(r) for r in set(reasons)} }"
+    )
+
+    # (3) The trust ratio the docstring has always claimed, now checked. This
+    # is the value the live stage computed and fed to every tier decision.
+    assert seen_trust, "the stage never computed a channel-trust ratio at all"
+    trust = seen_trust[0]
+    assert trust is not None, (
+        "the channel-trust ratio was unmeasurable on real kart data; every "
+        "corner-lap would fail safe to the session-relative tier"
+    )
+    assert ga.TRUST_BAND_LOW <= trust <= ga.TRUST_BAND_HIGH, (
+        f"channel-trust ratio {trust:.4f} is outside the trust band "
+        f"[{ga.TRUST_BAND_LOW}, {ga.TRUST_BAND_HIGH}] -- measured 0.9865 on "
+        f"this fixture during design"
+    )
+
+    for m in envelope_tier:
         assert 0.0 <= m["grip_anchor_pct"] <= 300.0, (
             f"implausible grip pct {m['grip_anchor_pct']} "
             f"(lap {m['lap_number']} corner {m['corner_id']})"
@@ -744,5 +828,7 @@ def test_grip_anchor_on_real_kart_telemetry(_isolated_track_registry):
             f"implausible baseline {m['grip_anchor_baseline_g']} G"
         )
 
-    print(f"\ntier distribution: "
-          f"{ {t: tiers.count(t) for t in set(tiers)} }")
+    print(f"\ntier distribution: {distribution}")
+    print(f"reason distribution: { {r: reasons.count(r) for r in set(reasons)} }")
+    print(f"session-envelope share: {len(envelope_tier)}/{len(metrics)} ({share:.1%})")
+    print(f"channel-trust ratio: {trust:.4f}")
