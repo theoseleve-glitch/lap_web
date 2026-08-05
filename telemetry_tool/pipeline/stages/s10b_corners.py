@@ -572,47 +572,79 @@ def _enrich_corner_telemetry(d: dict[str, Any], lap_df: pd.DataFrame) -> Optiona
 # the corner carrying more speed, so it had to reach a HIGHER ABSOLUTE speed
 # before the threshold tripped, and its onset came out LATER. The metric was
 # anti-correlated with corner performance: it penalised the driver for going
-# fast. Measured on data/raw/OK_R4.csv (9 laps x 8 corners):
+# fast. The threshold is now per-corner and SESSION-FIXED, so every lap at a
+# corner is measured against one identical absolute speed.
 #
-#                                          before      after
-#   median within-corner corr(apex, onset)  +0.552     -0.683
-#   corr(corner_time, onset) negative on     6 of 8      0 of 8
-#   late_throttle events on the FASTEST
-#     pass through their own corner          8 of 59     5 of 60
-#   corners whose reference onset was held
-#     by the SLOWEST lap                     4 of 8      0 of 8
+# ── HOW THE BASIS WAS SELECTED, AND WHY NOT ON corr(corner_time, onset) ──
 #
-# The single largest magnitude in the whole session used to be 40.5 m at
-# corner 1 lap 7 -- the FASTEST corner-1 lap of the session (apex 19.58 m/s,
-# corner time 2.166 s), flagged against a reference held by lap 1, the
-# slowest (apex 13.93 m/s, corner time 3.051 s). It is now 42.2 m at corner 1
-# lap 1: the slowest lap, costing a measured 0.885 s.
+# The obvious score -- "is corr(corner_time, onset) positive on every corner"
+# -- is NOT evidence that this metric measures throttle timing, and selecting
+# on it picks the wrong basis. corr(corner_time, apex_speed) is about -0.95 on
+# this session, so ANY onset that correlates with apex speed inherits a
+# corner-time correlation for free. Median r^2(apex -> onset) is 0.17-0.47
+# depending on basis: most of what the onset "knows" about corner time is
+# just apex speed wearing a different hat.
 #
-# WHY THE SESSION MEDIAN, NOT THE SESSION BEST. Every candidate below has the
-# property that actually matters (one fixed speed per corner, identical for
-# every lap); the median won on measurement, not taste. Same fixture, same
-# geometric bound, only the threshold basis varied:
+# The selection criterion is therefore TWO-SIDED:
 #
-#   threshold basis          med corr(apex,onset)  corr(ctime,onset)<0  censored
-#   session median + 0.5           -0.683               0 of 8            0
-#   session best   + 0.5           -0.404               1 of 8            1
-#   1.03 x session best            -0.400               0 of 8            1
-#   session worst  + 0.5           +0.045               4 of 8            0
-#   per-lap apex + 0.5 (shipped)   +0.552               6 of 8            0
+#   (1) ADDED INFORMATION -- the onset must explain corner-time variance
+#       BEYOND apex speed. Measured as the partial correlation
+#       r(corner_time, onset | apex_speed), pooled over all corner-laps with
+#       each channel z-scored WITHIN its corner first. Pooled (n=72) rather
+#       than a median of 8 per-corner values, because with 9 laps per corner
+#       each per-corner partial carries SE ~ 0.45 -- a median of eight such
+#       numbers is mostly noise, and it ranks the bases differently from the
+#       properly-powered estimate.
+#   (2) NOT A RESTATEMENT -- |corr(apex, onset)| must stay bounded away from
+#       1.0, or the "metric" is just apex speed rescaled.
 #
-# The session best sits at or above the top of a corner's apex-speed
-# distribution, so a slow lap must climb the entire spread (5.6 m/s at corner
-# 1) before crossing -- which lands its onset far down the exit where the
-# laps' speed traces have already converged, or past the search bound
-# entirely (that is the one censored lap). The median sits INSIDE the
-# distribution, so every lap crosses on the exit-acceleration ramp, which is
-# exactly where the laps differ most. The session worst sits below every
-# lap's apex, so nearly every lap crosses on the first post-apex sample and
-# the metric stops discriminating at all.
+# Measured on data/raw/OK_R4.csv (9 laps x 8 corners), same geometric bound,
+# only the threshold basis varied. "degen" counts onsets landing within 2
+# samples of the apex, i.e. corner-laps where the metric has silently
+# collapsed to "where the apex is":
+#
+#   basis                med r(apex,onset)  cens  degen  pooled r(ct,on|apex)
+#   per-lap apex + 0.5          +0.552         0      0   0.206 [-0.03,+0.42]
+#   session median + 0.5        -0.683         0     14   0.401 [+0.19,+0.58]
+#   session p75 + 0.5           -0.635         0      5   0.423 [+0.21,+0.60]
+#   SESSION BEST + 0.5          -0.404         1      0   0.360 [+0.14,+0.55]
+#   1.03 x session best         -0.400         1      0   0.369 [+0.15,+0.56]
+#   session best + 2.0          -0.267        21      0   0.529 [+0.29,+0.71]
+#   session worst + 0.5         +0.045         0     53   0.142 [-0.10,+0.36]
+#
+# THE CHOICE: session best + 0.5.
+#
+#   * Added information does NOT separate median / p75 / best -- their 95%
+#     CIs overlap heavily (0.19-0.58, 0.21-0.60, 0.14-0.55). Anyone who picks
+#     between them on that number alone is reading noise. What it DOES
+#     separate is the defect (0.206, CI includes zero) and `worst` (0.142, CI
+#     includes zero) from all of them.
+#   * Among the indistinguishable set, `best` is the only basis with ZERO
+#     degenerate onsets. It sits at or above the top of every corner's
+#     apex-speed distribution, so no lap is already above the threshold at its
+#     own apex, so no onset can collapse onto the apex position. The session
+#     median leaves 19% (14/72) of corner-laps reporting the apex position
+#     dressed as a throttle onset -- a number that LOOKS measured and is not.
+#   * `best` also has the LOWEST |corr(apex, onset)| of the credible set
+#     (0.404), i.e. it is the least redundant with apex speed -- criterion (2).
+#   * Its one cost is one censored corner-lap. That is strictly better than a
+#     degenerate one: a censored lap is reported as `not_measurable` with a
+#     named reason (see driving_events.ONSET_*), a degenerate lap is silently
+#     indistinguishable from a real measurement.
+#   * `best + 2.0` scores highest on added information but censors 21 of 72
+#     (29%) and drops two corners entirely -- exactly the censoring bias that
+#     makes naive truncation wrong.
+#
+# HONEST LIMIT, DO NOT OVERSTATE THIS METRIC. Pooled ΔR^2 for `best` is 0.056:
+# the onset explains about 6% of within-corner corner-time variance beyond
+# apex speed. Real (the CI excludes zero) but small. `late_throttle` is
+# therefore mostly, though not entirely, a restatement of `over_slowing` --
+# which is why events_repo now merges the pair rather than showing two
+# competing corrections (see `_dedupe_by_lap_corner`).
 #
 # 0.5 m/s is carried over unchanged from the shipped code so this fix
 # introduces no newly-tuned constant; only its reference point moved, from
-# "above THIS lap's apex" to "above THIS CORNER's session-median apex".
+# "above THIS lap's apex" to "above THIS CORNER's session-best apex".
 _ONSET_THRESHOLD_MARGIN_MPS = 0.5
 
 
@@ -732,7 +764,8 @@ def _assign_throttle_onsets(
 
     # Pass A: the per-corner apex-speed distribution, read at the SAME index
     # the scan starts from, so the threshold and the scan share one notion of
-    # "the apex".
+    # "the apex". The MAXIMUM over that distribution becomes the threshold --
+    # see the block comment above for why the max and not the median.
     apex_speeds: dict[Any, list[float]] = {}
     for lap_num, entries in by_lap.items():
         _, spd_arr = arrays[lap_num]
@@ -746,7 +779,7 @@ def _assign_throttle_onsets(
                 apex_speeds.setdefault(metric.get("corner_id"), []).append(v)
 
     thresholds = {
-        cid: float(np.median(vals)) + _ONSET_THRESHOLD_MARGIN_MPS
+        cid: float(np.max(vals)) + _ONSET_THRESHOLD_MARGIN_MPS
         for cid, vals in apex_speeds.items() if vals
     }
     limits = {

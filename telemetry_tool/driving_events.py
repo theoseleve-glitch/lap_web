@@ -473,11 +473,29 @@ OVER_SLOWING = _OverSlowing()
 # 59 events fired on the FASTEST pass through their own corner -- including
 # the session's largest magnitude (40.5 m, corner 1 lap 7, the fastest
 # corner-1 lap of the session). The threshold is now per-corner and
-# SESSION-FIXED, so every lap at a corner is measured against the same
-# absolute speed; the same measurements now read -0.683, 0 of 8, and the
-# reference is no longer held by the slowest lap anywhere. Any future change
-# to that derivation has to preserve the session-fixed property or this
-# detector goes back to penalising the driver for going fast.
+# SESSION-FIXED (the corner's session-best apex + 0.5 m/s), so every lap at a
+# corner is measured against the same absolute speed; the same measurements
+# now read -0.404, 1 of 8 (corner 1 at -0.032, i.e. zero), 5 of 57, and the
+# largest magnitude is 41.2 m on corner 8 lap 4 -- the SLOWEST lap through
+# that corner, costing a measured 0.495 s. Any future change to that
+# derivation has to preserve the session-fixed property or this detector goes
+# back to penalising the driver for going fast.
+#
+# HOW MUCH THIS DETECTOR ACTUALLY ADDS, AND WHY THE READ SURFACE MERGES IT.
+# `corr(corner_time, apex_speed)` is about -0.75 on this session, so an onset
+# that correlates with apex speed inherits a corner-time correlation for
+# free; "corr(corner_time, onset) is positive" is therefore NOT evidence this
+# detector measures throttle timing. The measurement that is: the partial
+# correlation r(corner_time, onset | apex_speed), pooled within corner, is
+# +0.360 [95% CI +0.136, +0.548] with a pooled dR^2 of 0.056. Real, but
+# small -- the onset explains ~6% of within-corner corner-time variance
+# beyond what apex speed already explains. Consequently `over_slowing` and
+# `late_throttle` co-fire on 39 of 57 measured late_throttle events (68%) and
+# carry the IDENTICAL `time_cost_s` by construction. `events_repo.
+# _dedupe_by_lap_corner` resolves that pair deterministically (over_slowing
+# wins, late_throttle's magnitude rides along in `evidence["also_fired"]`)
+# rather than letting SQL row order decide which correction a driver is
+# shown.
 
 # Measured probe: throttle-onset deltas at or below 2 m did not separate
 # from proxy noise on the real session. Emit strictly above it.

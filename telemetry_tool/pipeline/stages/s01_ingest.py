@@ -8,6 +8,8 @@ column mapping for downstream compatibility, and runs column discovery.
 from __future__ import annotations
 
 import logging
+import sys
+from pathlib import Path
 from typing import Any, Optional
 
 import pandas as pd
@@ -15,6 +17,59 @@ import pandas as pd
 from pipeline.helpers import lazy_import
 
 logger = logging.getLogger(__name__)
+
+# Which of the two readers produced the frame. Recorded on `source_info` (and
+# thence on the pipeline summary) because the choice is not cosmetic: the two
+# readers hand downstream stages DIFFERENT COLUMN NAMES, and corner detection
+# gives a different answer as a result. See `_ensure_package_root_on_path`.
+INGEST_PATH_ADAPTER = "adapter_registry"
+INGEST_PATH_LEGACY = "legacy_racechrono"
+
+
+def _ensure_package_root_on_path() -> None:
+    """Make ``telemetry_tool`` importable as a package from ANY launcher.
+
+    THIS IS NOT HOUSEKEEPING. ``run_ingest`` selects the adapter registry with
+    ``from telemetry_tool.adapters import parse_file`` -- an ABSOLUTE package
+    import needing the REPO ROOT on ``sys.path``, not merely ``telemetry_tool/``
+    (the registry's own modules import ``telemetry_tool.adapters.base`` in turn,
+    so a bare ``from adapters import ...`` cannot substitute). Production
+    supplies both (``Dockerfile``: ``PYTHONPATH=/app:/app/telemetry_tool``) and
+    so does pytest (``telemetry_tool/tests/`` and ``telemetry_tool/`` are both
+    packages, so pytest's basedir walk inserts the repo root, and
+    ``tests/conftest.py`` inserts ``telemetry_tool/``). An ad-hoc script that
+    adds only ``telemetry_tool/`` got an ImportError that this function's
+    caller used to swallow with a bare ``pass``.
+
+    The consequences were not subtle -- measured on ``data/raw/OK_R4.csv``,
+    same file, same cwd, same track-registry isolation, ONLY sys.path differing:
+
+        repo root present  -> adapter registry -> 8 corners, 72 corner-laps,
+                              143 driving events; columns ``Speed (m/s)``,
+                              ``Satellites``
+        repo root absent   -> legacy reader    -> 6 corners, 42 corner-laps,
+                              93 driving events; columns ``Speed (m/s) *calc``
+                              AND ``Speed (m/s)``, ``Satellites (sats)``
+
+    Blocking ``kart_envelope`` instead leaves 8/72/143 untouched, and blocking
+    ``telemetry_tool.adapters`` with the repo root present reproduces 6/42/93
+    exactly -- so the adapter import is the whole of the difference.
+
+    Idempotent, and never removes or reorders an existing entry.
+    """
+    try:
+        import telemetry_tool  # noqa: F401
+        return
+    except ImportError:
+        pass
+    # .../<repo root>/telemetry_tool/pipeline/stages/s01_ingest.py
+    root = str(Path(__file__).resolve().parents[3])
+    if root not in sys.path:
+        sys.path.insert(0, root)
+        logger.info(
+            "Added %s to sys.path so the adapter registry is importable "
+            "(the launcher did not provide it)", root,
+        )
 
 
 # ── Adapter compatibility: canonical → RaceChrono column names ───
@@ -104,20 +159,44 @@ def run_ingest(
     raw_df: Optional[pd.DataFrame] = None
 
     # ── 1. Try adapter registry (handles all formats) ────────────
+    #
+    # The import and the parse are caught SEPARATELY, and both are logged.
+    # They are different events with different fixes: "no registered adapter
+    # recognised this file" is ordinary and expected for an unsupported
+    # format, while "the registry itself could not be imported" means this
+    # process is about to silently ingest via a different reader that yields
+    # different column names and a different corner count. Collapsing the two
+    # into one bare `except ... : pass` is what let that divergence run
+    # unnoticed -- see `_ensure_package_root_on_path` for the measurements.
+    _ensure_package_root_on_path()
+    _parse_file = None
     try:
         from telemetry_tool.adapters import parse_file as _parse_file
+    except ImportError as exc:
+        logger.warning(
+            "Adapter registry could not be imported (%s) -- falling back to "
+            "the legacy RaceChrono reader. Column names and corner detection "
+            "WILL differ from a production run.", exc,
+        )
 
-        _df, _adapter = _parse_file(csv_path, progress_cb=progress_callback)
-        source_info["source_format"] = _adapter.FORMAT_NAME
-        source_info["available_channels"] = _adapter.available_channels()
-        source_info["data_tier"] = _adapter.data_tier()
-        source_info["source_metadata"] = _adapter.metadata()
-        raw_df = _df
-    except (ValueError, ImportError):
-        pass
+    if _parse_file is not None:
+        try:
+            _df, _adapter = _parse_file(csv_path, progress_cb=progress_callback)
+            source_info["source_format"] = _adapter.FORMAT_NAME
+            source_info["available_channels"] = _adapter.available_channels()
+            source_info["data_tier"] = _adapter.data_tier()
+            source_info["source_metadata"] = _adapter.metadata()
+            source_info["ingest_path"] = INGEST_PATH_ADAPTER
+            raw_df = _df
+        except (ValueError, ImportError) as exc:
+            logger.info(
+                "No registered adapter parsed %s (%s) -- using the legacy "
+                "RaceChrono reader", csv_path, exc,
+            )
 
     # ── 2. Fallback to original RaceChrono reader ────────────────
     if raw_df is None:
+        source_info["ingest_path"] = INGEST_PATH_LEGACY
         io_mod = lazy_import("io_racechrono")
         if io_mod is None:
             try:

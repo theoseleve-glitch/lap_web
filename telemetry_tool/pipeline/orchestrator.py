@@ -387,8 +387,12 @@ def run_full_analysis(
 
         raw_df, source_info = ingest_result
         summary["raw_df"] = None  # Don't hold ~8 GB
+        # `ingest_path` rides along with the rest: which reader produced the
+        # frame decides the downstream column names and, through them, the
+        # corner count -- so it is a precondition of every measured constant
+        # in this pipeline, not a debug detail (see s01_ingest).
         for k in ("source_format", "available_channels", "data_tier",
-                   "source_metadata", "channel_discovery"):
+                   "source_metadata", "channel_discovery", "ingest_path"):
             if k in source_info:
                 summary[k] = source_info[k]
         _channel_discovery = source_info.get("_channel_discovery")

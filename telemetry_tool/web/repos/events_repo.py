@@ -156,24 +156,91 @@ def _dedupe_by_lap_corner(rows: list[dict]) -> list[dict]:
 
     Decision (recorded per the fix request): both read surfaces dedupe to
     ONE entry per (lap_number, corner_id) -- a driver wants N distinct
-    places to work on, not the same corner twice with two labels. Keeps the
-    first row seen per key; since duplicates share the same ``time_cost_s``
-    by construction, which specific row survives doesn't change any
-    aggregate or ranking, only which single ``event_type`` label rides
-    along with that (lap, corner) entry.
+    places to work on, not the same corner twice with two labels.
 
-    Rows must already be in the order the caller wants ties broken by
-    (``SELECT_RANKED_EVENTS`` / ``SELECT_TIME_COSTS_FOR_CONSISTENCY`` are
-    both pre-sorted) -- this function is order-preserving, not re-sorting.
+    WHICH ROW SURVIVES IS NOT ARBITRARY (fix round 2). The original kept
+    "the first row seen", on the reasoning that duplicates share a
+    ``time_cost_s`` so the choice cannot move an aggregate. True for the
+    aggregates -- and irrelevant to the driver, who is shown the surviving
+    row's ``event_type`` and told to work on THAT. Measured on
+    data/raw/OK_R4.csv after the onset fix, ``over_slowing`` and
+    ``late_throttle`` co-fire on 39 of 57 measured late_throttle events
+    (68%), and those co-firing events carry the weight (median 9.0 m /
+    0.181 s versus 7.5 m / 0.057 s for the 18 that fire alone). So on 68% of
+    them, WHICH OF
+    TWO DIFFERENT CORRECTIONS the driver is shown was being decided by SQL
+    row order.
+
+    The priority below is explicit and documented. ``over_slowing`` wins:
+    it is the direct measurement (this lap's apex speed against the driver's
+    own best at this corner), whereas ``late_throttle`` is largely derived
+    from it -- the onset's partial correlation with corner time after
+    controlling for apex speed is ~0.36, i.e. real but small, so most of what
+    a late_throttle event says is what over_slowing already said. See
+    s10b_corners' `_assign_throttle_onsets` block comment for the numbers.
+
+    THE LOSER IS NOT DISCARDED. Its type and magnitude are recorded on the
+    survivor's ``evidence["also_fired"]`` so a read surface can render ONE
+    item carrying both facets ("you were 1.4 m/s down at the apex AND 12.4 m
+    later back on the power") instead of two competing ones. Dropping it
+    outright would have been the second way to lose the same information.
+
+    Order-independent by construction: the survivor is chosen by priority,
+    not by position, so any permutation of ``rows`` yields the same result.
+    Rows within one key that share a priority (there is at most one row per
+    (lap, corner, event_type) -- the table's UNIQUE key -- so this only
+    arises for an unrecognised type) fall back to first-seen, and the
+    surviving ORDER of distinct keys still follows the caller's sort.
     """
-    seen: set[tuple[Any, Any]] = set()
-    out = []
+    # Lower number wins. Unlisted types sort last but still beat nothing.
+    priority = {
+        "over_slowing": 0,
+        "late_throttle": 1,
+        "re_braking": 2,
+        "envelope_under_use": 3,
+    }
+
+    def _rank(row: dict) -> int:
+        return priority.get(row.get("event_type"), len(priority))
+
+    best: dict[tuple[Any, Any], dict] = {}
+    order: list[tuple[Any, Any]] = []
+    companions: dict[tuple[Any, Any], list[dict]] = {}
     for r in rows:
         key = (r.get("lap_number"), r.get("corner_id"))
-        if key in seen:
+        if key not in best:
+            best[key] = r
+            order.append(key)
+            companions[key] = []
             continue
-        seen.add(key)
-        out.append(r)
+        incumbent = best[key]
+        if _rank(r) < _rank(incumbent):
+            best[key] = r
+            companions[key].append(incumbent)
+        else:
+            companions[key].append(r)
+
+    out = []
+    for key in order:
+        survivor = dict(best[key])
+        # Only rows that actually carry a type can contribute a facet.
+        # `SELECT_TIME_COSTS_FOR_CONSISTENCY` selects lap/corner/cost only, so
+        # its rows have no `event_type` -- recording an `also_fired` entry of
+        # `{"event_type": None}` there would dress a cost-only row up as
+        # carrying detector detail it never had.
+        losers = [l for l in (companions.get(key) or []) if l.get("event_type")]
+        if losers and survivor.get("event_type"):
+            evidence = dict(survivor.get("evidence") or {})
+            evidence["also_fired"] = [
+                {
+                    "event_type": l.get("event_type"),
+                    "magnitude": l.get("magnitude"),
+                    "magnitude_unit": l.get("magnitude_unit"),
+                }
+                for l in sorted(losers, key=_rank)
+            ]
+            survivor["evidence"] = evidence
+        out.append(survivor)
     return out
 
 

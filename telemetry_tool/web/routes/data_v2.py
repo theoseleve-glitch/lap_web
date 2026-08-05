@@ -4654,7 +4654,31 @@ def get_condition_phases(session_id: str) -> tuple[dict, int]:
 @bp.route("/sessions/<session_id>/throttle-onset", methods=["GET"])
 @_safe_api
 def get_throttle_onset(session_id: str) -> tuple[dict, int]:
-    """Per-corner throttle onset distance from corner_metrics."""
+    """Per-corner throttle onset distance from corner_metrics.
+
+    SEMANTICS CHANGED 2026-08-05 (Task 12) and this endpoint's numbers moved
+    with them. `throttle_onset_m` used to be the first post-apex sample above
+    THIS LAP'S OWN apex speed + 0.5 m/s -- a per-lap threshold, which made a
+    faster lap's onset land LATER. It is now the first sample above the
+    CORNER'S SESSION-BEST apex speed + 0.5 m/s, one fixed speed for every lap
+    at that corner, so `onset_points` are comparable across laps for the
+    first time. Before the fix they were not, and `std_m` was partly measuring
+    the spread of apex speeds rather than of throttle application.
+
+    Measured on data/raw/OK_R4.csv, median per-corner `std_m` moves 5.74 m ->
+    5.38 m, i.e. no wholesale compression -- but individual corners move a
+    lot (corner 1: 11.38 -> 3.32 m, corner 8: 6.25 -> 13.63 m). Corner 1's
+    drop is the fix working: its laps span 5.6 m/s of apex speed, and under
+    the old per-lap threshold that spread was being reported as throttle-onset
+    spread.
+
+    `n_laps` can now be lower than the lap count: a lap whose speed never
+    reaches the corner's threshold inside the search window has no onset at
+    all and is reported as such upstream rather than given a fabricated one.
+    That is already handled -- such rows carry NULL and are skipped below,
+    and a corner where no lap resolved falls through to
+    `reason_code="no_throttle_data"`. On this fixture it is 1 corner-lap of 72.
+    """
     conn = get_db_connection()
     session = models.get_session_by_id(conn, session_id)
     if session is None:
