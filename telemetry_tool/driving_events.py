@@ -485,17 +485,46 @@ OVER_SLOWING = _OverSlowing()
 # `corr(corner_time, apex_speed)` is about -0.75 on this session, so an onset
 # that correlates with apex speed inherits a corner-time correlation for
 # free; "corr(corner_time, onset) is positive" is therefore NOT evidence this
-# detector measures throttle timing. The measurement that is: the partial
-# correlation r(corner_time, onset | apex_speed), pooled within corner, is
-# +0.360 [95% CI +0.136, +0.548] with a pooled dR^2 of 0.056. Real, but
-# small -- the onset explains ~6% of within-corner corner-time variance
-# beyond what apex speed already explains. Consequently `over_slowing` and
-# `late_throttle` co-fire on 39 of 57 measured late_throttle events (68%) and
-# carry the IDENTICAL `time_cost_s` by construction. `events_repo.
-# _dedupe_by_lap_corner` resolves that pair deterministically (over_slowing
-# wins, late_throttle's magnitude rides along in `evidence["also_fired"]`)
-# rather than letting SQL row order decide which correction a driver is
-# shown.
+# detector measures throttle timing.
+#
+# THE COUPLING IS STRUCTURAL, NOT INCIDENTAL. With a session-fixed threshold,
+# a slower lap arrives at the apex carrying less speed and must therefore
+# climb FURTHER along the exit to reach the same fixed speed. The onset
+# distance mechanically encodes the apex-speed deficit. The 2026-08-05 fix
+# flipped the SIGN of that coupling (it used to report the faster lap as
+# later, which is backwards); it did not and could not remove it.
+#
+# How much is left over is specification-dependent: the partial correlation
+# r(corner_time, onset | apex_speed) ranges from +0.360 (t=3.01, dR^2 5.6%,
+# corner z-scored) down to +0.099 (t=0.77, dR^2 0.6%) once lap-level pace is
+# also controlled for -- i.e. NOT distinguishable from zero under a lap
+# fixed-effects specification. See s10b_corners' `_assign_throttle_onsets`
+# block comment for the full table.
+#
+# CONSEQUENCES FOR ANY READ SURFACE (Phase 3, read this):
+#
+#   * `late_throttle`'s METRE magnitude must NEVER be rendered as a
+#     standalone claim. On its own it reads as "you got on the power N metres
+#     late", which the evidence above does not support -- a large part of
+#     that N is the apex-speed deficit `over_slowing` already reported.
+#   * It must NEVER be presented as a CAUSE of the event's `time_cost_s`.
+#     The cost is `corner_time - reference_corner_time`, identical to the
+#     cost `over_slowing` reports for the same corner-lap; attributing it to
+#     throttle timing would be attributing one measurement twice.
+#   * Render it as a facet OF the corner-lap, alongside the apex deficit --
+#     which is exactly the shape `events_repo._dedupe_by_lap_corner`
+#     produces via `evidence["also_fired"]`.
+#
+# The detector keeps its own event type deliberately: solo `late_throttle`
+# events carry a median cost of 0.057 s against 0.181 s for co-firing ones,
+# so the ranked view (ordered by `time_cost_s` DESC) already sinks them, and
+# the dedupe already prevents double-counting on co-firing keys. Suppressing
+# them outright would discard the ~30% that fire alone to solve a problem the
+# ordering already solves. `over_slowing` and `late_throttle` co-fire on 39
+# of 57 measured late_throttle events (68%) and carry the IDENTICAL
+# `time_cost_s` by construction; the dedupe resolves that pair
+# deterministically (over_slowing wins) rather than letting SQL row order
+# decide which correction a driver is shown.
 
 # Measured probe: throttle-onset deltas at or below 2 m did not separate
 # from proxy noise on the real session. Emit strictly above it.

@@ -341,6 +341,90 @@ class TestCornerContracts:
         assert "corners" in data
 
 
+# ── /throttle-onset contract ─────────────────────────────────────
+#
+# Task 12 changed what `throttle_onset_m` MEANS (per-lap threshold -> the
+# corner's session-best apex speed + 0.5 m/s) and made a lap's onset legitimately
+# absent when its speed never crosses that threshold inside the search window.
+# This endpoint's numbers moved with it. Until fix round 2 the only coverage was
+# `TestGracefulDegradation::test_optional_endpoint_never_500`, a smoke test that
+# cannot see any of that -- so the next change to this metric could have moved a
+# customer-facing endpoint silently.
+
+
+class TestThrottleOnsetContract:
+    """Pins the arithmetic and the missing-data behaviour, not just the shape."""
+
+    def _get(self, mock_client, rows):
+        with patch("web.routes.data_v2.get_db_connection") as mock_db, \
+             patch("web.routes.data_v2.models") as mock_models:
+            mock_db.return_value = MagicMock()
+            mock_models.get_session_by_id.return_value = {"session_id": "s1"}
+            mock_models.get_corner_metrics_for_session.return_value = rows
+            return mock_client.get("/api/v1/sessions/s1/throttle-onset")
+
+    def test_reports_per_corner_mean_std_and_lap_count(self, mock_client):
+        rows = [
+            {"corner_id": 1, "lap_number": 1, "throttle_onset_m": 100.0},
+            {"corner_id": 1, "lap_number": 2, "throttle_onset_m": 110.0},
+            {"corner_id": 1, "lap_number": 3, "throttle_onset_m": 120.0},
+            {"corner_id": 2, "lap_number": 1, "throttle_onset_m": 300.0},
+        ]
+        data = self._get(mock_client, rows).get_json()["data"]
+
+        assert data["available"] is True
+        by_id = {c["corner_id"]: c for c in data["corners"]}
+        assert by_id[1]["onset_points"] == [100.0, 110.0, 120.0]
+        assert by_id[1]["mean_m"] == pytest.approx(110.0)
+        # population std (np.std default), NOT the sample std
+        assert by_id[1]["std_m"] == pytest.approx(8.16, abs=0.01)
+        assert by_id[1]["n_laps"] == 3
+        assert by_id[2]["n_laps"] == 1
+        assert by_id[2]["std_m"] == pytest.approx(0.0)
+
+    def test_a_lap_with_no_measurable_onset_is_skipped_not_zero_filled(
+        self, mock_client,
+    ):
+        """A NULL `throttle_onset_m` is a lap whose speed never reached the
+        corner's session-fixed threshold inside the search window -- upstream
+        reports it as `not_measurable` rather than inventing a distance. It
+        must lower `n_laps`, never enter the mean as a 0.0, and never appear
+        in `onset_points`."""
+        rows = [
+            {"corner_id": 1, "lap_number": 1, "throttle_onset_m": 100.0},
+            {"corner_id": 1, "lap_number": 2, "throttle_onset_m": None},
+            {"corner_id": 1, "lap_number": 3, "throttle_onset_m": 120.0},
+        ]
+        data = self._get(mock_client, rows).get_json()["data"]
+
+        corner = data["corners"][0]
+        assert corner["n_laps"] == 2, "the unmeasurable lap was counted"
+        assert corner["onset_points"] == [100.0, 120.0]
+        assert corner["mean_m"] == pytest.approx(110.0), (
+            "a missing onset was folded in as 0.0")
+
+    def test_a_corner_where_no_lap_resolved_reports_a_reason_code(
+        self, mock_client,
+    ):
+        rows = [{"corner_id": 1, "lap_number": 1, "throttle_onset_m": None}]
+        data = self._get(mock_client, rows).get_json()["data"]
+
+        assert data["available"] is False
+        assert data["reason_code"] == "no_throttle_data"
+        assert data["corners"] == []
+
+    def test_no_corner_metrics_at_all_is_distinguished_from_no_onsets(
+        self, mock_client,
+    ):
+        """Two different causes, two different reason codes -- the same
+        distinction driving_events draws between "could not look" and
+        "looked, found nothing"."""
+        data = self._get(mock_client, []).get_json()["data"]
+
+        assert data["available"] is False
+        assert data["reason_code"] == "no_corner_metrics"
+
+
 # ── Track map contract ───────────────────────────────────────────
 
 

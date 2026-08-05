@@ -56,6 +56,15 @@ def _ensure_package_root_on_path() -> None:
     exactly -- so the adapter import is the whole of the difference.
 
     Idempotent, and never removes or reorders an existing entry.
+
+    APPENDED, never inserted at position 0 (fix round 2). The repo root holds
+    top-level ``config/``, ``tools/``, ``tests/``, ``src/`` and ``data/``
+    directories, and putting it first would let those shadow same-named
+    installed packages for the rest of the process. Appending means an
+    installed package still wins; the only thing this needs to achieve is that
+    ``telemetry_tool`` becomes importable AT ALL, and for that, position is
+    irrelevant. The early return keeps the blast radius to ad-hoc scripts
+    anyway -- production and pytest both already supply the root.
     """
     try:
         import telemetry_tool  # noqa: F401
@@ -65,9 +74,9 @@ def _ensure_package_root_on_path() -> None:
     # .../<repo root>/telemetry_tool/pipeline/stages/s01_ingest.py
     root = str(Path(__file__).resolve().parents[3])
     if root not in sys.path:
-        sys.path.insert(0, root)
+        sys.path.append(root)
         logger.info(
-            "Added %s to sys.path so the adapter registry is importable "
+            "Appended %s to sys.path so the adapter registry is importable "
             "(the launcher did not provide it)", root,
         )
 

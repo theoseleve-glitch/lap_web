@@ -482,6 +482,51 @@ def test_the_dedupe_survivor_is_chosen_by_priority_not_by_row_order():
         assert also[0]["magnitude_unit"] == "m", label
 
 
+def test_the_gate_uses_a_true_median_not_the_upper_middle_value():
+    """Fix round 2: the onset-correlation assertion was evaluating
+    `sorted(x)[len(x) // 2]`, the UPPER-MIDDLE value, while every comment and
+    the report documented the true median. With 8 corners that is always the
+    even case, so the two always differ. Both cleared the floor, so no
+    assertion failed -- which is exactly why this needs its own test: the
+    documented headroom was overstated by ~25% with nothing to catch it.
+
+    Pinned on the real per-corner values from the shipped basis.
+    """
+    real_corner_corrs = [-0.097, -0.292, -0.703, -0.835,
+                         -0.484, -0.324, 0.249, -0.874]
+
+    assert _median(real_corner_corrs) == pytest.approx(-0.404, abs=5e-4)
+    # the statistic that used to be evaluated, for contrast
+    assert sorted(real_corner_corrs)[len(real_corner_corrs) // 2] == \
+        pytest.approx(-0.324, abs=5e-4)
+
+    assert _median([3.0, 1.0, 2.0]) == pytest.approx(2.0)      # odd
+    assert _median([1.0, 2.0, 3.0, 4.0]) == pytest.approx(2.5)  # even
+    assert _median([5.0]) == pytest.approx(5.0)
+
+
+def test_the_dedupe_priority_covers_every_registered_detector():
+    """A fifth detector added without a priority line falls back to
+    first-row-wins, silently reintroducing the row-order nondeterminism this
+    function was written to remove. Verified by execution: two unranked types
+    on one key give two different outputs depending on input order."""
+    import driving_events as de
+    from web.repos import events_repo
+
+    assert set(events_repo._DEDUPE_PRIORITY) == de.EVENT_TYPES
+    events_repo._assert_dedupe_priority_is_total()
+
+    # And the guard actually fires when coverage is lost.
+    original = dict(events_repo._DEDUPE_PRIORITY)
+    try:
+        events_repo._DEDUPE_PRIORITY.pop("re_braking")
+        with pytest.raises(AssertionError, match="does not cover EVENT_TYPES"):
+            events_repo._dedupe_by_lap_corner([])
+    finally:
+        events_repo._DEDUPE_PRIORITY.clear()
+        events_repo._DEDUPE_PRIORITY.update(original)
+
+
 def test_the_dedupe_records_the_loser_rather_than_dropping_it(test_db):
     """End to end through the ranked surface: one entry for the corner-lap,
     carrying BOTH facets, so Phase 3 can render a single item that says what
@@ -1216,6 +1261,14 @@ _MAX_NEGATIVELY_CORRELATED_CORNERS = 2
 # vary would legitimately correlate weakly. Looser than round 1's -0.20
 # because the selected basis is deliberately LESS redundant with apex speed
 # than the one round 1 chose; see _MAX_ABS_APEX_ONSET_CORR.
+#
+# The eight per-corner values are -0.874, -0.835, -0.703, -0.484, -0.324,
+# -0.292, -0.097, +0.249. Their TRUE median is -0.404 (the mean of the two
+# middle values). Fix round 2 caught this assertion evaluating
+# `sorted(...)[len // 2]` instead, which is the upper-middle value -0.324 --
+# still clearing the floor, but overstating the documented headroom by ~25%.
+# `_median` below is now a real median, so the number asserted and the number
+# documented are the same number.
 _MAX_MEDIAN_APEX_ONSET_CORR = -0.10
 
 # THE UPPER BOUND (fix round 2). Without it, `onset := -k * apex_speed`
@@ -1231,19 +1284,48 @@ _MAX_ABS_APEX_ONSET_CORR = 0.90
 # asks whether the onset says anything corner time does not already learn
 # from apex speed: the partial correlation r(corner_time, onset | apex),
 # pooled over all corner-laps with each channel z-scored WITHIN its corner
-# first. Pooled (n=72) rather than a median of 8 per-corner values because at
-# 9 laps per corner each per-corner partial carries SE ~ 0.45.
+# first.
 #
-# MEASURED: +0.360, 95% CI [+0.136, +0.548] on the selected basis. The
-# pre-fix per-lap basis scores +0.206 with a CI that INCLUDES ZERO, and
-# `onset := -k * apex` scores 0 by construction. 0.10 sits below the measured
-# CI's lower bound and well above both failures.
+# MEASURED: +0.360 on the selected basis. This floor exists to catch a
+# DEGENERATE metric, not to rank bases: `onset := -k * apex` scores 0 by
+# construction, and the pre-fix per-lap basis scores +0.206.
 #
-# HONEST LIMIT: the matching pooled dR^2 is 0.056 -- the onset explains ~6% of
-# within-corner corner-time variance beyond apex speed. Real, but small. This
-# floor asserts the signal EXISTS; it does not claim the metric is strong, and
-# nothing downstream should read it as such.
+# READ THE FLOOR NARROWLY -- IT IS NOT A CONFIDENCE STATEMENT. A corner-cluster
+# bootstrap (the right resampling unit here, since corner-laps are not
+# independent within a corner) puts the selected basis's partial at
+# +0.360, 95% CI [+0.034, +0.508]. THE 0.10 FLOOR SITS INSIDE THAT INTERVAL.
+# So this assertion can legitimately fail on an equivalent session through
+# sampling alone; if it ever does, re-measure before concluding the metric
+# regressed. It is set where it is because everything it must catch scores at
+# or below ~0.2 while the measurement sits at 0.36, not because 0.10 is a
+# defensible lower confidence bound.
+#
+# HONEST LIMIT: "how much does the onset add" has no single answer. Across
+# four defensible specifications the matching dR^2 spans 0.1%-5.6% of
+# within-corner corner-time variance, and under either specification that also
+# controls for lap-level pace the selected basis's added information is NOT
+# distinguishable from zero (partial +0.099 t=0.77; +0.042 t=0.31). See the
+# `_assign_throttle_onsets` block comment in s10b_corners.py for the table.
+# This floor asserts only that the signal is not identically zero on the
+# shipped specification. Nothing downstream may read it as evidence the metric
+# is strong.
 _MIN_POOLED_PARTIAL_ONSET_R = 0.10
+
+
+def _median(values):
+    """A real median, averaging the two middle values on an even count.
+
+    `sorted(x)[len(x) // 2]` is the UPPER-MIDDLE value, not the median, and
+    with 8 corners that is always the even case. Fix round 2 caught the
+    onset-correlation assertion evaluating -0.324 while every comment and the
+    report documented the true median -0.404 -- both cleared the floor, so
+    nothing failed, but the documented headroom was overstated by ~25%.
+    """
+    ordered = sorted(values)
+    mid = len(ordered) // 2
+    if len(ordered) % 2:
+        return ordered[mid]
+    return (ordered[mid - 1] + ordered[mid]) / 2.0
 
 
 def _pearson(xs, ys):
@@ -1350,7 +1432,7 @@ def _assert_onset_is_not_inverted(plcm):
         f"throttle onset. That is the pre-2026-08-05 per-lap-threshold "
         f"inversion returning, not driving.")
 
-    median_apex_corr = sorted(apex_corrs)[len(apex_corrs) // 2]
+    median_apex_corr = _median(apex_corrs)
     assert median_apex_corr <= _MAX_MEDIAN_APEX_ONSET_CORR, (
         f"median within-corner corr(apex_speed, throttle_onset) is "
         f"{median_apex_corr:+.3f} (must be <= "
@@ -1407,12 +1489,17 @@ def _assert_driving_events_gate(summary):
     # put the repo root on sys.path. Asserted rather than assumed so a run
     # that quietly takes the other path fails HERE, naming the cause, instead
     # of failing an event-count floor that looks like a detector regression.
-    if "ingest_path" in summary:
-        assert summary["ingest_path"] == s01_ingest.INGEST_PATH_ADAPTER, (
-            f"ingested via {summary['ingest_path']!r}, not the adapter "
-            f"registry -- every floor in this gate was measured on the "
-            f"adapter path (which is what production runs), so none of them "
-            f"applies to this run")
+    #
+    # UNCONDITIONAL (fix round 2). This was `if "ingest_path" in summary:`,
+    # which meant deleting the key from the orchestrator's copy-through tuple
+    # silently disarmed the whole precondition with every test still green --
+    # the assertion could not fail, which is the one property this gate exists
+    # to never have.
+    assert summary.get("ingest_path") == s01_ingest.INGEST_PATH_ADAPTER, (
+        f"ingested via {summary.get('ingest_path')!r}, not the adapter "
+        f"registry -- every floor in this gate was measured on the adapter "
+        f"path (which is what production runs), so none of them applies to "
+        f"this run")
 
     # ── the denominator ───────────────────────────────────────────────
     corner_laps = {(m.get("lap_number"), m.get("corner_id"))
@@ -1532,7 +1619,7 @@ def _assert_driving_events_gate(summary):
     assert len(costs) >= _MIN_COSTED_EVENTS, (
         f"only {len(costs)} of {len(events)} events carry a time_cost_s "
         f"(floor {_MIN_COSTED_EVENTS}) -- the ranked view has nothing to rank")
-    median_cost = sorted(costs)[len(costs) // 2]
+    median_cost = _median(costs)
     assert median_cost <= _MAX_MEDIAN_COST_S, (
         f"median corner-time gap {median_cost:.3f}s exceeds "
         f"{_MAX_MEDIAN_COST_S}s -- that is a window/reference defect, "
@@ -1639,7 +1726,21 @@ def test_driving_events_on_real_kart_telemetry(_real_summary):
     `run_driving_events(...)["events"]` straight through, and that is
     `run_registry`'s `list[DrivingEvent]`. Hence attribute access.
     """
+    from pipeline.stages import s01_ingest
+
     summary = _real_summary
+
+    # The precondition, asserted on the REAL summary before the gate runs:
+    # the key must be PRESENT (not merely non-contradictory) and must name the
+    # adapter path. `_assert_driving_events_gate` re-checks it, but this
+    # catches the orchestrator silently dropping the key, which would make the
+    # gate's own check vacuous for every mutated replay too.
+    assert "ingest_path" in summary, (
+        "the pipeline summary no longer reports which reader ingested the "
+        "file -- every MEASURED constant in this module is conditioned on "
+        "that and can no longer be checked")
+    assert summary["ingest_path"] == s01_ingest.INGEST_PATH_ADAPTER
+
     d = _assert_driving_events_gate(summary)
 
     cl = d["corner_laps"]
@@ -1699,13 +1800,23 @@ def _force(event, **kw):
     return clone
 
 
-def _summary_with(base, *, events=None, cap=None, plcm=None):
+def _summary_with(base, *, events=None, cap=None, plcm=None, ingest_path=-1):
+    """A mutated copy of the real summary.
+
+    `ingest_path` is carried through by default (fix round 2): without it every
+    mutated summary lacked the key, so the gate's own precondition assertion
+    was never exercised by the battery and could be disarmed unnoticed. Pass
+    it explicitly to mutate it; the `-1` sentinel distinguishes "not given"
+    from an explicit `None`.
+    """
     return {
         "driving_events": base["driving_events"] if events is None else events,
         "driving_events_capability": (
             base["driving_events_capability"] if cap is None else cap),
         "per_lap_corner_metrics": (
             base["per_lap_corner_metrics"] if plcm is None else plcm),
+        "ingest_path": (base.get("ingest_path") if ingest_path == -1
+                        else ingest_path),
     }
 
 
@@ -1906,6 +2017,12 @@ _MUTATIONS = {
     # ── Task 12: the throttle-onset derivation ────────────────────────
     "the onset inversion returns (sign of both correlations flipped)":
         lambda b, de: _summary_with(b, plcm=_onset_sign_flipped(b)),
+    # ── the precondition itself ───────────────────────────────────────
+    "ingested via the legacy reader, not the adapter registry":
+        lambda b, de: _summary_with(b, ingest_path="legacy_racechrono"),
+    "ingest_path missing entirely (orchestrator stopped copying it)":
+        lambda b, de: _summary_with(b, ingest_path=None),
+
     "onset is a pure rescaling of apex speed (no throttle information)":
         lambda b, de: _summary_with(b, plcm=_onset_is_apex_rescaled(b)),
     "onset stops discriminating (one constant per corner)":
@@ -1935,6 +2052,7 @@ def test_the_real_data_gate_rejects_each_deliberate_degradation(
             _real_summary.get("driving_events_capability") or {}),
         "per_lap_corner_metrics": (
             _real_summary.get("per_lap_corner_metrics") or []),
+        "ingest_path": _real_summary.get("ingest_path"),
     }
     mutated = _MUTATIONS[mutation](base, de)
 

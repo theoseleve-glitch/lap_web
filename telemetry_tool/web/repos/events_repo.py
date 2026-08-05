@@ -138,6 +138,35 @@ def _row_to_dict(row: Any) -> dict:
     return d
 
 
+_DEDUPE_PRIORITY: dict[str, int] = {
+    "over_slowing": 0,
+    "late_throttle": 1,
+    "re_braking": 2,
+    "envelope_under_use": 3,
+}
+"""Which detector's label survives when several fire on one (lap, corner).
+
+Kept as an explicit ordering rather than derived from ``EVENT_TYPES`` (a
+frozenset has no order), but its COVERAGE is checked against ``EVENT_TYPES``
+so a newly-registered detector cannot silently fall through to first-seen --
+see ``_dedupe_by_lap_corner`` and ``_assert_dedupe_priority_is_total``.
+"""
+
+
+def _assert_dedupe_priority_is_total() -> None:
+    """Fail loudly if a detector exists with no dedupe priority."""
+    import driving_events as de
+
+    missing = de.EVENT_TYPES - set(_DEDUPE_PRIORITY)
+    extra = set(_DEDUPE_PRIORITY) - de.EVENT_TYPES
+    if missing or extra:
+        raise AssertionError(
+            f"_DEDUPE_PRIORITY does not cover EVENT_TYPES exactly: "
+            f"missing={sorted(missing)} unknown={sorted(extra)} -- an "
+            f"unranked event type falls back to first-row-wins, which makes "
+            f"the surviving label depend on database row order")
+
+
 def _dedupe_by_lap_corner(rows: list[dict]) -> list[dict]:
     """Collapse multiple event rows for the same (lap_number, corner_id)
     into one (fix round 1, IMPORTANT #1).
@@ -185,6 +214,16 @@ def _dedupe_by_lap_corner(rows: list[dict]) -> list[dict]:
     later back on the power") instead of two competing ones. Dropping it
     outright would have been the second way to lose the same information.
 
+    ``also_fired`` deliberately carries the loser's TYPE, MAGNITUDE and UNIT
+    only -- NOT its own ``evidence`` blob. That is a decision, not an
+    oversight: the loser's evidence duplicates the survivor's reference
+    values (both detectors quote the same corner-time reference for the same
+    corner-lap) and nesting one event's full evidence inside another's
+    invites a read surface to present the pair as two independent
+    measurements, which is precisely what the priority exists to prevent. A
+    consumer that needs the loser in full can query ``driving_events``
+    directly; the row is still there.
+
     Order-independent by construction: the survivor is chosen by priority,
     not by position, so any permutation of ``rows`` yields the same result.
     Rows within one key that share a priority (there is at most one row per
@@ -193,12 +232,16 @@ def _dedupe_by_lap_corner(rows: list[dict]) -> list[dict]:
     surviving ORDER of distinct keys still follows the caller's sort.
     """
     # Lower number wins. Unlisted types sort last but still beat nothing.
-    priority = {
-        "over_slowing": 0,
-        "late_throttle": 1,
-        "re_braking": 2,
-        "envelope_under_use": 3,
-    }
+    #
+    # COVERAGE IS ASSERTED, NOT ASSUMED (fix round 2). An unranked type falls
+    # back to first-seen, so a FIFTH detector added to `driving_events.
+    # EVENT_TYPES` without a line here would reintroduce exactly the row-order
+    # nondeterminism this function exists to remove -- verified: two unranked
+    # types on one key produce two different outputs depending on input order.
+    # Failing loudly at import of the first dedupe is far better than shipping
+    # a silently arbitrary choice to a driver.
+    _assert_dedupe_priority_is_total()
+    priority = _DEDUPE_PRIORITY
 
     def _rank(row: dict) -> int:
         return priority.get(row.get("event_type"), len(priority))

@@ -587,58 +587,92 @@ def _enrich_corner_telemetry(d: dict[str, Any], lap_df: pd.DataFrame) -> Optiona
 #
 # The selection criterion is therefore TWO-SIDED:
 #
-#   (1) ADDED INFORMATION -- the onset must explain corner-time variance
-#       BEYOND apex speed. Measured as the partial correlation
-#       r(corner_time, onset | apex_speed), pooled over all corner-laps with
-#       each channel z-scored WITHIN its corner first. Pooled (n=72) rather
-#       than a median of 8 per-corner values, because with 9 laps per corner
-#       each per-corner partial carries SE ~ 0.45 -- a median of eight such
-#       numbers is mostly noise, and it ranks the bases differently from the
-#       properly-powered estimate.
+#   (1) ADDED INFORMATION -- does the onset explain corner-time variance
+#       BEYOND apex speed? Measured as the partial correlation
+#       r(corner_time, onset | apex_speed).
 #   (2) NOT A RESTATEMENT -- |corr(apex, onset)| must stay bounded away from
 #       1.0, or the "metric" is just apex speed rescaled.
 #
 # Measured on data/raw/OK_R4.csv (9 laps x 8 corners), same geometric bound,
 # only the threshold basis varied. "degen" counts onsets landing within 2
 # samples of the apex, i.e. corner-laps where the metric has silently
-# collapsed to "where the apex is":
+# collapsed to "where the apex is". The partial column is pooled over all
+# corner-laps with each channel z-scored WITHIN its corner:
 #
 #   basis                med r(apex,onset)  cens  degen  pooled r(ct,on|apex)
 #   per-lap apex + 0.5          +0.552         0      0   0.206 [-0.03,+0.42]
 #   session median + 0.5        -0.683         0     14   0.401 [+0.19,+0.58]
 #   session p75 + 0.5           -0.635         0      5   0.423 [+0.21,+0.60]
-#   SESSION BEST + 0.5          -0.404         1      0   0.360 [+0.14,+0.55]
+#   SESSION BEST + 0.5          -0.404         1      0   0.360 [+0.03,+0.51]
 #   1.03 x session best         -0.400         1      0   0.369 [+0.15,+0.56]
 #   session best + 2.0          -0.267        21      0   0.529 [+0.29,+0.71]
 #   session worst + 0.5         +0.045         0     53   0.142 [-0.10,+0.36]
 #
-# THE CHOICE: session best + 0.5.
+# ADDED INFORMATION DOES NOT DECIDE THIS, IN EITHER DIRECTION. Do not read the
+# partial column as a ranking; it is estimator-dependent and the differences
+# are not significant. Of four defensible estimators, THREE put the pre-fix
+# per-lap basis FIRST:
 #
-#   * Added information does NOT separate median / p75 / best -- their 95%
-#     CIs overlap heavily (0.19-0.58, 0.21-0.60, 0.14-0.55). Anyone who picks
-#     between them on that number alone is reading noise. What it DOES
-#     separate is the defect (0.206, CI includes zero) and `worst` (0.142, CI
-#     includes zero) from all of them.
-#   * Among the indistinguishable set, `best` is the only basis with ZERO
-#     degenerate onsets. It sits at or above the top of every corner's
-#     apex-speed distribution, so no lap is already above the threshold at its
-#     own apex, so no onset can collapse onto the apex position. The session
-#     median leaves 19% (14/72) of corner-laps reporting the apex position
-#     dressed as a throttle onset -- a number that LOOKS measured and is not.
-#   * `best` also has the LOWEST |corr(apex, onset)| of the credible set
-#     (0.404), i.e. it is the least redundant with apex speed -- criterion (2).
-#   * Its one cost is one censored corner-lap. That is strictly better than a
-#     degenerate one: a censored lap is reported as `not_measurable` with a
-#     named reason (see driving_events.ONSET_*), a degenerate lap is silently
-#     indistinguishable from a real measurement.
+#   median of per-corner partials       defect +0.38 > best +0.26 > median +0.23
+#   Fisher-z mean of per-corner partials defect +0.37 > median +0.32 > best +0.24
+#   pooled, corner z-scored (the column) p75 > median > best > defect +0.21
+#   pooled, corner centred only          defect +0.27 > best +0.26 > median +0.25
+#
+# Every basis is computed on the SAME corner-laps, so the comparison is paired
+# and can be tested directly: the paired per-corner difference (defect - best)
+# in Fisher z is +0.140, t(7) = 1.21 -- not significant; a paired
+# corner-cluster bootstrap of the pooled-z difference gives -0.154, 95% CI
+# [-0.325, +0.250], with the defect ahead in 29% of replicates. An earlier
+# revision of this comment claimed the pooled estimate "reverses the ranking"
+# and was the properly-powered one. It does not and it is not: a median of
+# eight per-corner partials has SE ~ 0.12-0.14, comparable to the pooled
+# statistic's naive SE (0.12) and better than its cluster-robust SE (~0.25).
+#
+# THE CHOICE: session best + 0.5, on the two grounds that are ESTIMATOR-FREE.
+#
+#   * The pre-fix per-lap basis is disqualified on the DIRECTIONAL property,
+#     not on added information: median corr(apex, onset) = +0.552 and
+#     corr(corner_time, onset) NEGATIVE on 6 of 8 corners means it reports the
+#     faster lap as later. That is a sign, not an estimate.
+#   * Among the session-fixed candidates, `best` wins on two COUNTS rather
+#     than two estimates:
+#       - degeneracy 0/72, against 14/72 (19%) for the session median. A
+#         degenerate onset reports the apex position dressed as a throttle
+#         onset -- a number that LOOKS measured and is not. `best` sits at or
+#         above the top of every corner's apex-speed distribution, so no lap
+#         is already above the threshold at its own apex and no onset can
+#         collapse onto it.
+#       - |corr(apex, onset)| 0.404, against 0.684 for the session median,
+#         i.e. materially less redundant with apex speed -- criterion (2).
+#         (`1.03 x session best` measures 0.400 and is indistinguishable from
+#         `best` here; no superlative is claimed between those two.)
+#   * `best`'s one cost is one censored corner-lap, which is strictly better
+#     than a degenerate one: a censored lap is reported as `not_measurable`
+#     with a named reason (see driving_events.ONSET_*), a degenerate lap is
+#     silently indistinguishable from a real measurement.
 #   * `best + 2.0` scores highest on added information but censors 21 of 72
 #     (29%) and drops two corners entirely -- exactly the censoring bias that
 #     makes naive truncation wrong.
 #
-# HONEST LIMIT, DO NOT OVERSTATE THIS METRIC. Pooled ΔR^2 for `best` is 0.056:
-# the onset explains about 6% of within-corner corner-time variance beyond
-# apex speed. Real (the CI excludes zero) but small. `late_throttle` is
-# therefore mostly, though not entirely, a restatement of `over_slowing` --
+# HONEST LIMIT, DO NOT OVERSTATE THIS METRIC. "How much does the onset add
+# beyond apex speed" has no single answer; it spans 0.1%-5.6% of within-corner
+# corner-time variance depending on what else is controlled for:
+#
+#   specification                        partial r      t      dR^2
+#   corner z-scored (the column above)     +0.360     3.01     5.6%
+#   corner centred only                    +0.259     2.09     2.2%
+#   corner z-scored + lap fixed effects    +0.099     0.77     0.6%
+#   corner + lap dummies (two-way OLS)     +0.042     0.31     0.1%
+#
+# Controlling for lap-level pace is legitimate -- a slow lap tends to be slow
+# at every corner. STATE PLAINLY: under either lap-fixed-effects
+# specification the SELECTED basis's added information is not distinguishable
+# from zero (t = 0.77 and 0.31), while round 1's session-median basis survives
+# one of them (r = +0.260, t = 2.10). The selected basis is therefore NOT the
+# one with the most robust added information; it is the one that never
+# degenerates and is least redundant with apex speed. `late_throttle` is
+# largely, and on some specifications entirely, a restatement of
+# `over_slowing` --
 # which is why events_repo now merges the pair rather than showing two
 # competing corrections (see `_dedupe_by_lap_corner`).
 #
