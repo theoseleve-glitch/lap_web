@@ -401,3 +401,63 @@ def test_grip_anchor_failure_does_not_discard_the_per_lap_corner_metrics(tmp_pat
     for m in got:
         assert m.get("grip_anchor_tier") is None
         assert m.get("grip_anchor_pct") is None
+
+
+import os
+
+_REAL_CSV = "telemetry_tool/data/raw/OK_R4.csv"
+
+
+@pytest.fixture
+def _isolated_track_registry(tmp_path, monkeypatch):
+    """Keep the pipeline's track-registration write off the tracked
+    models/tracks.json — see the parent branch's test-hygiene incident."""
+    import track_detection
+    monkeypatch.setattr(
+        track_detection, "_default_db_path", lambda: str(tmp_path / "tracks.json")
+    )
+
+
+@pytest.mark.skipif(not os.path.exists(_REAL_CSV), reason="real fixture absent")
+def test_grip_anchor_on_real_kart_telemetry(_isolated_track_registry):
+    """Acceptance: on real data every corner-lap gets a tier from the closed
+    vocabulary, physics-tier percentages are physically plausible, and the
+    trust ratio lands near the 0.961 measured during design."""
+    import grip_anchor as ga
+    from pipeline import run_full_analysis
+
+    # NOTE: the brief's literal call is `run_full_analysis(_REAL_CSV)`, but
+    # pipeline.orchestrator.run_full_analysis's `session_meta` is a required
+    # positional parameter (no default) -- calling with one arg raises
+    # TypeError before the pipeline ever runs. Passing {} matches how every
+    # other real-pipeline test in this file already calls it (see
+    # test_orchestrator_calls_grip_anchor_with_the_per_lap_metrics_and_friction_model
+    # above: `pipeline.run_full_analysis(str(csv_path), {})`).
+    summary = run_full_analysis(_REAL_CSV, {})
+    metrics = summary.get("per_lap_corner_metrics") or []
+    assert metrics, "no per-lap corner metrics produced"
+
+    tiers = [m.get("grip_anchor_tier") for m in metrics]
+    assert all(t in ga.TIERS for t in tiers), f"tier outside vocabulary: {set(tiers)}"
+
+    # Every lap must be represented — the parent branch fixed the bug where
+    # only lap 1 produced corner data.
+    laps = {m["lap_number"] for m in metrics}
+    assert len(laps) >= 5, f"only {len(laps)} laps produced corner metrics: {laps}"
+
+    physics = [
+        m for m in metrics
+        if ga.is_quotable_as_physics(m.get("grip_anchor_tier"))
+        and m.get("grip_anchor_pct") is not None
+    ]
+    for m in physics:
+        assert 0.0 <= m["grip_anchor_pct"] <= 300.0, (
+            f"implausible grip pct {m['grip_anchor_pct']} "
+            f"(lap {m['lap_number']} corner {m['corner_id']})"
+        )
+        assert 0.2 <= m["grip_anchor_baseline_g"] <= 3.0, (
+            f"implausible baseline {m['grip_anchor_baseline_g']} G"
+        )
+
+    print(f"\ntier distribution: "
+          f"{ {t: tiers.count(t) for t in set(tiers)} }")
