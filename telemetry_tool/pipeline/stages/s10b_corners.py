@@ -514,6 +514,44 @@ def _enrich_corner_telemetry(d: dict[str, Any], lap_df: pd.DataFrame) -> Optiona
         dist_arr = pd.to_numeric(lap_df[dist_col], errors="coerce").values
         spd_arr = pd.to_numeric(lap_df[spd_col], errors="coerce").values
 
+        # ⚠ KNOWN REMAINING SEAM — THIS MASK IS IN ABSOLUTE METRES.
+        #
+        # `s_start`/`s_end` are the DETECTION lap's absolute metres, and
+        # `dist_arr` is THIS lap's own 0-based metres. Every resampled lap is
+        # rebased to its own span (resampling.py:210-226) and real spans on
+        # OK_R4 run 1198.65-1217.97 m, so this window shifts and narrows on
+        # longer laps -- the same coordinate-frame defect the 2026-08-05 wave
+        # fixed for `throttle_onset_m` and for the corner windows
+        # (`s10d2_grip_anchor._corner_mask`, which slices `distance_norm`).
+        #
+        # IT IS REAL. Measured on the fixture: this mask and the normalised
+        # one disagree on sample count for 35 of 72 corner-laps (49%).
+        #
+        # IT IS NOT URGENT, and that is measured too, not assumed. What this
+        # mask actually produces downstream is the APEX -- and apex speed is
+        # a MINIMUM over the window, so it only moves if the window's edge
+        # crosses the trough. Comparing the two masks' apex speeds over the
+        # same 72 corner-laps:
+        #
+        #   sample-count delta       median 0, max 2
+        #   |apex speed delta|       median 0.0000 m/s, MAX 0.0563 m/s
+        #   corner-laps over the `over_slowing` emit floor (0.5 m/s):  0
+        #   corners whose BEST-apex lap differs between frames:  0 of 8
+        #
+        # So `over_slowing`'s magnitudes and its ranking are unaffected at
+        # this session's geometry: the worst disagreement is ~9x below the
+        # floor at which the detector will emit anything at all.
+        #
+        # WHY IT WAS SCOPED OUT rather than fixed here: `_enrich_corner_
+        # telemetry` and `corner_analysis` feed a wide, long-standing set of
+        # consumers (brake points, entry/exit speeds, time loss, coaching
+        # hints, the legacy grip_utilization), so moving this frame is a
+        # behaviour change across all of them and belongs in its own change
+        # with its own verification -- not folded into a correctness fix for
+        # driving events. The number to watch is the 0.0563 m/s: it scales
+        # with lap-span spread, so a session with more variable laps than
+        # this one could push it toward the floor.
+        #
         # Find apex index (min speed in corner)
         mask = (dist_arr >= s_start) & (dist_arr <= s_end)
         corner_idx = np.where(mask)[0]
