@@ -21,7 +21,13 @@ build/
 # Cache
 .ingest_cache/
 .pytest_cache/
-data/cache/
+# A pattern containing an interior slash is anchored to the directory holding
+# the .gitignore, so `data/cache/` only ever matched a top-level ./data/cache
+# -- never telemetry_tool/data/cache/, which is where every pipeline run
+# actually writes. `git check-ignore -v telemetry_tool/data/cache/x` exited 1
+# and every clean-tree assertion in this lineage was made against a tree the
+# pipeline had just dirtied. The leading `**/` makes it match at any depth.
+**/data/cache/
 
 # Claude Code
 .claude/
