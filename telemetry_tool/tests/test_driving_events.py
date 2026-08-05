@@ -168,7 +168,6 @@ def _window(**over):
     return de.CornerWindow(**base)
 
 
-@pytest.mark.xfail(reason="registry populated in Tasks 7-8", strict=True)
 def test_registry_reports_not_triggered_separately_from_insufficient():
     """'Found nothing' and 'could not look' must never be the same answer."""
     import driving_events as de
@@ -257,12 +256,18 @@ def test_run_registry_handles_none_as_the_windows_argument(monkeypatch):
     assert cap["probe"] == "insufficient"
 
 
-def test_run_registry_handles_an_empty_iterable():
+def test_run_registry_handles_an_empty_iterable(monkeypatch):
+    """Isolated with a fake REGISTRY (like its fuzz-suite siblings) rather
+    than asserting `cap == {}` against whatever real detectors happen to be
+    registered: with zero windows, every REGISTERED detector still gets a
+    capability entry ('insufficient' -- no window could be looked at), so
+    the real cap is non-empty now that over_slowing/late_throttle exist."""
     import driving_events as de
 
+    monkeypatch.setattr(de, "REGISTRY", (_NeverFires(),))
     events, cap = _assert_total_result(de.run_registry([]))
     assert events == []
-    assert cap == {}
+    assert cap == {"probe": "insufficient"}
 
 
 def test_run_registry_handles_a_none_window_in_the_list(monkeypatch):
@@ -308,3 +313,78 @@ def test_run_registry_swallows_a_raising_detector(monkeypatch):
     events, cap = _assert_total_result(de.run_registry([_window()]))
     assert events == []
     assert cap["explodes"] == "insufficient"
+
+
+# ── over_slowing / late_throttle ───────────────────────────────────────────
+
+def test_over_slowing_measures_the_apex_deficit_against_the_reference():
+    import driving_events as de
+
+    w = _window(apex_speed_mps=12.0, corner_time_s=8.0,
+                reference={"apex_speed_mps": 13.5, "corner_time_s": 7.5,
+                           "throttle_onset_m": 10.0})
+    ev = de.OVER_SLOWING.detect(w)
+
+    assert ev is not None
+    assert ev.event_type == "over_slowing"
+    assert ev.magnitude == pytest.approx(1.5)        # 13.5 - 12.0
+    assert ev.magnitude_unit == "m/s"
+    assert ev.time_cost_s == pytest.approx(0.5)      # 8.0 - 7.5
+    assert ev.validity == de.VALIDITY_MEASURED
+    # The claim must be reconstructible from stored numbers.
+    assert ev.evidence["apex_speed_mps"] == pytest.approx(12.0)
+    assert ev.evidence["reference_apex_speed_mps"] == pytest.approx(13.5)
+
+
+def test_over_slowing_is_silent_when_this_lap_IS_the_reference():
+    import driving_events as de
+
+    w = _window(apex_speed_mps=13.5, corner_time_s=7.5,
+                reference={"apex_speed_mps": 13.5, "corner_time_s": 7.5,
+                           "throttle_onset_m": 10.0})
+    assert de.OVER_SLOWING.detect(w) is None
+
+
+def test_over_slowing_refuses_rather_than_guessing_without_a_reference():
+    """Tightened from the brief's `ev is None or ev.validity != MEASURED`:
+    that shape passes under two different detector behaviours. This detector
+    always refuses by returning None when the reference is incomplete --
+    assert that one behaviour exactly, not either of the two."""
+    import driving_events as de
+
+    w = _window(reference={})
+    assert de.OVER_SLOWING.detect(w) is None
+
+
+def test_late_throttle_measures_metres_later_than_the_reference():
+    import driving_events as de
+
+    w = _window(
+        throttle_onset_m=24.0,
+        reference={"apex_speed_mps": 12.0, "corner_time_s": 8.0,
+                   "throttle_onset_m": 10.0},
+    )
+    ev = de.LATE_THROTTLE.detect(w)
+
+    assert ev is not None
+    assert ev.event_type == "late_throttle"
+    assert ev.magnitude == pytest.approx(14.0)      # 24.0 - 10.0
+    assert ev.magnitude_unit == "m"
+    # The evidence must name the proxy, because this is NOT a throttle channel.
+    assert "proxy" in " ".join(str(v) for v in ev.evidence.values()).lower() \
+        or ev.evidence.get("source") == "speed_derivative_proxy"
+
+
+def test_late_throttle_refuses_when_this_lap_has_no_onset():
+    """No onset was found -- refuse, do not invent one.
+
+    Tightened from the brief's `ev is None or ev.validity != MEASURED` to
+    the one behaviour this detector actually has: return None."""
+    import driving_events as de
+
+    w = _window(
+        throttle_onset_m=None,
+        reference={"apex_speed_mps": 12.0, "corner_time_s": 8.0,
+                   "throttle_onset_m": 10.0},
+    )
+    assert de.LATE_THROTTLE.detect(w) is None

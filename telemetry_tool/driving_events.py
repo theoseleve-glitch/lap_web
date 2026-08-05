@@ -285,3 +285,144 @@ def run_registry(windows: Iterable[CornerWindow]) -> tuple[list["DrivingEvent"],
             capability[detector.name] = CAPABILITY_INSUFFICIENT
 
     return events, capability
+
+
+# ── over_slowing ────────────────────────────────────────────────────────
+#
+# Compares this lap's apex speed at a corner against this driver's own best
+# apex speed at the SAME corner (``reference["apex_speed_mps"]``). Measured
+# on the real kart session this fires on 57% of corner-laps -- arithmetic,
+# not an accusation: only one lap can hold the record. It exists to RANK
+# ("why did this corner-lap cost time"), ordered by ``time_cost_s`` at the
+# read surface (Task 10), not to flag every lap that isn't the best one.
+
+# Measured probe: apex-speed deficits at or below 0.5 m/s did not separate
+# from sample-to-sample scatter on the real session -- only deficits above
+# this floor read as a genuine hang-back at the apex rather than lap noise.
+# Emit strictly above it.
+OVER_SLOWING_APEX_DEFICIT_FLOOR_MPS = 0.5
+
+
+class _OverSlowing:
+    """``over_slowing``: this lap's apex speed fell short of the driver's
+    own best apex speed at this corner, by more than the measured floor."""
+
+    name = "over_slowing"
+    requires = frozenset({"apex_speed_mps", "corner_time_s"})
+    min_samples = 5
+
+    def detect(self, w: CornerWindow) -> DrivingEvent | None:
+        reference = w.reference or {}
+        apex_speed = w.apex_speed_mps
+        corner_time = w.corner_time_s
+        ref_apex_speed = reference.get("apex_speed_mps")
+        ref_corner_time = reference.get("corner_time_s")
+
+        # Refuse rather than guess: every number this claim needs must be
+        # real before it gets made -- an incomplete reference (e.g. no
+        # admissible lap has established this corner's bests yet) is
+        # silence, not a fabricated zero.
+        if None in (apex_speed, corner_time, ref_apex_speed, ref_corner_time):
+            return None
+
+        deficit = ref_apex_speed - apex_speed
+        if deficit <= OVER_SLOWING_APEX_DEFICIT_FLOOR_MPS:
+            return None
+
+        return DrivingEvent(
+            event_type="over_slowing",
+            lap_number=w.lap_number,
+            corner_id=w.corner_id,
+            s_norm_start=w.s_norm_start,
+            s_norm_end=w.s_norm_end,
+            magnitude=deficit,
+            magnitude_unit="m/s",
+            time_cost_s=corner_time - ref_corner_time,
+            validity=VALIDITY_MEASURED,
+            reason=None,
+            n_samples_in_window=w.n_samples,
+            evidence={
+                "apex_speed_mps": apex_speed,
+                "reference_apex_speed_mps": ref_apex_speed,
+                "corner_time_s": corner_time,
+                "reference_corner_time_s": ref_corner_time,
+            },
+        )
+
+
+OVER_SLOWING = _OverSlowing()
+
+
+# ── late_throttle ───────────────────────────────────────────────────────
+#
+# Compares this lap's throttle-onset distance against this driver's own
+# best onset at the SAME corner (``reference["throttle_onset_m"]``).
+# ``throttle_onset_m`` is a speed-derivative PROXY, not a real throttle
+# channel (``pipeline/stages/s10b_corners.py:494-498``: the first post-apex
+# sample where speed exceeds apex+0.5 m/s and keeps rising) -- as an
+# absolute claim the metres number is fiction. Comparing this lap to this
+# driver's own best pass through the SAME corner is what makes it usable:
+# the proxy's bias appears on both sides of the comparison and cancels.
+# Measured to fire on 68% of corner-laps -- same "only one lap holds the
+# record" arithmetic as over_slowing, so this ranks rather than flags.
+
+# Measured probe: throttle-onset deltas at or below 2 m did not separate
+# from proxy noise on the real session. Emit strictly above it.
+LATE_THROTTLE_ONSET_FLOOR_M = 2.0
+
+
+class _LateThrottle:
+    """``late_throttle``: this lap's (proxy) throttle onset landed further
+    down the straight than the driver's own best onset at this corner, by
+    more than the measured proxy-noise floor. Evidence names the proxy so
+    this is never read downstream as a real throttle measurement."""
+
+    name = "late_throttle"
+    requires = frozenset({"throttle_onset_m", "corner_time_s"})
+    min_samples = 5
+
+    def detect(self, w: CornerWindow) -> DrivingEvent | None:
+        reference = w.reference or {}
+        onset = w.throttle_onset_m
+        corner_time = w.corner_time_s
+        ref_onset = reference.get("throttle_onset_m")
+        ref_corner_time = reference.get("corner_time_s")
+
+        # Refuse rather than guess: no onset found on this lap, or no
+        # reference onset to compare against, means no claim -- not a
+        # fabricated one.
+        if None in (onset, corner_time, ref_onset, ref_corner_time):
+            return None
+
+        delta = onset - ref_onset
+        if delta <= LATE_THROTTLE_ONSET_FLOOR_M:
+            return None
+
+        return DrivingEvent(
+            event_type="late_throttle",
+            lap_number=w.lap_number,
+            corner_id=w.corner_id,
+            s_norm_start=w.s_norm_start,
+            s_norm_end=w.s_norm_end,
+            magnitude=delta,
+            magnitude_unit="m",
+            time_cost_s=corner_time - ref_corner_time,
+            validity=VALIDITY_MEASURED,
+            reason=None,
+            n_samples_in_window=w.n_samples,
+            evidence={
+                "throttle_onset_m": onset,
+                "reference_throttle_onset_m": ref_onset,
+                "source": "speed_derivative_proxy",
+                "corner_time_s": corner_time,
+                "reference_corner_time_s": ref_corner_time,
+            },
+        )
+
+
+LATE_THROTTLE = _LateThrottle()
+
+
+REGISTRY = (OVER_SLOWING, LATE_THROTTLE)
+"""Tasks 7-8's detectors. Task 7 populates over_slowing/late_throttle here;
+Task 8 appends re_braking/envelope_under_use."""
