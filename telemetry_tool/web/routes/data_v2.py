@@ -3512,6 +3512,15 @@ def get_driving_events(session_id: str) -> tuple[dict, int]:
     Ordered by time_cost_s DESC (see events_repo.get_ranked_events). Events
     with no time_cost_s (re_braking, envelope_under_use) are excluded from
     the ranking, not sorted to one end of it.
+
+    `capability` is served alongside, and it is not decoration: without it
+    `{"events": [], "available": false}` is BYTE-IDENTICAL for a clean
+    session with nothing to fix and for a session where `10d2_grip_anchor`
+    failed and three of four detectors could not look at anything. It maps
+    each detector name to "detected" / "not_triggered" / "insufficient" --
+    see `driving_events.CAPABILITIES`. An empty dict means the record was
+    never persisted for this session (pre-086 data, or the stage did not
+    run), which is itself distinct from "every detector reported".
     """
     conn = get_db_connection()
     session = models.get_session_by_id(conn, session_id)
@@ -3525,10 +3534,14 @@ def get_driving_events(session_id: str) -> tuple[dict, int]:
     limit = max(1, min(limit, 100))  # clamp to reasonable bounds, matches sibling endpoints
 
     events = events_repo.get_ranked_events(conn, session_id, limit=limit)
+    capability = events_repo.get_driving_events_capability(conn, session_id)
 
     return api_response({
         "events": events,
         "available": bool(events),
+        "capability": capability,
+        # Explicit, so a consumer never has to infer it from an empty dict.
+        "capability_available": bool(capability),
     })
 
 

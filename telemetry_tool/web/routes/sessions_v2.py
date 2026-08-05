@@ -280,6 +280,23 @@ def _persist_analysis_json(conn: sqlite3.Connection, session_id: str, summary: d
     if coaching and isinstance(coaching, str):
         blob["coaching_summary"] = coaching
 
+    # Driving-events CAPABILITY RECORD (final review, IMPORTANT 2).
+    #
+    # Computed by step 10d3 and, until now, thrown away: never persisted,
+    # never served, read only by tests. Without it a session whose
+    # `10d2_grip_anchor` failed returns `{"events": [], "available": false}`
+    # with zero consistency rows -- BYTE-IDENTICAL to a clean session with
+    # nothing to fix. The detected / not_triggered / insufficient distinction
+    # that `driving_events.CAPABILITIES`' own docstring calls "the point of
+    # this module" evaporated at the last step of the pipeline.
+    #
+    # Persisted even when EMPTY (`is not None`, not truthiness): an empty
+    # capability record means the stage itself did not run, which is its own
+    # distinct fact and must not read the same as "the key was never added".
+    dec = summary.get("driving_events_capability")
+    if isinstance(dec, dict):
+        blob["driving_events_capability"] = dec
+
     # Corner performances (aggregated from corner_metrics in pipeline)
     cp = summary.get("corner_performances")
     if cp and isinstance(cp, list):

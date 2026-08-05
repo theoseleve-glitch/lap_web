@@ -326,6 +326,43 @@ def _dedupe_by_lap_corner(rows: list[dict]) -> list[dict]:
     return out
 
 
+def get_driving_events_capability(
+    conn: sqlite3.Connection,
+    session_id: str,
+) -> dict:
+    """This session's per-detector capability record, or ``{}``.
+
+    Final review, IMPORTANT 2. `run_registry` computes "detected" /
+    "not_triggered" / "insufficient" for every registered detector, the stage
+    puts it on the summary, and it used to stop there -- never written, never
+    served. So a session whose `10d2_grip_anchor` failed came back from the
+    API as ``{"events": [], "available": false}`` with zero consistency rows,
+    which is exactly what a clean session with nothing to fix returns.
+
+    Stored in ``sessions.analysis_json`` rather than in its own table: it is
+    four short strings per session, it is written by the same two blob
+    writers that already run on both persistence paths, and a table would
+    need its own migration, RLS policy, cascade registrations and retention
+    entry to carry less information than one JSON key.
+
+    Returns ``{}`` -- never None -- when the blob is absent, unparseable, or
+    predates this field. The caller distinguishes "no record" from "every
+    detector reported" by the emptiness, which is why the endpoint also
+    serves `capability_available` explicitly.
+
+    Reads through the RLS-scoped request connection the caller already
+    resolved the session on, so it inherits that tenancy check.
+    """
+    try:
+        from web.repos.analysis_repo import get_analysis_json
+
+        analysis = get_analysis_json(conn, session_id) or {}
+    except Exception:
+        return {}
+    cap = analysis.get("driving_events_capability")
+    return cap if isinstance(cap, dict) else {}
+
+
 def get_ranked_events(
     conn: sqlite3.Connection,
     session_id: str,

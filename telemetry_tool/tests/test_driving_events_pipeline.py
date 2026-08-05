@@ -350,6 +350,67 @@ def test_the_payload_does_not_ship_the_evidence_twice(seeded_db):
     assert "evidence_json" not in row
 
 
+# ══════════════════════════════════════════════════════════════════
+# Final review, IMPORTANT 2 — the capability record is no longer discarded
+# ══════════════════════════════════════════════════════════════════
+
+
+def test_a_failed_anchor_stage_is_no_longer_indistinguishable_from_a_clean_session():
+    """THE defect: when `10d2_grip_anchor` fails, three of four detectors go
+    `insufficient` and the API returns `{"events": [], "available": false}`
+    with zero consistency rows -- byte-identical to a clean session with
+    nothing to fix. The capability record is the only thing that separates
+    them, and it was computed and thrown away."""
+    from web.repos import events_repo
+
+    clean = {"over_slowing": "not_triggered", "late_throttle": "not_triggered",
+             "re_braking": "not_triggered",
+             "envelope_under_use": "not_triggered"}
+    broken = {"over_slowing": "insufficient", "late_throttle": "insufficient",
+              "re_braking": "detected", "envelope_under_use": "insufficient"}
+
+    assert clean != broken, "the two states must not be representable alike"
+
+    # Both would produce the SAME ranked/consistency output; only this
+    # record tells them apart, so it has to survive to a consumer.
+    import inspect
+    src = inspect.getsource(events_repo.get_driving_events_capability)
+    assert "analysis_json" in src
+
+
+def test_the_capability_record_survives_persistence_and_reaches_the_reader(seeded_db):
+    from web.repos import events_repo
+    from web.repos.analysis_repo import insert_analysis_json
+
+    cap = {"over_slowing": "detected", "late_throttle": "insufficient",
+           "re_braking": "not_triggered", "envelope_under_use": "insufficient"}
+    insert_analysis_json(seeded_db, "s1", {"driving_events_capability": cap})
+    seeded_db.commit()
+
+    assert events_repo.get_driving_events_capability(seeded_db, "s1") == cap
+    # A session with no blob at all is `{}`, never None, and never a guess.
+    assert events_repo.get_driving_events_capability(seeded_db, "s2") == {}
+
+
+def test_both_analysis_blob_writers_carry_the_capability_record():
+    """There are TWO blob writers -- the celery/PG path and the sync upload
+    path -- and a record persisted by only one of them is absent on half the
+    product. Asserted structurally because both functions want a full
+    pipeline result to run."""
+    import inspect
+    from tasks import pipeline_tasks
+    from web.routes import sessions_v2
+
+    for fn in (pipeline_tasks._build_analysis_blob,
+               sessions_v2._persist_analysis_json):
+        src = inspect.getsource(fn)
+        assert 'blob["driving_events_capability"]' in src, fn.__name__
+        # `isinstance(..., dict)`, not truthiness: an EMPTY capability record
+        # means the stage did not run, which is its own fact and must not
+        # read the same as "the key was never added".
+        assert "isinstance(dec, dict)" in src, fn.__name__
+
+
 def test_an_empty_event_list_writes_nothing_and_does_not_raise(seeded_db):
     from pipeline.stages import s15_persist
 
@@ -1063,8 +1124,12 @@ class TestDrivingEventsIdorGuard:
             ]
             mock_events_repo.get_corner_consistency.return_value = [
                 {"corner_id": 1, "best_s": 0.0, "worst_s": 0.5,
-                 "median_s": 0.25, "spread_s": 0.5},
+                 "median_s": 0.25, "spread_s": 0.5,
+                 "anchor_tiers": ["driver_best_session"]},
             ]
+            mock_events_repo.get_driving_events_capability.return_value = {
+                "over_slowing": "detected",
+            }
 
             resp = data_v2_client.get(path)
 
@@ -1084,6 +1149,11 @@ class TestDrivingEventsIdorGuard:
             mock_events_repo.get_ranked_events.return_value = [
                 {"lap_number": 7, "corner_id": 4, "time_cost_s": 0.885},
             ]
+            mock_events_repo.get_driving_events_capability.return_value = {
+                "over_slowing": "detected", "late_throttle": "detected",
+                "re_braking": "not_triggered",
+                "envelope_under_use": "insufficient",
+            }
 
             resp = data_v2_client.get("/api/v1/sessions/s1/driving-events?limit=5")
 
@@ -1094,6 +1164,9 @@ class TestDrivingEventsIdorGuard:
             mock_events_repo.get_ranked_events.assert_called_once_with(
                 mock_db.return_value, "s1", limit=5,
             )
+            # IMPORTANT 2: the capability record reaches the consumer.
+            assert body["data"]["capability"]["envelope_under_use"] == "insufficient"
+            assert body["data"]["capability_available"] is True
 
     def test_owner_gets_corner_consistency(self, data_v2_client):
         with patch("web.routes.data_v2.get_db_connection") as mock_db, \
@@ -1650,7 +1723,7 @@ _REAL_CSV = "telemetry_tool/data/raw/OK_R4.csv"
 # "some events exist" plus a per-event vocabulary check, and a replay of
 # that body against 16 deliberately mutated event lists caught exactly ONE
 # of them: `run_registry -> ([], {})`. Everything else sailed through --
-# every event flipped to `insufficient_samples`, every `time_cost_s` set to
+# every event flipped to a non-measured validity, every `time_cost_s` set to
 # None, all 142 events collapsed onto one corner, only one of four
 # detectors ever firing, the whole capability record degraded to
 # "insufficient", Task 10's dedupe regressing so every event appeared five
@@ -2401,11 +2474,17 @@ def _onset_sign_flipped(base):
 
 
 def _flip_share(base, every):
-    """Flip every `every`-th event to insufficient_samples."""
+    """Flip every `every`-th event to a non-measured validity.
+
+    `insufficient_samples` until the final review removed it (no producer
+    could emit it); `not_measurable` is the surviving non-measured value and
+    degrades the measured SHARE identically, which is what this mutation
+    exists to test.
+    """
     import driving_events as de
 
     return [
-        _replace(e, validity=de.VALIDITY_INSUFFICIENT_SAMPLES,
+        _replace(e, validity=de.VALIDITY_NOT_MEASURABLE,
                  magnitude=None, time_cost_s=None) if i % every == 0 else e
         for i, e in enumerate(base["driving_events"])
     ]
@@ -2468,14 +2547,14 @@ def _constant_onset(base):
 # exists once the module-scoped fixture has run.
 _MUTATIONS = {
     # ── wholesale validity flips ──────────────────────────────────────
-    "every event insufficient_samples (structurally legal form)":
+    "every event non-measured (structurally legal form)":
         lambda b, de: _summary_with(b, events=[
-            _replace(e, validity=de.VALIDITY_INSUFFICIENT_SAMPLES,
+            _replace(e, validity=de.VALIDITY_NOT_MEASURABLE,
                      magnitude=None, time_cost_s=None)
             for e in b["driving_events"]]),
-    "every event insufficient_samples (magnitudes kept, post_init bypassed)":
+    "every event non-measured (magnitudes kept, post_init bypassed)":
         lambda b, de: _summary_with(b, events=[
-            _force(e, validity=de.VALIDITY_INSUFFICIENT_SAMPLES)
+            _force(e, validity=de.VALIDITY_NOT_MEASURABLE)
             for e in b["driving_events"]]),
     "every event not_measurable":
         lambda b, de: _summary_with(b, events=[

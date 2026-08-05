@@ -10,11 +10,16 @@ import pytest
 def test_vocabularies_are_closed():
     import driving_events as de
 
+    # `insufficient_samples` was REMOVED, not renamed: no producer could
+    # ever emit it (run_registry skips a too-small window before `detect` is
+    # called), and the fact it was meant to carry lives in the per-detector
+    # capability record -- which IS reachable, and is now persisted and
+    # served. See driving_events.py's block comment.
     assert de.VALIDITIES == frozenset({
         de.VALIDITY_MEASURED,
-        de.VALIDITY_INSUFFICIENT_SAMPLES,
         de.VALIDITY_NOT_MEASURABLE,
     })
+    assert not hasattr(de, "VALIDITY_INSUFFICIENT_SAMPLES")
     assert de.EVENT_TYPES == frozenset({
         "over_slowing", "late_throttle", "re_braking", "envelope_under_use",
     })
@@ -128,7 +133,7 @@ def test_a_non_measured_event_must_not_carry_a_magnitude():
             event_type="over_slowing", lap_number=1, corner_id=1,
             s_norm_start=0.25, s_norm_end=0.35, magnitude=1.4,
             magnitude_unit="m/s", time_cost_s=None,
-            validity=de.VALIDITY_INSUFFICIENT_SAMPLES, reason="window too short",
+            validity=de.VALIDITY_NOT_MEASURABLE, reason="window too short",
             anchor_tier=de.ANCHOR_DRIVER_BEST_SESSION,
             n_samples_in_window=2, evidence={"n": 2},
         )
@@ -187,7 +192,7 @@ def test_a_non_measured_event_must_not_carry_time_cost():
             event_type="over_slowing", lap_number=1, corner_id=1,
             s_norm_start=0.25, s_norm_end=0.35, magnitude=None,
             magnitude_unit="m/s", time_cost_s=0.5,
-            validity=de.VALIDITY_INSUFFICIENT_SAMPLES, reason="window too short",
+            validity=de.VALIDITY_NOT_MEASURABLE, reason="window too short",
             anchor_tier=de.ANCHOR_DRIVER_BEST_SESSION,
             n_samples_in_window=2, evidence={"n": 2},
         )
@@ -201,7 +206,7 @@ def test_a_non_measured_event_with_neither_magnitude_nor_time_cost():
         event_type="over_slowing", lap_number=1, corner_id=1,
         s_norm_start=0.25, s_norm_end=0.35, magnitude=None,
         magnitude_unit=de.MAGNITUDE_UNIT_MPS, time_cost_s=None,
-        validity=de.VALIDITY_INSUFFICIENT_SAMPLES, reason="window too short",
+        validity=de.VALIDITY_NOT_MEASURABLE, reason="window too short",
         anchor_tier=de.ANCHOR_DRIVER_BEST_SESSION,
         n_samples_in_window=2, evidence={"n": 2},
     )
@@ -424,6 +429,9 @@ def test_over_slowing_measures_the_apex_deficit_against_the_reference():
 
 
 def test_over_slowing_is_silent_when_this_lap_IS_the_reference():
+    """`None`, NOT `CANNOT_JUDGE`: the detector looked, judged, and this
+    corner-lap genuinely has no apex deficit. That is a real verdict and it
+    must stay distinguishable from the refusals below."""
     import driving_events as de
 
     w = _window(apex_speed_mps=13.5, corner_time_s=7.5,
@@ -433,14 +441,15 @@ def test_over_slowing_is_silent_when_this_lap_IS_the_reference():
 
 
 def test_over_slowing_refuses_rather_than_guessing_without_a_reference():
-    """Tightened from the brief's `ev is None or ev.validity != MEASURED`:
-    that shape passes under two different detector behaviours. This detector
-    always refuses by returning None when the reference is incomplete --
-    assert that one behaviour exactly, not either of the two."""
+    """Tightened twice. First from the brief's `ev is None or ev.validity !=
+    MEASURED`, which passes under two different detector behaviours. Then
+    from bare `None` to `CANNOT_JUDGE`: an incomplete reference means nobody
+    could judge this corner-lap, and `None` asserted the opposite -- that it
+    was looked at and found clean."""
     import driving_events as de
 
     w = _window(reference={})
-    assert de.OVER_SLOWING.detect(w) is None
+    assert de.OVER_SLOWING.detect(w) is de.CANNOT_JUDGE
 
 
 def test_late_throttle_measures_metres_later_than_the_reference():
@@ -474,7 +483,7 @@ def test_late_throttle_refuses_when_this_lap_has_no_onset():
         reference={"apex_speed_mps": 12.0, "corner_time_s": 8.0,
                    "throttle_onset_m": 10.0},
     )
-    assert de.LATE_THROTTLE.detect(w) is None
+    assert de.LATE_THROTTLE.detect(w) is de.CANNOT_JUDGE
 
 
 # ── the onset scan looked and found nothing: say so, do not vanish ───────
@@ -592,7 +601,7 @@ def test_over_slowing_refuses_a_nan_apex_speed():
     w = _window(apex_speed_mps=float("nan"), corner_time_s=8.0,
                 reference={"apex_speed_mps": 13.5, "corner_time_s": 7.5,
                            "throttle_onset_m": 10.0})
-    assert de.OVER_SLOWING.detect(w) is None
+    assert de.OVER_SLOWING.detect(w) is de.CANNOT_JUDGE
 
 
 def test_over_slowing_refuses_a_nan_reference_apex_speed():
@@ -601,7 +610,7 @@ def test_over_slowing_refuses_a_nan_reference_apex_speed():
     w = _window(apex_speed_mps=12.0, corner_time_s=8.0,
                 reference={"apex_speed_mps": float("nan"), "corner_time_s": 7.5,
                            "throttle_onset_m": 10.0})
-    assert de.OVER_SLOWING.detect(w) is None
+    assert de.OVER_SLOWING.detect(w) is de.CANNOT_JUDGE
 
 
 def test_late_throttle_refuses_a_nan_onset():
@@ -612,7 +621,7 @@ def test_late_throttle_refuses_a_nan_onset():
         reference={"apex_speed_mps": 12.0, "corner_time_s": 8.0,
                    "throttle_onset_m": 10.0},
     )
-    assert de.LATE_THROTTLE.detect(w) is None
+    assert de.LATE_THROTTLE.detect(w) is de.CANNOT_JUDGE
 
 
 def test_late_throttle_refuses_a_nan_reference_onset():
@@ -623,7 +632,7 @@ def test_late_throttle_refuses_a_nan_reference_onset():
         reference={"apex_speed_mps": 12.0, "corner_time_s": 8.0,
                    "throttle_onset_m": float("nan")},
     )
-    assert de.LATE_THROTTLE.detect(w) is None
+    assert de.LATE_THROTTLE.detect(w) is de.CANNOT_JUDGE
 
 
 # ── Final review, CRITICAL 2: the impossible-but-finite class ────────────
@@ -643,7 +652,7 @@ def test_over_slowing_refuses_a_substituted_zero_apex_speed():
     w = _window(apex_speed_mps=0.0, corner_time_s=8.0,
                 reference={"apex_speed_mps": 17.82, "corner_time_s": 7.5,
                            "throttle_onset_m": 10.0})
-    assert de.OVER_SLOWING.detect(w) is None, (
+    assert de.OVER_SLOWING.detect(w) is de.CANNOT_JUDGE, (
         "a 0.0 apex speed is a substitution, not a measurement -- emitting "
         "against it tells the driver they were 17.8 m/s slow at an apex "
         "nobody measured")
@@ -684,11 +693,11 @@ def test_over_slowing_refuses_a_zero_corner_time():
     assert de.OVER_SLOWING.detect(_window(
         apex_speed_mps=12.0, corner_time_s=0.0,
         reference={"apex_speed_mps": 13.5, "corner_time_s": 7.5,
-                   "throttle_onset_m": 10.0})) is None
+                   "throttle_onset_m": 10.0})) is de.CANNOT_JUDGE
     assert de.OVER_SLOWING.detect(_window(
         apex_speed_mps=12.0, corner_time_s=8.0,
         reference={"apex_speed_mps": 13.5, "corner_time_s": 0.0,
-                   "throttle_onset_m": 10.0})) is None
+                   "throttle_onset_m": 10.0})) is de.CANNOT_JUDGE
 
 
 def test_late_throttle_refuses_a_zero_corner_time():
@@ -697,7 +706,7 @@ def test_late_throttle_refuses_a_zero_corner_time():
     assert de.LATE_THROTTLE.detect(_window(
         throttle_onset_m=24.0, corner_time_s=0.0,
         reference={"apex_speed_mps": 12.0, "corner_time_s": 7.5,
-                   "throttle_onset_m": 10.0})) is None
+                   "throttle_onset_m": 10.0})) is de.CANNOT_JUDGE
 
 
 def test_a_zero_apex_speed_reads_insufficient_not_not_triggered():
@@ -795,10 +804,35 @@ def test_re_braking_needs_a_sustained_run_not_a_single_sample():
 
 
 def test_re_braking_refuses_when_the_channel_is_absent():
+    """Tightened from `ev is None or ev.validity != MEASURED`: an absent
+    channel is COULD NOT LOOK, and returning bare None asserted the opposite
+    ("looked, this corner-lap was clean")."""
     import driving_events as de
 
-    ev = de.RE_BRAKING.detect(_window(a_long_mps2=None))
-    assert ev is None or ev.validity != de.VALIDITY_MEASURED
+    assert de.RE_BRAKING.detect(_window(a_long_mps2=None)) is de.CANNOT_JUDGE
+
+
+def test_re_braking_separates_a_clean_run_from_an_unreadable_one():
+    """The overload the final review named: ONE non-finite post-apex sample
+    made `re_braking` return the same value as a corner-lap with no re-brake
+    in it -- and `run_registry` reads that as a positive "no issue here"."""
+    import driving_events as de
+    import numpy as np
+
+    clean = np.zeros(40)                     # no run below the decel floor
+    unreadable = np.zeros(40)
+    unreadable[25] = np.nan
+
+    assert de.RE_BRAKING.detect(_window(a_long_mps2=clean)) is None
+    assert de.RE_BRAKING.detect(
+        _window(a_long_mps2=unreadable)) is de.CANNOT_JUDGE
+
+    # And the two produce DIFFERENT capability verdicts, which is the whole
+    # point -- previously both read "not_triggered".
+    _, cap_clean = de.run_registry([_window(a_long_mps2=clean)])
+    _, cap_bad = de.run_registry([_window(a_long_mps2=unreadable)])
+    assert cap_clean["re_braking"] == de.CAPABILITY_NOT_TRIGGERED
+    assert cap_bad["re_braking"] == de.CAPABILITY_INSUFFICIENT
 
 
 # ── re_braking: fix round 1 -- the magnitude floor pins the measured rate ──
@@ -841,8 +875,8 @@ def test_envelope_under_use_fires_below_the_floor_and_is_silent_above():
 def test_envelope_under_use_refuses_without_a_phase_1_number():
     import driving_events as de
 
-    ev = de.ENVELOPE_UNDER_USE.detect(_window(grip_anchor_pct=None))
-    assert ev is None or ev.validity != de.VALIDITY_MEASURED
+    assert de.ENVELOPE_UNDER_USE.detect(
+        _window(grip_anchor_pct=None)) is de.CANNOT_JUDGE
 
 
 # ── Final review, IMPORTANT 1b: the tier-2 bound is TAUTOLOGICAL ─────────

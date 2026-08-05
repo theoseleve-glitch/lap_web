@@ -73,14 +73,39 @@ ANCHOR_REASON_SELF_REFERENTIAL_BOUND = "anchor_bound_self_referential"
 ANCHOR_REASON_UNKNOWN_TIER = "anchor_tier_unknown"
 
 VALIDITY_MEASURED = "measured"
-VALIDITY_INSUFFICIENT_SAMPLES = "insufficient_samples"
 VALIDITY_NOT_MEASURABLE = "not_measurable"
 
 VALIDITIES = frozenset({
     VALIDITY_MEASURED,
-    VALIDITY_INSUFFICIENT_SAMPLES,
     VALIDITY_NOT_MEASURABLE,
 })
+
+# ── `insufficient_samples` was REMOVED, deliberately ─────────────────────
+#
+# It was a third validity value that NO producer could emit. `run_registry`
+# skips a window below `min_samples` before `detect` is ever called, so no
+# detector was in a position to construct one, and none did.
+#
+# It is not wired up instead of removed because the fact it was meant to
+# carry is already carried, twice and better:
+#   * the per-detector `capability` record's "insufficient" value covers
+#     exactly this case, and as of the final review's IMPORTANT 2 it is
+#     PERSISTED and SERVED rather than computed and thrown away;
+#   * `n_samples_in_window` rides on every event that IS emitted.
+# A vocabulary whose members are not all reachable is an unchecked promise,
+# and keeping this one would invite a future detector to emit it and thereby
+# split "could not look" across two channels that then have to agree.
+#
+# Spec SS5.2's Detected / NotTriggered / Insufficient distinction is NOT lost
+# by this: that is the CAPABILITIES axis (a detector's whole pass over all
+# windows), which is intact. VALIDITIES is the other axis (one event's own
+# number), where the honest values are "measured" and "not measurable".
+#
+# RESIDUAL, recorded: the per-WINDOW "this one window was too small" fact is
+# aggregated into the per-detector capability value rather than located. On
+# the real fixture no window is anywhere near the floor (25-79 samples
+# against a floor of 5), so nothing is lost today; a session that does hit it
+# would see the detector read "insufficient" without saying which corner-lap.
 
 # ── throttle-onset status taxonomy (machine-readable) ─────────────────────
 #
@@ -418,12 +443,58 @@ is documented "Do NOT silently skip -- silent skips are exactly the failure
 mode the brief forbids." Our capability value is a plain string per detector
 rather than that module's class hierarchy, but the reasoning is identical.
 
-"insufficient" itself covers three distinct can't-look causes -- a required
-channel absent from the window, a window smaller than min_samples, and an
-exception raised while detecting -- collapsed into one value on purpose: the
-distinction that matters to a customer is look-vs-couldn't, not which of the
-three reasons blocked the look.
+"insufficient" itself covers four distinct can't-look causes -- a required
+channel absent from the window, a window smaller than min_samples, a
+detector that looked and found its inputs unusable (``CANNOT_JUDGE``), and
+an exception raised while detecting -- collapsed into one value on purpose:
+the distinction that matters to a customer is look-vs-couldn't, not which of
+the four reasons blocked the look.
+
+THIS RECORD IS PERSISTED AND SERVED (final review, IMPORTANT 2). It used to
+be computed by the stage, put on the summary, and thrown away: never
+written, never returned by the API, read only by tests. The consequence was
+that when ``10d2_grip_anchor`` failed, three of four detectors went
+``insufficient`` and the API returned ``{"events": [], "available": false}``
+with zero consistency rows -- BYTE-IDENTICAL to a clean session with nothing
+to fix. The whole point of this module evaporated at the last step. It now
+rides in ``sessions.analysis_json`` under ``driving_events_capability`` and
+comes back on ``GET /sessions/{id}/driving-events``.
 """
+
+
+class _CannotJudge:
+    """Sentinel: this detector LOOKED at the window and could not judge it.
+
+    ``detect() -> None`` was overloaded and the final review's IMPORTANT 2
+    named the collapse: ``over_slowing`` returning None because the reference
+    was incomplete, and ``re_braking`` returning None because ONE post-apex
+    sample was non-finite, were both counted as ``any_looked_clean`` --
+    "looked, found nothing" -- which is a POSITIVE claim that this corner-lap
+    was fine. It was not; nobody could tell.
+
+    So the two are now different return values:
+      * ``None``      -- looked, judged, nothing to report. A real verdict.
+      * ``CANNOT_JUDGE`` -- looked, could not judge. Contributes to
+        ``insufficient``, exactly like a missing required channel.
+
+    A sentinel rather than a fourth capability value: the customer-facing
+    distinction is still look-vs-couldn't (see above), and a detector that
+    can name a LOCATED refusal already has a better tool -- an explicit
+    ``not_measurable`` event carrying a machine-readable reason, which is
+    what ``late_throttle`` and ``envelope_under_use`` emit.
+    """
+
+    __slots__ = ()
+
+    def __repr__(self) -> str:  # pragma: no cover - debugging aid
+        return "CANNOT_JUDGE"
+
+    def __bool__(self) -> bool:
+        # Never accidentally truthy-tested into meaning "an event".
+        return False
+
+
+CANNOT_JUDGE = _CannotJudge()
 
 
 def _window_satisfies_requires(w: CornerWindow, requires: frozenset[str]) -> bool:
@@ -526,6 +597,11 @@ def run_registry(windows: Iterable[CornerWindow]) -> tuple[list["DrivingEvent"],
                 )
                 continue
 
+            if result is CANNOT_JUDGE:
+                # Looked, could not judge. NOT "found nothing" -- see
+                # `_CannotJudge`. Falls through to `insufficient` unless some
+                # other window was genuinely judged.
+                continue
             if result is not None:
                 events.append(result)
                 any_detected = True
@@ -639,7 +715,7 @@ class _OverSlowing:
         # incomplete reference (e.g. no admissible lap has established this
         # corner's bests yet) is silence, not a fabricated zero.
         if not _all_finite(apex_speed, corner_time, ref_apex_speed, ref_corner_time):
-            return None
+            return CANNOT_JUDGE
         # And a SECOND, independent layer for the impossible-but-finite
         # class -- see `_all_positive`. `s10d3._build_one_window` already
         # strips non-positive apex speeds and corner times off the window so
@@ -647,7 +723,7 @@ class _OverSlowing:
         # detector reporting None (looked, found nothing); this catch here is
         # for a window built by any other caller.
         if not _all_positive(apex_speed, corner_time, ref_apex_speed, ref_corner_time):
-            return None
+            return CANNOT_JUDGE
 
         deficit = ref_apex_speed - apex_speed
         if deficit <= OVER_SLOWING_APEX_DEFICIT_FLOOR_MPS:
@@ -834,13 +910,13 @@ class _LateThrottle:
         # onset to compare against, or either value non-finite, means no
         # claim -- not a fabricated one.
         if not _all_finite(onset, corner_time, ref_onset, ref_corner_time):
-            return None
+            return CANNOT_JUDGE
         # `corner_time` alone gets the positivity check: this detector's own
         # magnitude is a distance, where 0 is a real position, but its
         # `time_cost_s` is a corner-time gap and a 0 s corner time is the
         # same impossible-but-finite substitution `_all_positive` documents.
         if not _all_positive(corner_time, ref_corner_time):
-            return None
+            return CANNOT_JUDGE
 
         delta = onset - ref_onset
         if delta <= LATE_THROTTLE_ONSET_FLOOR_M:
@@ -969,14 +1045,17 @@ class _ReBraking:
         # Refuse rather than guess: no channel, no apex location, or a
         # non-finite apex index means no claim can be made.
         if a_long is None or not _all_finite(apex_idx):
-            return None
+            return CANNOT_JUDGE
         apex_idx = int(apex_idx)
         if apex_idx < 0 or apex_idx >= len(a_long):
-            return None
+            return CANNOT_JUDGE
 
         post_apex = a_long[apex_idx:]
+        # ONE non-finite sample anywhere after the apex means the run search
+        # cannot be trusted -- but it does NOT mean this corner-lap was
+        # clean, which is what returning None used to assert.
         if not _all_finite(*post_apex):
-            return None
+            return CANNOT_JUDGE
 
         run_length, run_start = _longest_run_below(post_apex, RE_BRAKING_DECEL_FLOOR_MPS2)
         if run_length < RE_BRAKING_MIN_RUN_SAMPLES:
@@ -988,7 +1067,7 @@ class _ReBraking:
         run_slice = post_apex[run_start:run_start + run_length]
         peak_decel_mps2 = float(-np.min(run_slice))
         if not _all_finite(peak_decel_mps2):
-            return None
+            return CANNOT_JUDGE
 
         return DrivingEvent(
             event_type="re_braking",
@@ -1128,7 +1207,7 @@ class _EnvelopeUnderUse:
         # Refuse rather than guess: no Phase 1 number for this corner means
         # no claim, not a fabricated one.
         if not _all_finite(grip_pct):
-            return None
+            return CANNOT_JUDGE
 
         if grip_pct >= ENVELOPE_UNDER_USE_FLOOR_PCT:
             return None

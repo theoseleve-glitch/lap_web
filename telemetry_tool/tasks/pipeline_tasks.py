@@ -613,6 +613,23 @@ def _build_analysis_blob(result: dict) -> dict:
     if cdiag and isinstance(cdiag, dict):
         blob["corner_diagnosis"] = cdiag
 
+    # Driving-events CAPABILITY RECORD (final review, IMPORTANT 2).
+    #
+    # Computed by step 10d3 and, until now, thrown away: never persisted,
+    # never served, read only by tests. Without it a session whose
+    # `10d2_grip_anchor` failed returns `{"events": [], "available": false}`
+    # with zero consistency rows -- BYTE-IDENTICAL to a clean session with
+    # nothing to fix. The detected / not_triggered / insufficient distinction
+    # that `driving_events.CAPABILITIES`' own docstring calls "the point of
+    # this module" evaporated at the last step of the pipeline.
+    #
+    # Persisted even when EMPTY (`is not None`, not truthiness): an empty
+    # capability record means the stage itself did not run, which is its own
+    # distinct fact and must not read the same as "the key was never added".
+    dec = result.get("driving_events_capability")
+    if isinstance(dec, dict):
+        blob["driving_events_capability"] = dec
+
     # Gamification (XP, level, achievements, streak)
     gam = result.get("gamification")
     if gam and isinstance(gam, dict):
