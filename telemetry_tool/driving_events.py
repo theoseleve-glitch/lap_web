@@ -35,10 +35,12 @@ logger = logging.getLogger(__name__)
 # own best, two different baselines that are numerically indistinguishable
 # (median 97.7% vs 94.7%).
 #
-# The vocabulary is `grip_anchor.TIERS` verbatim, plus ONE value it does not
-# have. Reusing Phase 1's tier names rather than coining a parallel set is
-# the same discipline `honesty.py`'s TIERS frozenset enforces: a cross-session
-# baseline becomes a NEW value, never a silent redefinition of an old one.
+# `grip_anchor` OWNS this vocabulary; this module imports it and declares a
+# named extension, checked at import by `ga.assert_extends_tiers` so the two
+# cannot drift apart unnoticed. Reusing Phase 1's tier names rather than
+# coining a parallel set is the same discipline `honesty.py`'s TIERS frozenset
+# enforces: a cross-session baseline becomes a NEW value, never a silent
+# redefinition of an old one.
 #
 # `absolute_measurement` is the addition: `re_braking`'s magnitude is a peak
 # deceleration in m/s^2, compared against a fixed physical floor and against
@@ -49,7 +51,25 @@ logger = logging.getLogger(__name__)
 # anything.
 ANCHOR_ABSOLUTE_MEASUREMENT = "absolute_measurement"
 
-ANCHOR_TIERS = frozenset(ga.TIERS) | {ANCHOR_ABSOLUTE_MEASUREMENT}
+EVENT_ONLY_ANCHOR_TIERS = frozenset({ANCHOR_ABSOLUTE_MEASUREMENT})
+"""Tiers this layer adds that `grip_anchor` deliberately does not have.
+
+`grip_anchor.TIERS` closes the `corner_metrics.grip_anchor_tier` COLUMN,
+which only ever holds a grip verdict. `DrivingEvent.anchor_tier` answers a
+wider question over four detectors, three of which never touch grip -- so
+the extension is real, and it is DECLARED here rather than appearing as an
+incidental superset."""
+
+ANCHOR_TIERS = frozenset(ga.TIERS) | EVENT_ONLY_ANCHOR_TIERS
+
+# Checked at import, not in a test: a consumer that silently drops or
+# redefines one of grip_anchor's tiers must fail at LOAD, not when a row
+# eventually fails validation. `grip_anchor` owns the vocabulary and supplies
+# this guard; this module may only add what it has named above.
+ga.assert_extends_tiers(
+    ANCHOR_TIERS, EVENT_ONLY_ANCHOR_TIERS,
+    owner="driving_events.ANCHOR_TIERS",
+)
 
 # Convenience aliases so detectors and tests do not reach across modules for
 # a string literal.

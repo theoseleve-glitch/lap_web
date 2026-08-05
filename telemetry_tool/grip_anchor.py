@@ -64,6 +64,68 @@ TIERS: Final = frozenset({
     TIER_REFUSED,
 })
 
+# ── THIS MODULE OWNS THE TIER VOCABULARY ─────────────────────────────────
+#
+# `TIERS` is the closed set of legal values for the `corner_metrics.
+# grip_anchor_tier` COLUMN. Every value in it names a grip baseline, because
+# that column never holds anything else.
+#
+# A consumer layer may legitimately need a WIDER vocabulary. `driving_events.
+# DrivingEvent.anchor_tier` answers a broader question -- "what was THIS
+# magnitude measured against" over four detectors, three of which never touch
+# grip -- so it carries one value this module deliberately does not have
+# (`absolute_measurement`, for a raw deceleration compared against no limit).
+# Putting that value HERE would be wrong: it can never appear in the column
+# this frozenset closes.
+#
+# What must never happen is the two drifting apart unnoticed, which is the
+# cross-module version of the exact defect this whole tiering design exists
+# to prevent. So an extension is DECLARED and CHECKED rather than incidental:
+# a consumer calls `assert_extends_tiers` at import, and may only ADD values
+# it has named, never drop or redefine one of ours.
+
+
+def assert_extends_tiers(
+    vocabulary, extension, *, owner: str = "a consumer",
+) -> None:
+    """Guard a consumer's widened tier vocabulary against drift from `TIERS`.
+
+    Raises unless ``vocabulary`` is exactly ``TIERS | extension``: every tier
+    this module defines is still present (so a value can never be silently
+    dropped on the way to a consumer), and the only additions are the ones
+    that consumer explicitly declared.
+
+    Called at import time by the consumer, so divergence is a hard failure at
+    load rather than a mismatch discovered when a row fails validation.
+    """
+    vocabulary = frozenset(vocabulary)
+    extension = frozenset(extension)
+
+    missing = TIERS - vocabulary
+    if missing:
+        raise AssertionError(
+            f"{owner} is missing tier(s) {sorted(missing)} that grip_anchor."
+            f"TIERS defines. A consumer may EXTEND the tier vocabulary but "
+            f"never drop from it -- a dropped value means an anchor this "
+            f"module can emit has no legal representation downstream.")
+
+    undeclared = vocabulary - TIERS - extension
+    if undeclared:
+        raise AssertionError(
+            f"{owner} adds tier(s) {sorted(undeclared)} that are neither in "
+            f"grip_anchor.TIERS nor in its own declared extension set. An "
+            f"undeclared addition is exactly the cross-module drift the tier "
+            f"design exists to prevent -- name it, or use one of ours.")
+
+    unused = extension & TIERS
+    if unused:
+        raise AssertionError(
+            f"{owner} declares {sorted(unused)} as an EXTENSION, but "
+            f"grip_anchor.TIERS already defines it. Either it is ours (drop "
+            f"it from the extension set) or the two now disagree about what "
+            f"the name means.")
+
+
 _SESSION_ENVELOPE_TIERS: Final = frozenset({
     TIER_SESSION_ENVELOPE_ELLIPSE_FITTED,
     TIER_SESSION_ENVELOPE_ELLIPSE_DEFAULT_P2,

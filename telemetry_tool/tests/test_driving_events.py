@@ -4,6 +4,8 @@ Every event is a checkable claim: what this lap did, what the reference lap
 did, which lap that was, and how many samples the window held. There is
 deliberately no confidence float -- see the spec's section 5.5.
 """
+import inspect
+
 import pytest
 
 
@@ -48,12 +50,74 @@ def test_the_anchor_and_unit_vocabularies_are_closed():
     import grip_anchor as ga
     import driving_events as de
 
-    # Phase 1's tiers verbatim, plus exactly one addition.
-    assert de.ANCHOR_TIERS == frozenset(ga.TIERS) | {"absolute_measurement"}
-    assert de.ANCHOR_TIERS - frozenset(ga.TIERS) == {de.ANCHOR_ABSOLUTE_MEASUREMENT}
+    # Phase 1's tiers verbatim, plus exactly one DECLARED addition.
+    assert de.ANCHOR_TIERS == frozenset(ga.TIERS) | de.EVENT_ONLY_ANCHOR_TIERS
+    assert de.EVENT_ONLY_ANCHOR_TIERS == {de.ANCHOR_ABSOLUTE_MEASUREMENT}
     assert de.MAGNITUDE_UNITS == frozenset({"m/s", "m", "m/s2", "pct"})
     assert set(de.TIME_COST_ATTRIBUTION) == de.EVENT_TYPES
     assert set(de.TIME_COST_ATTRIBUTION.values()) <= de.ATTRIBUTIONS
+
+
+def test_the_two_modules_cannot_drift_apart_on_the_tier_vocabulary():
+    """Residual 6. `driving_events.ANCHOR_TIERS` is a strict superset of
+    `grip_anchor.TIERS`, which is two modules holding different ideas of a
+    CLOSED vocabulary -- the cross-module version of the exact defect the
+    tiering design exists to prevent, and the class per-task review cannot
+    see.
+
+    `grip_anchor` owns the vocabulary (it closes the
+    `corner_metrics.grip_anchor_tier` column) and supplies the guard;
+    `driving_events` declares its extension and calls it AT IMPORT, so
+    divergence fails at load rather than when a row fails validation.
+    """
+    import grip_anchor as ga
+    import driving_events as de
+
+    # The shipped pair is legal, and the check really runs at import.
+    ga.assert_extends_tiers(
+        de.ANCHOR_TIERS, de.EVENT_ONLY_ANCHOR_TIERS, owner="shipped")
+    assert "assert_extends_tiers" in inspect.getsource(de)
+
+    # A consumer may not DROP one of grip_anchor's tiers...
+    with pytest.raises(AssertionError, match="missing tier"):
+        ga.assert_extends_tiers(
+            frozenset(ga.TIERS) - {ga.TIER_REFUSED},
+            de.EVENT_ONLY_ANCHOR_TIERS, owner="probe")
+
+    # ...nor add one it has not declared...
+    with pytest.raises(AssertionError, match="neither in"):
+        ga.assert_extends_tiers(
+            frozenset(ga.TIERS) | {"physics"},
+            de.EVENT_ONLY_ANCHOR_TIERS, owner="probe")
+
+    # ...nor claim one of grip_anchor's own names as its extension.
+    with pytest.raises(AssertionError, match="already defines"):
+        ga.assert_extends_tiers(
+            frozenset(ga.TIERS), frozenset({ga.TIER_REFUSED}), owner="probe")
+
+
+def test_the_event_only_tier_is_justified_by_a_detector_that_needs_it():
+    """The extension must be needed at the EVENT layer and not at the anchor
+    layer -- explicit, not incidental. `re_braking`'s magnitude is a raw
+    deceleration against no limit, so no grip tier is true of it; and
+    `absolute_measurement` must never reach `corner_metrics.grip_anchor_tier`,
+    which is why it does not live in `grip_anchor`."""
+    import numpy as np
+    import grip_anchor as ga
+    import driving_events as de
+
+    ev = de.RE_BRAKING.detect(_window(
+        a_long_mps2=np.array([0.0] * 20 + [-3.0] * 5 + [0.0] * 15),
+        apex_idx=18))
+    assert ev is not None
+    assert ev.anchor_tier == de.ANCHOR_ABSOLUTE_MEASUREMENT
+    assert ev.anchor_tier not in ga.TIERS, (
+        "the whole reason this value exists is that no grip tier is true of "
+        "a raw deceleration")
+    # And no other detector uses it -- one detector, one justified addition.
+    assert de.ANCHOR_ABSOLUTE_MEASUREMENT not in {
+        de.ANCHOR_DRIVER_BEST_SESSION, de.ANCHOR_SESSION_ENVELOPE_FITTED,
+        de.ANCHOR_SESSION_ENVELOPE_DEFAULT_P2, de.ANCHOR_REFUSED}
 
 
 def test_an_unknown_anchor_tier_is_rejected():
