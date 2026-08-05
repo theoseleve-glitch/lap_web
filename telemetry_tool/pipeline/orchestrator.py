@@ -1044,7 +1044,10 @@ def run_full_analysis(
     # ══════════════════════════════════════════════════════════════
     # PHASE 4: Theoretical Lap + Corner Analysis (step 10)
     # ══════════════════════════════════════════════════════════════
-    from pipeline.stages import s10a_corner_ocp, s10_theoretical, s10b_corners, s10d2_grip_anchor
+    from pipeline.stages import (
+        s10a_corner_ocp, s10_theoretical, s10b_corners, s10d2_grip_anchor,
+        s10d3_driving_events,
+    )
 
     # Gate: skip if distance quality is degraded
     _dq = summary.get("distance_quality")
@@ -1211,6 +1214,30 @@ def run_full_analysis(
 
     per_lap_corner_metrics = _plcm or []
     summary["per_lap_corner_metrics"] = per_lap_corner_metrics
+
+    # Step 10d3 — driving-event detectors (over_slowing, late_throttle,
+    # re_braking, envelope_under_use) over the now-final per_lap_corner_metrics.
+    # Runs immediately after 10d2 so it sees the anchor when 10d2 succeeded
+    # and the unanchored metrics when it didn't -- either way it consumes
+    # per_lap_corner_metrics, never _plcm directly, so it can't itself
+    # resurrect data a grip-anchor failure already degraded.
+    #
+    # Bound to its own name and promoted only on success, same shape as
+    # `_plcm_anchored` just above and for the same reason: `_safe_step`
+    # returns (None, err) on any exception, so an in-place rebind would wipe
+    # out driving_events entirely instead of degrading to an empty result.
+    _driving_events_result, err = _safe_step(
+        "10d3_driving_events", s10d3_driving_events.run_driving_events,
+        per_lap_corner_metrics, corners, resampled_laps,
+        excluded_laps=excluded_laps,
+    )
+    _record("10d3_driving_events", _driving_events_result, err)
+    summary["driving_events"] = (
+        (_driving_events_result or {}).get("events", [])
+    )
+    summary["driving_events_capability"] = (
+        (_driving_events_result or {}).get("capability", {})
+    )
 
     # Endurance + Raceline
     endurance_r, err = _safe_step("10e_endurance", s10b_corners.run_endurance, summary)

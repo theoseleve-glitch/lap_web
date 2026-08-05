@@ -60,3 +60,128 @@ def test_driving_events_is_registered_in_both_delete_cascade_registries():
 
     assert "driving_events" in CASCADE_CONFIG["session"]["children"]
     assert "driving_events" in inspect.getsource(driver_repo.delete_driver_cascade)
+
+
+def test_stage_returns_events_and_a_capability_record():
+    from pipeline.stages import s10d3_driving_events
+
+    n = 400
+    d = np.linspace(0.0, 1200.0, n)
+    def lap(v):
+        return pd.DataFrame({
+            "Distance (m)": d, "distance_norm": d / 1200.0,
+            "Speed (m/s)": np.full(n, v),
+            "Lateral acceleration (G) *calc": np.full(n, 0.9),
+            "Longitudinal acceleration (G) *calc": np.zeros(n),
+        })
+
+    corners = [{"corner_id": 1, "s_start": 300.0, "s_end": 400.0}]
+    metrics = [
+        {"lap_number": 1, "corner_id": 1, "apex_speed_mps": 10.0,
+         "corner_time_s": 10.0, "corner_time_best_s": 8.0,
+         "grip_anchor_pct": 70.0},
+        {"lap_number": 2, "corner_id": 1, "apex_speed_mps": 12.5,
+         "corner_time_s": 8.0, "corner_time_best_s": 8.0,
+         "grip_anchor_pct": 99.0},
+    ]
+
+    out = s10d3_driving_events.run_driving_events(
+        metrics, corners, {1: lap(10.0), 2: lap(12.5)},
+    )
+
+    assert "events" in out and "capability" in out
+    assert set(out["capability"]) == {
+        "over_slowing", "late_throttle", "re_braking", "envelope_under_use"}
+    # lap 1 was slower than the reference, so something must be said about it
+    assert any(e.lap_number == 1 for e in out["events"])
+
+
+def test_stage_never_raises_on_malformed_input():
+    from pipeline.stages import s10d3_driving_events
+
+    for args in (
+        ([], [], {}),
+        ([None], [None], {1: None}),
+        ([{"lap_number": None, "corner_id": None}], ["junk"], {1: pd.DataFrame()}),
+    ):
+        out = s10d3_driving_events.run_driving_events(*args)
+        assert isinstance(out, dict)
+        assert "events" in out and "capability" in out
+
+
+@pytest.fixture
+def _isolated_track_registry(tmp_path, monkeypatch):
+    """Keep the pipeline's track-registration write off the tracked
+    models/tracks.json -- copied from test_grip_anchor_pipeline.py's fixture
+    of the same name (not importable across test modules), see the parent
+    branch's test-hygiene incident."""
+    import track_detection
+    monkeypatch.setattr(
+        track_detection, "_default_db_path", lambda: str(tmp_path / "tracks.json")
+    )
+
+
+def _write_synthetic_csv(tmp_path, n_laps=3):
+    """Minimal RaceChrono-style CSV, same column shape as
+    test_grip_anchor_pipeline.py's ``_make_pipeline_csv`` (already proven to
+    clear column discovery and reach the friction/grip stages of
+    ``pipeline.run_full_analysis``) -- copied rather than imported, since
+    nothing in this test suite imports across test modules."""
+    rng = np.random.default_rng(7)
+    n_per_lap = 150
+    lap_length = 500.0
+    frames = []
+    for lap in range(1, n_laps + 1):
+        t_start = (lap - 1) * 30.0
+        t = np.linspace(t_start, t_start + 25.0, n_per_lap)
+        dist = np.linspace(0, lap_length, n_per_lap)
+        speed = np.full(n_per_lap, 20.0) + rng.normal(0, 0.5, n_per_lap)
+        lat = np.linspace(45.0, 45.002, n_per_lap) + rng.normal(0, 1e-5, n_per_lap)
+        lon = np.linspace(9.0, 9.002, n_per_lap) + rng.normal(0, 1e-5, n_per_lap)
+        frames.append(pd.DataFrame({
+            "Lap #": np.full(n_per_lap, lap),
+            "Time (s)": t,
+            "Distance (m)": dist + (lap - 1) * lap_length,
+            "Speed (m/s)": speed,
+            "Latitude (deg)": lat,
+            "Longitude (deg)": lon,
+            "Bearing (deg)": np.full(n_per_lap, 90.0) + rng.normal(0, 1, n_per_lap),
+            "Longitudinal acceleration (G) *calc": rng.normal(0, 0.02, n_per_lap),
+            "Lateral acceleration (G) *calc": rng.normal(0, 0.4, n_per_lap),
+        }))
+    csv_path = tmp_path / "driving_events_wiring_test.csv"
+    pd.concat(frames, ignore_index=True).to_csv(csv_path, index=False)
+    return csv_path
+
+
+def test_orchestrator_runs_the_driving_events_stage(_isolated_track_registry, tmp_path):
+    """Behavioural: spy on the stage while driving the real orchestrator.
+
+    Mirrors test_grip_anchor_pipeline.py's orchestrator spy exactly -- patch
+    run_per_lap_corner_metrics to return a fixed non-empty list (synthetic-CSV
+    corner detection is unreliable), then assert the stage under test was
+    actually called. A source-grep would pass even if it were wired into dead
+    code.
+    """
+    from unittest.mock import patch
+    from pipeline.stages import s10b_corners, s10d3_driving_events
+    import pipeline
+
+    fixed = [
+        {"lap_number": 1, "corner_id": 1, "apex_speed_mps": 10.0,
+         "corner_time_s": 10.0, "corner_time_best_s": 8.0,
+         "grip_anchor_pct": 70.0},
+        {"lap_number": 2, "corner_id": 1, "apex_speed_mps": 12.5,
+         "corner_time_s": 8.0, "corner_time_best_s": 8.0,
+         "grip_anchor_pct": 99.0},
+    ]
+    csv_path = _write_synthetic_csv(tmp_path)
+
+    with patch.object(s10b_corners, "run_per_lap_corner_metrics",
+                      return_value=fixed), \
+         patch.object(s10d3_driving_events, "run_driving_events",
+                      wraps=s10d3_driving_events.run_driving_events) as spy:
+        pipeline.run_full_analysis(str(csv_path), {})
+
+    assert spy.call_count == 1, "the driving-events stage was never called"
+    assert spy.call_args.args[0] == fixed
