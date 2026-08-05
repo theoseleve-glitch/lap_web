@@ -68,6 +68,18 @@ class DrivingEvent:
         if self.validity == VALIDITY_MEASURED:
             if not self.evidence:
                 raise ValueError("evidence must be non-empty for a measured event")
+            # A NaN/inf defeats an `is None` guard upstream (NaN != None, and
+            # every comparison with NaN is False) and would otherwise let a
+            # meaningless number through labelled "measured" -- exactly what
+            # this module exists to prevent, and something `json.dumps`
+            # would later emit as a bare, invalid-JSON `NaN` token (Task 10
+            # persists events as JSON). Enforced here, not just at each
+            # detector, so no future detector can reintroduce this class of
+            # bug.
+            if self.magnitude is not None and not np.isfinite(self.magnitude):
+                raise ValueError(f"magnitude must be finite for a measured event, got {self.magnitude!r}")
+            if self.time_cost_s is not None and not np.isfinite(self.time_cost_s):
+                raise ValueError(f"time_cost_s must be finite for a measured event, got {self.time_cost_s!r}")
         else:
             if self.magnitude is not None:
                 raise ValueError(f"magnitude must be None for a {self.validity} event, got {self.magnitude!r}")
@@ -287,6 +299,25 @@ def run_registry(windows: Iterable[CornerWindow]) -> tuple[list["DrivingEvent"],
     return events, capability
 
 
+def _all_finite(*values) -> bool:
+    """True when every value is neither ``None`` nor NaN/+-inf.
+
+    `x is None` alone is not enough: NaN equals nothing, including None
+    (`float("nan") is None` is False), and every comparison against NaN
+    (including a floor check like ``deficit <= FLOOR``) is False -- so a NaN
+    silently defeats both an ``is None`` guard and an emit-floor guard,
+    producing a confidently-labelled ``validity="measured"`` event carrying
+    a meaningless number. Detectors call this before doing any arithmetic
+    with reference/window values; `DrivingEvent.__post_init__` re-checks the
+    two numbers that actually leave the module (`magnitude`, `time_cost_s`)
+    as a second, independent layer.
+    """
+    for v in values:
+        if v is None or not np.isfinite(v):
+            return False
+    return True
+
+
 # ── over_slowing ────────────────────────────────────────────────────────
 #
 # Compares this lap's apex speed at a corner against this driver's own best
@@ -309,6 +340,11 @@ class _OverSlowing:
 
     name = "over_slowing"
     requires = frozenset({"apex_speed_mps", "corner_time_s"})
+    # Real corner windows on this grid measured 25-79 samples (review probe,
+    # fix round 1). 5 is a deliberately permissive floor, not a tuned one:
+    # it only rejects windows an order of magnitude smaller than anything
+    # seen on real data -- catching truncated/degenerate windows without
+    # asserting a "right" value nobody has measured for this detector.
     min_samples = 5
 
     def detect(self, w: CornerWindow) -> DrivingEvent | None:
@@ -319,10 +355,10 @@ class _OverSlowing:
         ref_corner_time = reference.get("corner_time_s")
 
         # Refuse rather than guess: every number this claim needs must be
-        # real before it gets made -- an incomplete reference (e.g. no
-        # admissible lap has established this corner's bests yet) is
-        # silence, not a fabricated zero.
-        if None in (apex_speed, corner_time, ref_apex_speed, ref_corner_time):
+        # real (not missing, not NaN, not +-inf) before it gets made -- an
+        # incomplete reference (e.g. no admissible lap has established this
+        # corner's bests yet) is silence, not a fabricated zero.
+        if not _all_finite(apex_speed, corner_time, ref_apex_speed, ref_corner_time):
             return None
 
         deficit = ref_apex_speed - apex_speed
@@ -379,6 +415,10 @@ class _LateThrottle:
 
     name = "late_throttle"
     requires = frozenset({"throttle_onset_m", "corner_time_s"})
+    # Same measured floor as over_slowing: real corner windows on this grid
+    # measured 25-79 samples (review probe, fix round 1), so 5 is a
+    # deliberately permissive floor pending any detector-specific tuning,
+    # not a value derived to be "correct" for this detector specifically.
     min_samples = 5
 
     def detect(self, w: CornerWindow) -> DrivingEvent | None:
@@ -388,10 +428,10 @@ class _LateThrottle:
         ref_onset = reference.get("throttle_onset_m")
         ref_corner_time = reference.get("corner_time_s")
 
-        # Refuse rather than guess: no onset found on this lap, or no
-        # reference onset to compare against, means no claim -- not a
-        # fabricated one.
-        if None in (onset, corner_time, ref_onset, ref_corner_time):
+        # Refuse rather than guess: no onset found on this lap, no reference
+        # onset to compare against, or either value non-finite, means no
+        # claim -- not a fabricated one.
+        if not _all_finite(onset, corner_time, ref_onset, ref_corner_time):
             return None
 
         delta = onset - ref_onset

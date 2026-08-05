@@ -388,3 +388,106 @@ def test_late_throttle_refuses_when_this_lap_has_no_onset():
                    "throttle_onset_m": 10.0},
     )
     assert de.LATE_THROTTLE.detect(w) is None
+
+
+# ── fix round 1: NaN must never fabricate a "measured" claim ──────────────
+#
+# `is None` alone does not catch NaN (`float("nan") is None` is False), and
+# every comparison against NaN -- including an emit-floor check like
+# `deficit <= FLOOR` -- is False. Both detectors' finiteness guard, and
+# `DrivingEvent.__post_init__`'s independent second layer, are bite-checked
+# here.
+
+def test_over_slowing_refuses_a_nan_apex_speed():
+    import driving_events as de
+
+    w = _window(apex_speed_mps=float("nan"), corner_time_s=8.0,
+                reference={"apex_speed_mps": 13.5, "corner_time_s": 7.5,
+                           "throttle_onset_m": 10.0})
+    assert de.OVER_SLOWING.detect(w) is None
+
+
+def test_over_slowing_refuses_a_nan_reference_apex_speed():
+    import driving_events as de
+
+    w = _window(apex_speed_mps=12.0, corner_time_s=8.0,
+                reference={"apex_speed_mps": float("nan"), "corner_time_s": 7.5,
+                           "throttle_onset_m": 10.0})
+    assert de.OVER_SLOWING.detect(w) is None
+
+
+def test_late_throttle_refuses_a_nan_onset():
+    import driving_events as de
+
+    w = _window(
+        throttle_onset_m=float("nan"),
+        reference={"apex_speed_mps": 12.0, "corner_time_s": 8.0,
+                   "throttle_onset_m": 10.0},
+    )
+    assert de.LATE_THROTTLE.detect(w) is None
+
+
+def test_late_throttle_refuses_a_nan_reference_onset():
+    import driving_events as de
+
+    w = _window(
+        throttle_onset_m=24.0,
+        reference={"apex_speed_mps": 12.0, "corner_time_s": 8.0,
+                   "throttle_onset_m": float("nan")},
+    )
+    assert de.LATE_THROTTLE.detect(w) is None
+
+
+def test_a_measured_event_must_have_a_finite_magnitude():
+    """Layer 2 defence: even if a future detector's own NaN guard has a bug,
+    the record itself refuses to carry a non-finite 'measured' magnitude --
+    `json.dumps` would otherwise emit an invalid-JSON bare `NaN` token at
+    Task 10's persistence layer."""
+    import driving_events as de
+
+    with pytest.raises(ValueError, match="magnitude"):
+        de.DrivingEvent(
+            event_type="over_slowing", lap_number=1, corner_id=1,
+            s_norm_start=0.25, s_norm_end=0.35, magnitude=float("nan"),
+            magnitude_unit="m/s", time_cost_s=0.5,
+            validity=de.VALIDITY_MEASURED, reason=None,
+            n_samples_in_window=42, evidence={"n": 42},
+        )
+
+
+def test_a_measured_event_must_have_a_finite_time_cost():
+    """Same layer-2 defence, covering +-inf (not just NaN) and the other
+    numeric field."""
+    import driving_events as de
+
+    with pytest.raises(ValueError, match="time_cost_s"):
+        de.DrivingEvent(
+            event_type="over_slowing", lap_number=1, corner_id=1,
+            s_norm_start=0.25, s_norm_end=0.35, magnitude=1.5,
+            magnitude_unit="m/s", time_cost_s=float("inf"),
+            validity=de.VALIDITY_MEASURED, reason=None,
+            n_samples_in_window=42, evidence={"n": 42},
+        )
+
+
+# ── fix round 1: late_throttle was never routed through run_registry ──────
+
+def test_registry_reports_late_throttle_capability_too():
+    """cap["over_slowing"] is asserted elsewhere in this file; nothing
+    previously routed late_throttle through run_registry, so a mutation to
+    its `requires` or `min_samples` could have passed the whole suite
+    silently. Mirrors test_registry_reports_not_triggered_separately_from_
+    insufficient's clean/tiny pair, for late_throttle specifically."""
+    import driving_events as de
+
+    # A clean window: matches the reference throttle onset -> not_triggered.
+    clean = _window(throttle_onset_m=10.0)
+    _, cap = de.run_registry([clean])
+    assert cap["late_throttle"] == "not_triggered"
+
+    # A window too short to judge.
+    tiny = _window(n_samples=2, speed_mps=np.full(2, 12.0),
+                   a_lat_mps2=np.full(2, 9.0), a_long_mps2=np.zeros(2),
+                   dist_m=np.linspace(250.0, 260.0, 2))
+    _, cap2 = de.run_registry([tiny])
+    assert cap2["late_throttle"] == "insufficient"
