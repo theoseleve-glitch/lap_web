@@ -380,6 +380,7 @@ def _export_user_data_impl(user_id: int, export_id: str) -> dict[str, Any]:
             "gps_traces": [],
             "session_weather": [],
             "corner_metrics": [],
+            "driving_events": [],
             "theoretical_data": [],
         }
         for sess in sessions:

@@ -1160,5 +1160,35 @@ PHASE_24_TABLES: list[tuple[str, str]] = [
     ("race_weather_windows", _RACE_WEATHER_WINDOWS_TABLE),
 ]
 
+# ------------------------------------------------------------------
+# Phase 25 tables — Driving events (Phase 2 of driving-pattern-recognition)
+# ------------------------------------------------------------------
+
+_DRIVING_EVENTS_TABLE = """
+CREATE TABLE IF NOT EXISTS driving_events (
+    id                   INTEGER PRIMARY KEY AUTOINCREMENT,
+    session_id           TEXT    NOT NULL REFERENCES sessions(session_id),
+    lap_number           INTEGER NOT NULL,
+    corner_id            INTEGER NOT NULL,
+    event_type           TEXT    NOT NULL,
+    s_norm_start         REAL,
+    s_norm_end           REAL,
+    magnitude            REAL,
+    magnitude_unit       TEXT,
+    time_cost_s          REAL,
+    validity             TEXT,
+    reason               TEXT,
+    n_samples_in_window  INTEGER,
+    evidence_json        TEXT,
+    workspace_id         INTEGER,
+    created_at           TEXT    NOT NULL DEFAULT (datetime('now')),
+    UNIQUE(session_id, lap_number, corner_id, event_type)
+);
+"""
+
+PHASE_25_TABLES: list[tuple[str, str]] = [
+    ("driving_events", _DRIVING_EVENTS_TABLE),
+]
+
 # Convenience: all tables across all phases (updated as phases ship).
-ALL_TABLES = PHASE_1_TABLES + PHASE_2_TABLES + PHASE_3_TABLES + PHASE_4_TABLES + PHASE_5_TABLES + PHASE_6_TABLES + PHASE_7_TABLES + PHASE_8_TABLES + PHASE_9_TABLES + PHASE_10_TABLES + PHASE_11_TABLES + PHASE_12_TABLES + PHASE_13_TABLES + PHASE_14_TABLES + PHASE_15_TABLES + PHASE_16_TABLES + PHASE_17_TABLES + PHASE_18_TABLES + PHASE_19_TABLES + PHASE_20_TABLES + PHASE_21_TABLES + PHASE_22_TABLES + PHASE_23_TABLES + PHASE_24_TABLES
+ALL_TABLES = PHASE_1_TABLES + PHASE_2_TABLES + PHASE_3_TABLES + PHASE_4_TABLES + PHASE_5_TABLES + PHASE_6_TABLES + PHASE_7_TABLES + PHASE_8_TABLES + PHASE_9_TABLES + PHASE_10_TABLES + PHASE_11_TABLES + PHASE_12_TABLES + PHASE_13_TABLES + PHASE_14_TABLES + PHASE_15_TABLES + PHASE_16_TABLES + PHASE_17_TABLES + PHASE_18_TABLES + PHASE_19_TABLES + PHASE_20_TABLES + PHASE_21_TABLES + PHASE_22_TABLES + PHASE_23_TABLES + PHASE_24_TABLES + PHASE_25_TABLES

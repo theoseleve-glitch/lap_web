@@ -47,6 +47,7 @@ _RAW_DATA_TABLES = [
     "driving_style_features",
     "theoretical_data",
     "corner_metrics",
+    "driving_events",
     "session_weather",
     "session_weather_laps",
     "data_health",
