@@ -69,3 +69,80 @@ def test_an_unknown_event_type_is_rejected():
             validity=de.VALIDITY_NOT_MEASURABLE, reason="x",
             n_samples_in_window=0, evidence={"n": 0},
         )
+
+
+def test_an_invalid_validity_is_rejected():
+    """Validity must be one of the three valid types."""
+    import driving_events as de
+
+    with pytest.raises(ValueError, match="validity"):
+        de.DrivingEvent(
+            event_type="over_slowing", lap_number=1, corner_id=1,
+            s_norm_start=0.0, s_norm_end=0.1, magnitude=None,
+            magnitude_unit="", time_cost_s=None,
+            validity="probably_fine", reason="invalid",
+            n_samples_in_window=0, evidence={"n": 0},
+        )
+
+
+def test_validity_is_case_sensitive():
+    """Case variants of validity strings must be rejected."""
+    import driving_events as de
+
+    with pytest.raises(ValueError, match="validity"):
+        de.DrivingEvent(
+            event_type="over_slowing", lap_number=1, corner_id=1,
+            s_norm_start=0.0, s_norm_end=0.1, magnitude=None,
+            magnitude_unit="", time_cost_s=None,
+            validity="Measured", reason="case mismatch",
+            n_samples_in_window=0, evidence={"n": 0},
+        )
+
+
+def test_a_non_measured_event_must_not_carry_time_cost():
+    """A non-measured event with time_cost_s set must raise ValueError."""
+    import driving_events as de
+
+    with pytest.raises(ValueError, match="time_cost_s"):
+        de.DrivingEvent(
+            event_type="over_slowing", lap_number=1, corner_id=1,
+            s_norm_start=0.25, s_norm_end=0.35, magnitude=None,
+            magnitude_unit="m/s", time_cost_s=0.5,
+            validity=de.VALIDITY_INSUFFICIENT_SAMPLES, reason="window too short",
+            n_samples_in_window=2, evidence={"n": 2},
+        )
+
+
+def test_a_non_measured_event_with_neither_magnitude_nor_time_cost():
+    """A non-measured event with both magnitude and time_cost_s as None must succeed."""
+    import driving_events as de
+
+    ev = de.DrivingEvent(
+        event_type="over_slowing", lap_number=1, corner_id=1,
+        s_norm_start=0.25, s_norm_end=0.35, magnitude=None,
+        magnitude_unit="", time_cost_s=None,
+        validity=de.VALIDITY_INSUFFICIENT_SAMPLES, reason="window too short",
+        n_samples_in_window=2, evidence={"n": 2},
+    )
+    assert ev.magnitude is None
+    assert ev.time_cost_s is None
+
+
+def test_evidence_is_defensively_copied():
+    """Post-construction mutation of the caller's dict must not affect the event."""
+    import driving_events as de
+
+    caller_dict = {"n": 42, "lap_id": 5}
+    ev = de.DrivingEvent(
+        event_type="over_slowing", lap_number=1, corner_id=1,
+        s_norm_start=0.25, s_norm_end=0.35, magnitude=1.4,
+        magnitude_unit="m/s", time_cost_s=0.31,
+        validity=de.VALIDITY_MEASURED, reason=None,
+        n_samples_in_window=42, evidence=caller_dict,
+    )
+    # Mutate the caller's dict after construction
+    caller_dict["n"] = 999999
+    caller_dict["new_key"] = "injected"
+    # The event's evidence must remain unchanged
+    assert ev.evidence == {"n": 42, "lap_id": 5}
+    assert "new_key" not in ev.evidence

@@ -67,3 +67,8 @@ class DrivingEvent:
                 raise ValueError(f"magnitude must be None for a {self.validity} event, got {self.magnitude!r}")
             if self.time_cost_s is not None:
                 raise ValueError(f"time_cost_s must be None for a {self.validity} event, got {self.time_cost_s!r}")
+
+        # Defensive copy: evidence is mutable, so take a copy to prevent caller
+        # mutations from affecting the frozen event. MappingProxyType does not
+        # JSON-serialize (Task 10 persists this as JSON), so use dict().
+        object.__setattr__(self, "evidence", dict(self.evidence))
