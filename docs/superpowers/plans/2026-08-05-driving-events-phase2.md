@@ -333,9 +333,12 @@ Expected: FAIL — `KeyError: 'corner_time_s'`.
 
 In `run_grip_anchor`, in the same per-(corner, lap) loop that already computes the lateral peak, also compute the traversal time:
 
+Add the import at the top of the module, then inside the existing loop body — immediately after the block that computes `peak[(cid, lap_num)]` — insert:
+
 ```python
-from corner_analysis import _integrate_time
-...
+from corner_analysis import _integrate_time   # module-level import
+
+# ... inside the existing per-(corner, lap) loop, after the peak block:
             d_win = pd.to_numeric(lap_df[dist_col], errors="coerce").values[mask]
             v_win = pd.to_numeric(lap_df[speed_col], errors="coerce").values[mask]
             t = float(_integrate_time(d_win, v_win))
@@ -1147,7 +1150,7 @@ git commit -m "feat(pipeline): step 10d3 emits driving events and a capability r
 - Create: `telemetry_tool/web/repos/events_repo.py`
 - Modify: `telemetry_tool/db/queries.py`
 - Modify: `telemetry_tool/web/routes/data_v2.py`
-- Modify: `telemetry_tool/pipeline/stages/s15_persist.py` (or wherever corner metrics are persisted — find it in Step 1)
+- Modify: **all three** corner-metric persistence sites — `telemetry_tool/pipeline/stages/s15_persist.py:237`, `telemetry_tool/tasks/pipeline_tasks.py:1158`, `telemetry_tool/tasks/endurance_tasks.py:779`
 - Test: `telemetry_tool/tests/test_driving_events_pipeline.py`
 
 **Interfaces:**
@@ -1159,12 +1162,20 @@ git commit -m "feat(pipeline): step 10d3 emits driving events and a capability r
 
 Two surfaces, one data model — this is what "rank + consistency together" means. The ranked list answers *what should I fix next*; the aggregate answers *where am I unreliable*.
 
-- [ ] **Step 1: Find the persistence site and an endpoint to model on**
+- [ ] **Step 1: Read the three persistence sites and an endpoint to model on**
 
-Run: `grep -rn "insert_corner_metrics" telemetry_tool/ --include=*.py | grep -v tests`
+`insert_corner_metrics` is called from exactly three places (verified):
+
+```
+telemetry_tool/pipeline/stages/s15_persist.py:237     # sync upload path
+telemetry_tool/tasks/pipeline_tasks.py:1158           # celery pipeline path
+telemetry_tool/tasks/endurance_tasks.py:779           # endurance path (BARE except, no log)
+```
+
+Run: `sed -n '230,250p' telemetry_tool/pipeline/stages/s15_persist.py`
 Run: `sed -n '3452,3470p' telemetry_tool/web/routes/data_v2.py`
 
-The first gives the writer to sit beside; the second is the `SELECT *` corner-metrics endpoint whose shape to copy.
+The first shows the writer to sit beside; the second is the `SELECT *` corner-metrics endpoint whose auth/tenancy/envelope shape to copy.
 
 - [ ] **Step 2: Write the failing tests**
 
