@@ -345,3 +345,59 @@ def test_orchestrator_calls_grip_anchor_with_the_per_lap_metrics_and_friction_mo
     # The (pass-through) result must actually land back in the summary --
     # proving the call sits on the path that feeds summary, not a side branch.
     assert summary["per_lap_corner_metrics"] == fixed_plcm
+
+
+def test_grip_anchor_failure_does_not_discard_the_per_lap_corner_metrics(tmp_path):
+    """Regression for a Critical review finding: the wiring used to rebind
+    ``_plcm`` in place from ``_safe_step``'s result. Since ``_safe_step``
+    returns ``(None, err)`` on ANY exception, a failure inside
+    ``run_grip_anchor`` turned ``_plcm`` into ``None`` and then, at
+    ``per_lap_corner_metrics = _plcm or []``, into an empty list -- silently
+    discarding step 10d's brake points, apex/entry/exit speeds and every
+    other substantive field, even though none of that data has anything to
+    do with grip anchoring and 10d itself succeeded.
+
+    The grip anchor is decoration on top of 10d's metrics, not their source:
+    a failure here must degrade to the unanchored metrics, never delete
+    them. This drives the real orchestrator with run_grip_anchor patched to
+    raise, and asserts step 10d's substantive data survives intact.
+    """
+    csv_path = _make_pipeline_csv(tmp_path)
+    fixed_plcm = [
+        {"lap_number": 1, "corner_id": 1, "apex_speed_mps": 25.0},
+        {"lap_number": 2, "corner_id": 1, "apex_speed_mps": 24.0},
+    ]
+
+    import pipeline
+
+    with (
+        patch(
+            "pipeline.stages.s10b_corners.run_per_lap_corner_metrics",
+            return_value=fixed_plcm,
+        ),
+        patch(
+            "pipeline.stages.s10d2_grip_anchor.run_grip_anchor",
+            side_effect=RuntimeError("boom: simulated grip-anchor failure"),
+        ),
+    ):
+        summary = pipeline.run_full_analysis(str(csv_path), {})
+
+    got = summary["per_lap_corner_metrics"]
+    assert len(got) == 2, (
+        "a grip-anchor failure must not change how many corner-lap metrics survive"
+    )
+    assert [m.get("apex_speed_mps") for m in got] == [25.0, 24.0], (
+        "step 10d's substantive fields must survive a grip-anchor failure untouched"
+    )
+    assert [m.get("lap_number") for m in got] == [1, 2]
+    assert [m.get("corner_id") for m in got] == [1, 1]
+
+    # The failure must be recorded, not swallowed silently.
+    assert "10d2_grip_anchor" in summary["steps_failed"]
+    assert "10d2_grip_anchor" in summary["errors"]
+
+    # And the metrics must simply lack the anchor -- not carry fabricated
+    # values -- when the stage that would set them blew up.
+    for m in got:
+        assert m.get("grip_anchor_tier") is None
+        assert m.get("grip_anchor_pct") is None

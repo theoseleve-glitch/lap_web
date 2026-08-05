@@ -1190,15 +1190,23 @@ def run_full_analysis(
     # Step 10d2 — tiered grip anchor. Runs here because this is the only point
     # where the friction model, corners, resampled laps and per-lap metrics
     # all coexist. Every downstream number is quoted against this.
+    #
+    # The anchor is decoration on top of step 10d's metrics, not a source of
+    # them: a failure here (_safe_step returns None on any exception) must
+    # degrade to the unanchored metrics, never wipe out 10d's brake points,
+    # apex/entry/exit speeds, etc. by falling through to `_plcm or []`. So we
+    # rebind into a separate name and only adopt it when it's not None.
     if _plcm:
-        _plcm, err = _safe_step(
+        _plcm_anchored, err = _safe_step(
             "10d2_grip_anchor", s10d2_grip_anchor.run_grip_anchor,
             _plcm, corners, resampled_laps,
             friction_model=summary.get("friction_model"),
             friction_envelope=summary.get("friction_envelope"),
             curvature_profile=curvature_profile,
         )
-        _record("10d2_grip_anchor", _plcm, err)
+        _record("10d2_grip_anchor", _plcm_anchored, err)
+        if _plcm_anchored is not None:
+            _plcm = _plcm_anchored
 
     per_lap_corner_metrics = _plcm or []
     summary["per_lap_corner_metrics"] = per_lap_corner_metrics
