@@ -1,4 +1,6 @@
 """Driving events — schema, persistence, stage wiring and real-data acceptance."""
+from unittest.mock import MagicMock, patch
+
 import numpy as np
 import pandas as pd
 import pytest
@@ -240,3 +242,205 @@ def test_orchestrator_runs_the_driving_events_stage(_isolated_track_registry, tm
 
     assert spy.call_count == 1, "the driving-events stage was never called"
     assert spy.call_args.args[0] == fixed
+
+
+# ══════════════════════════════════════════════════════════════════
+# Task 10 — persistence and the two read surfaces
+# ══════════════════════════════════════════════════════════════════
+
+
+def test_ranked_events_are_ordered_by_time_cost(test_db):
+    from web.repos import events_repo
+    import driving_events as de
+
+    evs = [
+        de.DrivingEvent(
+            event_type="over_slowing", lap_number=L, corner_id=C,
+            s_norm_start=0.2, s_norm_end=0.3, magnitude=1.0,
+            magnitude_unit="m/s", time_cost_s=cost,
+            validity=de.VALIDITY_MEASURED, reason=None,
+            n_samples_in_window=40, evidence={"apex_speed_mps": 10.0},
+        )
+        for (L, C, cost) in [(1, 1, 0.10), (7, 4, 0.885), (9, 1, 0.412)]
+    ]
+    events_repo.insert_driving_events(test_db, "s1", evs)
+    test_db.commit()
+
+    got = events_repo.get_ranked_events(test_db, "s1", limit=2)
+    assert [round(g["time_cost_s"], 3) for g in got] == [0.885, 0.412]
+    assert got[0]["lap_number"] == 7 and got[0]["corner_id"] == 4
+
+
+def test_corner_consistency_reports_best_median_and_spread(test_db):
+    from web.repos import events_repo
+    import driving_events as de
+
+    # corner 4 is inconsistent, corner 2 is tight
+    rows = [(4, 0.0), (4, 0.45), (4, 0.89), (2, 0.0), (2, 0.05), (2, 0.09)]
+    evs = [
+        de.DrivingEvent(
+            event_type="over_slowing", lap_number=i + 1, corner_id=c,
+            s_norm_start=0.2, s_norm_end=0.3, magnitude=1.0,
+            magnitude_unit="m/s", time_cost_s=cost,
+            validity=de.VALIDITY_MEASURED, reason=None,
+            n_samples_in_window=40, evidence={"x": 1},
+        )
+        for i, (c, cost) in enumerate(rows)
+    ]
+    events_repo.insert_driving_events(test_db, "s1", evs)
+    test_db.commit()
+
+    by_corner = {r["corner_id"]: r for r in
+                 events_repo.get_corner_consistency(test_db, "s1")}
+    assert by_corner[4]["spread_s"] > by_corner[2]["spread_s"]
+    assert by_corner[4]["worst_s"] == pytest.approx(0.89)
+
+
+def test_insert_is_idempotent_so_reprocess_does_not_double(test_db):
+    from web.repos import events_repo
+    import driving_events as de
+
+    ev = de.DrivingEvent(
+        event_type="over_slowing", lap_number=1, corner_id=1,
+        s_norm_start=0.2, s_norm_end=0.3, magnitude=1.0, magnitude_unit="m/s",
+        time_cost_s=0.2, validity=de.VALIDITY_MEASURED, reason=None,
+        n_samples_in_window=40, evidence={"x": 1},
+    )
+    events_repo.insert_driving_events(test_db, "s1", [ev])
+    events_repo.insert_driving_events(test_db, "s1", [ev])
+    test_db.commit()
+
+    n = test_db.execute(
+        "SELECT count(*) FROM driving_events WHERE session_id='s1'").fetchone()[0]
+    assert n == 1
+
+
+def test_insert_coerces_numpy_evidence_to_json_safe_types(test_db):
+    """Resolution #4: evidence may contain numpy scalars. np.int64/np.bool_/
+    np.float32 are NOT subclasses of Python's int/bool/float, so json.dumps
+    raises TypeError on them directly (confirmed against this repo's own
+    numpy build) -- and Phase 1 lost an entire corner_metrics write to the
+    equivalent bind-time version of this bug because the exception was
+    swallowed. If insert_driving_events doesn't coerce, this test raises
+    TypeError instead of asserting anything -- that failure mode is itself
+    the point being guarded against."""
+    from web.repos import events_repo
+    import driving_events as de
+    import json
+
+    ev = de.DrivingEvent(
+        event_type="envelope_under_use", lap_number=1, corner_id=1,
+        s_norm_start=0.2, s_norm_end=0.3, magnitude=float(np.float64(42.0)),
+        magnitude_unit="pct", time_cost_s=None,
+        validity=de.VALIDITY_MEASURED, reason=None,
+        n_samples_in_window=40,
+        evidence={
+            "grip_anchor_pct": np.float64(42.0),
+            "sample_count": np.int64(40),
+            "clean": np.bool_(True),
+            "floor_pct": np.float32(100.0),
+        },
+    )
+    events_repo.insert_driving_events(test_db, "s1", [ev])
+    test_db.commit()
+
+    row = test_db.execute(
+        "SELECT evidence_json FROM driving_events WHERE session_id='s1'"
+    ).fetchone()
+    parsed = json.loads(row["evidence_json"])
+    assert parsed == {
+        "grip_anchor_pct": 42.0, "sample_count": 40,
+        "clean": True, "floor_pct": 100.0,
+    }
+
+
+# ── Endpoints: tenancy scoping (resolution #3) ─────────────────────
+#
+# Mirrors tests/test_idor_theoretical_user_corners.py's mock-based pattern
+# exactly (that file's own header explains why: two confirmed cross-tenant
+# blockers were routes that queried a child table by client-supplied
+# session_id without first resolving ownership through
+# models.get_session_by_id() on the RLS-scoped request connection). A
+# session_id outside the caller's workspace must 404 and must NEVER reach
+# events_repo.
+
+
+@pytest.fixture
+def data_v2_client():
+    """Minimal Flask app with only the data_v2 blueprint -- no real DB."""
+    from flask import Flask
+    from web.routes.data_v2 import bp
+
+    app = Flask(__name__)
+    app.config["TESTING"] = True
+    app.config["USE_PG"] = False
+    app.register_blueprint(bp)
+    return app.test_client()
+
+
+class TestDrivingEventsIdorGuard:
+
+    @pytest.mark.parametrize("path", [
+        "/api/v1/sessions/foreign-session/driving-events",
+        "/api/v1/sessions/foreign-session/corner-consistency",
+    ])
+    def test_404_when_session_not_visible_to_caller(self, data_v2_client, path):
+        """A non-owner (session invisible on the RLS-scoped connection, i.e.
+        get_session_by_id returns None) must get 404, and events_repo must
+        never be touched -- proves the guard fires before any query, not
+        just that the final response happens to omit foreign data."""
+        with patch("web.routes.data_v2.get_db_connection") as mock_db, \
+                patch("web.routes.data_v2.models") as mock_models, \
+                patch("web.routes.data_v2.events_repo") as mock_events_repo:
+            mock_db.return_value = MagicMock()
+            mock_models.get_session_by_id.return_value = None
+
+            resp = data_v2_client.get(path)
+
+            assert resp.status_code == 404, resp.get_data(as_text=True)
+            body = resp.get_json()
+            assert body["ok"] is False
+            assert body["error"]["code"] == "NOT_FOUND"
+            mock_events_repo.get_ranked_events.assert_not_called()
+            mock_events_repo.get_corner_consistency.assert_not_called()
+
+    def test_owner_gets_ranked_events(self, data_v2_client):
+        with patch("web.routes.data_v2.get_db_connection") as mock_db, \
+                patch("web.routes.data_v2.models") as mock_models, \
+                patch("web.routes.data_v2.events_repo") as mock_events_repo:
+            mock_db.return_value = MagicMock()
+            mock_models.get_session_by_id.return_value = {"session_id": "s1", "workspace_id": 1}
+            mock_events_repo.get_ranked_events.return_value = [
+                {"lap_number": 7, "corner_id": 4, "time_cost_s": 0.885},
+            ]
+
+            resp = data_v2_client.get("/api/v1/sessions/s1/driving-events?limit=5")
+
+            assert resp.status_code == 200, resp.get_data(as_text=True)
+            body = resp.get_json()
+            assert body["ok"] is True
+            assert body["data"]["events"][0]["corner_id"] == 4
+            mock_events_repo.get_ranked_events.assert_called_once_with(
+                mock_db.return_value, "s1", limit=5,
+            )
+
+    def test_owner_gets_corner_consistency(self, data_v2_client):
+        with patch("web.routes.data_v2.get_db_connection") as mock_db, \
+                patch("web.routes.data_v2.models") as mock_models, \
+                patch("web.routes.data_v2.events_repo") as mock_events_repo:
+            mock_db.return_value = MagicMock()
+            mock_models.get_session_by_id.return_value = {"session_id": "s1", "workspace_id": 1}
+            mock_events_repo.get_corner_consistency.return_value = [
+                {"corner_id": 4, "best_s": 0.0, "worst_s": 0.89,
+                 "median_s": 0.45, "spread_s": 0.89},
+            ]
+
+            resp = data_v2_client.get("/api/v1/sessions/s1/corner-consistency")
+
+            assert resp.status_code == 200, resp.get_data(as_text=True)
+            body = resp.get_json()
+            assert body["ok"] is True
+            assert body["data"]["corners"][0]["spread_s"] == pytest.approx(0.89)
+            mock_events_repo.get_corner_consistency.assert_called_once_with(
+                mock_db.return_value, "s1",
+            )

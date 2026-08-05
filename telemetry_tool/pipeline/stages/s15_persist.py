@@ -111,6 +111,9 @@ def run_persist_to_db(
         # Per-lap corner metrics
         _persist_corner_metrics(conn, session_id, summary)
 
+        # Driving events (Phase 2 of driving-pattern-recognition, Task 10)
+        _persist_driving_events(conn, session_id, summary)
+
         # Manual condition markers
         manual_cc = meta.get("manual_condition_changes")
         if manual_cc:
@@ -241,6 +244,28 @@ def _persist_corner_metrics(conn: Any, session_id: str, summary: dict) -> None:
             )
     except Exception as exc:
         logger.warning("Corner metrics persistence skipped: %s", exc)
+
+
+def _persist_driving_events(conn: Any, session_id: str, summary: dict) -> None:
+    """Persist Phase 2 driving events (over_slowing, late_throttle,
+    re_braking, envelope_under_use) — see s10d3_driving_events.py."""
+    events = summary.get("driving_events")
+    if not events:
+        return
+    try:
+        from web.repos.events_repo import insert_driving_events
+        n = insert_driving_events(conn, session_id, events)
+        if n > 0:
+            logger.info(
+                "Persisted %d driving events for session %s.", n, session_id,
+            )
+    except Exception as exc:
+        # Logged with exc_info=True (unlike endurance_tasks.py's bare
+        # except at the same call site — Task 10 brief calls that out by
+        # name as the pattern NOT to repeat) so a swallowed write is at
+        # least diagnosable, matching _persist_corner_metrics's sibling
+        # guard just above (same swallow-and-log shape, upgraded).
+        logger.warning("Driving events persistence skipped: %s", exc, exc_info=True)
 
 
 def _enrich_historical(

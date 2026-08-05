@@ -1006,3 +1006,44 @@ SELECT * FROM export_templates ORDER BY template_name;
 SELECT_EXPORT_TEMPLATE_BY_ID = """
 SELECT * FROM export_templates WHERE id = :id;
 """
+
+# ------------------------------------------------------------------
+# Driving events (Phase 2 of driving-pattern-recognition, Task 10)
+# ------------------------------------------------------------------
+
+INSERT_DRIVING_EVENT = """
+INSERT OR REPLACE INTO driving_events (
+    session_id, lap_number, corner_id, event_type,
+    s_norm_start, s_norm_end, magnitude, magnitude_unit,
+    time_cost_s, validity, reason, n_samples_in_window, evidence_json
+) VALUES (
+    :session_id, :lap_number, :corner_id, :event_type,
+    :s_norm_start, :s_norm_end, :magnitude, :magnitude_unit,
+    :time_cost_s, :validity, :reason, :n_samples_in_window, :evidence_json
+);
+"""
+
+# The ranked "what should I fix next" surface. Excludes NULL time_cost_s
+# (re_braking / envelope_under_use never compute one -- see driving_events.py)
+# rather than relying on ORDER BY ... DESC to push them somewhere consistent:
+# SQLite sorts NULL as the smallest value (so DESC puts NULLs last) while
+# PostgreSQL's default is the opposite (DESC puts NULLs first) -- filtering
+# them out sidesteps that cross-dialect difference outright, and a NULL cost
+# can't be ranked by cost anyway.
+SELECT_RANKED_EVENTS = """
+SELECT * FROM driving_events
+WHERE session_id = :session_id AND time_cost_s IS NOT NULL
+ORDER BY time_cost_s DESC
+LIMIT :limit;
+"""
+
+# Raw per-event costs for the "where am I unreliable" corner-consistency
+# surface. Aggregated (best/median/worst/spread) in Python, not SQL:
+# PostgreSQL has percentile_cont for median but SQLite has no built-in
+# median function, so there is no single expression portable across both
+# dialects this repo supports -- see events_repo.get_corner_consistency.
+SELECT_TIME_COSTS_FOR_CONSISTENCY = """
+SELECT corner_id, time_cost_s FROM driving_events
+WHERE session_id = :session_id AND time_cost_s IS NOT NULL
+ORDER BY corner_id;
+"""

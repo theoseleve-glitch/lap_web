@@ -46,6 +46,7 @@ from web.chart_cache import chart_cached
 from web.db import get_db_connection
 from web.middleware.audit import audit_log
 from web.rate_limit import rate_limit
+from web.repos import events_repo
 from web.repos.delete_cascade import delete_entity_cascade, get_delete_impact
 
 logger = logging.getLogger(__name__)
@@ -3485,6 +3486,68 @@ def get_corner_metrics_summary(session_id: str) -> tuple[dict, int]:
     return api_response({
         "corners": summary or [],
         "available": bool(summary),
+    })
+
+
+# ══════════════════════════════════════════════════════════════════
+# 18b. GET /api/v1/sessions/<id>/driving-events
+# 18c. GET /api/v1/sessions/<id>/corner-consistency
+#
+# Phase 2 of driving-pattern-recognition (Task 10). Tenancy scoping copies
+# get_corner_metrics above exactly, not just its @_safe_api decorator:
+# resolve session_id through models.get_session_by_id() on the RLS-scoped
+# request connection FIRST and 404 before touching driving_events at all
+# when it isn't visible to this caller's workspace. See
+# tests/test_idor_theoretical_user_corners.py for why this specific check
+# exists -- two confirmed cross-tenant blockers were routes that queried a
+# child table by client-supplied session_id without it.
+# ══════════════════════════════════════════════════════════════════
+
+
+@bp.route("/sessions/<session_id>/driving-events", methods=["GET"])
+@_safe_api
+def get_driving_events(session_id: str) -> tuple[dict, int]:
+    """Ranked driving events for this session -- "what should I fix next".
+
+    Ordered by time_cost_s DESC (see events_repo.get_ranked_events). Events
+    with no time_cost_s (re_braking, envelope_under_use) are excluded from
+    the ranking, not sorted to one end of it.
+    """
+    conn = get_db_connection()
+    session = models.get_session_by_id(conn, session_id)
+    if session is None:
+        return api_error(ErrorCode.NOT_FOUND, "Session not found", status=404)
+
+    try:
+        limit = int(request.args.get("limit", 10))
+    except (TypeError, ValueError):
+        limit = 10
+    limit = max(1, min(limit, 100))  # clamp to reasonable bounds, matches sibling endpoints
+
+    events = events_repo.get_ranked_events(conn, session_id, limit=limit)
+
+    return api_response({
+        "events": events,
+        "available": bool(events),
+    })
+
+
+@bp.route("/sessions/<session_id>/corner-consistency", methods=["GET"])
+@_safe_api
+def get_corner_consistency(session_id: str) -> tuple[dict, int]:
+    """Per-corner best/median/worst/spread of time_cost_s -- "where am I
+    unreliable". A corner with no cost-bearing event this session is
+    omitted, not zero-filled (see events_repo.get_corner_consistency)."""
+    conn = get_db_connection()
+    session = models.get_session_by_id(conn, session_id)
+    if session is None:
+        return api_error(ErrorCode.NOT_FOUND, "Session not found", status=404)
+
+    corners = events_repo.get_corner_consistency(conn, session_id)
+
+    return api_response({
+        "corners": corners,
+        "available": bool(corners),
     })
 
 

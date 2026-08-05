@@ -1162,6 +1162,18 @@ def _persist_session_data(ctx: PipelineContext, result: dict) -> None:
             logger.warning("Failed to insert corner metrics for session %s", session_id, exc_info=True)
             conn.rollback()
 
+        # 6b. Insert driving events (Phase 2 of driving-pattern-recognition, Task 10)
+        try:
+            driving_events = result.get("driving_events")
+            if driving_events:
+                from web.repos.events_repo import insert_driving_events
+                n = insert_driving_events(conn, session_id, driving_events)
+                conn.commit()
+                logger.info("Inserted %d driving events for session %s", n, session_id)
+        except Exception:
+            logger.warning("Failed to insert driving events for session %s", session_id, exc_info=True)
+            conn.rollback()
+
         # 7. Insert score details (expects full result dict)
         try:
             score_result = result.get("score_result")

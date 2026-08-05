@@ -781,6 +781,25 @@ def _persist_stint_session(
         except Exception:
             conn.rollback()
 
+        # 6b. Insert driving events (Phase 2 of driving-pattern-recognition,
+        # Task 10). Logged with exc_info=True, unlike the bare except just
+        # above (Task 10 brief calls that pattern out by name as the one
+        # NOT to repeat here).
+        try:
+            driving_events = summary.get("driving_events")
+            if driving_events:
+                from web.repos.events_repo import insert_driving_events
+                n = insert_driving_events(conn, session_id, driving_events)
+                conn.commit()
+                logger.info(
+                    "Stint %d: inserted %d driving events", stint_number, n,
+                )
+        except Exception as exc:
+            logger.warning(
+                "Stint %d: driving events insert failed: %s", stint_number, exc, exc_info=True,
+            )
+            conn.rollback()
+
         # 7. Insert score details
         try:
             if summary.get("score_result"):
