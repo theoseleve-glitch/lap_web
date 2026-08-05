@@ -98,6 +98,13 @@ def run_grip_anchor(
     non-dict corner, a corner with a non-numeric s_start, a non-dict metric
     entry, or a decide_anchor call that fails for an unanticipated reason.
     """
+    # `or frozenset()`, matching the sibling guard at
+    # s10d3_driving_events.run_driving_events. Without it an explicit
+    # `excluded_laps=None` raises TypeError from the unguarded `in` check in
+    # the peak loop below -- `_safe_step` catches it, but a whole step's
+    # output is discarded for a one-line omission.
+    excluded_laps = excluded_laps or frozenset()
+
     metrics = list(per_lap_corner_metrics or [])
     if not metrics:
         return metrics
@@ -209,6 +216,16 @@ def run_grip_anchor(
         # `cid`/`lap_num`, which are only bound on the success path and
         # would be undefined here for the malformed-entry branch.
         m["corner_time_s"] = corner_time.get((cid_for_log, lap_for_log))
+        # WRITTEN AND NEVER READ, deliberately kept (final review, cheap
+        # minor). `s10d3._build_references` recomputes the per-corner fastest
+        # time independently rather than reading this back, ON PURPOSE: that
+        # keeps the detectors' notion of "the reference" alive even when this
+        # whole stage failed for a session. So this field is not a dependency
+        # of anything -- it is the anchored metric row's own record of the
+        # corner's best, persisted alongside `corner_time_s` so a reader of
+        # `corner_metrics` can see the comparison without re-deriving it.
+        # Kept rather than removed because deleting it would leave
+        # `corner_time_s` quoted against nothing at the DB layer.
         m["corner_time_best_s"] = session_best_time.get(cid_for_log)
 
     tiers = {}

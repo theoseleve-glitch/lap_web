@@ -25,6 +25,7 @@ built on top of it — may assert that causal link.
 from __future__ import annotations
 
 import json
+import logging
 import math
 import sqlite3
 from statistics import median
@@ -34,6 +35,8 @@ import numpy as np
 
 from db import queries as Q
 from web.repos._helpers import _safe_float
+
+logger = logging.getLogger(__name__)
 
 
 def _safe_int(v: Any) -> int | None:
@@ -326,6 +329,64 @@ def _dedupe_by_lap_corner(rows: list[dict]) -> list[dict]:
     return out
 
 
+# ── row budgets: the read surfaces are bounded, and provably so ──────────
+#
+# Final review, deferred minor 4. Both queries used to fetch EVERY qualifying
+# row so the Python layer could dedupe before slicing. Measured here through
+# the real path (tracemalloc, real SQLite, realistic evidence blobs):
+# 2,937 B/row on the ranked surface and 439 B/row on the consistency one, so
+# 20,000 rows peak at 58.7 MB and 8.8 MB respectively. Row count is
+# `laps x corners x 2` with no cap on either anywhere in the pipeline, while
+# `max_upload_size_mb` is -1 (unlimited) on the world-class and b2b plans: a
+# 1,200-lap endurance session over 15 corners extrapolates to ~106 MB per
+# request, times 32 gunicorn threads. With the bound, the same call peaks at
+# 64 KB.
+
+_MAX_COST_BEARING_ROWS_PER_KEY = 2
+"""How many rows for ONE (lap_number, corner_id) can carry a time_cost_s.
+
+This is what makes the ranked query's `limit*2+2` bound provably safe rather
+than a guess: the table's UNIQUE key caps rows per key at one per event type,
+and only this many event types ever compute a cost. Asserted against
+`driving_events.TIME_COST_ATTRIBUTION` below so a fifth detector that starts
+emitting a cost cannot silently invalidate the arithmetic."""
+
+_CONSISTENCY_ROW_CAP = 20000
+"""Hard ceiling for the corner-consistency surface.
+
+It aggregates rather than slices, so there is no caller-supplied N to scale
+from. 20,000 rows is ~8.8 MB peak by the measurement above (this
+surface selects four columns, not the whole row), and it is far beyond any
+plausible session: the real fixture produces 99 cost-bearing rows,
+and even a 1,000-lap endurance run over 20 corners produces ~40,000 -- which
+is exactly the case that must be capped rather than served. Hitting it is
+logged as a WARNING because the aggregate is then computed over a truncated
+set and is no longer representative."""
+
+
+def _assert_cost_bearing_row_bound() -> None:
+    """The ranked query's LIMIT is arithmetic, not a guess -- keep it true."""
+    import driving_events as de
+
+    cost_bearing = {t for t, a in de.TIME_COST_ATTRIBUTION.items()
+                    if a != de.ATTRIBUTION_NO_COST}
+    if len(cost_bearing) > _MAX_COST_BEARING_ROWS_PER_KEY:
+        raise AssertionError(
+            f"{len(cost_bearing)} event types now carry a time_cost_s "
+            f"({sorted(cost_bearing)}), but SELECT_RANKED_EVENTS' "
+            f"LIMIT limit*{_MAX_COST_BEARING_ROWS_PER_KEY}+2 assumes at most "
+            f"{_MAX_COST_BEARING_ROWS_PER_KEY} cost-bearing rows per "
+            f"(lap, corner). The bound no longer guarantees `limit` distinct "
+            f"keys survive the dedupe -- raise the factor with it.")
+
+
+def _ranked_row_budget(limit: int) -> int:
+    """SQL row budget that provably yields >= `limit` distinct (lap, corner)
+    keys after `_dedupe_by_lap_corner`."""
+    _assert_cost_bearing_row_bound()
+    return limit * _MAX_COST_BEARING_ROWS_PER_KEY + 2
+
+
 def get_driving_events_capability(
     conn: sqlite3.Connection,
     session_id: str,
@@ -382,11 +443,13 @@ def get_ranked_events(
     fewer than ``limit`` distinct problems while the response still looked
     full.
     """
+    limit = _safe_int(limit) or 10
+    limit = max(1, limit)
     rows = conn.execute(Q.SELECT_RANKED_EVENTS, {
         "session_id": session_id,
+        "row_budget": _ranked_row_budget(limit),
     }).fetchall()
     events = _dedupe_by_lap_corner([_row_to_dict(r) for r in rows])
-    limit = _safe_int(limit) or 10
     return events[:limit]
 
 
@@ -406,7 +469,19 @@ def get_corner_consistency(
     """
     rows = conn.execute(Q.SELECT_TIME_COSTS_FOR_CONSISTENCY, {
         "session_id": session_id,
+        "row_budget": _CONSISTENCY_ROW_CAP,
     }).fetchall()
+    if len(rows) >= _CONSISTENCY_ROW_CAP:
+        # Loudly, because a truncated aggregate is a WRONG aggregate: the
+        # per-corner median would be computed over an arbitrary prefix of the
+        # session. Logged rather than raised so the surface still answers,
+        # but nobody gets to read a skewed median as a measured one.
+        logger.warning(
+            "corner-consistency hit the %d-row cap for session %s -- the "
+            "per-corner aggregates are computed over a TRUNCATED set and are "
+            "not representative of the whole session",
+            _CONSISTENCY_ROW_CAP, session_id,
+        )
     rows = _dedupe_by_lap_corner([dict(r) for r in rows])
 
     by_corner: dict[Any, list[float]] = {}

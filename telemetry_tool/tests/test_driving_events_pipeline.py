@@ -411,6 +411,82 @@ def test_both_analysis_blob_writers_carry_the_capability_record():
         assert "isinstance(dec, dict)" in src, fn.__name__
 
 
+# ══════════════════════════════════════════════════════════════════
+# Deferred minor 4 — the read surfaces are bounded, and provably so
+# ══════════════════════════════════════════════════════════════════
+
+
+def test_the_ranked_query_is_bounded_and_still_dedupes_before_slicing(test_db):
+    """The bound has to do BOTH jobs: cap the fetch, and still leave enough
+    rows that `limit` DISTINCT (lap, corner) keys survive the dedupe.
+
+    Built as the pathological case the unbounded fetch existed for: every
+    (lap, corner) fires BOTH cost-bearing detectors, so a naive `LIMIT limit`
+    would return limit/2 distinct problems while the response looked full.
+    """
+    import driving_events as de
+    from web.repos import events_repo
+
+    evs = []
+    for lap in range(1, 21):
+        for etype, unit in (("over_slowing", de.MAGNITUDE_UNIT_MPS),
+                            ("late_throttle", de.MAGNITUDE_UNIT_M)):
+            evs.append(de.DrivingEvent(
+                event_type=etype, lap_number=lap, corner_id=1,
+                s_norm_start=0.1, s_norm_end=0.2, magnitude=5.0,
+                magnitude_unit=unit, time_cost_s=1.0 - lap * 0.01,
+                validity=de.VALIDITY_MEASURED, reason=None,
+                n_samples_in_window=30,
+                anchor_tier=de.ANCHOR_DRIVER_BEST_SESSION, anchor_reason=None,
+                evidence={"x": 1}))
+    events_repo.insert_driving_events(test_db, "s1", evs)
+    test_db.commit()
+
+    for limit in (1, 5, 10, 20):
+        got = events_repo.get_ranked_events(test_db, "s1", limit=limit)
+        assert len(got) == limit, (
+            f"asked for {limit} distinct problems, got {len(got)} -- the SQL "
+            f"bound truncated before the dedupe could run")
+        keys = {(e["lap_number"], e["corner_id"]) for e in got}
+        assert len(keys) == limit, "duplicate (lap, corner) survived"
+        # And they are the COSTLIEST ones, in order.
+        assert [e["time_cost_s"] for e in got] == sorted(
+            (e["time_cost_s"] for e in got), reverse=True)
+    assert got[0]["time_cost_s"] == pytest.approx(0.99)
+
+
+def test_the_row_budget_bound_is_asserted_against_the_detector_set():
+    """`limit*2+2` is arithmetic that depends on at most TWO event types
+    carrying a cost. A fifth detector that starts emitting one must not be
+    able to invalidate it silently."""
+    import driving_events as de
+    from web.repos import events_repo
+
+    events_repo._assert_cost_bearing_row_bound()   # the shipped set is fine
+
+    original = dict(de.TIME_COST_ATTRIBUTION)
+    de.TIME_COST_ATTRIBUTION["re_braking"] = de.ATTRIBUTION_ATTRIBUTABLE
+    try:
+        with pytest.raises(AssertionError, match="cost-bearing"):
+            events_repo._assert_cost_bearing_row_bound()
+    finally:
+        de.TIME_COST_ATTRIBUTION.clear()
+        de.TIME_COST_ATTRIBUTION.update(original)
+
+
+def test_the_consistency_surface_has_its_own_hard_cap():
+    """It aggregates rather than slices, so it cannot borrow the ranked
+    query's caller-scaled bound. Truncation there is a WRONG median, not a
+    short list, so hitting the cap must be logged."""
+    import inspect
+    from web.repos import events_repo
+
+    assert events_repo._CONSISTENCY_ROW_CAP > 0
+    src = inspect.getsource(events_repo.get_corner_consistency)
+    assert "_CONSISTENCY_ROW_CAP" in src
+    assert "logger.warning" in src
+
+
 def test_an_empty_event_list_writes_nothing_and_does_not_raise(seeded_db):
     from pipeline.stages import s15_persist
 
@@ -431,16 +507,49 @@ def test_driving_events_is_registered_for_retention_and_gdpr():
     assert "driving_events" in inspect.getsource(gdpr_tasks)
 
 
-def test_driving_events_is_registered_in_both_delete_cascade_registries():
-    """A table missing from either registry leaves orphaned rows on SQLite
+def test_driving_events_is_registered_in_every_delete_cascade_registry():
+    """A table missing from ANY registry leaves orphaned rows on SQLite
     (the FK there has no ON DELETE CASCADE) and under-counts every backend's
-    delete-impact dry-run preview."""
+    delete-impact dry-run preview.
+
+    There are FOUR, not the three the plan named -- the final review's
+    IMPORTANT 3 found `track_repo.delete_track_cascade` missed. It lists ~20
+    session-child tables including `corner_metrics`; `driving_events` sat
+    right next to it and was absent, so deleting a track left event rows
+    behind permanently on SQLite.
+    """
     import inspect
     from web.repos.delete_cascade import CASCADE_CONFIG
-    from web.repos import driver_repo
+    from web.repos import driver_repo, track_repo
 
     assert "driving_events" in CASCADE_CONFIG["session"]["children"]
     assert "driving_events" in inspect.getsource(driver_repo.delete_driver_cascade)
+    # NOTE this source-text assertion is weak on its own -- it passes on a
+    # mere COMMENT mentioning the table (verified while bite-checking: the
+    # tuple was deleted and this still went green). The executed test below
+    # is the one with teeth; this one only names the fourth registry.
+    assert "driving_events" in inspect.getsource(track_repo.delete_track_cascade)
+
+
+def test_deleting_a_track_removes_its_driving_events(seeded_db):
+    """Executed, not asserted structurally: the registry entry has to be in
+    the loop that actually runs, with the right join column."""
+    from web.repos import track_repo
+    from pipeline.stages import s15_persist
+
+    s15_persist._persist_driving_events(
+        seeded_db, "s1", {"driving_events": [_one_event()]})
+    seeded_db.commit()
+    assert seeded_db.execute(
+        "SELECT count(*) FROM driving_events").fetchone()[0] == 1
+
+    track_repo.delete_track_cascade(seeded_db, "t1")
+    seeded_db.commit()
+
+    assert seeded_db.execute(
+        "SELECT count(*) FROM driving_events").fetchone()[0] == 0, (
+        "driving_events rows outlived the track that owned them -- SQLite's "
+        "mirror has no ON DELETE CASCADE, so nothing else will collect them")
 
 
 def test_stage_returns_events_and_a_capability_record():

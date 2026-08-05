@@ -1033,17 +1033,50 @@ INSERT OR REPLACE INTO driving_events (
 # them out sidesteps that cross-dialect difference outright, and a NULL cost
 # can't be ranked by cost anyway.
 #
-# NO `LIMIT` here (fix round 1): over_slowing and late_throttle can both
-# fire on the SAME (lap_number, corner_id) with the IDENTICAL time_cost_s
-# (see events_repo.get_ranked_events / _dedupe_by_lap_corner). Limiting in
-# SQL happens BEFORE that dedup, so a duplicate pair could consume two of
-# the caller's requested N slots and silently return fewer than N distinct
-# problems. events_repo fetches every qualifying row, dedupes, THEN slices
-# to the caller's limit in Python.
+# A BOUNDED LIMIT, and the bound is proved rather than guessed.
+#
+# Fix round 1 removed the LIMIT entirely, because over_slowing and
+# late_throttle can both fire on the SAME (lap_number, corner_id) with the
+# IDENTICAL time_cost_s (see events_repo._dedupe_by_lap_corner). Limiting in
+# SQL happens BEFORE that dedupe, so a naive `LIMIT :limit` could let one
+# duplicate pair consume two of the caller's N slots and silently return
+# fewer than N distinct problems.
+#
+# The final review re-measured what that unbounded fetch actually costs and
+# the earlier "6,000 rows / ~10 MiB" estimate was WRONG. Re-measured AGAIN
+# here, through the real fetch + `_row_to_dict` + dedupe path against a real
+# SQLite database (tracemalloc, 20,000 rows with realistic evidence blobs):
+#
+#   ranked path, unbounded   20,000 rows   58.7 MB peak   2,937 B/row
+#   ranked path, LIMIT bound     22 rows   64.3 KB peak
+#
+# (The review quoted ~3.7 KB/row; 2.9 KB is the same order and the
+# conclusion is identical. Do not treat either figure as exact -- the blob
+# size varies with the detector.) Row count is `laps x corners x 2` with NO
+# cap on either anywhere in the pipeline, while `max_upload_size_mb` is -1
+# (unlimited) on the world-class and b2b plans: a 1,200-lap endurance session
+# over 15 corners extrapolates to ~106 MB PER REQUEST, times 32 gunicorn
+# threads. Bounded, the same request peaks at 64 KB.
+#
+# `LIMIT :limit * 2 + 2` PROVABLY preserves dedupe-before-slice. The table's
+# UNIQUE(session_id, lap_number, corner_id, event_type) caps rows per
+# (lap, corner) key at one per event type, and only TWO event types ever
+# carry a non-NULL time_cost_s (over_slowing, late_throttle -- the other two
+# are excluded by the WHERE below and by construction never compute a cost).
+# So at most 2 rows per key survive the WHERE, and any 2N+2 rows ordered by
+# cost contain at least N distinct keys. The +2 is slack for the boundary
+# pair. If a future detector starts emitting a cost, this factor MUST rise
+# with it -- `events_repo._MAX_COST_BEARING_ROWS_PER_KEY` is asserted against
+# `TIME_COST_ATTRIBUTION` so that cannot happen silently.
+#
+# The ORDER BY is fully deterministic (cost, then lap, corner, type) so the
+# truncation point is stable across backends and repeat calls rather than
+# depending on physical row order.
 SELECT_RANKED_EVENTS = """
 SELECT * FROM driving_events
 WHERE session_id = :session_id AND time_cost_s IS NOT NULL
-ORDER BY time_cost_s DESC;
+ORDER BY time_cost_s DESC, lap_number, corner_id, event_type
+LIMIT :row_budget;
 """
 
 # Raw per-event costs for the "where am I unreliable" corner-consistency
@@ -1059,8 +1092,16 @@ ORDER BY time_cost_s DESC;
 # (lap, corner), so without the dedup a lap that fired both detectors is
 # counted twice and skews median_s toward corners with more detector
 # coverage rather than genuine per-lap variance.
+# ITS OWN HARD CAP (final review, deferred minor 4). This surface aggregates
+# rather than slices, so it cannot borrow the ranked query's `limit*2+2`
+# bound -- there is no caller-supplied N. It is capped at a fixed ceiling
+# instead, and the ceiling is chosen so no plausible session is truncated:
+# see `events_repo._CONSISTENCY_ROW_CAP`. Truncation here would silently
+# bias the per-corner median, so the repo layer LOGS when the cap is hit
+# rather than quietly returning a skewed aggregate.
 SELECT_TIME_COSTS_FOR_CONSISTENCY = """
 SELECT lap_number, corner_id, time_cost_s, anchor_tier FROM driving_events
 WHERE session_id = :session_id AND time_cost_s IS NOT NULL
-ORDER BY corner_id, lap_number;
+ORDER BY corner_id, lap_number, event_type
+LIMIT :row_budget;
 """

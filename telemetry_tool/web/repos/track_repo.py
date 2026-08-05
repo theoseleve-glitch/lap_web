@@ -461,6 +461,14 @@ def delete_track_cascade(conn: sqlite3.Connection, track_id: str) -> dict:
     # Order matters: delete children before parent.
     for table, col in [
         ("corner_metrics", "session_id"),
+        # Final review, IMPORTANT 3. `driving_events` was registered in the
+        # three registries the plan named (delete_cascade.CASCADE_CONFIG,
+        # driver_repo.delete_driver_cascade, retention/gdpr) and missed in
+        # this fourth one. PostgreSQL's FK ondelete=CASCADE covers it there,
+        # but the SQLite mirror in db/schema.py has no ON DELETE CASCADE, so
+        # deleting a track left orphaned event rows permanently -- and
+        # get_delete_impact() under-counted on every backend.
+        ("driving_events", "session_id"),
         ("corner_best_practices", "track_id"),
         ("gps_traces", "session_id"),
         ("score_details", "session_id"),

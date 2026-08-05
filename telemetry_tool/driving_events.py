@@ -701,6 +701,23 @@ class _OverSlowing:
     # it only rejects windows an order of magnitude smaller than anything
     # seen on real data -- catching truncated/degenerate windows without
     # asserting a "right" value nobody has measured for this detector.
+    #
+    # ⚠ THIS IS A DOCUMENTED DEPARTURE FROM THE SPEC. Spec §9 fixes
+    # `min_samples_per_corner` at 20, "grounded in the measurement that real
+    # corners carry 25-79 samples on the distance grid". All four detectors
+    # here use 5. The departure is deliberate and harmless on the measured
+    # data -- every real window clears BOTH numbers by 5x or more, so the two
+    # values are indistinguishable on this fixture -- but it is a departure,
+    # and it was undocumented until the final review.
+    #
+    # 5 rather than 20 because 20 is a floor derived for the SPEC'S detector
+    # set, which included primitives (`ramp`, `oscillation`) that genuinely
+    # need sample density; none of the four shipped detectors does. A
+    # deficit of apex speed against a reference is meaningful on any window
+    # with a locatable apex. Raising it to 20 would silence detectors on
+    # short corners for a resolution reason that does not apply to them.
+    # Whoever adds a detector that DOES need density must override upward
+    # (the spec's own instruction), not change this shared value.
     min_samples = 5
 
     def detect(self, w: CornerWindow) -> DrivingEvent | None:
@@ -1088,6 +1105,14 @@ class _ReBraking:
                 "run_length_samples": run_length,
                 "run_start_idx_post_apex": run_start,
                 "apex_idx": apex_idx,
+                # WIRED rather than removed (final review, cheap minor):
+                # `s_norm_apex` was computed onto every window and read by
+                # nothing. `apex_idx` alone is an index into arrays a
+                # consumer does not have, so a re-brake located "12 samples
+                # after the apex" is unplottable; the normalised apex
+                # position makes the location checkable from the stored
+                # record and is the frame the event's own span is already in.
+                "s_norm_apex": w.s_norm_apex,
             },
         )
 
