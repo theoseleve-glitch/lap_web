@@ -1857,9 +1857,10 @@ _REAL_CSV = "telemetry_tool/data/raw/OK_R4.csv"
 # 3x headroom below the measured 72 costs nothing in sensitivity.
 _MIN_CORNER_LAPS = 24
 
-# MEASURED: 139 events (141 before the final review's coordinate-frame fix
-# dropped two late_throttle events below the emit floor). Catches the
-# "events collapse to 4" mutation.
+# MEASURED: 140 events. 141 before the final review; the coordinate-frame
+# fix dropped two late_throttle events below the emit floor (-2) and the
+# tier-2 refusal turned 14 measured envelope_under_use events into 15
+# not_measurable ones (+1). Catches the "events collapse to 4" mutation.
 # With four detectors over >= 24 corner-laps, and the two reference-comparison
 # detectors structurally able to fire on up to 8 of every 9 laps per corner
 # (only the record-holding lap is silent), a functioning session cannot come
@@ -1867,8 +1868,12 @@ _MIN_CORNER_LAPS = 24
 # measured value while being ~7x above the collapse case.
 _MIN_EVENTS = 30
 
-# MEASURED: 138/139 = 99.3% of events are validity="measured" (the one
-# exception is a genuine `not_measurable` late_throttle -- see below).
+# MEASURED: 124/140 = 88.6% of events are validity="measured". The 16
+# exceptions are all genuine, located refusals: 15 envelope_under_use
+# events refusing a self-referential tier-2 grip anchor (final review,
+# IMPORTANT 1b) and 1 late_throttle whose onset scan found no crossing.
+# The share fell from 99.3% BECAUSE the branch learned to refuse; the
+# floor was already set at 0.80 to leave room for exactly this.
 # Catches every wholesale validity flip. Deliberately NOT pinned at 1.0:
 # the spec explicitly wants a future detector to be able to emit an honest
 # `Insufficient` on windows where a channel is missing, and pinning 100%
@@ -1886,7 +1891,7 @@ _MIN_MEASURED_SHARE = 0.80
 _MIN_DISTINCT_CORNERS = 4
 _MIN_DISTINCT_LAPS = 4
 
-# MEASURED: 99 of 139 events carry a time_cost_s (over_slowing +
+# MEASURED: 99 of 140 events carry a time_cost_s (over_slowing +
 # late_throttle; re_braking and envelope_under_use carry None by design).
 # Catches "every time_cost_s = None". time_cost_s is the ranking key -- it
 # is the entire reason the ranked read surface exists -- so a session that
@@ -1897,7 +1902,7 @@ _MIN_DISTINCT_LAPS = 4
 # carries no cost by construction (a not_measurable event may not carry
 # numbers at all), so this floor is also the guard against the onset
 # derivation degrading wholesale into refusals. On this fixture 1 of 72
-# corner-laps refuses, so 57 of 58 late_throttle events are costed.
+# corner-laps refuses, so 55 of 56 late_throttle events are costed.
 _MIN_COSTED_EVENTS = 20
 
 # MEASURED: median cost 0.163 s, max 0.885 s. Unchanged by the
@@ -2401,9 +2406,24 @@ def test_driving_events_on_real_kart_telemetry(_real_summary):
     every event is measured, located and non-degenerate, and the costs are
     plausible both per-event and in bulk.
 
-    MEASURED on this fixture: 72 corner-laps (9 laps x 8 corners), 141
-    events, 99.3% validity="measured", all four capability values "detected",
-    costs min 0.000 / median 0.163 / max 0.885 s.
+    MEASURED on this fixture: 72 corner-laps (9 laps x 8 corners), 140
+    events, 88.6% validity="measured", all four capability values "detected",
+    costs min 0.000 / median 0.163 / max 0.885 s. Event mix over_slowing 44 /
+    late_throttle 56 / envelope_under_use 35 (20 measured + 15 refused on a
+    tier-2 anchor) / re_braking 5.
+
+    THE FINAL REVIEW MOVED THESE NUMBERS TWICE, both times by refusing to
+    make a claim the data does not support:
+      * the coordinate-frame fix (Critical 1) put `throttle_onset_m` in
+        `distance_norm`, dropping late_throttle 58 -> 56 and its largest
+        magnitude 41.20 -> 28.89 m -- 12.31 m of that headline example was
+        LAP LENGTH. Per-corner medians fell 34-42% at corners 3, 6 and 8.
+      * the tier-2 ruling (IMPORTANT 1b) turned 14 measured
+        `envelope_under_use` events into 15 `not_measurable` ones, because
+        on a `driver_best_session` anchor the 100% floor cannot be exceeded
+        and the detector was reporting arithmetic as measurement.
+    Costs are untouched by both (median 0.163 s, max 0.885 s) and must be:
+    the cost is a corner-TIME gap and never touched either mechanism.
 
     THE PRECONDITION THESE CONSTANTS CARRY (fix round 2). Every number above
     holds only for the ADAPTER-REGISTRY ingestion path, which is what
