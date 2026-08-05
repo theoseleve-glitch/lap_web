@@ -231,15 +231,25 @@ def decide_anchor(
     envelope_bin: Any,
     trust_ratio: float | None,
     session_best_lat_mps2: float | None,
+    bin_out_of_range: bool = False,
 ) -> Anchor:
     """Decide what this corner-lap's grip usage may honestly be quoted against.
 
     Fail-SAFE, strongest doubt first: an absent envelope, an unmeasurable
     sample, a fabricated bin or an untrusted channel each drop us to the
     session-relative tier; if even that is unavailable we refuse.
+
+    ``bin_out_of_range`` lets the caller say "I looked for a bin near this
+    speed and every candidate was too far away to trust" -- distinct from
+    ``envelope_bin`` simply being unmeasured/fabricated. Checked before
+    ``bin_is_measured`` so an out-of-range speed is never misreported as a
+    data-quality problem with the bin itself.
     """
     if friction is None:
         return _session_best_anchor(a_lat_mps2, session_best_lat_mps2, REASON_NO_ENVELOPE)
+
+    if bin_out_of_range:
+        return _session_best_anchor(a_lat_mps2, session_best_lat_mps2, REASON_SPEED_OUT_OF_BINS)
 
     if not bin_is_measured(envelope_bin):
         return _session_best_anchor(a_lat_mps2, session_best_lat_mps2, REASON_BIN_FABRICATED)

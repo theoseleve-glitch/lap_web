@@ -622,6 +622,22 @@ def test_decide_anchor_names_no_envelope_when_friction_is_absent():
     assert a.reason == ga.REASON_NO_ENVELOPE
 
 
+def test_decide_anchor_names_speed_out_of_bins_over_a_measured_bin():
+    """Isolates precedence: even when the caller ALSO passes a genuinely
+    measured bin, bin_out_of_range=True must still win. The caller is
+    asserting "this measured bin sits at the wrong speed for this sample,"
+    which is a different fact than "there's no data" (bin_fabricated) --
+    reporting the wrong reason here would misname a coverage gap as a
+    data-quality problem."""
+    import grip_anchor as ga
+
+    a = ga.decide_anchor(**_args(envelope_bin=_measured_bin(), bin_out_of_range=True))
+    assert a.tier == ga.TIER_DRIVER_BEST_SESSION
+    assert a.reason == ga.REASON_SPEED_OUT_OF_BINS
+    assert a.pct == pytest.approx(90.0)          # 9.0 / 10.0, same as REASON_CHANNEL_UNTRUSTED's fallback
+    assert a.baseline_g == pytest.approx(10.0 / 9.80665)
+
+
 def test_decide_anchor_names_no_measurement_for_a_degenerate_envelope():
     """Isolates the LAST precedence rung: friction present, bin measured,
     channel trusted, but ellipse_fill_pct itself returns None. Reached via a

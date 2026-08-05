@@ -92,7 +92,14 @@ def _lap_frame(n=400, a_lat_g=0.9):
 
 
 def test_run_grip_anchor_attaches_a_tier_to_every_metric():
+    """Assert COMPUTED values, not just key presence -- a wrong impl where
+    _corner_mask always returns None would ALSO make every metric come back
+    with a non-None tier (TIER_REFUSED is still not-None), so the vocabulary
+    membership check alone isn't enough either. The session-best baseline
+    must be genuinely cross-lap: lap 1 scores against lap 2's peak, not its
+    own (which would silently read 100% for every lap)."""
     from pipeline.stages import s10d2_grip_anchor
+    import grip_anchor as ga
 
     metrics = [
         {"lap_number": 1, "corner_id": 1, "apex_speed_mps": 25.0},
@@ -105,12 +112,32 @@ def test_run_grip_anchor_attaches_a_tier_to_every_metric():
 
     assert len(out) == 2
     for m in out:
-        assert "grip_anchor_tier" in m
-        assert m["grip_anchor_tier"] is not None
+        assert m["grip_anchor_tier"] in ga.TIERS
+
+    # No friction model was supplied, so both must fall to the session-best
+    # tier, named "no envelope" (not fabricated, not refused).
+    lap1, lap2 = out[0], out[1]
+    assert lap1["grip_anchor_tier"] == ga.TIER_DRIVER_BEST_SESSION
+    assert lap1["grip_anchor_reason"] == ga.REASON_NO_ENVELOPE
+    assert lap1["grip_anchor_pct"] == pytest.approx(100 * 0.9 / 1.1)   # ~81.82%, vs lap 2's peak
+    assert lap1["grip_anchor_baseline_g"] == pytest.approx(1.1)
+
+    assert lap2["grip_anchor_tier"] == ga.TIER_DRIVER_BEST_SESSION
+    assert lap2["grip_anchor_reason"] == ga.REASON_NO_ENVELOPE
+    assert lap2["grip_anchor_pct"] == pytest.approx(100.0)             # lap 2 IS the session best
+    assert lap2["grip_anchor_baseline_g"] == pytest.approx(1.1)
 
 
 def test_run_grip_anchor_refuses_rather_than_inventing_when_it_has_nothing():
-    """No friction model, no usable laps: it must refuse, not fabricate."""
+    """No friction model, no usable laps: it must refuse, not fabricate.
+
+    Asserting the REASON, not just the tier, matters here: a wrong
+    implementation where decide_anchor always raises would ALSO land on
+    TIER_REFUSED (the stage's except-branch fallback), but with
+    REASON_NO_MEASUREMENT rather than the REASON_NO_LAP_BASELINE that
+    decide_anchor itself genuinely reaches for this input -- so this
+    distinguishes an honest refusal from every call being swallowed.
+    """
     import grip_anchor as ga
     from pipeline.stages import s10d2_grip_anchor
 
@@ -118,16 +145,121 @@ def test_run_grip_anchor_refuses_rather_than_inventing_when_it_has_nothing():
     out = s10d2_grip_anchor.run_grip_anchor(metrics, [], {})
 
     assert out[0]["grip_anchor_tier"] == ga.TIER_REFUSED
+    assert out[0]["grip_anchor_reason"] == ga.REASON_NO_LAP_BASELINE
     assert out[0]["grip_anchor_pct"] is None
+    assert out[0]["grip_anchor_baseline_g"] is None
 
 
 def test_run_grip_anchor_never_raises_on_malformed_input():
     """This runs inside _safe_step, but a stage that throws loses the whole
-    step; assert on RESULTS, not on the absence of an exception."""
+    step; assert on RESULTS, not on the absence of an exception. A wrong
+    implementation could satisfy a weaker "has the four keys" check while
+    fabricating an out-of-vocabulary tier or an unbounded pct -- assert the
+    genuine, honest refusal values instead."""
     from pipeline.stages import s10d2_grip_anchor
+    import grip_anchor as ga
 
     out = s10d2_grip_anchor.run_grip_anchor(
         [{"lap_number": None, "corner_id": None}], [], {},
     )
     assert len(out) == 1
-    assert "grip_anchor_tier" in out[0]
+    assert out[0]["grip_anchor_tier"] == ga.TIER_REFUSED
+    assert out[0]["grip_anchor_tier"] in ga.TIERS
+    assert out[0]["grip_anchor_reason"] == ga.REASON_NO_LAP_BASELINE
+    assert out[0]["grip_anchor_pct"] is None
+    assert out[0]["grip_anchor_baseline_g"] is None
+
+
+def test_run_grip_anchor_is_total_against_malformed_corners_and_metrics():
+    """Fuzz-style regression for the three raise sites the reviewer found:
+    a non-dict corner record, a corner with a non-numeric s_start, and a
+    non-dict metric entry. None of these may raise, and every element that
+    comes back -- even one that started life as `None` -- must carry all
+    four grip_anchor_* keys."""
+    from pipeline.stages import s10d2_grip_anchor
+
+    metrics = [{"lap_number": 1, "corner_id": 1, "apex_speed_mps": 25.0}]
+    laps = {1: _lap_frame(a_lat_g=0.9)}
+
+    for corners in (
+        [None],
+        ["garbage"],
+        [{"corner_id": 1, "s_start": "abc", "s_end": 200.0}],
+    ):
+        out = s10d2_grip_anchor.run_grip_anchor(list(metrics), corners, laps)
+        assert len(out) == 1
+        for key in (
+            "grip_anchor_tier", "grip_anchor_reason",
+            "grip_anchor_pct", "grip_anchor_baseline_g",
+        ):
+            assert key in out[0], f"missing {key} for corners={corners!r}"
+
+    out = s10d2_grip_anchor.run_grip_anchor([None], [], {})
+    assert len(out) == 1
+    for key in (
+        "grip_anchor_tier", "grip_anchor_reason",
+        "grip_anchor_pct", "grip_anchor_baseline_g",
+    ):
+        assert key in out[0], "missing key for a non-dict metric entry"
+
+
+def test_run_grip_anchor_refuses_to_borrow_a_distant_envelope_bin():
+    """A friction envelope with real measured coverage only far from this
+    corner's apex speed must NOT be treated as a hit. Everything else this
+    corner-lap needs to reach a PHYSICS tier is deliberately made healthy
+    (a real friction model, a genuinely trusted lateral channel) so that,
+    without the distance guard, it WOULD reach TIER_PHYSICS_ELLIPSE_FITTED
+    off a bin measured 35 m/s away from its own apex speed -- reaching a
+    physics tier off a borrowed, distant bin would claim measured coverage
+    the data doesn't have. Must instead degrade to the session-relative
+    tier, named speed_out_of_bins (not bin_fabricated: the bin IS
+    genuinely measured, just at the wrong speed for this sample)."""
+    from pipeline.stages import s10d2_grip_anchor
+    import grip_anchor as ga
+    from friction_envelope import FrictionBin
+
+    far_bin = FrictionBin(
+        speed_center_mps=40.0, combined_g_p95=1.3, lat_max_g=1.3,
+        accel_max_g=0.35, brake_max_g=0.62, sample_count=41, confidence=1.0,
+    )
+
+    class _Envelope:
+        friction_bins = [far_bin]
+
+    class _FullFriction:
+        """A real, healthy friction model -- everything downstream of the
+        bin-distance check must pass, so the guard is the ONLY thing
+        standing between this input and a false physics-tier reading."""
+        exponent = 2.0
+        exponent_source = "fitted"
+
+        def lateral_max(self, speed_mps):
+            return 20.0
+
+        def traction_max(self, speed_mps):
+            return 20.0
+
+        def braking_max(self, speed_mps):
+            return 20.0
+
+    a_lat_g = 0.9
+    v_full = 25.0                        # constant "Speed (m/s)" in _lap_frame
+    kappa = (a_lat_g * 9.80665) / (v_full ** 2)   # makes trust_ratio exactly 1.0
+    curvature_profile = pd.DataFrame({
+        "distance_m": np.linspace(0.0, 1200.0, 400),
+        "curvature_1pm": np.full(400, kappa),
+    })
+
+    metrics = [{"lap_number": 1, "corner_id": 1, "apex_speed_mps": 5.0}]
+    corners = [{"corner_id": 1, "s_start": 100.0, "s_end": 200.0}]
+    laps = {1: _lap_frame(a_lat_g=a_lat_g)}
+
+    out = s10d2_grip_anchor.run_grip_anchor(
+        metrics, corners, laps,
+        friction_model=_FullFriction(),
+        friction_envelope=_Envelope(),
+        curvature_profile=curvature_profile,
+    )
+    assert out[0]["grip_anchor_tier"] == ga.TIER_DRIVER_BEST_SESSION
+    assert out[0]["grip_anchor_reason"] == ga.REASON_SPEED_OUT_OF_BINS
+    assert out[0]["grip_anchor_pct"] == pytest.approx(100.0)   # only lap, is its own session best
