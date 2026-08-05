@@ -146,3 +146,60 @@ def test_evidence_is_defensively_copied():
     # The event's evidence must remain unchanged
     assert ev.evidence == {"n": 42, "lap_id": 5}
     assert "new_key" not in ev.evidence
+
+
+import numpy as np
+
+
+def _window(**over):
+    import driving_events as de
+    base = dict(
+        lap_number=1, corner_id=1, s_norm_start=0.25, s_norm_end=0.35,
+        n_samples=40,
+        speed_mps=np.full(40, 12.0), a_lat_mps2=np.full(40, 9.0),
+        a_long_mps2=np.zeros(40), dist_m=np.linspace(250.0, 350.0, 40),
+        apex_speed_mps=12.0, corner_time_s=8.0,
+        reference={"apex_speed_mps": 13.5, "corner_time_s": 7.5,
+                   "throttle_onset_m": 10.0},
+        grip_anchor_pct=95.0,
+    )
+    base.update(over)
+    return de.CornerWindow(**base)
+
+
+@pytest.mark.xfail(reason="registry populated in Tasks 7-8", strict=True)
+def test_registry_reports_not_triggered_separately_from_insufficient():
+    """'Found nothing' and 'could not look' must never be the same answer."""
+    import driving_events as de
+
+    # A clean window: detectors can look, and (mostly) find nothing.
+    clean = _window(apex_speed_mps=13.5, corner_time_s=7.5)
+    _, cap = de.run_registry([clean])
+    assert set(cap.values()) <= {"detected", "not_triggered", "insufficient"}
+    assert cap["over_slowing"] == "not_triggered"
+
+    # A window too short to judge.
+    tiny = _window(n_samples=2, speed_mps=np.full(2, 12.0),
+                   a_lat_mps2=np.full(2, 9.0), a_long_mps2=np.zeros(2),
+                   dist_m=np.linspace(250.0, 260.0, 2))
+    _, cap2 = de.run_registry([tiny])
+    assert cap2["over_slowing"] == "insufficient"
+
+
+@pytest.mark.xfail(reason="registry populated in Tasks 7-8", strict=True)
+def test_registry_marks_a_detector_insufficient_when_its_channel_is_absent():
+    import driving_events as de
+
+    w = _window(a_long_mps2=None)
+    _, cap = de.run_registry([w])
+    assert cap["re_braking"] == "insufficient"
+
+
+@pytest.mark.xfail(reason="registry populated in Tasks 7-8", strict=True)
+def test_every_event_the_registry_emits_is_in_the_vocabulary():
+    import driving_events as de
+
+    events, _ = de.run_registry([_window(), _window(lap_number=2)])
+    for e in events:
+        assert e.event_type in de.EVENT_TYPES
+        assert e.validity in de.VALIDITIES
