@@ -119,6 +119,10 @@ def insert_driving_events(
             "validity": ev.validity,
             "reason": ev.reason,
             "n_samples_in_window": _safe_int(ev.n_samples_in_window),
+            # Spec SS5.1 provenance. Bound unconditionally: a row without
+            # it is a percentage nobody can trace to a baseline.
+            "anchor_tier": ev.anchor_tier,
+            "anchor_reason": ev.anchor_reason,
             "evidence_json": json.dumps(_json_safe(ev.evidence or {})),
         })
         count += 1
@@ -126,8 +130,34 @@ def insert_driving_events(
 
 
 def _row_to_dict(row: Any) -> dict:
+    """One event row as a payload dict.
+
+    Two derived fields are added here rather than stored, because both are
+    properties of the event TYPE, not of the row -- storing them would let
+    one row disagree with its own detector's contract:
+
+    ``time_cost_attribution`` -- may a consumer present ``time_cost_s`` as
+    CAUSED by this event's own ``magnitude``? See
+    ``driving_events.TIME_COST_ATTRIBUTION``. ``late_throttle`` is
+    ``"context"``: its cost is the identical corner-time gap ``over_slowing``
+    reports for the same corner-lap, and its added information beyond apex
+    speed is not distinguishable from zero, so rendering the metres as a
+    standalone claim or as the cause of the cost attributes one measurement
+    twice. That prohibition previously lived only in a source comment, and
+    Phase 3 reads this response, not the source.
+
+    ``magnitude_is_standalone_quotable`` -- the same constraint stated for
+    the magnitude on its own, so a renderer does not have to infer it from
+    the attribution value.
+    """
+    import driving_events as de
+
     d = dict(row)
-    raw = d.get("evidence_json")
+    raw = d.pop("evidence_json", None)
+    # POPPED, not read: the payload used to carry the evidence TWICE, once
+    # parsed as `evidence` and once as the raw JSON string. Dropping the raw
+    # copy halves the response size and the per-row memory the ranked read
+    # holds while deduping.
     if isinstance(raw, str):
         try:
             d["evidence"] = json.loads(raw)
@@ -135,6 +165,12 @@ def _row_to_dict(row: Any) -> dict:
             d["evidence"] = {}
     else:
         d["evidence"] = raw or {}
+
+    attribution = de.TIME_COST_ATTRIBUTION.get(
+        d.get("event_type"), de.ATTRIBUTION_CONTEXT)
+    d["time_cost_attribution"] = attribution
+    d["magnitude_is_standalone_quotable"] = (
+        attribution != de.ATTRIBUTION_CONTEXT)
     return d
 
 
@@ -337,12 +373,14 @@ def get_corner_consistency(
     rows = _dedupe_by_lap_corner([dict(r) for r in rows])
 
     by_corner: dict[Any, list[float]] = {}
+    anchors_by_corner: dict[Any, set] = {}
     for r in rows:
         cid = r.get("corner_id")
         cost = _safe_float(r.get("time_cost_s"))
         if cid is None or cost is None:
             continue
         by_corner.setdefault(cid, []).append(cost)
+        anchors_by_corner.setdefault(cid, set()).add(r.get("anchor_tier"))
 
     out = []
     for cid, costs in by_corner.items():
@@ -355,6 +393,16 @@ def get_corner_consistency(
             "worst_s": worst,
             "median_s": median(costs),
             "spread_s": worst - best,
+            # Spec SS5.1 applies to AGGREGATES too -- these four numbers are
+            # quoted to a driver, so they must say what they were measured
+            # against. A LIST, not a scalar: the aggregate is over several
+            # events and nothing guarantees they share a tier, so collapsing
+            # a mixed set to one label would be the fabrication this field
+            # exists to prevent. In practice both cost-bearing detectors
+            # anchor on `driver_best_session`, so this is normally a
+            # one-element list -- and a second element is real information.
+            "anchor_tiers": sorted(anchors_by_corner.get(cid, set()),
+                                   key=lambda t: (t is None, str(t))),
         })
     out.sort(key=lambda r: r["corner_id"])
     return out

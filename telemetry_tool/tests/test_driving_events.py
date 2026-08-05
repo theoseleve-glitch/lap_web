@@ -33,6 +33,67 @@ def test_vocabularies_are_closed():
     assert de.ONSET_REFUSAL_REASONS == de.ONSET_STATUSES - {de.ONSET_MEASURED}
 
 
+def test_the_anchor_and_unit_vocabularies_are_closed():
+    """Final review, IMPORTANT 1a + a deferred minor.
+
+    `anchor_tier` is spec SS5.1's mandatory provenance field; `magnitude_unit`
+    was the one vocabulary that accepted any string, in the field where a typo
+    is a UNIT error rather than a label error.
+    """
+    import grip_anchor as ga
+    import driving_events as de
+
+    # Phase 1's tiers verbatim, plus exactly one addition.
+    assert de.ANCHOR_TIERS == frozenset(ga.TIERS) | {"absolute_measurement"}
+    assert de.ANCHOR_TIERS - frozenset(ga.TIERS) == {de.ANCHOR_ABSOLUTE_MEASUREMENT}
+    assert de.MAGNITUDE_UNITS == frozenset({"m/s", "m", "m/s2", "pct"})
+    assert set(de.TIME_COST_ATTRIBUTION) == de.EVENT_TYPES
+    assert set(de.TIME_COST_ATTRIBUTION.values()) <= de.ATTRIBUTIONS
+
+
+def test_an_unknown_anchor_tier_is_rejected():
+    """A provenance claim nobody can check is worse than no claim."""
+    import driving_events as de
+
+    with pytest.raises(ValueError, match="anchor_tier"):
+        de.DrivingEvent(
+            event_type="over_slowing", lap_number=1, corner_id=1,
+            s_norm_start=0.25, s_norm_end=0.35, magnitude=1.4,
+            magnitude_unit=de.MAGNITUDE_UNIT_MPS, time_cost_s=0.31,
+            validity=de.VALIDITY_MEASURED, reason=None,
+            anchor_tier="physics", n_samples_in_window=42,
+            evidence={"n": 1},
+        )
+
+
+def test_an_unknown_magnitude_unit_is_rejected():
+    """Spec SS8 names a 9.8x unit error as a top risk for this subsystem."""
+    import driving_events as de
+
+    with pytest.raises(ValueError, match="magnitude_unit"):
+        de.DrivingEvent(
+            event_type="over_slowing", lap_number=1, corner_id=1,
+            s_norm_start=0.25, s_norm_end=0.35, magnitude=1.4,
+            magnitude_unit="kph", time_cost_s=0.31,
+            validity=de.VALIDITY_MEASURED, reason=None,
+            anchor_tier=de.ANCHOR_DRIVER_BEST_SESSION, n_samples_in_window=42,
+            evidence={"n": 1},
+        )
+
+
+def test_anchor_tier_has_no_default_so_every_site_must_state_it():
+    """Spec SS5.1: mandatory on every event. A default would let a new
+    construction site inherit a plausible-looking provenance it never
+    checked -- which is how the field came to be dropped in the first
+    place."""
+    import dataclasses
+    import driving_events as de
+
+    f = {x.name: x for x in dataclasses.fields(de.DrivingEvent)}["anchor_tier"]
+    assert f.default is dataclasses.MISSING
+    assert f.default_factory is dataclasses.MISSING
+
+
 def test_there_is_no_confidence_field():
     """A probability nobody can calibrate is worse than no number at all."""
     import dataclasses
@@ -53,6 +114,7 @@ def test_a_measured_event_must_carry_evidence():
             s_norm_start=0.25, s_norm_end=0.35, magnitude=1.4,
             magnitude_unit="m/s", time_cost_s=0.31,
             validity=de.VALIDITY_MEASURED, reason=None,
+            anchor_tier=de.ANCHOR_DRIVER_BEST_SESSION,
             n_samples_in_window=42, evidence={},
         )
 
@@ -67,6 +129,7 @@ def test_a_non_measured_event_must_not_carry_a_magnitude():
             s_norm_start=0.25, s_norm_end=0.35, magnitude=1.4,
             magnitude_unit="m/s", time_cost_s=None,
             validity=de.VALIDITY_INSUFFICIENT_SAMPLES, reason="window too short",
+            anchor_tier=de.ANCHOR_DRIVER_BEST_SESSION,
             n_samples_in_window=2, evidence={"n": 2},
         )
 
@@ -80,6 +143,7 @@ def test_an_unknown_event_type_is_rejected():
             s_norm_start=0.0, s_norm_end=0.1, magnitude=None,
             magnitude_unit="", time_cost_s=None,
             validity=de.VALIDITY_NOT_MEASURABLE, reason="x",
+            anchor_tier=de.ANCHOR_DRIVER_BEST_SESSION,
             n_samples_in_window=0, evidence={"n": 0},
         )
 
@@ -94,6 +158,7 @@ def test_an_invalid_validity_is_rejected():
             s_norm_start=0.0, s_norm_end=0.1, magnitude=None,
             magnitude_unit="", time_cost_s=None,
             validity="probably_fine", reason="invalid",
+            anchor_tier=de.ANCHOR_DRIVER_BEST_SESSION,
             n_samples_in_window=0, evidence={"n": 0},
         )
 
@@ -108,6 +173,7 @@ def test_validity_is_case_sensitive():
             s_norm_start=0.0, s_norm_end=0.1, magnitude=None,
             magnitude_unit="", time_cost_s=None,
             validity="Measured", reason="case mismatch",
+            anchor_tier=de.ANCHOR_DRIVER_BEST_SESSION,
             n_samples_in_window=0, evidence={"n": 0},
         )
 
@@ -122,6 +188,7 @@ def test_a_non_measured_event_must_not_carry_time_cost():
             s_norm_start=0.25, s_norm_end=0.35, magnitude=None,
             magnitude_unit="m/s", time_cost_s=0.5,
             validity=de.VALIDITY_INSUFFICIENT_SAMPLES, reason="window too short",
+            anchor_tier=de.ANCHOR_DRIVER_BEST_SESSION,
             n_samples_in_window=2, evidence={"n": 2},
         )
 
@@ -133,8 +200,9 @@ def test_a_non_measured_event_with_neither_magnitude_nor_time_cost():
     ev = de.DrivingEvent(
         event_type="over_slowing", lap_number=1, corner_id=1,
         s_norm_start=0.25, s_norm_end=0.35, magnitude=None,
-        magnitude_unit="", time_cost_s=None,
+        magnitude_unit=de.MAGNITUDE_UNIT_MPS, time_cost_s=None,
         validity=de.VALIDITY_INSUFFICIENT_SAMPLES, reason="window too short",
+        anchor_tier=de.ANCHOR_DRIVER_BEST_SESSION,
         n_samples_in_window=2, evidence={"n": 2},
     )
     assert ev.magnitude is None
@@ -151,6 +219,7 @@ def test_evidence_is_defensively_copied():
         s_norm_start=0.25, s_norm_end=0.35, magnitude=1.4,
         magnitude_unit="m/s", time_cost_s=0.31,
         validity=de.VALIDITY_MEASURED, reason=None,
+        anchor_tier=de.ANCHOR_DRIVER_BEST_SESSION,
         n_samples_in_window=42, evidence=caller_dict,
     )
     # Mutate the caller's dict after construction
@@ -177,6 +246,11 @@ def _window(**over):
         reference={"apex_speed_mps": 13.5, "corner_time_s": 7.5,
                    "throttle_onset_m": 10.0},
         grip_anchor_pct=95.0,
+        # Tier 1 by default: a quotable session-envelope anchor, so
+        # `envelope_under_use` exercises its MEASURED path. Tests that care
+        # about provenance override it.
+        anchor_tier=de.ANCHOR_SESSION_ENVELOPE_FITTED,
+        anchor_reason=None,
     )
     base.update(over)
     return de.CornerWindow(**base)
@@ -659,6 +733,7 @@ def test_a_measured_event_must_have_a_finite_magnitude():
             s_norm_start=0.25, s_norm_end=0.35, magnitude=float("nan"),
             magnitude_unit="m/s", time_cost_s=0.5,
             validity=de.VALIDITY_MEASURED, reason=None,
+            anchor_tier=de.ANCHOR_DRIVER_BEST_SESSION,
             n_samples_in_window=42, evidence={"n": 42},
         )
 
@@ -674,6 +749,7 @@ def test_a_measured_event_must_have_a_finite_time_cost():
             s_norm_start=0.25, s_norm_end=0.35, magnitude=1.5,
             magnitude_unit="m/s", time_cost_s=float("inf"),
             validity=de.VALIDITY_MEASURED, reason=None,
+            anchor_tier=de.ANCHOR_DRIVER_BEST_SESSION,
             n_samples_in_window=42, evidence={"n": 42},
         )
 
@@ -755,6 +831,9 @@ def test_envelope_under_use_fires_below_the_floor_and_is_silent_above():
     assert low is not None
     assert low.magnitude == pytest.approx(62.0)
     assert low.magnitude_unit == "pct"
+    # The number now says what it was measured against.
+    assert low.anchor_tier == de.ANCHOR_SESSION_ENVELOPE_FITTED
+    assert low.evidence["grip_anchor_tier"] == de.ANCHOR_SESSION_ENVELOPE_FITTED
 
     assert de.ENVELOPE_UNDER_USE.detect(_window(grip_anchor_pct=101.5)) is None
 
@@ -764,6 +843,111 @@ def test_envelope_under_use_refuses_without_a_phase_1_number():
 
     ev = de.ENVELOPE_UNDER_USE.detect(_window(grip_anchor_pct=None))
     assert ev is None or ev.validity != de.VALIDITY_MEASURED
+
+
+# ── Final review, IMPORTANT 1b: the tier-2 bound is TAUTOLOGICAL ─────────
+#
+# On `driver_best_session` the percentage is `100 * |a_lat| / session_best`,
+# so it CANNOT exceed 100 and "under 100%" is true of all-but-one lap by
+# arithmetic. Measured: 35% fire on tier 1 against 93% on tier 2 (14 of 15).
+# The spec already cut `over_braking` and `envelope_exceedance` for exactly
+# this defect (SS5.5); this applies the same rule to the case that slipped
+# through.
+
+
+def test_envelope_under_use_refuses_on_a_self_referential_tier_2_anchor():
+    import driving_events as de
+
+    ev = de.ENVELOPE_UNDER_USE.detect(_window(
+        grip_anchor_pct=62.0, anchor_tier=de.ANCHOR_DRIVER_BEST_SESSION))
+
+    assert ev is not None, (
+        "silence would be counted 'not_triggered' -- looked and found "
+        "nothing -- which is exactly the collapse this layer prevents")
+    assert ev.validity == de.VALIDITY_NOT_MEASURABLE, (
+        f"a 62.0% measured against a bound that cannot be exceeded is not a "
+        f"measurement, got validity={ev.validity!r} magnitude={ev.magnitude!r}")
+    assert ev.magnitude is None
+    assert ev.reason == de.ANCHOR_REASON_SELF_REFERENTIAL_BOUND
+    assert ev.anchor_tier == de.ANCHOR_DRIVER_BEST_SESSION
+
+
+def test_the_tier_2_refusal_does_not_depend_on_the_value():
+    """Refuse for EVERY tier-2 corner-lap, not only the ones under the floor.
+
+    On tier 2 "it was above 100" carries exactly as little information as
+    "it was below" -- both are arithmetic. Refusing uniformly is also what
+    makes the size of the unjudgeable set readable off the output instead of
+    inferable from missing rows.
+    """
+    import driving_events as de
+
+    for pct in (10.0, 62.0, 99.9, 100.0, 140.0):
+        ev = de.ENVELOPE_UNDER_USE.detect(_window(
+            grip_anchor_pct=pct, anchor_tier=de.ANCHOR_DRIVER_BEST_SESSION))
+        assert ev is not None and ev.validity == de.VALIDITY_NOT_MEASURABLE, pct
+
+
+def test_envelope_under_use_still_measures_on_both_quotable_tiers():
+    """The refusal must be aimed at the tautology, not at the detector."""
+    import driving_events as de
+
+    for tier in (de.ANCHOR_SESSION_ENVELOPE_FITTED,
+                 de.ANCHOR_SESSION_ENVELOPE_DEFAULT_P2):
+        ev = de.ENVELOPE_UNDER_USE.detect(
+            _window(grip_anchor_pct=62.0, anchor_tier=tier))
+        assert ev is not None and ev.validity == de.VALIDITY_MEASURED, tier
+        assert ev.anchor_tier == tier
+
+
+def test_an_unrecognised_tier_is_refused_with_its_own_reason():
+    """Fail-safe: unknown provenance is never quotable, and it is not the
+    same finding as the tier-2 tautology -- an operator seeing one should
+    not go looking for the other."""
+    import driving_events as de
+
+    ev = de.ENVELOPE_UNDER_USE.detect(_window(
+        grip_anchor_pct=62.0, anchor_tier="physics_ellipse"))
+    assert ev.validity == de.VALIDITY_NOT_MEASURABLE
+    assert ev.reason == de.ANCHOR_REASON_UNKNOWN_TIER
+    # And the event itself still carries a LEGAL tier value.
+    assert ev.anchor_tier in de.ANCHOR_TIERS
+
+
+def test_a_window_with_no_tier_at_all_reads_insufficient():
+    """`anchor_tier` is in `requires`, so a percentage with no provenance is
+    'could not look', never 'looked and found nothing'."""
+    import driving_events as de
+
+    _, cap = de.run_registry([_window(grip_anchor_pct=62.0, anchor_tier=None)])
+    assert cap["envelope_under_use"] == de.CAPABILITY_INSUFFICIENT
+
+
+def test_the_silent_tier_collapse_is_now_visible_downstream():
+    """The reachable failure the review demonstrated: step 09c degrading
+    while 10d succeeds sends EVERY corner-lap to tier 2, which used to take
+    this detector from 34/72 to 65/72 (90%) -- all `validity="measured"`,
+    magnitudes in the same range, indistinguishable from a good run."""
+    import driving_events as de
+
+    good = [_window(lap_number=n, grip_anchor_pct=62.0,
+                    anchor_tier=de.ANCHOR_SESSION_ENVELOPE_FITTED)
+            for n in range(1, 10)]
+    degraded = [_window(lap_number=n, grip_anchor_pct=62.0,
+                        anchor_tier=de.ANCHOR_DRIVER_BEST_SESSION)
+                for n in range(1, 10)]
+
+    ev_good, _ = de.run_registry(good)
+    ev_degraded, _ = de.run_registry(degraded)
+
+    def measured_euu(evs):
+        return [e for e in evs if e.event_type == "envelope_under_use"
+                and e.validity == de.VALIDITY_MEASURED]
+
+    assert len(measured_euu(ev_good)) == 9
+    assert measured_euu(ev_degraded) == [], (
+        "a wholesale degradation to the self-referential anchor still "
+        "produces measured events -- the two runs are indistinguishable")
 
 
 # ── re_braking: apex_idx must be honoured, not re-derived ─────────────────

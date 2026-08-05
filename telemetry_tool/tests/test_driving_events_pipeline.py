@@ -30,6 +30,7 @@ def test_driving_events_has_a_unique_key_so_reprocess_does_not_double(test_db):
         session_id="s1", lap_number=1, corner_id=1, event_type="over_slowing",
         s_norm_start=0.25, s_norm_end=0.35, magnitude=1.4, magnitude_unit="m/s",
         time_cost_s=0.31, validity="measured", reason=None,
+        anchor_tier="driver_best_session", anchor_reason=None,
         n_samples_in_window=42, evidence_json="{}",
     )
     cols = ", ".join(row)
@@ -66,6 +67,7 @@ def _one_event():
         s_norm_start=0.25, s_norm_end=0.35, magnitude=1.4,
         magnitude_unit="m/s", time_cost_s=0.31,
         validity=de.VALIDITY_MEASURED, reason=None,
+        anchor_tier=de.ANCHOR_DRIVER_BEST_SESSION,
         n_samples_in_window=42,
         evidence={"apex_speed_mps": 12.0, "reference_apex_speed_mps": 13.4},
     )
@@ -231,6 +233,123 @@ def test_without_isolation_the_failure_is_raised_rather_than_swallowed(seeded_db
             conn, "s1", {"driving_events": [_one_event()]})
 
 
+def test_the_anchor_provenance_survives_the_round_trip(seeded_db):
+    """IMPORTANT 1a: spec SS5.1's `anchor_tier` must reach BOTH read surfaces,
+    not just the dataclass. Neither surface used to carry it, so a consumer
+    could not tell an `envelope_under_use` percentage backed by the fitted
+    session envelope from one backed by the driver's own best -- two
+    different baselines, numerically indistinguishable (median 97.7 vs
+    94.7 on the real fixture)."""
+    import driving_events as de
+    from pipeline.stages import s15_persist
+    from web.repos import events_repo
+
+    ev = de.DrivingEvent(
+        event_type="envelope_under_use", lap_number=4, corner_id=7,
+        s_norm_start=0.5, s_norm_end=0.6, magnitude=94.7,
+        magnitude_unit=de.MAGNITUDE_UNIT_PCT, time_cost_s=None,
+        validity=de.VALIDITY_MEASURED, reason=None, n_samples_in_window=30,
+        anchor_tier=de.ANCHOR_SESSION_ENVELOPE_DEFAULT_P2,
+        anchor_reason=None, evidence={"grip_anchor_pct": 94.7},
+    )
+    costed = de.DrivingEvent(
+        event_type="over_slowing", lap_number=4, corner_id=7,
+        s_norm_start=0.5, s_norm_end=0.6, magnitude=1.4,
+        magnitude_unit=de.MAGNITUDE_UNIT_MPS, time_cost_s=0.31,
+        validity=de.VALIDITY_MEASURED, reason=None, n_samples_in_window=30,
+        anchor_tier=de.ANCHOR_DRIVER_BEST_SESSION, anchor_reason=None,
+        evidence={"apex_speed_mps": 12.0},
+    )
+    s15_persist._persist_driving_events(
+        seeded_db, "s1", {"driving_events": [ev, costed]})
+    seeded_db.commit()
+
+    stored = seeded_db.execute(
+        "SELECT event_type, anchor_tier, anchor_reason FROM driving_events "
+        "WHERE session_id='s1' ORDER BY event_type").fetchall()
+    assert [(r["event_type"], r["anchor_tier"]) for r in stored] == [
+        ("envelope_under_use", de.ANCHOR_SESSION_ENVELOPE_DEFAULT_P2),
+        ("over_slowing", de.ANCHOR_DRIVER_BEST_SESSION),
+    ]
+
+    ranked = events_repo.get_ranked_events(seeded_db, "s1")
+    assert ranked and ranked[0]["anchor_tier"] == de.ANCHOR_DRIVER_BEST_SESSION
+
+    corners = events_repo.get_corner_consistency(seeded_db, "s1")
+    assert corners and corners[0]["anchor_tiers"] == [
+        de.ANCHOR_DRIVER_BEST_SESSION], (
+        "the aggregate is quoted to a driver too, so it must say what it "
+        "was measured against")
+
+
+def test_the_payload_marks_late_throttle_as_non_attributable(seeded_db):
+    """IMPORTANT 4: the prohibition must be IN THE PAYLOAD. Phase 3 will read
+    the response, not the source comment.
+
+    18 solo `late_throttle` keys reach the ranked API standalone on the real
+    fixture, so the dedupe does not cover this case.
+    """
+    import driving_events as de
+    from pipeline.stages import s15_persist
+    from web.repos import events_repo
+
+    def _ev(event_type, unit, cost, lap):
+        return de.DrivingEvent(
+            event_type=event_type, lap_number=lap, corner_id=lap,
+            s_norm_start=0.1, s_norm_end=0.2, magnitude=5.0,
+            magnitude_unit=unit, time_cost_s=cost,
+            validity=de.VALIDITY_MEASURED, reason=None, n_samples_in_window=30,
+            anchor_tier=de.ANCHOR_DRIVER_BEST_SESSION, anchor_reason=None,
+            evidence={"x": 1},
+        )
+
+    s15_persist._persist_driving_events(seeded_db, "s1", {"driving_events": [
+        _ev("late_throttle", de.MAGNITUDE_UNIT_M, 0.42, 1),
+        _ev("over_slowing", de.MAGNITUDE_UNIT_MPS, 0.31, 2),
+    ]})
+    seeded_db.commit()
+
+    by_type = {e["event_type"]: e
+               for e in events_repo.get_ranked_events(seeded_db, "s1")}
+
+    lt = by_type["late_throttle"]
+    assert lt["time_cost_attribution"] == de.ATTRIBUTION_CONTEXT, (
+        "a consumer handed event_type/magnitude/time_cost_s in one flat "
+        "object has nothing telling it this cost is not caused by this "
+        "magnitude")
+    assert lt["magnitude_is_standalone_quotable"] is False
+
+    os_ = by_type["over_slowing"]
+    assert os_["time_cost_attribution"] == de.ATTRIBUTION_ATTRIBUTABLE
+    assert os_["magnitude_is_standalone_quotable"] is True
+
+
+def test_the_payload_does_not_ship_the_evidence_twice(seeded_db):
+    """Deferred minor 3: the row carried `evidence` (parsed) AND
+    `evidence_json` (the same bytes as a string). Dropping the raw copy
+    halves the response and the per-row memory the ranked read holds while
+    deduping."""
+    import driving_events as de
+    from pipeline.stages import s15_persist
+    from web.repos import events_repo
+
+    s15_persist._persist_driving_events(seeded_db, "s1", {"driving_events": [
+        de.DrivingEvent(
+            event_type="over_slowing", lap_number=1, corner_id=1,
+            s_norm_start=0.1, s_norm_end=0.2, magnitude=1.4,
+            magnitude_unit=de.MAGNITUDE_UNIT_MPS, time_cost_s=0.31,
+            validity=de.VALIDITY_MEASURED, reason=None,
+            n_samples_in_window=30,
+            anchor_tier=de.ANCHOR_DRIVER_BEST_SESSION, anchor_reason=None,
+            evidence={"apex_speed_mps": 12.0}),
+    ]})
+    seeded_db.commit()
+
+    row = events_repo.get_ranked_events(seeded_db, "s1")[0]
+    assert row["evidence"] == {"apex_speed_mps": 12.0}
+    assert "evidence_json" not in row
+
+
 def test_an_empty_event_list_writes_nothing_and_does_not_raise(seeded_db):
     from pipeline.stages import s15_persist
 
@@ -330,7 +449,15 @@ def test_a_corner_with_no_reference_at_all_still_lets_reference_free_detectors_e
     corners = [{"corner_id": 1, "s_start": 300.0, "s_end": 400.0}]
     # Deliberately NO apex_speed_mps / corner_time_s / throttle_onset_m on
     # the only lap at this corner -- reference_by_corner[1] will be {}.
-    metrics = [{"lap_number": 1, "corner_id": 1, "grip_anchor_pct": 40.0}]
+    # `grip_anchor_tier` alongside the pct: since the final review's
+    # IMPORTANT 1a, `envelope_under_use` REQUIRES the tier -- a percentage
+    # whose baseline nobody can name is not quotable, so a metric dict
+    # carrying a bare number now reads "insufficient" rather than being
+    # judged against an unknown baseline. Tier 1 here so the detector takes
+    # its measured path; the tier-2 tautology is covered in
+    # test_driving_events.py.
+    metrics = [{"lap_number": 1, "corner_id": 1, "grip_anchor_pct": 40.0,
+                "grip_anchor_tier": "session_envelope_ellipse_fitted"}]
 
     out = s10d3_driving_events.run_driving_events(metrics, corners, {1: lap_df})
     cap = out["capability"]
@@ -470,6 +597,7 @@ def test_ranked_events_are_ordered_by_time_cost(test_db):
             s_norm_start=0.2, s_norm_end=0.3, magnitude=1.0,
             magnitude_unit="m/s", time_cost_s=cost,
             validity=de.VALIDITY_MEASURED, reason=None,
+            anchor_tier=de.ANCHOR_DRIVER_BEST_SESSION,
             n_samples_in_window=40, evidence={"apex_speed_mps": 10.0},
         )
         for (L, C, cost) in [(1, 1, 0.10), (7, 4, 0.885), (9, 1, 0.412)]
@@ -494,6 +622,7 @@ def test_corner_consistency_reports_best_median_and_spread(test_db):
             s_norm_start=0.2, s_norm_end=0.3, magnitude=1.0,
             magnitude_unit="m/s", time_cost_s=cost,
             validity=de.VALIDITY_MEASURED, reason=None,
+            anchor_tier=de.ANCHOR_DRIVER_BEST_SESSION,
             n_samples_in_window=40, evidence={"x": 1},
         )
         for i, (c, cost) in enumerate(rows)
@@ -543,6 +672,7 @@ def test_corner_consistency_dedupes_a_lap_that_fired_multiple_detectors(test_db)
             s_norm_start=0.2, s_norm_end=0.3, magnitude=1.0,
             magnitude_unit="m/s", time_cost_s=0.10,
             validity=de.VALIDITY_MEASURED, reason=None,
+            anchor_tier=de.ANCHOR_DRIVER_BEST_SESSION,
             n_samples_in_window=40, evidence={"x": 1},
         ),
         de.DrivingEvent(
@@ -550,6 +680,7 @@ def test_corner_consistency_dedupes_a_lap_that_fired_multiple_detectors(test_db)
             s_norm_start=0.2, s_norm_end=0.3, magnitude=1.0,
             magnitude_unit="m", time_cost_s=0.10,
             validity=de.VALIDITY_MEASURED, reason=None,
+            anchor_tier=de.ANCHOR_DRIVER_BEST_SESSION,
             n_samples_in_window=40, evidence={"x": 1},
         ),
         de.DrivingEvent(
@@ -557,6 +688,7 @@ def test_corner_consistency_dedupes_a_lap_that_fired_multiple_detectors(test_db)
             s_norm_start=0.2, s_norm_end=0.3, magnitude=1.0,
             magnitude_unit="m/s", time_cost_s=0.50,
             validity=de.VALIDITY_MEASURED, reason=None,
+            anchor_tier=de.ANCHOR_DRIVER_BEST_SESSION,
             n_samples_in_window=40, evidence={"x": 1},
         ),
         de.DrivingEvent(
@@ -564,6 +696,7 @@ def test_corner_consistency_dedupes_a_lap_that_fired_multiple_detectors(test_db)
             s_norm_start=0.2, s_norm_end=0.3, magnitude=1.0,
             magnitude_unit="m/s", time_cost_s=0.90,
             validity=de.VALIDITY_MEASURED, reason=None,
+            anchor_tier=de.ANCHOR_DRIVER_BEST_SESSION,
             n_samples_in_window=40, evidence={"x": 1},
         ),
     ]
@@ -595,6 +728,7 @@ def test_ranked_events_dedupes_a_lap_that_fired_multiple_detectors(test_db):
             s_norm_start=0.2, s_norm_end=0.3, magnitude=1.0,
             magnitude_unit="m/s", time_cost_s=0.90,
             validity=de.VALIDITY_MEASURED, reason=None,
+            anchor_tier=de.ANCHOR_DRIVER_BEST_SESSION,
             n_samples_in_window=40, evidence={"x": 1},
         ),
         de.DrivingEvent(
@@ -602,6 +736,7 @@ def test_ranked_events_dedupes_a_lap_that_fired_multiple_detectors(test_db):
             s_norm_start=0.2, s_norm_end=0.3, magnitude=1.0,
             magnitude_unit="m", time_cost_s=0.90,
             validity=de.VALIDITY_MEASURED, reason=None,
+            anchor_tier=de.ANCHOR_DRIVER_BEST_SESSION,
             n_samples_in_window=40, evidence={"x": 1},
         ),
         de.DrivingEvent(
@@ -609,6 +744,7 @@ def test_ranked_events_dedupes_a_lap_that_fired_multiple_detectors(test_db):
             s_norm_start=0.2, s_norm_end=0.3, magnitude=1.0,
             magnitude_unit="m/s", time_cost_s=0.50,
             validity=de.VALIDITY_MEASURED, reason=None,
+            anchor_tier=de.ANCHOR_DRIVER_BEST_SESSION,
             n_samples_in_window=40, evidence={"x": 1},
         ),
     ]
@@ -633,6 +769,7 @@ def _co_firing_pair():
             s_norm_start=0.2, s_norm_end=0.3, magnitude=1.4,
             magnitude_unit="m/s", time_cost_s=0.90,
             validity=de.VALIDITY_MEASURED, reason=None,
+            anchor_tier=de.ANCHOR_DRIVER_BEST_SESSION,
             n_samples_in_window=40, evidence={"x": 1},
         ),
         de.DrivingEvent(
@@ -640,6 +777,7 @@ def _co_firing_pair():
             s_norm_start=0.2, s_norm_end=0.3, magnitude=12.4,
             magnitude_unit="m", time_cost_s=0.90,
             validity=de.VALIDITY_MEASURED, reason=None,
+            anchor_tier=de.ANCHOR_DRIVER_BEST_SESSION,
             n_samples_in_window=40, evidence={"x": 1},
         ),
     ]
@@ -771,6 +909,7 @@ def test_ranked_events_limit_applies_after_dedup_not_before(test_db):
             s_norm_start=0.2, s_norm_end=0.3, magnitude=1.0,
             magnitude_unit="m/s", time_cost_s=0.90,
             validity=de.VALIDITY_MEASURED, reason=None,
+            anchor_tier=de.ANCHOR_DRIVER_BEST_SESSION,
             n_samples_in_window=40, evidence={"x": 1},
         ),
         de.DrivingEvent(
@@ -778,6 +917,7 @@ def test_ranked_events_limit_applies_after_dedup_not_before(test_db):
             s_norm_start=0.2, s_norm_end=0.3, magnitude=1.0,
             magnitude_unit="m", time_cost_s=0.90,
             validity=de.VALIDITY_MEASURED, reason=None,
+            anchor_tier=de.ANCHOR_DRIVER_BEST_SESSION,
             n_samples_in_window=40, evidence={"x": 1},
         ),
         de.DrivingEvent(
@@ -785,6 +925,7 @@ def test_ranked_events_limit_applies_after_dedup_not_before(test_db):
             s_norm_start=0.2, s_norm_end=0.3, magnitude=1.0,
             magnitude_unit="m/s", time_cost_s=0.50,
             validity=de.VALIDITY_MEASURED, reason=None,
+            anchor_tier=de.ANCHOR_DRIVER_BEST_SESSION,
             n_samples_in_window=40, evidence={"x": 1},
         ),
         de.DrivingEvent(
@@ -792,6 +933,7 @@ def test_ranked_events_limit_applies_after_dedup_not_before(test_db):
             s_norm_start=0.2, s_norm_end=0.3, magnitude=1.0,
             magnitude_unit="m/s", time_cost_s=0.30,
             validity=de.VALIDITY_MEASURED, reason=None,
+            anchor_tier=de.ANCHOR_DRIVER_BEST_SESSION,
             n_samples_in_window=40, evidence={"x": 1},
         ),
     ]
@@ -814,6 +956,7 @@ def test_insert_is_idempotent_so_reprocess_does_not_double(test_db):
         event_type="over_slowing", lap_number=1, corner_id=1,
         s_norm_start=0.2, s_norm_end=0.3, magnitude=1.0, magnitude_unit="m/s",
         time_cost_s=0.2, validity=de.VALIDITY_MEASURED, reason=None,
+        anchor_tier=de.ANCHOR_DRIVER_BEST_SESSION,
         n_samples_in_window=40, evidence={"x": 1},
     )
     events_repo.insert_driving_events(test_db, "s1", [ev])
@@ -843,6 +986,7 @@ def test_insert_coerces_numpy_evidence_to_json_safe_types(test_db):
         s_norm_start=0.2, s_norm_end=0.3, magnitude=float(np.float64(42.0)),
         magnitude_unit="pct", time_cost_s=None,
         validity=de.VALIDITY_MEASURED, reason=None,
+        anchor_tier=de.ANCHOR_DRIVER_BEST_SESSION,
         n_samples_in_window=40,
         evidence={
             "grip_anchor_pct": np.float64(42.0),

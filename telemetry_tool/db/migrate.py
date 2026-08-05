@@ -19,6 +19,35 @@ from .schema import ALL_TABLES, SCHEMA_VERSION
 logger = logging.getLogger(__name__)
 
 
+def _add_column_if_missing(
+    cur: sqlite3.Cursor, table: str, coldef: str,
+) -> None:
+    """Idempotent ``ALTER TABLE ... ADD COLUMN``, swallowing ONLY the
+    already-present case.
+
+    ``except sqlite3.OperationalError: pass`` swallowed EVERY failure, not
+    just the duplicate-column one -- so "no such table", a syntax error in
+    the column definition, or a locked database all read as "the column is
+    already there". The block then reports success and the very next
+    ``INSERT`` naming that column raises and is swallowed by all three
+    writers, losing the write silently. That is the exact loss this block
+    exists to prevent, so anything other than a duplicate column is
+    re-raised: a loud failure at schema-open beats a silent one at
+    every write.
+    """
+    col = coldef.split()[0]
+    try:
+        cur.execute(f"ALTER TABLE {table} ADD COLUMN {coldef};")
+        logger.debug("Added column %s.%s.", table, col)
+    except sqlite3.OperationalError as exc:
+        if "duplicate column" not in str(exc).lower():
+            logger.error(
+                "ALTER TABLE %s ADD COLUMN %s failed for a reason other than "
+                "the column already existing: %s", table, col, exc,
+            )
+            raise
+
+
 def ensure_schema(conn: sqlite3.Connection) -> int:
     """
     Create all tables if they do not exist and record the schema version.
@@ -663,16 +692,39 @@ def ensure_schema(conn: sqlite3.Connection) -> int:
         "grip_anchor_baseline_g REAL",
     ]
     for col in _GRIP_ANCHOR_COLS:
-        try:
-            cur.execute(f"ALTER TABLE corner_metrics ADD COLUMN {col};")
-            logger.debug("Added column corner_metrics.%s.", col.split()[0])
-        except sqlite3.OperationalError:
-            pass  # Column already exists.
+        _add_column_if_missing(cur, "corner_metrics", col)
 
     cur.execute(
         "INSERT OR IGNORE INTO schema_version (version, description) "
         "VALUES (?, ?);",
         (37, "Phase 37 schema — grip anchor columns on corner_metrics"),
+    )
+
+    # ── Phase 38: anchor provenance on driving_events ──────────────────
+    #
+    # Same hazard as Phase 37 above, one table over. `driving_events`
+    # itself is a NEW table, so `db/schema.py`'s CREATE TABLE IF NOT
+    # EXISTS does create it on an existing database -- but these two
+    # COLUMNS were added to that CREATE afterwards, and CREATE TABLE IF
+    # NOT EXISTS is a no-op against a table that already exists. Any dev
+    # or desktop database that ran this branch before the columns landed
+    # therefore has the table WITHOUT them, and
+    # `queries.INSERT_DRIVING_EVENT` names them unconditionally.
+    #
+    # That is exactly the sequence Phase 37 paid for: the INSERT raises
+    # OperationalError, all three writers swallow it, and the session
+    # persists ZERO driving events with nothing but a warning.
+    _DRIVING_EVENT_ANCHOR_COLS = [
+        "anchor_tier TEXT",
+        "anchor_reason TEXT",
+    ]
+    for col in _DRIVING_EVENT_ANCHOR_COLS:
+        _add_column_if_missing(cur, "driving_events", col)
+
+    cur.execute(
+        "INSERT OR IGNORE INTO schema_version (version, description) "
+        "VALUES (?, ?);",
+        (38, "Phase 38 schema — anchor provenance on driving_events"),
     )
 
     conn.commit()

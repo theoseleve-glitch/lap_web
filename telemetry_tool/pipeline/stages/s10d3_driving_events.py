@@ -312,6 +312,12 @@ def _build_one_window(
         throttle_onset_status=metric.get("throttle_onset_status"),
         reference=dict(reference),
         grip_anchor_pct=_finite_float(metric.get("grip_anchor_pct")),
+        # Phase 1's verdict, passed through as-is (NOT coerced): the tier
+        # vocabulary is closed and `envelope_under_use` fails safe on
+        # anything it does not recognise. Absent when 10d2 never ran, which
+        # its `requires` reads as "could not look".
+        anchor_tier=metric.get("grip_anchor_tier"),
+        anchor_reason=metric.get("grip_anchor_reason"),
     )
 
 

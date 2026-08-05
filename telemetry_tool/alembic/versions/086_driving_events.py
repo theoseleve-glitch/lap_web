@@ -54,6 +54,13 @@ def upgrade() -> None:
         sa.Column("validity", sa.Text, nullable=True),
         sa.Column("reason", sa.Text, nullable=True),
         sa.Column("n_samples_in_window", sa.Integer, nullable=True),
+        # Spec SS5.1: mandatory on every event -- no number is quoted
+        # without saying what it was measured against. Nullable in the
+        # DDL only so a pre-086 row could never block the migration;
+        # every writer supplies it and DrivingEvent refuses to construct
+        # without one.
+        sa.Column("anchor_tier", sa.Text, nullable=True),
+        sa.Column("anchor_reason", sa.Text, nullable=True),
         sa.Column("evidence_json", sa.Text, nullable=True),
         sa.Column("workspace_id", sa.Integer,
                   sa.ForeignKey("workspaces.id", ondelete="CASCADE"), nullable=False,

@@ -1015,11 +1015,13 @@ INSERT_DRIVING_EVENT = """
 INSERT OR REPLACE INTO driving_events (
     session_id, lap_number, corner_id, event_type,
     s_norm_start, s_norm_end, magnitude, magnitude_unit,
-    time_cost_s, validity, reason, n_samples_in_window, evidence_json
+    time_cost_s, validity, reason, n_samples_in_window,
+    anchor_tier, anchor_reason, evidence_json
 ) VALUES (
     :session_id, :lap_number, :corner_id, :event_type,
     :s_norm_start, :s_norm_end, :magnitude, :magnitude_unit,
-    :time_cost_s, :validity, :reason, :n_samples_in_window, :evidence_json
+    :time_cost_s, :validity, :reason, :n_samples_in_window,
+    :anchor_tier, :anchor_reason, :evidence_json
 );
 """
 
@@ -1058,7 +1060,7 @@ ORDER BY time_cost_s DESC;
 # counted twice and skews median_s toward corners with more detector
 # coverage rather than genuine per-lap variance.
 SELECT_TIME_COSTS_FOR_CONSISTENCY = """
-SELECT lap_number, corner_id, time_cost_s FROM driving_events
+SELECT lap_number, corner_id, time_cost_s, anchor_tier FROM driving_events
 WHERE session_id = :session_id AND time_cost_s IS NOT NULL
 ORDER BY corner_id, lap_number;
 """

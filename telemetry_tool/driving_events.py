@@ -20,7 +20,57 @@ from typing import Final, Iterable, Protocol
 
 import numpy as np
 
+import grip_anchor as ga
+
 logger = logging.getLogger(__name__)
+
+# ── anchor provenance (spec SS5.1: mandatory on EVERY event) ──────────────
+#
+# "`anchor_tier` is mandatory on every event. No number is quoted without
+# saying what it was measured against." It was dropped from the dataclass
+# during implementation and the whole-branch review put it back, because
+# without it `envelope_under_use` emitted a bare percentage whose baseline a
+# consumer could not identify -- and on the real fixture those events split
+# 20 backed by a fitted session envelope against 14 backed by the driver's
+# own best, two different baselines that are numerically indistinguishable
+# (median 97.7% vs 94.7%).
+#
+# The vocabulary is `grip_anchor.TIERS` verbatim, plus ONE value it does not
+# have. Reusing Phase 1's tier names rather than coining a parallel set is
+# the same discipline `honesty.py`'s TIERS frozenset enforces: a cross-session
+# baseline becomes a NEW value, never a silent redefinition of an old one.
+#
+# `absolute_measurement` is the addition: `re_braking`'s magnitude is a peak
+# deceleration in m/s^2, compared against a fixed physical floor and against
+# no limit at all. Labelling it `refused` would be false (nothing was
+# refused) and labelling it with a grip tier would be false too (no grip
+# baseline was involved). It says exactly what it is: an absolute reading,
+# not a limit-relative one. A consumer must not render it as a percentage of
+# anything.
+ANCHOR_ABSOLUTE_MEASUREMENT = "absolute_measurement"
+
+ANCHOR_TIERS = frozenset(ga.TIERS) | {ANCHOR_ABSOLUTE_MEASUREMENT}
+
+# Convenience aliases so detectors and tests do not reach across modules for
+# a string literal.
+ANCHOR_SESSION_ENVELOPE_FITTED = ga.TIER_SESSION_ENVELOPE_ELLIPSE_FITTED
+ANCHOR_SESSION_ENVELOPE_DEFAULT_P2 = ga.TIER_SESSION_ENVELOPE_ELLIPSE_DEFAULT_P2
+ANCHOR_DRIVER_BEST_SESSION = ga.TIER_DRIVER_BEST_SESSION
+ANCHOR_REFUSED = ga.TIER_REFUSED
+
+# Machine-readable anchor reasons this module adds on top of
+# `grip_anchor`'s REASON_* taxonomy.
+#
+# The bound cannot be exceeded, so "under the bound" is not a finding.
+# `envelope_under_use` on a `driver_best_session` anchor computes
+# `100 * |a_lat| / session_best_lat`, which cannot exceed 100 BY
+# CONSTRUCTION, so a 100% floor reduces the detector to "this was not your
+# best lateral-g at this corner". Measured on the real fixture: 35% fire rate
+# on tier 1 against 93% on tier 2 (14 of 15 -- exactly all-but-the-best).
+ANCHOR_REASON_SELF_REFERENTIAL_BOUND = "anchor_bound_self_referential"
+# A percentage arrived with no identifiable tier, or one outside the closed
+# vocabulary. Fail-safe: unknown provenance is never quotable.
+ANCHOR_REASON_UNKNOWN_TIER = "anchor_tier_unknown"
 
 VALIDITY_MEASURED = "measured"
 VALIDITY_INSUFFICIENT_SAMPLES = "insufficient_samples"
@@ -96,6 +146,90 @@ EVENT_TYPES = frozenset({
     "envelope_under_use",
 })
 
+# ── magnitude units: CLOSED, like every other vocabulary here ────────────
+#
+# `event_type` and `validity` both raise on an unknown value; `magnitude_unit`
+# accepted any string, which is the one field where an unnoticed typo is a
+# UNIT ERROR rather than a label error. Spec SS8 names a 9.8x lateral-g unit
+# confusion as a top risk for this exact subsystem, and the branch already
+# hit its neighbour: `FrictionCircle` is m/s^2 while `FrictionBin`/`GripMap`
+# mu are G.
+#
+# These are the four units the shipped detectors emit. Spec SS5.1's
+# illustrative list was `"g" | "kph" | "m" | "s" | "deg" | "pct"` and does
+# NOT contain "m/s" or "m/s2"; the SHIPPED values are canonical here because
+# they are what the arithmetic actually produces (SI, matching the
+# `*_mps`/`*_mps2` field names everywhere else in this codebase), and
+# silently accepting the spec's `kph` alongside them would reintroduce the
+# ambiguity this frozenset exists to remove. A new unit is a deliberate edit
+# here, not an accident at a call site.
+MAGNITUDE_UNIT_MPS = "m/s"       # over_slowing: an apex-speed deficit
+MAGNITUDE_UNIT_M = "m"           # late_throttle: an onset distance delta
+MAGNITUDE_UNIT_MPS2 = "m/s2"     # re_braking: a peak deceleration
+MAGNITUDE_UNIT_PCT = "pct"       # envelope_under_use: grip-anchor usage
+
+MAGNITUDE_UNITS = frozenset({
+    MAGNITUDE_UNIT_MPS,
+    MAGNITUDE_UNIT_M,
+    MAGNITUDE_UNIT_MPS2,
+    MAGNITUDE_UNIT_PCT,
+})
+
+# ── is this event's time_cost_s ATTRIBUTABLE to its own magnitude? ───────
+#
+# Final review, IMPORTANT 4. The API hands a consumer `event_type`,
+# `magnitude`, `magnitude_unit` and `time_cost_s` in one flat object with
+# nothing distinguishing "this cost is caused by this magnitude" from "this
+# cost is context". For `late_throttle` the distinction is load-bearing and
+# was previously recorded ONLY in a source comment -- and Phase 3 will read
+# the response, not the source.
+#
+# Two facts make it non-attributable:
+#   * its added information beyond apex speed is +0.098 (t = 0.81) pooled and
+#     +0.002 (t = 0.02) under lap fixed effects -- not distinguishable from
+#     zero, so its metre magnitude is largely the apex deficit `over_slowing`
+#     already reported;
+#   * its `time_cost_s` is `corner_time - reference_corner_time`, the
+#     IDENTICAL number `over_slowing` computes for the same corner-lap.
+#     Attributing it to throttle timing attributes one measurement twice.
+# 18 solo `late_throttle` keys reach the ranked API standalone on the real
+# fixture (magnitudes 3.8-19.8 m, costs to 0.416 s), so the dedupe does not
+# cover this case.
+#
+# `over_slowing` is `attributable`: the apex-speed deficit and the corner-time
+# gap are the same physical fact measured two ways.
+# `re_braking` and `envelope_under_use` carry no cost at all, so the question
+# does not arise -- `no_cost` says that rather than implying either answer.
+ATTRIBUTION_ATTRIBUTABLE = "attributable"
+ATTRIBUTION_CONTEXT = "context"
+ATTRIBUTION_NO_COST = "no_cost"
+
+ATTRIBUTIONS = frozenset({
+    ATTRIBUTION_ATTRIBUTABLE,
+    ATTRIBUTION_CONTEXT,
+    ATTRIBUTION_NO_COST,
+})
+
+TIME_COST_ATTRIBUTION: dict[str, str] = {
+    "over_slowing": ATTRIBUTION_ATTRIBUTABLE,
+    "late_throttle": ATTRIBUTION_CONTEXT,
+    "re_braking": ATTRIBUTION_NO_COST,
+    "envelope_under_use": ATTRIBUTION_NO_COST,
+}
+"""Per event type: may a consumer present `time_cost_s` as CAUSED by this
+event's own `magnitude`?
+
+A property of the event TYPE, not of the row, which is why it is a map here
+and a derived field at the read surface rather than a stored column: storing
+it would let one row disagree with the detector's own contract.
+
+`context` is a HARD prohibition, not a hint. A `late_throttle` event's metre
+magnitude must never be rendered as a standalone claim ("you got on the power
+N metres late") and its `time_cost_s` must never be presented as the cost OF
+being late on the throttle. Render it as a facet of the corner-lap, alongside
+the apex deficit -- which is the shape `events_repo._dedupe_by_lap_corner`
+already produces via `evidence["also_fired"]`."""
+
 
 @dataclass(frozen=True)
 class DrivingEvent:
@@ -113,6 +247,15 @@ class DrivingEvent:
     reason: str | None
     n_samples_in_window: int
     evidence: dict
+    # What this event's magnitude was measured AGAINST. Mandatory and
+    # deliberately WITHOUT a default: every construction site has to state
+    # the provenance rather than inherit a plausible-looking one. See the
+    # ANCHOR_* block at the top of this module.
+    anchor_tier: str
+    # Why the anchor is what it is, when it degraded. None on an
+    # undegraded anchor -- same shape and same taxonomy as
+    # `grip_anchor.Anchor.reason`.
+    anchor_reason: str | None = None
 
     def __post_init__(self):
         """Validate the event's structural invariants."""
@@ -121,6 +264,19 @@ class DrivingEvent:
 
         if self.validity not in VALIDITIES:
             raise ValueError(f"validity must be one of {VALIDITIES}, got {self.validity!r}")
+
+        # Closed, like event_type and validity. An unknown tier is a claim
+        # about provenance that nobody can check, which is worse than no
+        # claim -- the exact reason the vocabulary exists.
+        if self.anchor_tier not in ANCHOR_TIERS:
+            raise ValueError(
+                f"anchor_tier must be one of {sorted(ANCHOR_TIERS)}, "
+                f"got {self.anchor_tier!r}")
+
+        if self.magnitude_unit not in MAGNITUDE_UNITS:
+            raise ValueError(
+                f"magnitude_unit must be one of {sorted(MAGNITUDE_UNITS)}, "
+                f"got {self.magnitude_unit!r}")
 
         if self.validity == VALIDITY_MEASURED:
             if not self.evidence:
@@ -213,6 +369,12 @@ class CornerWindow:
     throttle_onset_status: str | None
     reference: dict
     grip_anchor_pct: float | None
+    # Phase 1's verdict for this corner-lap, straight off the metric dict
+    # (`grip_anchor_tier` / `grip_anchor_reason`). None when 10d2 never ran
+    # or could not label this corner-lap. `envelope_under_use` REQUIRES the
+    # tier -- a percentage whose baseline nobody can name is not quotable.
+    anchor_tier: str | None = None
+    anchor_reason: str | None = None
 
 
 class Detector(Protocol):
@@ -498,11 +660,17 @@ class _OverSlowing:
             s_norm_start=w.s_norm_start,
             s_norm_end=w.s_norm_end,
             magnitude=deficit,
-            magnitude_unit="m/s",
+            magnitude_unit=MAGNITUDE_UNIT_MPS,
             time_cost_s=corner_time - ref_corner_time,
             validity=VALIDITY_MEASURED,
             reason=None,
             n_samples_in_window=w.n_samples,
+            # The baseline IS the driver's own best pass through this
+            # corner in this session -- exactly what
+            # `grip_anchor.TIER_DRIVER_BEST_SESSION` names. Not a grip claim:
+            # the tier vocabulary names the POPULATION a number was measured
+            # against, and this one is the same population.
+            anchor_tier=ANCHOR_DRIVER_BEST_SESSION,
             evidence={
                 "apex_speed_mps": apex_speed,
                 "reference_apex_speed_mps": ref_apex_speed,
@@ -650,9 +818,12 @@ class _LateThrottle:
                 s_norm_start=w.s_norm_start,
                 s_norm_end=w.s_norm_end,
                 magnitude=None,
-                magnitude_unit="m",
+                magnitude_unit=MAGNITUDE_UNIT_M,
                 time_cost_s=None,
                 validity=VALIDITY_NOT_MEASURABLE,
+                anchor_tier=ANCHOR_REFUSED,
+                anchor_reason=(status if status in ONSET_REFUSAL_REASONS
+                               else ONSET_NO_MEASUREMENT),
                 reason=(status if status in ONSET_REFUSAL_REASONS
                         else ONSET_NO_MEASUREMENT),
                 n_samples_in_window=w.n_samples,
@@ -682,7 +853,8 @@ class _LateThrottle:
             s_norm_start=w.s_norm_start,
             s_norm_end=w.s_norm_end,
             magnitude=delta,
-            magnitude_unit="m",
+            magnitude_unit=MAGNITUDE_UNIT_M,
+            anchor_tier=ANCHOR_DRIVER_BEST_SESSION,
             time_cost_s=corner_time - ref_corner_time,
             validity=VALIDITY_MEASURED,
             reason=None,
@@ -825,7 +997,10 @@ class _ReBraking:
             s_norm_start=w.s_norm_start,
             s_norm_end=w.s_norm_end,
             magnitude=peak_decel_mps2,
-            magnitude_unit="m/s2",
+            magnitude_unit=MAGNITUDE_UNIT_MPS2,
+            # Nothing was refused and no grip baseline was involved: this is
+            # a raw deceleration in m/s^2 against a fixed physical floor.
+            anchor_tier=ANCHOR_ABSOLUTE_MEASUREMENT,
             time_cost_s=None,
             validity=VALIDITY_MEASURED,
             reason=None,
@@ -843,37 +1018,114 @@ RE_BRAKING = _ReBraking()
 
 # ── envelope_under_use ─────────────────────────────────────────────────────
 #
-# A per-phase slice of Phase 1's `grip_anchor_pct`, already computed onto
-# the window -- this detector adds no new math, only a floor. It inherits
-# Phase 1's tier and reason "for free" in the sense that the number itself
-# was already measured upstream; this detector's only job is deciding when
-# that number is low enough to be worth surfacing.
+# A whole-corner reading of Phase 1's `grip_anchor_pct`, already computed
+# onto the window -- this detector adds no new math, only a floor and a
+# provenance gate.
 #
-# 100% IS the measured floor, not an arbitrary round number: Phase 1's
-# baseline is this session's own p95 envelope (grip_anchor.py's module
-# docstring), so "under 100%" means literally "used less grip than this
-# driver's own best at this speed/phase" -- the honest reading of
-# "under-use". It is also the only floor consistent with the one number
-# already measured on real data: median 101.5%, 37 of 57 corner-laps above
-# 100% (grip_anchor.py:17, s10d2_grip_anchor.py probe) -- a 100% floor fires
-# on the remaining 20/57 (~35%), i.e. well under half, matching the brief.
+# 100% IS the measured floor ON A TIER-1 ANCHOR, not an arbitrary round
+# number: Phase 1's tier-1 baseline is the session's speed-binned p95
+# envelope (grip_anchor.py's module docstring), which a corner-lap can and
+# does EXCEED -- median 101.5%, 37 of 57 corner-laps above 100% -- so a 100%
+# floor is a real threshold there, firing on 20/57 (35%) of the real fixture.
+#
+# ⛔ ON A TIER-2 ANCHOR THE SAME FLOOR IS TAUTOLOGICAL, AND THAT IS WHY THIS
+# DETECTOR NOW REFUSES THERE (final review, IMPORTANT 1b).
+# `grip_anchor._session_best_anchor` computes
+# `pct = 100 * |a_lat| / session_best_lat`, where the denominator is the MAX
+# over every corner-lap at that corner. The value therefore CANNOT EXCEED 100
+# BY CONSTRUCTION, and "under 100%" degenerates to "this was not your single
+# best lateral-g at this corner" -- true of all-but-one lap, by arithmetic,
+# with no driving in it. Measured on the real fixture:
+#
+#   tier                              fire rate      median magnitude
+#   session_envelope_ellipse_fitted   20/57 = 35%         97.7
+#   driver_best_session               14/15 = 93%         94.7
+#                                     ^ exactly all-but-the-corner's-best
+#
+# and the two are numerically indistinguishable, so nothing downstream could
+# tell a real finding from an arithmetic one. Corner 7 of the fixture is 100%
+# tier 2, so all nine of its laps were being judged this way.
+#
+# WORSE, THE DEGRADATION WAS SILENT END TO END. Forcing `friction_model=None`
+# (step 09c degrading while 10d succeeds -- a reachable split) sends EVERY
+# corner-lap to tier 2 and took this detector from 34/72 to 65/72 (90%), all
+# `validity="measured"`, magnitudes in the same range. Two runs, one of which
+# measured nothing, that no consumer could distinguish.
+#
+# THE PRECEDENT, NOT A NEW JUDGEMENT: spec SS5.5 already CUT `over_braking` and
+# `envelope_exceedance` for exactly this defect -- "tautological against a
+# self-referential envelope". Refusing tier 2 applies the rule the spec
+# already made to the case that slipped through it.
+#
+# The refusal is an explicit `not_measurable` event with a machine-readable
+# reason, NOT silence: a silent `return None` would be counted
+# `not_triggered` ("looked, found nothing"), collapsing the very distinction
+# CAPABILITIES exists to preserve.
 ENVELOPE_UNDER_USE_FLOOR_PCT = 100.0
 
 
 class _EnvelopeUnderUse:
-    """``envelope_under_use``: this lap's grip-anchor usage for this phase
-    fell below the measured floor -- meaningful margin left unused."""
+    """``envelope_under_use``: this lap used less of the session's fitted
+    grip envelope, through this whole corner, than the measured floor --
+    meaningful margin left unused.
+
+    WHOLE-CORNER, NOT PER-PHASE. An earlier docstring said "for this phase"
+    and "a per-phase slice"; `corner_phase` was never built (spec SS6 lists it
+    as Phase 2 content and it did not land), and `grip_anchor_pct` is one
+    number for the entire corner window. The wording promised a resolution
+    the number does not have.
+    """
 
     name = "envelope_under_use"
-    requires = frozenset({"grip_anchor_pct"})
+    # `anchor_tier` is REQUIRED, not merely read: a percentage whose baseline
+    # nobody can name is not quotable at all, so a window without a tier
+    # reads "insufficient" (could not look) rather than being judged against
+    # an unknown baseline.
+    requires = frozenset({"grip_anchor_pct", "anchor_tier"})
     # Same permissive floor as Tasks 7's detectors -- real corner windows
     # measured 25-79 samples; not tuned specifically for this detector.
     min_samples = 5
 
+    def _refuse(self, w: CornerWindow, reason: str) -> DrivingEvent:
+        return DrivingEvent(
+            event_type="envelope_under_use",
+            lap_number=w.lap_number,
+            corner_id=w.corner_id,
+            s_norm_start=w.s_norm_start,
+            s_norm_end=w.s_norm_end,
+            magnitude=None,
+            magnitude_unit=MAGNITUDE_UNIT_PCT,
+            time_cost_s=None,
+            validity=VALIDITY_NOT_MEASURABLE,
+            reason=reason,
+            n_samples_in_window=w.n_samples,
+            anchor_tier=w.anchor_tier if w.anchor_tier in ANCHOR_TIERS
+                        else ANCHOR_REFUSED,
+            anchor_reason=reason,
+            evidence={},
+        )
+
     def detect(self, w: CornerWindow) -> DrivingEvent | None:
         grip_pct = w.grip_anchor_pct
+        tier = w.anchor_tier
 
-        # Refuse rather than guess: no Phase 1 number for this phase means
+        # PROVENANCE FIRST, before the number is looked at. `pct` alone
+        # cannot tell you which baseline produced it.
+        if not ga.is_quotable_as_session_envelope(tier):
+            # Refuse UNCONDITIONALLY on a non-quotable tier, not only when
+            # the value happens to be under the floor: on tier 2 the
+            # comparison itself is arithmetic, so "it was above 100" carries
+            # exactly as little information as "it was below". Emitting the
+            # refusal for every such corner-lap is also what makes the size
+            # of the unjudgeable set readable off the output.
+            return self._refuse(
+                w,
+                ANCHOR_REASON_SELF_REFERENTIAL_BOUND
+                if tier == ANCHOR_DRIVER_BEST_SESSION
+                else ANCHOR_REASON_UNKNOWN_TIER,
+            )
+
+        # Refuse rather than guess: no Phase 1 number for this corner means
         # no claim, not a fabricated one.
         if not _all_finite(grip_pct):
             return None
@@ -888,14 +1140,20 @@ class _EnvelopeUnderUse:
             s_norm_start=w.s_norm_start,
             s_norm_end=w.s_norm_end,
             magnitude=grip_pct,
-            magnitude_unit="pct",
+            magnitude_unit=MAGNITUDE_UNIT_PCT,
             time_cost_s=None,
             validity=VALIDITY_MEASURED,
             reason=None,
             n_samples_in_window=w.n_samples,
+            # Phase 1's own verdict, carried through verbatim. This is the
+            # ONLY detector whose anchor varies per corner-lap, and it is the
+            # one whose magnitude IS the anchored number.
+            anchor_tier=tier,
+            anchor_reason=w.anchor_reason,
             evidence={
                 "grip_anchor_pct": grip_pct,
                 "floor_pct": ENVELOPE_UNDER_USE_FLOOR_PCT,
+                "grip_anchor_tier": tier,
             },
         )
 

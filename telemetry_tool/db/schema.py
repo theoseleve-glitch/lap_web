@@ -6,7 +6,7 @@ All CREATE TABLE statements live here as constants so that
 """
 
 # Current schema version -- bump when adding/altering tables.
-SCHEMA_VERSION = 37
+SCHEMA_VERSION = 38
 
 # ------------------------------------------------------------------
 # Phase 1 tables
@@ -1179,6 +1179,8 @@ CREATE TABLE IF NOT EXISTS driving_events (
     validity             TEXT,
     reason               TEXT,
     n_samples_in_window  INTEGER,
+    anchor_tier          TEXT,
+    anchor_reason        TEXT,
     evidence_json        TEXT,
     workspace_id         INTEGER,
     created_at           TEXT    NOT NULL DEFAULT (datetime('now')),
