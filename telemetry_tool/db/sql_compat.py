@@ -126,6 +126,7 @@ _PG_CONFLICT_TARGETS: dict[str, tuple[str, ...]] = {
     "user_corners":          ("session_id", "corner_index"),
     "stint_analysis":        ("session_id", "stint_number"),
     "predefined_track_coords": ("track_name",),
+    "driving_events":        ("session_id", "lap_number", "corner_id", "event_type"),
 }
 
 

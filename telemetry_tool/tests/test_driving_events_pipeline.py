@@ -48,3 +48,15 @@ def test_driving_events_is_registered_for_retention_and_gdpr():
 
     assert "driving_events" in retention_tasks._RAW_DATA_TABLES
     assert "driving_events" in inspect.getsource(gdpr_tasks)
+
+
+def test_driving_events_is_registered_in_both_delete_cascade_registries():
+    """A table missing from either registry leaves orphaned rows on SQLite
+    (the FK there has no ON DELETE CASCADE) and under-counts every backend's
+    delete-impact dry-run preview."""
+    import inspect
+    from web.repos.delete_cascade import CASCADE_CONFIG
+    from web.repos import driver_repo
+
+    assert "driving_events" in CASCADE_CONFIG["session"]["children"]
+    assert "driving_events" in inspect.getsource(driver_repo.delete_driver_cascade)

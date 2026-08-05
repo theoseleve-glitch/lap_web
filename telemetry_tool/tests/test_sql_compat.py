@@ -112,6 +112,29 @@ def test_insert_or_replace():
     assert "DO UPDATE SET lap_time_s = EXCLUDED.lap_time_s" in result
 
 
+def test_insert_or_replace_driving_events():
+    """driving_events must upsert on its 4-column UNIQUE key on PG.
+
+    Without a _PG_CONFLICT_TARGETS entry, the translation strips OR REPLACE
+    and emits a bare INSERT with no ON CONFLICT at all -- so a reprocess
+    raises UniqueViolation on PostgreSQL instead of upserting. Migration
+    086's docstring claims this conflict target exists; this test holds
+    that claim true.
+    """
+    sql = (
+        "INSERT OR REPLACE INTO driving_events "
+        "(session_id, lap_number, corner_id, event_type, magnitude) "
+        "VALUES (:session_id, :lap_number, :corner_id, :event_type, :magnitude);"
+    )
+    result = translate_params(sql)
+    assert "INSERT INTO" in result
+    assert "OR REPLACE" not in result
+    assert (
+        "ON CONFLICT (session_id, lap_number, corner_id, event_type)" in result
+    )
+    assert "DO UPDATE SET magnitude = EXCLUDED.magnitude" in result
+
+
 def test_insert_or_replace_unknown_table():
     """INSERT OR REPLACE for unknown tables strips OR REPLACE without ON CONFLICT."""
     sql = (

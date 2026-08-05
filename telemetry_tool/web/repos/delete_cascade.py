@@ -73,6 +73,7 @@ CASCADE_CONFIG: dict[str, dict[str, Any]] = {
         "children": [
             "score_details",
             "corner_metrics",
+            "driving_events",
             "condition_phases",
             "laps",
             "gps_traces",

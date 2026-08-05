@@ -246,7 +246,7 @@ def delete_driver_cascade(conn, driver_id: int) -> dict:
 
     # Delete session-level children.
     session_tables = [
-        "corner_metrics", "gps_traces", "score_details", "condition_phases",
+        "corner_metrics", "driving_events", "gps_traces", "score_details", "condition_phases",
         "laps", "data_health", "session_tags", "session_sectors",
         "theoretical_data", "reference_lines", "stint_analysis",
         "session_annotations", "session_weather", "vehicle_setups",
