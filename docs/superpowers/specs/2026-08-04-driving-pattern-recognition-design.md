@@ -200,20 +200,26 @@ Only the last two require Phase 4. This is the measured basis for deferring the 
 
 ✓ = runs on GPS-only tier-2 data, i.e. what LAP's actual customers upload.
 
-| Detector | Basis | ✓ |
-|---|---|---|
-| `over_braking` | peak decel vs envelope brake axis, plus resulting min-speed deficit | ✓ |
-| `over_slowing` | min speed below driver's best at that corner, causally linked to the preceding brake event | ✓ |
-| `coast_gap` | neither accel nor decel beyond a band, between brake release and throttle | ✓ |
-| `late_throttle` | throttle-on point vs driver best, magnitude in metres | ✓ |
-| `envelope_under_use` | per-phase fill fraction below threshold vs anchor | ✓ |
-| `envelope_exceedance` | samples outside the fitted ellipse, with magnitude | ✓ |
-| `corner_rounding` | combined-g trace shape through the brake→turn transition ("square vs round") | ✓ |
-| `re_braking` | second decel event after the apex | ✓ |
-| `understeer` / `oversteer` | **from `handling/`, spatially joined** — not re-implemented | ✓ |
-| `lockup`, `wheelspin` | require brake pressure / wheel speed | ✗ dark on tier 2 |
+**This table was cut down by measurement.** A read-only probe over the real kart session (`scratchpad/probe_phase2_detectors.py`) computed each candidate's fire rate and magnitude distribution on 54 corner-laps before any code was written. Four survive.
 
-`handling/` is consumed as a **detector source**, spatially joined on `s_start`/`s_end` overlap. It is not promoted to a canonical label store: it is session-level, best-lap-only, string-keyed, and uses a different corner numbering. Joining is correct; promoting is not.
+| Detector | Basis | Measured fire rate | Verdict |
+|---|---|---|---|
+| `over_slowing` | apex speed below the driver's own best pass at that corner | 57% | **SHIP** — rank, don't flag |
+| `late_throttle` | throttle-onset proxy vs the driver's own best, in metres | 68% | **SHIP** — *relative only* |
+| `re_braking` | sustained post-apex deceleration run (≥3 samples) | **7%** | **SHIP** — rare is the point |
+| `envelope_under_use` | per-phase slice of Phase 1's `grip_anchor_pct` | — | **SHIP** — reuses a number already measured on real data |
+| `over_braking` | peak decel vs the envelope's braking axis | — | **CUT** — tautological, see below |
+| `envelope_exceedance` | samples outside the fitted ellipse | ~65% | **CUT** — tautological, see below |
+| `corner_rounding` | "square vs round" g-g transition shape | — | **CUT** — a shape verdict over 10–20 samples with no ground truth, colliding with the existing `no_trail_braking` cause |
+| `understeer` / `oversteer` from `handling/` | fused detector ensemble | — | **CUT** — `runner.py:123-127` masks to the best lap, so it can fill 1 lap of a per-lap tape |
+| `coast_gap` | neither accel nor decel between brake release and throttle | — | **DEFER to 4a** — 0.3 s is ~3 samples on this grid; real once the ~100 Hz IMU is ingested |
+| `lockup`, `wheelspin` | require brake pressure / wheel speed | — | dark on tier 2 |
+
+**Why the two envelope detectors are cut.** In production `build_friction_model` is called with no kwargs (`s09_physics.py:228`), so `kart_traction_floor=False` — no kart floors, no 1.20× GPS boost, and `apply_kart_traction_floor`'s return is discarded anyway. What remains is three self-referential percentiles of *this session's own samples*: lateral p95, braking p95, traction p98. About 5% of samples exceed their own bin's p95 **by arithmetic**, and Phase 1 measured the consequence directly — median 101.5%, 37 of 57 corner-laps above 100%. A detector built on that fires on ~65% of corner-laps and means nothing. "You braked harder than your own 95th percentile" is not a mistake.
+
+**Why `handling/` is cut entirely**, not merely un-promoted: beyond the best-lap masking, its confidence is not salvageable. `weight_calibrator.py:36-77` correlates each detector against *the ensemble's own consensus* — circular — with a multiplier that floors at 0.4× and can never go negative, so `lat_g_plateau` (r = −0.4453 vs TUMFTM truth), `gg_shape` (−0.4193) and `heading_accel` (−0.3386) push the posterior the wrong way at 40–90% strength. `fusion.py:117-121` records in its own comment that the formula was retuned to lift mean confidence from ~20% to ~50% with no calibration. Laundering that into a customer-facing number is the failure this whole layer exists to prevent.
+
+**No confidence float anywhere.** A `DrivingEvent` carries instead: a mandatory `evidence` dict (this lap's value, the reference lap's value, the reference lap number, the sample count), a validity tier reusing `grip_anchor`'s vocabulary, and `n_samples_in_window` — the one honest scalar, because it is what actually determines whether the detector could see what it claims. **Rank by measured time cost in seconds**, never by confidence.
 
 `corner_diagnosis`'s yaw labels are **not** retired until Phase 2 events are landing and coverage is proven equal. They are currently the only per-lap-per-corner label that persists anywhere; retiring first would replace something with nothing.
 
@@ -227,9 +233,13 @@ If a lap is better than the reference, the event does not fire. No silent negati
 
 ### 5.7 Persistence
 
-Migration `085_driving_events` off single head `084_merge_chain_ab`, workspace-scoped and RLS-enabled, copying `081_feeling_competition.py:43-82`.
+Migration **`086_driving_events`** off single head **`085_grip_anchor`** — 085 was consumed by Phase 1. Workspace-scoped and RLS-enabled, copying `081_feeling_competition.py:43-89`.
 
-**Plus the `db/schema.py` mirror, `ALL_TABLES`, and a `SCHEMA_VERSION` bump.** Omitting this is precisely why `store_corner_progression` was written, never wired, and never testable — the standard pytest fixture builds from `db/schema.py`, so a table that exists only in alembic cannot be unit-tested.
+`UNIQUE(session_id, lap_number, corner_id, event_type)` is **required, not optional**: nothing in the repo deletes corner rows before rewriting, so without it every reprocess doubles the table — and `sql_compat`'s `INSERT OR REPLACE` → `ON CONFLICT` translation fails outright on PG without a conflict target.
+
+**Plus the `db/schema.py` mirror, `ALL_TABLES`, and — the part Phase 1 learned the hard way — the `db/migrate.py` work.** A `CREATE TABLE IF NOT EXISTS` in `db/schema.py` is a no-op against an existing database, so Phase 1's four columns never appeared on any live SQLite install until an idempotent `ALTER` block was added to `db/migrate.py`; all three writers swallowed the resulting error and silently persisted **zero** corner metrics. For a NEW table the equivalent obligation must be checked against how a recently-added table was handled in *both* files, not assumed.
+
+Also register the table in `retention_tasks._RAW_DATA_TABLES` and the `gdpr_tasks` export dict, or it becomes data that cannot be purged or exported.
 
 Note an existing asymmetry to resolve: `get_driver_corner_trends` **is** live (`s13_coaching_v3.py:160,164`, pipeline step 13f) while its writer has zero callers. There is a dead read path in production; this design adopts it or retires it explicitly.
 
