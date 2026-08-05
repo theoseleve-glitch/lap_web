@@ -1203,6 +1203,7 @@ def run_full_analysis(
             friction_model=summary.get("friction_model"),
             friction_envelope=_friction_envelope_result,
             curvature_profile=curvature_profile,
+            excluded_laps=excluded_laps,
         )
         _record("10d2_grip_anchor", _plcm_anchored, err)
         if _plcm_anchored is not None:

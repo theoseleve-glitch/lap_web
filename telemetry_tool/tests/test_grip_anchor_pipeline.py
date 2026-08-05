@@ -832,3 +832,37 @@ def test_grip_anchor_on_real_kart_telemetry(_isolated_track_registry):
     print(f"reason distribution: { {r: reasons.count(r) for r in set(reasons)} }")
     print(f"session-envelope share: {len(envelope_tier)}/{len(metrics)} ({share:.1%})")
     print(f"channel-trust ratio: {trust:.4f}")
+
+
+def test_grip_anchor_ignores_excluded_laps_when_choosing_the_session_best():
+    """An excluded lap must not set the per-corner reference. On real data the
+    truncated final lap otherwise wins 'best' at almost every corner."""
+    from pipeline.stages import s10d2_grip_anchor
+
+    corners = [{"corner_id": 1, "s_start": 100.0, "s_end": 200.0}]
+    metrics = [{"lap_number": 1, "corner_id": 1, "apex_speed_mps": 25.0}]
+
+    # lap 2 is excluded but has a much higher lateral peak
+    laps = {
+        1: _lap_frame(a_lat_g=0.9),
+        2: _lap_frame(a_lat_g=2.0),
+    }
+
+    out = s10d2_grip_anchor.run_grip_anchor(
+        metrics, corners, laps, excluded_laps=frozenset({2}),
+    )
+    # lap 1 is the only admissible lap, so it IS the session best -> 100%
+    assert out[0]["grip_anchor_pct"] == pytest.approx(100.0, abs=0.5)
+
+
+def test_grip_anchor_uses_an_excluded_lap_if_not_told_to_exclude_it():
+    """Control: without the exclusion, lap 2's higher peak becomes the
+    reference and lap 1 scores below 100. This is what pins the fix."""
+    from pipeline.stages import s10d2_grip_anchor
+
+    corners = [{"corner_id": 1, "s_start": 100.0, "s_end": 200.0}]
+    metrics = [{"lap_number": 1, "corner_id": 1, "apex_speed_mps": 25.0}]
+    laps = {1: _lap_frame(a_lat_g=0.9), 2: _lap_frame(a_lat_g=2.0)}
+
+    out = s10d2_grip_anchor.run_grip_anchor(metrics, corners, laps)
+    assert out[0]["grip_anchor_pct"] < 60.0     # 0.9 / 2.0

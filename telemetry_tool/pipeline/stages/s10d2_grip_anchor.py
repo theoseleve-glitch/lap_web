@@ -79,6 +79,7 @@ def run_grip_anchor(
     friction_model: Any = None,
     friction_envelope: Any = None,
     curvature_profile: Any = None,
+    excluded_laps: frozenset[int] = frozenset(),
 ) -> list[dict[str, Any]]:
     """Attach grip_anchor_* to every metric dict. Returns the same list.
 
@@ -100,6 +101,8 @@ def run_grip_anchor(
     # come from this session only: corner_id is not stable across sessions.
     peak: dict[tuple[Any, Any], float] = {}
     for lap_num, lap_df in (resampled_laps or {}).items():
+        if lap_num in excluded_laps:
+            continue
         if lap_df is None or len(lap_df) < 10:
             continue
         a_lat = _resolve_accel_lat(lap_df)          # already m/s², already abs
