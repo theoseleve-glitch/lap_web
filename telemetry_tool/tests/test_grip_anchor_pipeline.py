@@ -897,3 +897,44 @@ def test_corner_window_is_frame_stable_across_laps_of_different_length():
     # And the long lap's window really is further along in metres.
     d_long = long["Distance (m)"].values[m_long]
     assert d_long.min() == pytest.approx(300.0, abs=5.0)   # 25% of 1200
+
+
+def test_corner_time_is_measured_and_referenced_to_the_session_best():
+    """Each corner-lap gets its own traversal time and the best time any
+    admissible lap achieved through the same corner."""
+    from pipeline.stages import s10d2_grip_anchor
+
+    def _lap_at(speed, n=1000, total=1000.0):
+        d = np.linspace(0.0, total, n)
+        return pd.DataFrame({
+            "Distance (m)": d,
+            "distance_norm": d / total,
+            "Speed (m/s)": np.full(n, speed),
+            "Lateral acceleration (G) *calc": np.full(n, 0.9),
+        })
+
+    corners = [{"corner_id": 1, "s_start": 250.0, "s_end": 350.0}]
+    metrics = [
+        {"lap_number": 1, "corner_id": 1, "apex_speed_mps": 10.0},
+        {"lap_number": 2, "corner_id": 1, "apex_speed_mps": 20.0},
+    ]
+    laps = {1: _lap_at(10.0), 2: _lap_at(20.0)}
+
+    out = s10d2_grip_anchor.run_grip_anchor(metrics, corners, laps)
+    by_lap = {m["lap_number"]: m for m in out}
+
+    # 100 m at 10 m/s = 10 s; at 20 m/s = 5 s.
+    assert by_lap[1]["corner_time_s"] == pytest.approx(10.0, rel=0.02)
+    assert by_lap[2]["corner_time_s"] == pytest.approx(5.0, rel=0.02)
+    # Both rows carry the SAME best -- the fastest admissible pass.
+    assert by_lap[1]["corner_time_best_s"] == pytest.approx(5.0, rel=0.02)
+    assert by_lap[2]["corner_time_best_s"] == pytest.approx(5.0, rel=0.02)
+
+
+def test_corner_time_is_none_when_the_window_is_unusable():
+    from pipeline.stages import s10d2_grip_anchor
+
+    metrics = [{"lap_number": 1, "corner_id": 1, "apex_speed_mps": 10.0}]
+    out = s10d2_grip_anchor.run_grip_anchor(metrics, [], {})
+    assert out[0]["corner_time_s"] is None
+    assert out[0]["corner_time_best_s"] is None

@@ -12,7 +12,7 @@ import numpy as np
 import pandas as pd
 
 import grip_anchor as ga
-from corner_analysis import _resolve_accel_lat
+from corner_analysis import _integrate_time, _resolve_accel_lat
 
 logger = logging.getLogger(__name__)
 
@@ -116,7 +116,12 @@ def run_grip_anchor(
 
     # Peak lateral per (corner, lap), and the session best per corner. Both
     # come from this session only: corner_id is not stable across sessions.
+    #
+    # corner_time carries the same shape: how long THIS lap took through
+    # THIS corner, measured over the identical mask so the time and the
+    # peak are always drawn from the same stretch of tarmac.
     peak: dict[tuple[Any, Any], float] = {}
+    corner_time: dict[tuple[Any, Any], float] = {}
     if detection_lap is not None:
         for lap_num, lap_df in resampled_laps.items():
             if lap_num in excluded_laps:
@@ -124,6 +129,10 @@ def run_grip_anchor(
             if lap_df is None or len(lap_df) < 10:
                 continue
             a_lat = _resolve_accel_lat(lap_df)          # already m/s², already abs
+            dist_col = next((c for c in ("Distance (m)", "distance_m")
+                              if c in lap_df.columns), None)
+            speed_col = next((c for c in ("Speed (m/s)", "speed_mps")
+                               if c in lap_df.columns), None)
             for cid, corner in corners_by_id.items():
                 mask = _corner_mask(lap_df, corner, detection_lap)
                 if mask is None:
@@ -132,11 +141,29 @@ def run_grip_anchor(
                 vals = vals[np.isfinite(vals)]
                 if vals.size:
                     peak[(cid, lap_num)] = float(np.nanmax(vals))
+                if dist_col is not None and speed_col is not None:
+                    d_win = pd.to_numeric(lap_df[dist_col], errors="coerce").values[mask]
+                    v_win = pd.to_numeric(lap_df[speed_col], errors="coerce").values[mask]
+                    t = float(_integrate_time(d_win, v_win))
+                    # _integrate_time returns 0.0 when it cannot integrate
+                    # (fewer than 2 usable samples) -- that is ABSENT, not a
+                    # real measurement, so it must not enter the dict at all.
+                    if np.isfinite(t) and t > 0:
+                        corner_time[(cid, lap_num)] = t
 
     session_best: dict[Any, float] = {}
     for (cid, _lap), v in peak.items():
         if v > session_best.get(cid, 0.0):
             session_best[cid] = v
+
+    # Fastest admissible pass per corner. A plain min() with a 0.0 floor
+    # would be wrong here (unlike the lateral peak's max()/0.0 floor above):
+    # a genuine corner time is always > 0, but seeding with 0.0 would make
+    # every corner's "best" clamp to 0.0 instead of the true fastest lap.
+    session_best_time: dict[Any, float] = {}
+    for (cid, _lap), t in corner_time.items():
+        if cid not in session_best_time or t < session_best_time[cid]:
+            session_best_time[cid] = t
 
     # One trust ratio per session, over cornering samples only.
     trust = _session_trust_ratio(resampled_laps, curvature_profile)
@@ -176,6 +203,13 @@ def run_grip_anchor(
             m = {}
             metrics[i] = m
         _apply(m, anchor)
+        # None when absent -- e.g. cid_for_log/lap_for_log never resolved
+        # (malformed metric entry) or this (corner, lap) had no usable
+        # window. Looked up by the SAME keys used to log failures above, not
+        # `cid`/`lap_num`, which are only bound on the success path and
+        # would be undefined here for the malformed-entry branch.
+        m["corner_time_s"] = corner_time.get((cid_for_log, lap_for_log))
+        m["corner_time_best_s"] = session_best_time.get(cid_for_log)
 
     tiers = {}
     for m in metrics:
