@@ -697,11 +697,21 @@ _REAL_CSV = "telemetry_tool/data/raw/OK_R4.csv"
 @pytest.fixture
 def _isolated_track_registry(tmp_path, monkeypatch):
     """Keep the pipeline's track-registration write off the tracked
-    models/tracks.json — see the parent branch's test-hygiene incident."""
+    models/tracks.json — see the parent branch's test-hygiene incident.
+
+    Returns a `Path`, not a `str`. `_default_db_path` is annotated `-> Path`
+    and `load_track_database` calls `path.exists()` on whatever it returns,
+    so a `str` here made stage 05_detect_track raise
+    `AttributeError: 'str' object has no attribute 'exists'`. That is
+    swallowed by `pipeline/helpers.py:93`, so the isolation "worked" only by
+    killing track detection outright. Corrected in fix round 1 of Task 11;
+    matches the already-correct version at test_distance_frame.py:614.
+    """
     import track_detection
-    monkeypatch.setattr(
-        track_detection, "_default_db_path", lambda: str(tmp_path / "tracks.json")
-    )
+
+    fake_path = tmp_path / "tracks_isolated.json"
+    monkeypatch.setattr(track_detection, "_default_db_path", lambda: fake_path)
+    return fake_path
 
 
 # Minimum share of corner-laps that must reach a session-envelope tier on this

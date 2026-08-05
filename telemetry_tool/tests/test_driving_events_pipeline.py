@@ -1,5 +1,6 @@
 """Driving events — schema, persistence, stage wiring and real-data acceptance."""
 import os
+from collections import Counter
 from unittest.mock import MagicMock, patch
 
 import numpy as np
@@ -170,13 +171,25 @@ def test_stage_never_raises_on_malformed_input():
 @pytest.fixture
 def _isolated_track_registry(tmp_path, monkeypatch):
     """Keep the pipeline's track-registration write off the tracked
-    models/tracks.json -- copied from test_grip_anchor_pipeline.py's fixture
-    of the same name (not importable across test modules), see the parent
-    branch's test-hygiene incident."""
+    models/tracks.json -- see the parent branch's test-hygiene incident.
+
+    Returns a `Path`, not a `str`. `_default_db_path` is annotated `-> Path`
+    and `load_track_database` calls `path.exists()` on whatever it returns,
+    so a `str` here made stage 05_detect_track raise
+    `AttributeError: 'str' object has no attribute 'exists'`. That is
+    swallowed by `pipeline/helpers.py:93`, so the isolation "worked" only by
+    killing track detection outright -- every test using this fixture ran
+    with `steps_failed == ['05_detect_track']` and `track_id='unknown_track'`.
+    Verified during fix round 1 that correcting it leaves this module's
+    driving-events output bit-identical (corner detection is purely
+    geometric off lap 1 and never consults the registry). Matches the
+    already-correct version at test_distance_frame.py:614.
+    """
     import track_detection
-    monkeypatch.setattr(
-        track_detection, "_default_db_path", lambda: str(tmp_path / "tracks.json")
-    )
+
+    fake_path = tmp_path / "tracks_isolated.json"
+    monkeypatch.setattr(track_detection, "_default_db_path", lambda: fake_path)
+    return fake_path
 
 
 def _write_synthetic_csv(tmp_path, n_laps=3):
@@ -634,74 +647,279 @@ class TestDrivingEventsIdorGuard:
 
 _REAL_CSV = "telemetry_tool/data/raw/OK_R4.csv"
 
+# ── The floors this gate enforces ─────────────────────────────────────────
+#
+# Fix round 1 rewrote this section. The original gate asserted only
+# "some events exist" plus a per-event vocabulary check, and a replay of
+# that body against 16 deliberately mutated event lists caught exactly ONE
+# of them: `run_registry -> ([], {})`. Everything else sailed through --
+# every event flipped to `insufficient_samples`, every `time_cost_s` set to
+# None, all 142 events collapsed onto one corner, only one of four
+# detectors ever firing, the whole capability record degraded to
+# "insufficient", Task 10's dedupe regressing so every event appeared five
+# times. None of those is a subtle failure; all of them are things this
+# phase exists to prevent, and none was asserted.
+#
+# The rule each constant below follows: anchor on the value MEASURED on this
+# fixture, then sit far enough below it that honest track-to-track variation
+# cannot trip the floor, while staying far above the collapse it exists to
+# catch. That gap is wide here because the failure modes are systemic --
+# they take the whole session to zero or to one, not to "somewhat less".
+# Same reasoning, and the same shape, as
+# test_grip_anchor_pipeline.py's _MIN_SESSION_ENVELOPE_SHARE.
+
+# MEASURED: 72 corner-laps (8 detected corners x 9 admissible laps).
+# 24 = 4 corners x 6 laps: the smallest session shape in which a per-corner
+# "the driver's own best" reference means anything at all. Below 6 laps a
+# per-corner best is one lucky pass rather than a reference, and below 4
+# corners this is not a circuit. Every way this collapses is structural, not
+# gradual -- corner detection regressing (8 -> 2 corners gives 18) or the
+# admissible-lap set collapsing takes it well under 24 in one step -- so the
+# 3x headroom below the measured 72 costs nothing in sensitivity.
+_MIN_CORNER_LAPS = 24
+
+# MEASURED: 142 events. Catches the "142 events collapse to 4" mutation.
+# With four detectors over >= 24 corner-laps, and the two reference-comparison
+# detectors structurally able to fire on up to 8 of every 9 laps per corner
+# (only the record-holding lap is silent), a functioning session cannot come
+# back with a single-digit event count. 30 keeps ~4.7x headroom under the
+# measured value while being ~7x above the collapse case.
+_MIN_EVENTS = 30
+
+# MEASURED: 142/142 = 100% of events are validity="measured".
+# Catches every wholesale validity flip. Deliberately NOT pinned at 1.0:
+# the spec explicitly wants a future detector to be able to emit an honest
+# `Insufficient` on windows where a channel is missing, and pinning 100%
+# here would make that correct behaviour fail this gate. 0.80 still fails
+# instantly on the mutation that matters -- a systemic flip drives the
+# measured share to ZERO, because validity is decided per detector from
+# session-wide inputs, not per event.
+_MIN_MEASURED_SHARE = 0.80
+
+# MEASURED: events on all 8 corners and all 9 laps.
+# Catches "all events from one corner", "every corner_id = 1", and corner
+# detection regressing 8 -> 2. Half the detected corners is the right order:
+# a real session shows problems in several distinct places, and every
+# collapse mode drives this to 1 or 2.
+_MIN_DISTINCT_CORNERS = 4
+_MIN_DISTINCT_LAPS = 4
+
+# MEASURED: 103 of 142 events carry a time_cost_s (over_slowing +
+# late_throttle; re_braking and envelope_under_use carry None by design).
+# Catches "every time_cost_s = None". time_cost_s is the ranking key -- it
+# is the entire reason the ranked read surface exists -- so a session that
+# produces events but no costs has silently lost the product feature while
+# staying green. 20 leaves ~5x headroom.
+_MIN_COSTED_EVENTS = 20
+
+# MEASURED: median cost 0.138 s, max 0.885 s.
+# Catches "costs uniformly 4.9 s" -- which the old body's `<= 5.0` per-event
+# bound waved straight through. A median corner-time gap above 1.0 s means
+# the driver is losing ~8 s a lap to corner execution against their OWN best
+# pass, which is a window/reference defect rather than driving. 1.0 s is
+# ~7x the measured median and still far below the 4.9 s mutation.
+_MAX_MEDIAN_COST_S = 1.0
+
+# MEASURED: worst cost 0.885 s.
+# Catches "every time_cost_s = 0.0", which every other cost assertion here
+# waves through (a uniform zero is inside the per-event bounds and drags the
+# median DOWN, not up). A session where no corner-lap is even a tenth of a
+# second off the driver's own best at that corner does not mean a flawless
+# driver -- it means the reference collapsed onto each lap individually, so
+# every lap is trivially its own best and the whole comparison is vacuous.
+# The plan's own composite-lap figure (0.121 s) is the smallest spread this
+# session's geometry can produce. 0.10 s keeps ~9x headroom under 0.885.
+_MIN_WORST_COST_S = 0.10
+
+
+def _assert_driving_events_gate(summary):
+    """The gate's assertion body, factored out so it can be replayed against
+    deliberately mutated summaries.
+
+    Fix round 1 exists because the previous body could not fail. Keeping the
+    assertions callable means the bite-check exercises THE COMMITTED
+    ASSERTIONS against each mutation, rather than a hand-copied lookalike
+    that can drift from what actually ships. Returns a diagnostics dict for
+    the caller to print.
+    """
+    import driving_events as de
+
+    events = summary.get("driving_events") or []
+    cap = summary.get("driving_events_capability") or {}
+    plcm = summary.get("per_lap_corner_metrics") or []
+
+    # ── the denominator ───────────────────────────────────────────────
+    corner_laps = {(m.get("lap_number"), m.get("corner_id"))
+                   for m in plcm if isinstance(m, dict)}
+    assert len(corner_laps) >= _MIN_CORNER_LAPS, (
+        f"only {len(corner_laps)} corner-laps reached the detectors "
+        f"(floor {_MIN_CORNER_LAPS}); "
+        f"{len({c for _, c in corner_laps})} corners x "
+        f"{len({lap for lap, _ in corner_laps})} laps")
+
+    # ── events exist, in quantity ─────────────────────────────────────
+    assert events, "no driving events produced on real telemetry"
+    assert len(events) >= _MIN_EVENTS, (
+        f"only {len(events)} events over {len(corner_laps)} corner-laps "
+        f"(floor {_MIN_EVENTS})")
+
+    # ── the capability record: KEYS *and* VALUES ──────────────────────
+    # The old body asserted only set(cap), which run_registry populates
+    # unconditionally for every registered detector -- so it could never
+    # observe a degraded value. The values are the part that carries
+    # information.
+    assert set(cap) == {"over_slowing", "late_throttle",
+                        "re_braking", "envelope_under_use"}, cap
+    assert all(v == de.CAPABILITY_DETECTED for v in cap.values()), (
+        f"every detector must actually fire on this fixture, got {cap}")
+
+    # ── all four detectors are represented in the events themselves ───
+    types = {e.event_type for e in events}
+    assert types == set(de.EVENT_TYPES), (
+        f"expected all four detectors to emit, got {sorted(types)}")
+
+    # ── honesty: the headline "everything is measured" claim ──────────
+    n_measured = sum(1 for e in events if e.validity == de.VALIDITY_MEASURED)
+    share = n_measured / len(events)
+    assert share >= _MIN_MEASURED_SHARE, (
+        f"only {n_measured}/{len(events)} = {share:.1%} of events are "
+        f"'{de.VALIDITY_MEASURED}' (floor {_MIN_MEASURED_SHARE:.0%}); "
+        f"validity mix {Counter(e.validity for e in events)}")
+
+    # ── spread: not all one corner, not all one lap ───────────────────
+    laps = {e.lap_number for e in events}
+    corner_ids = {e.corner_id for e in events}
+    assert len(laps) >= _MIN_DISTINCT_LAPS, f"events on only {len(laps)} laps: {laps}"
+    assert len(corner_ids) >= _MIN_DISTINCT_CORNERS, (
+        f"events on only {len(corner_ids)} corners: {sorted(corner_ids)} -- "
+        f"a session's problems are not all in one place")
+
+    # ── no duplicates ─────────────────────────────────────────────────
+    # Each detector emits at most one event per window and windows are
+    # unique per (lap, corner), so this is a structural invariant. It is
+    # also the regression guard for Task 10's dedupe.
+    keys = [(e.event_type, e.lap_number, e.corner_id) for e in events]
+    assert len(set(keys)) == len(keys), (
+        f"{len(keys) - len(set(keys))} duplicate (type, lap, corner) events")
+
+    # ── per-event structure ───────────────────────────────────────────
+    costs = []
+    for e in events:
+        # NOTE: these two are defence-in-depth, NOT teeth. DrivingEvent.
+        # __post_init__ already raises on a bad event_type or validity and
+        # run_registry swallows the construction failure, so a violating
+        # event can never reach this loop. Kept because they are free and
+        # would catch a future refactor that moves validation out of the
+        # dataclass; do not mistake them for the assertions that bite.
+        assert e.event_type in de.EVENT_TYPES
+        assert e.validity in de.VALIDITIES
+
+        # Spans must be real and ordered. Catches every span collapsing to
+        # 0.0, which would make Phase 3 render every event at the start line.
+        assert 0.0 <= e.s_norm_start < e.s_norm_end <= 1.0, (
+            f"degenerate span [{e.s_norm_start}, {e.s_norm_end}] "
+            f"(lap {e.lap_number} corner {e.corner_id})")
+
+        if e.validity == de.VALIDITY_MEASURED:
+            assert e.evidence, "a measured event must carry evidence"
+
+            # Magnitude must clear the detector's own emission floor -- the
+            # detector only emits ABOVE it, so this is structural. Catches
+            # every magnitude being zeroed.
+            if e.event_type == "over_slowing":
+                assert e.magnitude > de.OVER_SLOWING_APEX_DEFICIT_FLOOR_MPS, (
+                    f"over_slowing magnitude {e.magnitude} at or below its "
+                    f"own emission floor")
+            elif e.event_type == "late_throttle":
+                assert e.magnitude > de.LATE_THROTTLE_ONSET_FLOOR_M, (
+                    f"late_throttle magnitude {e.magnitude} at or below its "
+                    f"own emission floor")
+
+            if e.time_cost_s is not None:
+                # Lower bound is an INVARIANT, not a taste: the reference
+                # corner time is the minimum over admissible laps and is
+                # self-inclusive (this window's own time is one of the
+                # candidates -- see s10d3_driving_events' module docstring),
+                # so the gap can never be negative. The old body's -0.5
+                # tolerance let a uniformly-negative mutation pass.
+                assert -1e-9 <= e.time_cost_s <= 5.0, (
+                    f"implausible cost {e.time_cost_s}s "
+                    f"(lap {e.lap_number} corner {e.corner_id})")
+                costs.append(e.time_cost_s)
+
+    # ── the ranking key actually exists and is plausible in bulk ──────
+    assert len(costs) >= _MIN_COSTED_EVENTS, (
+        f"only {len(costs)} of {len(events)} events carry a time_cost_s "
+        f"(floor {_MIN_COSTED_EVENTS}) -- the ranked view has nothing to rank")
+    median_cost = sorted(costs)[len(costs) // 2]
+    assert median_cost <= _MAX_MEDIAN_COST_S, (
+        f"median corner-time gap {median_cost:.3f}s exceeds "
+        f"{_MAX_MEDIAN_COST_S}s -- that is a window/reference defect, "
+        f"not driving")
+    assert max(costs) >= _MIN_WORST_COST_S, (
+        f"worst corner-time gap is only {max(costs):.3f}s (floor "
+        f"{_MIN_WORST_COST_S}s) -- the per-corner reference has collapsed "
+        f"onto each lap individually, making every comparison vacuous")
+
+    return {
+        "corner_laps": corner_laps, "events": events, "cap": cap,
+        "costs": sorted(costs), "measured_share": share,
+        "laps": laps, "corner_ids": corner_ids,
+    }
+
 
 @pytest.mark.skipif(not os.path.exists(_REAL_CSV), reason="real fixture absent")
 def test_driving_events_on_real_kart_telemetry(_isolated_track_registry):
-    """Acceptance: events are emitted, every one is in the vocabulary, the
-    capability record covers all four detectors, and the costs are plausible.
+    """Acceptance: events are emitted in quantity, all four detectors fire,
+    every event is measured, located and non-degenerate, and the costs are
+    plausible both per-event and in bulk.
 
-    Probe baseline on this session (54 corner-laps, 9 racing laps, 6 corners):
-    over_slowing 57%, late_throttle 68%, re_braking 7%, worst cost 0.885 s.
+    MEASURED on this fixture: 72 corner-laps (9 laps x 8 corners), 142
+    events, 100% validity="measured", all four capability values "detected",
+    costs min 0.000 / median 0.138 / max 0.885 s.
 
-    The stage measures 72 corner-laps, not 54, so the printed counts are
-    over a different denominator and cannot be read against 57/68/7%
-    directly -- hence the denominator is printed too. Measured in Task 11:
-    the LAP count agrees (9; `excluded_laps` = {10} drops the truncated
-    final lap exactly as intended), and it is the CORNER count that differs
-    -- 8 detected here versus the probe's 6. `re_braking` (6.9% vs 7%) and
-    the worst cost (0.8846 s vs 0.885 s) reproduce the probe almost
-    exactly; `over_slowing` and `late_throttle` sit higher because
-    `apex_speed_mps`/`throttle_onset_m` are measured INSIDE the corner
-    spans, so a different corner set moves the triggers. No 6-of-8 corner
-    subset reproduces 57%/68% (checked, all 28) -- the probe's corner list
-    is genuinely different geometry, not a subset. Full anatomy in the
-    Task 11 report. Do not "fix" this by moving a threshold.
+    THE PROBE BASELINE, CORRECTED (fix round 1). The plan quotes
+    "over_slowing 57%, late_throttle 68%, re_braking 7%" from
+    `original_probe.py` variant C. Re-running that probe shows two of those
+    three cannot be compared to this stage as-is:
+
+      * `re_braking` was NEVER MEASURED by the probe. It gates on
+        `if "accel_long_mps2" in lap.columns`, a pipeline-internal name that
+        does not exist on the probe's raw-CSV frame (which carries
+        `Longitudinal acceleration (G) *calc`), so its counter stayed 0 and
+        the probe reports 0/54 = 0% in all three variants. The plan's "7%"
+        came from a later note measuring the pipeline's own 8-corner
+        windows, so agreeing with it is circular, not corroboration.
+      * `over_slowing` (54) and `late_throttle` (40) are percentages of
+        DIFFERENT denominators -- the probe divides late_throttle only by
+        the windows where its onset proxy resolved.
+
+    Restricted to the six corners the probe also found, this stage measures
+    over_slowing 31/54 -- the probe's exact numerator AND denominator. So
+    over_slowing's divergence is explained entirely by the two extra corners
+    (ids 3 and 8) the pipeline detects and the probe did not; the probe
+    feeds `detect_corners` a differently-preprocessed frame.
+    `late_throttle` is NOT explained that way (45/54 here vs 27/54) and has
+    a second, independent cause -- the two onset derivations differ. See the
+    Task 11 report. Do not "fix" any of this by moving a threshold.
 
     `summary["driving_events"]` carries `driving_events.DrivingEvent`
     dataclass instances, not dicts: `orchestrator.py` assigns
     `run_driving_events(...)["events"]` straight through, and that is
-    `run_registry`'s `list[DrivingEvent]`. Hence attribute access below.
+    `run_registry`'s `list[DrivingEvent]`. Hence attribute access.
     """
-    from collections import Counter
-
-    import driving_events as de
     from pipeline import run_full_analysis
 
     summary = run_full_analysis(_REAL_CSV, {})
-    events = summary.get("driving_events") or []
-    cap = summary.get("driving_events_capability") or {}
+    d = _assert_driving_events_gate(summary)
 
-    assert events, "no driving events produced on real telemetry"
-    assert set(cap) == {"over_slowing", "late_throttle",
-                        "re_braking", "envelope_under_use"}
-
-    for e in events:
-        assert e.event_type in de.EVENT_TYPES
-        assert e.validity in de.VALIDITIES
-        if e.validity == de.VALIDITY_MEASURED:
-            assert e.evidence, "a measured event must carry evidence"
-            if e.time_cost_s is not None:
-                assert -0.5 <= e.time_cost_s <= 5.0, (
-                    f"implausible cost {e.time_cost_s}s "
-                    f"(lap {e.lap_number} corner {e.corner_id})")
-
-    laps = {e.lap_number for e in events}
-    assert len(laps) >= 4, f"events on only {len(laps)} laps: {laps}"
-
-    # The denominator the fire rates are per-cent OF. Windows are built one
-    # per (lap, corner) key in per_lap_corner_metrics that also survives the
-    # excluded-lap filter, so this is the closest published proxy for the
-    # window count -- see the report for the exact reconciliation.
-    plcm = summary.get("per_lap_corner_metrics") or []
-    corner_laps = {(m.get("lap_number"), m.get("corner_id"))
-                   for m in plcm if isinstance(m, dict)}
-    print(f"\ncorner-laps: {len(corner_laps)} "
-          f"({len({lap for lap, _ in corner_laps})} laps x "
-          f"{len({c for _, c in corner_laps})} corners)")
-    print(f"event types: {Counter(e.event_type for e in events)}")
-    print(f"capability:  {cap}")
-    costs = [e.time_cost_s for e in events if e.time_cost_s is not None]
-    if costs:
-        print(f"cost s: min {min(costs):.3f} median "
-              f"{sorted(costs)[len(costs)//2]:.3f} max {max(costs):.3f}")
-
+    cl = d["corner_laps"]
+    print(f"\ncorner-laps: {len(cl)} "
+          f"({len({lap for lap, _ in cl})} laps x "
+          f"{len({c for _, c in cl})} corners)")
+    print(f"event types: {Counter(e.event_type for e in d['events'])}")
+    print(f"capability:  {d['cap']}")
+    print(f"measured:    {d['measured_share']:.1%} of {len(d['events'])} events")
+    costs = d["costs"]
+    print(f"cost s: min {costs[0]:.3f} median "
+          f"{costs[len(costs) // 2]:.3f} max {costs[-1]:.3f}")
