@@ -186,7 +186,6 @@ def test_registry_reports_not_triggered_separately_from_insufficient():
     assert cap2["over_slowing"] == "insufficient"
 
 
-@pytest.mark.xfail(reason="registry populated in Tasks 7-8", strict=True)
 def test_registry_marks_a_detector_insufficient_when_its_channel_is_absent():
     import driving_events as de
 
@@ -491,3 +490,83 @@ def test_registry_reports_late_throttle_capability_too():
                    dist_m=np.linspace(250.0, 260.0, 2))
     _, cap2 = de.run_registry([tiny])
     assert cap2["late_throttle"] == "insufficient"
+
+
+# ── re_braking / envelope_under_use ────────────────────────────────────────
+
+def test_re_braking_needs_a_sustained_run_not_a_single_sample():
+    import driving_events as de
+
+    a = np.zeros(40)
+    a[20] = -2.0                       # one isolated sample
+    assert de.RE_BRAKING.detect(_window(a_long_mps2=a)) is None
+
+    a2 = np.zeros(40)
+    a2[20:23] = -2.0                   # three consecutive
+    ev = de.RE_BRAKING.detect(_window(a_long_mps2=a2))
+    assert ev is not None
+    assert ev.event_type == "re_braking"
+    assert ev.validity == de.VALIDITY_MEASURED
+
+
+def test_re_braking_refuses_when_the_channel_is_absent():
+    import driving_events as de
+
+    ev = de.RE_BRAKING.detect(_window(a_long_mps2=None))
+    assert ev is None or ev.validity != de.VALIDITY_MEASURED
+
+
+def test_envelope_under_use_fires_below_the_floor_and_is_silent_above():
+    import driving_events as de
+
+    low = de.ENVELOPE_UNDER_USE.detect(_window(grip_anchor_pct=62.0))
+    assert low is not None
+    assert low.magnitude == pytest.approx(62.0)
+    assert low.magnitude_unit == "pct"
+
+    assert de.ENVELOPE_UNDER_USE.detect(_window(grip_anchor_pct=101.5)) is None
+
+
+def test_envelope_under_use_refuses_without_a_phase_1_number():
+    import driving_events as de
+
+    ev = de.ENVELOPE_UNDER_USE.detect(_window(grip_anchor_pct=None))
+    assert ev is None or ev.validity != de.VALIDITY_MEASURED
+
+
+# ── re_braking: apex_idx must be honoured, not re-derived ─────────────────
+#
+# _window()'s default speed_mps is CONSTANT (np.full(40, 12.0)), so a real
+# nanargmin over it would return index 0 -- a re_braking test built only on
+# that default fixture cannot tell "sliced from apex_idx=20" apart from
+# "sliced from index 0 by coincidence". This fixture gives speed_mps a
+# genuine minimum at a known index (25), distinct from apex_idx (20), and
+# places the sustained decel run BEFORE apex_idx to prove the detector
+# slices from apex_idx (finds nothing post-apex) rather than from the
+# genuine speed minimum (which would find the run and fire).
+
+def _window_with_real_apex(a_long_mps2):
+    speed = np.full(40, 12.0)
+    speed[25] = 5.0                    # the genuine minimum: index 25
+    return _window(
+        a_long_mps2=a_long_mps2, speed_mps=speed,
+        apex_idx=20, s_norm_apex=0.30,
+    )
+
+
+def test_re_braking_slices_from_apex_idx_not_from_a_re_derived_minimum():
+    import driving_events as de
+
+    a = np.zeros(40)
+    a[10:14] = -2.0                    # sustained run, but BEFORE apex_idx=20
+    # If the detector re-derived the apex via nanargmin(speed_mps) it would
+    # land on index 25 (the genuine minimum) and still miss this pre-apex
+    # run -- so also confirm a post-apex run (after 20, and after 25) DOES
+    # fire, proving the slice point is apex_idx=20, not index 0 and not 25.
+    assert de.RE_BRAKING.detect(_window_with_real_apex(a)) is None
+
+    a2 = np.zeros(40)
+    a2[30:33] = -2.0                   # sustained run after apex_idx=20
+    ev = de.RE_BRAKING.detect(_window_with_real_apex(a2))
+    assert ev is not None
+    assert ev.event_type == "re_braking"

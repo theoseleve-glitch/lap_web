@@ -463,6 +463,187 @@ class _LateThrottle:
 LATE_THROTTLE = _LateThrottle()
 
 
-REGISTRY = (OVER_SLOWING, LATE_THROTTLE)
-"""Tasks 7-8's detectors. Task 7 populates over_slowing/late_throttle here;
+# ── re_braking ──────────────────────────────────────────────────────────
+#
+# Looks for a SUSTAINED post-apex deceleration run in `a_long_mps2` -- a
+# second, distinct dab of the brake after the corner's main braking event is
+# already behind the driver. Measured on the real kart session this fires on
+# 7% of corner-laps -- rare enough to work as a FLAG rather than a ranking,
+# unlike over_slowing/late_throttle (57%/68%): with one driver-vs-self
+# comparison, a re-brake is either present or it isn't.
+#
+# Units: the resampled frame carries `Longitudinal acceleration (G) *calc`
+# in G, not m/s^2 -- Task 9's window builder converts (x 9.80665) before
+# this detector ever sees the array. This detector receives m/s^2 already
+# and must not convert again.
+#
+# Slices from `apex_idx`, never re-derives it via nanargmin: `apex_idx` is
+# the window builder's single source of truth for "where is the apex", and
+# a second argmin over `speed_mps` can disagree with it on ties or noise
+# (see CornerWindow's docstring). Re-deriving here would give this module
+# two different notions of "the apex" inside one record.
+
+# Measured probe: at ~85-105 ms/sample on this grid, a genuine brake dab
+# spans 2-3 samples; a single sample is noise. Requiring >= 3 consecutive
+# samples is what makes this detector fire at 7% rather than ~60%.
+RE_BRAKING_MIN_RUN_SAMPLES = 3
+
+# Sign convention: a_long_mps2 is signed, negative = decelerating. Zero (not
+# a tuned negative floor) is the honest boundary here: any negative sample is
+# decelerating, and it is the RUN-LENGTH requirement above (>= 3 consecutive)
+# that does the real noise rejection, exactly as the brief specifies -- a
+# second, tuned magnitude floor on top would double up on the same job with
+# no measured value to justify it.
+RE_BRAKING_DECEL_FLOOR_MPS2 = 0.0
+
+
+def _longest_run_below(values: np.ndarray, floor: float) -> tuple[int, int]:
+    """(length, start_index) of the longest run of consecutive samples
+    strictly below `floor`. Returns (0, -1) for an empty array or no such
+    run. On a tie for longest, the FIRST run found wins -- deterministic,
+    and it is the earliest re-brake that matters for locating the event."""
+    longest = 0
+    longest_start = -1
+    current = 0
+    current_start = -1
+    for i, v in enumerate(values):
+        if v < floor:
+            if current == 0:
+                current_start = i
+            current += 1
+            if current > longest:
+                longest = current
+                longest_start = current_start
+        else:
+            current = 0
+    return longest, longest_start
+
+
+class _ReBraking:
+    """``re_braking``: a sustained (>= 3 consecutive samples) deceleration
+    run found AFTER the apex -- a second dab of the brake once the corner's
+    main braking event is already over."""
+
+    name = "re_braking"
+    requires = frozenset({"a_long_mps2", "apex_idx"})
+    # A post-apex slice needs at least the run length itself present after
+    # the apex to have any chance of finding one; 5 mirrors the permissive
+    # floor used by Tasks 7's detectors (not a tuned value for this one).
+    min_samples = 5
+
+    def detect(self, w: CornerWindow) -> DrivingEvent | None:
+        a_long = w.a_long_mps2
+        apex_idx = w.apex_idx
+
+        # Refuse rather than guess: no channel, no apex location, or a
+        # non-finite apex index means no claim can be made.
+        if a_long is None or not _all_finite(apex_idx):
+            return None
+        apex_idx = int(apex_idx)
+        if apex_idx < 0 or apex_idx >= len(a_long):
+            return None
+
+        post_apex = a_long[apex_idx:]
+        if not _all_finite(*post_apex):
+            return None
+
+        run_length, run_start = _longest_run_below(post_apex, RE_BRAKING_DECEL_FLOOR_MPS2)
+        if run_length < RE_BRAKING_MIN_RUN_SAMPLES:
+            return None
+
+        # The strongest (most negative) sample within the run, reported as a
+        # positive magnitude -- the checkable physical claim ("how hard"),
+        # not just "how long".
+        run_slice = post_apex[run_start:run_start + run_length]
+        peak_decel_mps2 = float(-np.min(run_slice))
+        if not _all_finite(peak_decel_mps2):
+            return None
+
+        return DrivingEvent(
+            event_type="re_braking",
+            lap_number=w.lap_number,
+            corner_id=w.corner_id,
+            s_norm_start=w.s_norm_start,
+            s_norm_end=w.s_norm_end,
+            magnitude=peak_decel_mps2,
+            magnitude_unit="m/s2",
+            time_cost_s=None,
+            validity=VALIDITY_MEASURED,
+            reason=None,
+            n_samples_in_window=w.n_samples,
+            evidence={
+                "run_length_samples": run_length,
+                "run_start_idx_post_apex": run_start,
+                "apex_idx": apex_idx,
+            },
+        )
+
+
+RE_BRAKING = _ReBraking()
+
+
+# ── envelope_under_use ─────────────────────────────────────────────────────
+#
+# A per-phase slice of Phase 1's `grip_anchor_pct`, already computed onto
+# the window -- this detector adds no new math, only a floor. It inherits
+# Phase 1's tier and reason "for free" in the sense that the number itself
+# was already measured upstream; this detector's only job is deciding when
+# that number is low enough to be worth surfacing.
+#
+# 100% IS the measured floor, not an arbitrary round number: Phase 1's
+# baseline is this session's own p95 envelope (grip_anchor.py's module
+# docstring), so "under 100%" means literally "used less grip than this
+# driver's own best at this speed/phase" -- the honest reading of
+# "under-use". It is also the only floor consistent with the one number
+# already measured on real data: median 101.5%, 37 of 57 corner-laps above
+# 100% (grip_anchor.py:17, s10d2_grip_anchor.py probe) -- a 100% floor fires
+# on the remaining 20/57 (~35%), i.e. well under half, matching the brief.
+ENVELOPE_UNDER_USE_FLOOR_PCT = 100.0
+
+
+class _EnvelopeUnderUse:
+    """``envelope_under_use``: this lap's grip-anchor usage for this phase
+    fell below the measured floor -- meaningful margin left unused."""
+
+    name = "envelope_under_use"
+    requires = frozenset({"grip_anchor_pct"})
+    # Same permissive floor as Tasks 7's detectors -- real corner windows
+    # measured 25-79 samples; not tuned specifically for this detector.
+    min_samples = 5
+
+    def detect(self, w: CornerWindow) -> DrivingEvent | None:
+        grip_pct = w.grip_anchor_pct
+
+        # Refuse rather than guess: no Phase 1 number for this phase means
+        # no claim, not a fabricated one.
+        if not _all_finite(grip_pct):
+            return None
+
+        if grip_pct >= ENVELOPE_UNDER_USE_FLOOR_PCT:
+            return None
+
+        return DrivingEvent(
+            event_type="envelope_under_use",
+            lap_number=w.lap_number,
+            corner_id=w.corner_id,
+            s_norm_start=w.s_norm_start,
+            s_norm_end=w.s_norm_end,
+            magnitude=grip_pct,
+            magnitude_unit="pct",
+            time_cost_s=None,
+            validity=VALIDITY_MEASURED,
+            reason=None,
+            n_samples_in_window=w.n_samples,
+            evidence={
+                "grip_anchor_pct": grip_pct,
+                "floor_pct": ENVELOPE_UNDER_USE_FLOOR_PCT,
+            },
+        )
+
+
+ENVELOPE_UNDER_USE = _EnvelopeUnderUse()
+
+
+REGISTRY = (OVER_SLOWING, LATE_THROTTLE, RE_BRAKING, ENVELOPE_UNDER_USE)
+"""All four Phase 2 detectors: Task 7 built over_slowing/late_throttle,
 Task 8 appends re_braking/envelope_under_use."""
