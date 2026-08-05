@@ -485,3 +485,32 @@ def test_ellipse_fill_never_leaks_inf_or_nan_across_extreme_exponents_and_limits
         result = ga.ellipse_fill_pct(6.0, -4.5, 25.0, f)
         ok = result is None or (isinstance(result, float) and math.isfinite(result))
         assert ok, f"exponent={exponent!r} limit={limit!r} -> {result!r}"
+
+
+def test_bin_is_measured_rejects_a_fabricated_bin():
+    import grip_anchor as ga
+    from friction_envelope import FrictionBin
+
+    fabricated = FrictionBin(
+        speed_center_mps=20.0, combined_g_p95=1.0, lat_max_g=1.0,
+        accel_max_g=0.6, brake_max_g=1.0, sample_count=3, confidence=0.0,
+    )
+    assert ga.bin_is_measured(fabricated) is False
+
+
+def test_bin_is_measured_accepts_a_real_bin():
+    import grip_anchor as ga
+    from friction_envelope import FrictionBin
+
+    real = FrictionBin(
+        speed_center_mps=20.0, combined_g_p95=1.3, lat_max_g=1.3,
+        accel_max_g=0.35, brake_max_g=0.62, sample_count=41, confidence=1.0,
+    )
+    assert ga.bin_is_measured(real) is True
+
+
+def test_bin_is_measured_is_fail_safe_on_none_or_junk():
+    import grip_anchor as ga
+
+    assert ga.bin_is_measured(None) is False
+    assert ga.bin_is_measured(object()) is False

@@ -170,3 +170,22 @@ def ellipse_fill_pct(
     if not np.isfinite(result):
         return None
     return float(result)
+
+
+# A FrictionBin is fabricated exactly when friction_envelope took its
+# synthetic branch: n_in_bin < 8, which sets confidence to 0.0. Real bins get
+# min(1.0, n/32) with n >= 8, hence confidence >= 0.25. The two are exclusive.
+_MIN_MEASURED_SAMPLES: Final = 8
+
+
+def bin_is_measured(bin_obj: Any) -> bool:
+    """True only when this envelope bin is a real measurement.
+
+    Fail-safe: anything we cannot inspect is treated as fabricated.
+    """
+    try:
+        confidence = float(getattr(bin_obj, "confidence"))
+        sample_count = int(getattr(bin_obj, "sample_count"))
+    except (AttributeError, TypeError, ValueError):
+        return False
+    return confidence > 0.0 and sample_count >= _MIN_MEASURED_SAMPLES
