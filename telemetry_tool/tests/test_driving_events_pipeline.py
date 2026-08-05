@@ -1,4 +1,5 @@
 """Driving events — schema, persistence, stage wiring and real-data acceptance."""
+import os
 from unittest.mock import MagicMock, patch
 
 import numpy as np
@@ -625,3 +626,82 @@ class TestDrivingEventsIdorGuard:
             mock_events_repo.get_corner_consistency.assert_called_once_with(
                 mock_db.return_value, "s1",
             )
+
+
+# ══════════════════════════════════════════════════════════════════
+# Task 11 — real-data acceptance. This is the gate.
+# ══════════════════════════════════════════════════════════════════
+
+_REAL_CSV = "telemetry_tool/data/raw/OK_R4.csv"
+
+
+@pytest.mark.skipif(not os.path.exists(_REAL_CSV), reason="real fixture absent")
+def test_driving_events_on_real_kart_telemetry(_isolated_track_registry):
+    """Acceptance: events are emitted, every one is in the vocabulary, the
+    capability record covers all four detectors, and the costs are plausible.
+
+    Probe baseline on this session (54 corner-laps, 9 racing laps, 6 corners):
+    over_slowing 57%, late_throttle 68%, re_braking 7%, worst cost 0.885 s.
+
+    The stage measures 72 corner-laps, not 54, so the printed counts are
+    over a different denominator and cannot be read against 57/68/7%
+    directly -- hence the denominator is printed too. Measured in Task 11:
+    the LAP count agrees (9; `excluded_laps` = {10} drops the truncated
+    final lap exactly as intended), and it is the CORNER count that differs
+    -- 8 detected here versus the probe's 6. `re_braking` (6.9% vs 7%) and
+    the worst cost (0.8846 s vs 0.885 s) reproduce the probe almost
+    exactly; `over_slowing` and `late_throttle` sit higher because
+    `apex_speed_mps`/`throttle_onset_m` are measured INSIDE the corner
+    spans, so a different corner set moves the triggers. No 6-of-8 corner
+    subset reproduces 57%/68% (checked, all 28) -- the probe's corner list
+    is genuinely different geometry, not a subset. Full anatomy in the
+    Task 11 report. Do not "fix" this by moving a threshold.
+
+    `summary["driving_events"]` carries `driving_events.DrivingEvent`
+    dataclass instances, not dicts: `orchestrator.py` assigns
+    `run_driving_events(...)["events"]` straight through, and that is
+    `run_registry`'s `list[DrivingEvent]`. Hence attribute access below.
+    """
+    from collections import Counter
+
+    import driving_events as de
+    from pipeline import run_full_analysis
+
+    summary = run_full_analysis(_REAL_CSV, {})
+    events = summary.get("driving_events") or []
+    cap = summary.get("driving_events_capability") or {}
+
+    assert events, "no driving events produced on real telemetry"
+    assert set(cap) == {"over_slowing", "late_throttle",
+                        "re_braking", "envelope_under_use"}
+
+    for e in events:
+        assert e.event_type in de.EVENT_TYPES
+        assert e.validity in de.VALIDITIES
+        if e.validity == de.VALIDITY_MEASURED:
+            assert e.evidence, "a measured event must carry evidence"
+            if e.time_cost_s is not None:
+                assert -0.5 <= e.time_cost_s <= 5.0, (
+                    f"implausible cost {e.time_cost_s}s "
+                    f"(lap {e.lap_number} corner {e.corner_id})")
+
+    laps = {e.lap_number for e in events}
+    assert len(laps) >= 4, f"events on only {len(laps)} laps: {laps}"
+
+    # The denominator the fire rates are per-cent OF. Windows are built one
+    # per (lap, corner) key in per_lap_corner_metrics that also survives the
+    # excluded-lap filter, so this is the closest published proxy for the
+    # window count -- see the report for the exact reconciliation.
+    plcm = summary.get("per_lap_corner_metrics") or []
+    corner_laps = {(m.get("lap_number"), m.get("corner_id"))
+                   for m in plcm if isinstance(m, dict)}
+    print(f"\ncorner-laps: {len(corner_laps)} "
+          f"({len({lap for lap, _ in corner_laps})} laps x "
+          f"{len({c for _, c in corner_laps})} corners)")
+    print(f"event types: {Counter(e.event_type for e in events)}")
+    print(f"capability:  {cap}")
+    costs = [e.time_cost_s for e in events if e.time_cost_s is not None]
+    if costs:
+        print(f"cost s: min {min(costs):.3f} median "
+              f"{sorted(costs)[len(costs)//2]:.3f} max {max(costs):.3f}")
+
