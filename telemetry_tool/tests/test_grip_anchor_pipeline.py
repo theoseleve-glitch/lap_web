@@ -83,6 +83,99 @@ def test_insert_corner_metrics_round_trips_anchor_values_uncapped(seeded_db):
     assert row["grip_anchor_baseline_g"] == pytest.approx(1.42)
 
 
+def test_insert_corner_metrics_coerces_numpy_scalars_on_the_anchor_binds():
+    """The four anchor binds skipped ``_safe_float`` while every neighbouring
+    numeric at score_repo.py:96-109 went through it.
+
+    ``grip_anchor.decide_anchor`` is public and its tier-2 path returns
+    ``100.0 * abs(a_lat) / best``. In the pipeline ``a_lat`` comes out of a
+    numpy array, so that expression is a ``numpy.float64``, not a ``float``.
+    psycopg2 raises ``can't adapt type 'numpy.float64'`` on such a bind, and
+    the exception is swallowed at all three writers (``s15_persist.py:243``
+    logs a warning, ``pipeline_tasks.py:1161`` warns and rolls back,
+    ``endurance_tasks.py:781`` catches bare and logs nothing). The result is
+    that the session persists ZERO corner metrics -- brake points,
+    entry/apex/exit speeds, time loss, coaching hints and the legacy
+    ``grip_utilization`` all gone with it.
+
+    ASSERTED ON THE BIND DICT, NOT THROUGH THE DATABASE, deliberately:
+    sqlite3 accepts ``numpy.float64`` without complaint, so a round-trip
+    through ``seeded_db`` would stay green with ``_safe_float`` removed and
+    could not observe this defect at all. Only PostgreSQL rejects it, and the
+    tests do not run against PostgreSQL.
+    """
+    from web.repos.score_repo import insert_corner_metrics
+
+    class _CapturingConn:
+        """Records the bind dict instead of executing it."""
+
+        def __init__(self):
+            self.binds = []
+
+        def execute(self, sql, params):
+            self.binds.append(params)
+
+    conn = _CapturingConn()
+    summary = {"per_lap_corner_metrics": [{
+        "lap_number": 1, "corner_id": 1,
+        "apex_speed_mps": np.float64(25.0),
+        "grip_anchor_tier": "session_envelope_ellipse_fitted",
+        "grip_anchor_reason": None,
+        "grip_anchor_pct": np.float64(131.07),        # the real measured max
+        "grip_anchor_baseline_g": np.float32(1.174),  # the real measured max
+    }]}
+
+    assert insert_corner_metrics(conn, "s1", summary) == 1
+    bind = conn.binds[0]
+
+    # `type(...) is float` on purpose: numpy.float64 is a SUBCLASS of float,
+    # so isinstance() passes for it and would not catch this at all.
+    assert type(bind["grip_anchor_pct"]) is float, (
+        f"grip_anchor_pct bound as {type(bind['grip_anchor_pct']).__name__}, "
+        f"which psycopg2 cannot adapt"
+    )
+    assert type(bind["grip_anchor_baseline_g"]) is float, (
+        f"grip_anchor_baseline_g bound as "
+        f"{type(bind['grip_anchor_baseline_g']).__name__}"
+    )
+    assert bind["grip_anchor_pct"] == pytest.approx(131.07)
+    assert bind["grip_anchor_baseline_g"] == pytest.approx(1.174, abs=1e-6)
+
+    # The two TEXT binds are deliberately left alone -- _safe_float would
+    # turn the tier string into None and silently erase the label.
+    assert bind["grip_anchor_tier"] == "session_envelope_ellipse_fitted"
+    assert bind["grip_anchor_reason"] is None
+
+
+def test_insert_corner_metrics_nulls_non_finite_anchor_values():
+    """The other half of what ``_safe_float`` buys: a non-finite pct becomes
+    NULL rather than a poisoned row. ``ellipse_fill_pct`` refuses to emit
+    inf/NaN, but ``decide_anchor``'s tier-2 path divides by a session best it
+    only checks for ``> 0``, and the column is DOUBLE PRECISION, so an
+    infinity would be stored and then served."""
+    from web.repos.score_repo import insert_corner_metrics
+
+    class _CapturingConn:
+        def __init__(self):
+            self.binds = []
+
+        def execute(self, sql, params):
+            self.binds.append(params)
+
+    conn = _CapturingConn()
+    summary = {"per_lap_corner_metrics": [{
+        "lap_number": 1, "corner_id": 1,
+        "grip_anchor_tier": "refused",
+        "grip_anchor_pct": np.float64("inf"),
+        "grip_anchor_baseline_g": np.float64("nan"),
+    }]}
+
+    assert insert_corner_metrics(conn, "s1", summary) == 1
+    bind = conn.binds[0]
+    assert bind["grip_anchor_pct"] is None
+    assert bind["grip_anchor_baseline_g"] is None
+
+
 def _lap_frame(n=400, a_lat_g=0.9):
     d = np.linspace(0.0, 1200.0, n)
     return pd.DataFrame({

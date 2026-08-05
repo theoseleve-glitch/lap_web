@@ -108,10 +108,23 @@ def insert_corner_metrics(
                                             or row.get("grip_utilisation_pct")),
             "time_loss_ms":    _safe_float(row.get("time_loss_ms")),
             "coaching_hint":   row.get("coaching_hint", ""),
+            # TEXT columns pass through; the two NUMERIC ones go through
+            # _safe_float like every neighbouring numeric above. These are the
+            # only binds here fed by a public pure function -- grip_anchor
+            # .decide_anchor's tier-2 path returns
+            # `100.0 * abs(a_lat) / best`, which is a numpy.float64 whenever
+            # a_lat came from an array, i.e. always, in the pipeline. psycopg2
+            # raises "can't adapt type 'numpy.float64'" on such a bind, and
+            # every writer swallows it (s15_persist.py, pipeline_tasks.py,
+            # and endurance_tasks.py with a bare except and no log), so the
+            # WHOLE session's corner metrics are lost -- brake points, apex
+            # speeds, time loss, coaching hints and the legacy
+            # grip_utilization included. _safe_float also nulls non-finite
+            # values, so an inf/NaN pct becomes NULL instead of a poisoned row.
             "grip_anchor_tier":       row.get("grip_anchor_tier"),
             "grip_anchor_reason":     row.get("grip_anchor_reason"),
-            "grip_anchor_pct":        row.get("grip_anchor_pct"),
-            "grip_anchor_baseline_g": row.get("grip_anchor_baseline_g"),
+            "grip_anchor_pct":        _safe_float(row.get("grip_anchor_pct")),
+            "grip_anchor_baseline_g": _safe_float(row.get("grip_anchor_baseline_g")),
         })
         count += 1
 
