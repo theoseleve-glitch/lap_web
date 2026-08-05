@@ -158,7 +158,8 @@ def _window(**over):
         n_samples=40,
         speed_mps=np.full(40, 12.0), a_lat_mps2=np.full(40, 9.0),
         a_long_mps2=np.zeros(40), dist_m=np.linspace(250.0, 350.0, 40),
-        apex_speed_mps=12.0, corner_time_s=8.0,
+        apex_speed_mps=12.0, apex_idx=20, s_norm_apex=0.30,
+        corner_time_s=8.0, throttle_onset_m=9.0,
         reference={"apex_speed_mps": 13.5, "corner_time_s": 7.5,
                    "throttle_onset_m": 10.0},
         grip_anchor_pct=95.0,
@@ -195,11 +196,115 @@ def test_registry_marks_a_detector_insufficient_when_its_channel_is_absent():
     assert cap["re_braking"] == "insufficient"
 
 
-@pytest.mark.xfail(reason="registry populated in Tasks 7-8", strict=True)
 def test_every_event_the_registry_emits_is_in_the_vocabulary():
+    """Not xfail like its two neighbours: with REGISTRY still empty this is
+    vacuously true (zero events trivially satisfy the loop below), so it
+    passes for real today rather than failing on a missing detector name.
+    Marking it xfail(strict=True) anyway would XPASS-fail the suite the
+    moment it's collected -- confirmed by running with --runxfail. It stays
+    unmarked and becomes a genuine check the moment Tasks 7-8 add detectors
+    that actually emit events; no unmark step needed for this one."""
     import driving_events as de
 
     events, _ = de.run_registry([_window(), _window(lap_number=2)])
     for e in events:
         assert e.event_type in de.EVENT_TYPES
         assert e.validity in de.VALIDITIES
+
+
+# ── run_registry must be total: never raise, for any input ────────────────
+#
+# REGISTRY ships empty in production today, so these use monkeypatch to
+# install small fake detectors for the duration of a single test (auto-
+# restored after) -- that's how a window missing attributes, or a detector
+# whose detect() raises, gets exercised before Tasks 7-8 exist for real.
+
+class _NeverFires:
+    """A detector with no requirements that always looks and finds nothing."""
+    name = "probe"
+    requires = frozenset()
+    min_samples = 5
+
+    def detect(self, w):
+        return None
+
+
+class _AlwaysRaises:
+    name = "explodes"
+    requires = frozenset()
+    min_samples = 5
+
+    def detect(self, w):
+        raise RuntimeError("boom")
+
+
+def _assert_total_result(result):
+    """The invariant that must hold for every fuzz vector below: a 2-tuple
+    whose capability values are all drawn from the closed set."""
+    events, cap = result
+    assert isinstance(events, list)
+    assert isinstance(cap, dict)
+    assert set(cap.values()) <= {"detected", "not_triggered", "insufficient"}
+    return events, cap
+
+
+def test_run_registry_handles_none_as_the_windows_argument(monkeypatch):
+    import driving_events as de
+
+    monkeypatch.setattr(de, "REGISTRY", (_NeverFires(),))
+    events, cap = _assert_total_result(de.run_registry(None))
+    assert events == []
+    assert cap["probe"] == "insufficient"
+
+
+def test_run_registry_handles_an_empty_iterable():
+    import driving_events as de
+
+    events, cap = _assert_total_result(de.run_registry([]))
+    assert events == []
+    assert cap == {}
+
+
+def test_run_registry_handles_a_none_window_in_the_list(monkeypatch):
+    import driving_events as de
+
+    monkeypatch.setattr(de, "REGISTRY", (_NeverFires(),))
+    events, cap = _assert_total_result(de.run_registry([None]))
+    assert events == []
+    assert cap["probe"] == "insufficient"
+
+
+def test_run_registry_handles_a_window_missing_attributes(monkeypatch):
+    import driving_events as de
+
+    class Bare:
+        """Not a CornerWindow at all -- no n_samples, no anything."""
+
+    monkeypatch.setattr(de, "REGISTRY", (_NeverFires(),))
+    events, cap = _assert_total_result(de.run_registry([Bare()]))
+    assert events == []
+    assert cap["probe"] == "insufficient"
+
+
+def test_run_registry_handles_a_generator_that_raises_partway_through(monkeypatch):
+    import driving_events as de
+
+    def bad_gen():
+        yield _window()          # one good window before the blow-up
+        raise RuntimeError("corrupt lap")
+        yield _window()          # pragma: no cover -- never reached
+
+    monkeypatch.setattr(de, "REGISTRY", (_NeverFires(),))
+    events, cap = _assert_total_result(de.run_registry(bad_gen()))
+    assert events == []
+    # The window yielded before the raise was still usable.
+    assert cap["probe"] == "not_triggered"
+
+
+def test_run_registry_swallows_a_raising_detector(monkeypatch):
+    import driving_events as de
+
+    monkeypatch.setattr(de, "REGISTRY", (_AlwaysRaises(),))
+    events, cap = _assert_total_result(de.run_registry([_window()]))
+    assert events == []
+    assert cap["explodes"] == "insufficient"

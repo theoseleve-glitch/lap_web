@@ -14,10 +14,13 @@ did, what the reference lap did, which lap that was, how many samples), a
 validity tier, and n_samples_in_window. A probability nobody can calibrate is
 worse than no number at all.
 """
+import logging
 from dataclasses import dataclass
 from typing import Iterable, Protocol
 
 import numpy as np
+
+logger = logging.getLogger(__name__)
 
 VALIDITY_MEASURED = "measured"
 VALIDITY_INSUFFICIENT_SAMPLES = "insufficient_samples"
@@ -85,10 +88,20 @@ class CornerWindow:
     ``a_long_mps2`` is None when the channel is absent from the log,
     ``throttle_onset_m`` is a speed-derivative proxy (NOT a real throttle
     channel) and is None when it could not be derived, and
-    ``apex_speed_mps`` / ``corner_time_s`` / ``grip_anchor_pct`` are None
-    when upstream could not compute them for this corner/lap. A detector
-    declares which of these it needs via ``Detector.requires`` so the
-    registry can tell "not present" apart from "present but nothing found".
+    ``apex_speed_mps`` / ``apex_idx`` / ``s_norm_apex`` / ``corner_time_s`` /
+    ``grip_anchor_pct`` are None when upstream could not compute them for
+    this corner/lap. A detector declares which of these it needs via
+    ``Detector.requires`` so the registry can tell "not present" apart from
+    "present but nothing found".
+
+    ``apex_idx`` is an index into this window's own arrays (``speed_mps``,
+    ``a_lat_mps2``, ``a_long_mps2``, ``dist_m``) -- e.g. a post-apex detector
+    like re_braking slices ``a_long_mps2[apex_idx:]`` directly rather than
+    re-deriving the apex itself (which can diverge from ``apex_speed_mps`` on
+    ties or noise: see ``pipeline/stages/s10b_corners.py:484-492``'s
+    ``np.nanargmin`` derivation for the precedent this mirrors). ``s_norm_apex``
+    carries the same location in normalised-distance terms for evidence/
+    reporting, so a detector doesn't have to interpolate it from ``dist_m``.
     """
 
     lap_number: int
@@ -101,6 +114,8 @@ class CornerWindow:
     a_long_mps2: np.ndarray | None
     dist_m: np.ndarray
     apex_speed_mps: float | None
+    apex_idx: int | None
+    s_norm_apex: float | None
     corner_time_s: float | None
     throttle_onset_m: float | None
     reference: dict
@@ -159,11 +174,43 @@ three reasons blocked the look.
 def _window_satisfies_requires(w: CornerWindow, requires: frozenset[str]) -> bool:
     """True when every field a detector `requires` is present (not None) on
     this window. Missing attribute names count as unmet, not as an error --
-    a typo'd requires should degrade to "insufficient", never crash."""
+    a typo'd requires should degrade to "insufficient", never crash. Safe
+    even when `w` itself is None: `getattr(None, name, None)` returns the
+    default rather than raising."""
     for field_name in requires:
         if getattr(w, field_name, None) is None:
             return False
     return True
+
+
+def _safe_windows(windows) -> list:
+    """Materialise `windows` defensively so a bad argument can never make
+    `run_registry` raise. Handles: `windows` itself not being iterable
+    (e.g. None), and an iterable/generator that raises partway through
+    (e.g. lazily built from raw telemetry that fails on a corrupt lap).
+
+    Windows already produced before a failure are kept -- consumption just
+    stops at the point of failure rather than discarding everything, so a
+    generator that yields three good windows and then blows up on the
+    fourth still leaves those three windows available to every detector.
+    """
+    try:
+        iterator = iter(windows)
+    except TypeError:
+        logger.exception("run_registry: windows argument is not iterable: %r", windows)
+        return []
+
+    collected = []
+    while True:
+        try:
+            w = next(iterator)
+        except StopIteration:
+            break
+        except Exception:
+            logger.exception("run_registry: windows iterator raised while producing a window")
+            break
+        collected.append(w)
+    return collected
 
 
 def run_registry(windows: Iterable[CornerWindow]) -> tuple[list["DrivingEvent"], dict[str, str]]:
@@ -174,17 +221,30 @@ def run_registry(windows: Iterable[CornerWindow]) -> tuple[list["DrivingEvent"],
     the CAPABILITIES docstring for why that distinction exists and why
     "insufficient" deliberately does not split further.
 
+    `run_registry` never raises, for any input -- not just a well-formed
+    `Iterable[CornerWindow]`. `windows` may be None, empty, a generator that
+    raises partway through, or contain a None/malformed window; a registered
+    detector's `detect` may raise. Every one of those is caught here rather
+    than a caller learning about a corrupt lap via a stack trace out of a
+    report-generation call. The always-true invariant: for any input, the
+    return value is a 2-tuple whose `capability` values are all drawn from
+    the closed ``{"detected", "not_triggered", "insufficient"}`` set.
+
     Per detector, across all windows:
-    - a window whose `requires` are not met, or whose `n_samples` is below
-      `min_samples`, does not count as looked-at for that window
-    - a `detect` call that raises is caught here and also does not count as
-      looked-at for that window -- `run_registry` itself never raises
+    - a window whose `requires` are not met, whose `n_samples` is below
+      `min_samples` (or is missing/unreadable), or whose `detect` call
+      raises, does not count as looked-at for that window -- all three are
+      caught by the same try/except below, deliberately: `min_samples` is
+      evaluated inside the guarded block precisely so a malformed window
+      (e.g. None, or missing `n_samples`) degrades the same way a raising
+      `detect` call does, instead of crashing before `detect` is even
+      reached
     - if any window yields an event, the detector is "detected"
     - else if any window was successfully looked at (no missing requires,
       enough samples, no exception) with nothing found, it is "not_triggered"
     - else (no window could be looked at) it is "insufficient"
     """
-    windows = list(windows)
+    windows = _safe_windows(windows)
     events: list[DrivingEvent] = []
     capability: dict[str, str] = {}
 
@@ -193,17 +253,22 @@ def run_registry(windows: Iterable[CornerWindow]) -> tuple[list["DrivingEvent"],
         any_looked_clean = False
 
         for w in windows:
-            if not _window_satisfies_requires(w, detector.requires):
-                continue
-            if w.n_samples < detector.min_samples:
-                continue
-
             try:
+                if not _window_satisfies_requires(w, detector.requires):
+                    continue
+                if w.n_samples < detector.min_samples:
+                    continue
+
                 result = detector.detect(w)
             except Exception:
-                # Never raise out of run_registry: a broken detector on one
+                # Never raise out of run_registry: a broken detector, or a
+                # malformed window (None, missing n_samples, ...), on one
                 # window must not take down the rest of the report, and
                 # must not silently masquerade as "looked, found nothing".
+                logger.exception(
+                    "run_registry: detector %r failed evaluating a window",
+                    getattr(detector, "name", detector),
+                )
                 continue
 
             if result is not None:
