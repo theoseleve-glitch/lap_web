@@ -207,7 +207,23 @@ def ellipse_fill_pct(
     except Exception:
         return None
 
-    if not (np.isfinite(ay_max) and np.isfinite(ax_max)) or ay_max <= 0 or ax_max <= 0 or p <= 0:
+    # `p <= 0` alone does NOT reject a non-finite exponent: `inf <= 0` and
+    # `nan <= 0` are both False, so both used to sail through. With p = inf,
+    # `rx**inf + ry**inf` is 0 for every ratio under 1 and the second power
+    # `frac ** (1/inf) == frac ** 0.0` is 1.0 for ANY frac, so the function
+    # returned exactly 100.0 for every sample regardless of how little grip it
+    # used -- verified: a sample at 10% of the envelope read 100.0. That is a
+    # fabricated number, not a refusal, headed for a double-precision column
+    # and a coaching payload. Same reachability class as the two overflow
+    # leaks already fixed: FrictionCircle.from_dict()'s
+    # `exponent=d.get("exponent", _DEFAULT_ELLIPSE_EXP)` is unclamped.
+    if (
+        not (np.isfinite(ay_max) and np.isfinite(ax_max))
+        or ay_max <= 0
+        or ax_max <= 0
+        or not np.isfinite(p)
+        or p <= 0
+    ):
         return None
 
     # Do the power arithmetic in numpy float64, not plain Python float. Python's

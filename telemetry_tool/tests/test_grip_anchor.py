@@ -514,6 +514,88 @@ def test_ellipse_fill_never_leaks_inf_or_nan_across_extreme_exponents_and_limits
         assert ok, f"exponent={exponent!r} limit={limit!r} -> {result!r}"
 
 
+def test_ellipse_fill_refuses_an_infinite_exponent_instead_of_fabricating_100():
+    """With p = inf the function used to return exactly 100.0 for EVERY
+    sample: `rx**inf` is 0 for any ratio under 1, and the second power
+    `frac ** (1/inf)` is `frac ** 0.0`, which is 1.0 for any frac at all. So a
+    sample using 10% of the envelope reported 100% of available grip -- a
+    fabricated number bound for a double-precision column and a coaching
+    payload, not a refusal.
+
+    `p <= 0` does not catch it (`inf <= 0` is False), which is why the guard
+    needed `not np.isfinite(p)`. Reachable the same way as the two overflow
+    leaks already fixed: FrictionCircle.from_dict() takes `exponent` straight
+    from the dict with no clamp.
+
+    The 10%-of-envelope sample is the point: at the boundary (a_lat == lat)
+    100.0 would be the RIGHT answer, so a boundary sample could not tell a
+    fabrication from a correct result.
+    """
+    import grip_anchor as ga
+
+    f = _FakeFriction(lat=12.0, exponent=float("inf"))
+    assert ga.ellipse_fill_pct(1.2, 0.0, 25.0, f) is None       # 10% of the envelope
+    assert ga.ellipse_fill_pct(12.0, 0.0, 25.0, f) is None       # at the boundary
+
+    # NaN slid through the same hole (`nan <= 0` is False) and is now caught
+    # by the same finiteness clause rather than by luck downstream.
+    assert ga.ellipse_fill_pct(6.0, -4.5, 25.0, _FakeFriction(exponent=float("nan"))) is None
+
+
+def test_ellipse_fill_at_a_huge_finite_exponent_is_documented_not_guessed():
+    """The companion value from review: p = 1e308 is FINITE, so the
+    finiteness guard above deliberately does not catch it. `0.5 ** 1e308`
+    underflows to 0.0, frac becomes 0.0, and `0.0 ** (1/1e308)` is 0.0 -- so
+    a 50%/50% combined sample reads 0.0.
+
+    That is pinned here as a KNOWN RESIDUAL, not endorsed. Rejecting it would
+    require inventing a magnitude threshold on p, which this pass is
+    explicitly forbidden from doing. What matters is that it cannot fabricate
+    a confident high number and cannot leak inf/nan: it is finite, and it is
+    not the 100.0 the infinite case produced. If a later change gives p a
+    principled bound, this expectation should change deliberately rather than
+    silently.
+    """
+    import grip_anchor as ga
+
+    result = ga.ellipse_fill_pct(6.0, -4.5, 25.0, _FakeFriction(lat=12.0, brake=9.0, exponent=1e308))
+    assert result == 0.0
+    assert result != 100.0
+    assert math.isfinite(result)
+
+
+def test_bin_is_measured_requires_BOTH_confidence_and_sample_count():
+    """Pins the combinator itself. Flipping the `and` to an `or` left all 38
+    unit tests green, because every existing case had confidence and
+    sample_count agreeing -- so nothing observed that both are required.
+
+    The disagreeing case is the one that matters: confidence=0.9 with
+    sample_count=2 is a bin claiming high confidence off two samples, exactly
+    the shape a fail-safe gate exists to reject. Under `or` it would be
+    accepted and a corner-lap would reach a session-envelope tier off two
+    samples' worth of "measured" coverage.
+    """
+    import grip_anchor as ga
+    from friction_envelope import FrictionBin
+
+    def _bin(confidence, sample_count):
+        return FrictionBin(
+            speed_center_mps=25.0, combined_g_p95=1.3, lat_max_g=1.3,
+            accel_max_g=0.35, brake_max_g=0.62,
+            sample_count=sample_count, confidence=confidence,
+        )
+
+    # The signals DISAGREE -- only `and` rejects this.
+    assert ga.bin_is_measured(_bin(confidence=0.9, sample_count=2)) is False
+    # ...and the mirror image, high count with zero confidence.
+    assert ga.bin_is_measured(_bin(confidence=0.0, sample_count=41)) is False
+
+    # The sample_count boundary, previously untested on either side. 8 is the
+    # exact n at which friction_envelope stops taking its synthetic branch.
+    assert ga.bin_is_measured(_bin(confidence=1.0, sample_count=7)) is False
+    assert ga.bin_is_measured(_bin(confidence=1.0, sample_count=8)) is True
+
+
 def test_bin_is_measured_rejects_a_fabricated_bin():
     import grip_anchor as ga
     from friction_envelope import FrictionBin
