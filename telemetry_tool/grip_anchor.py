@@ -5,8 +5,21 @@ measured against, and a machine-readable REASON when it had to degrade.
 Pure and dependency-light — no I/O, no pipeline knowledge — so the decision
 can be bite-checked without a database.
 
+WHAT "AVAILABLE" IS, PLAINLY: the highest tier's baseline is
+``FrictionCircle.lateral_vals``, which ``friction_model.build_friction_model``
+builds as a per-speed-bin **p95 of |a_lat| taken from this session's own laps**
+(``friction_model.py:574-577``). It is therefore **NOT an absolute vehicle
+limit** and must never be presented as one. It is the same population as the
+``driver_best_session`` tier, differing only in the statistic: a p95 across a
+speed bin rather than a single maximum at one corner. A driver who never
+approached the car's real limit collapses that envelope onto their own
+performance and still reads ~100% "of available grip" — which is why the
+real-data median on ``OK_R4.csv`` is 101.51%, not something comfortably under
+100. The tier names say ``session_envelope`` precisely so that no consumer can
+read them as a physics claim about the car.
+
 Fail-SAFE: any doubt degrades toward the lower tier. An unknown or absent
-signal must never produce a physics tier.
+signal must never produce a session-envelope tier.
 
 Shape copied from ``track_surface/honesty.py``; values are our own.
 """
@@ -18,11 +31,25 @@ from typing import Any, Final
 import numpy as np
 
 # -- Tier vocabulary — the ONLY legal values of corner_metrics.grip_anchor_tier.
-# Two physics tiers, not one: the ellipse exponent is FITTED from boundary
-# samples but silently falls back to a hint when they are thin, and a claim of
-# "fitted ellipse" over a defaulted p=2 would be a false provenance claim.
-TIER_PHYSICS_ELLIPSE_FITTED: Final = "physics_ellipse_fitted"
-TIER_PHYSICS_ELLIPSE_DEFAULT_P2: Final = "physics_ellipse_default_p2"
+#
+# READ THE NAMES LITERALLY. Both top tiers are ``session_envelope_*``, never
+# "physics", because the envelope they measure against is derived from THIS
+# SESSION'S OWN LAPS (see the module docstring). Naming them "physics" was the
+# overclaim these names exist to retire.
+#
+# Two of them, not one: the ellipse exponent is FITTED from boundary samples
+# but silently falls back to a hint when they are thin, and a claim of "fitted
+# ellipse" over a defaulted p=2 would be a false provenance claim.
+#
+# PHASE 1 CAVEAT — the two are arithmetically IDENTICAL right now. The stage
+# passes ``a_long_mps2=0.0`` (``s10d2_grip_anchor.run_grip_anchor``), so in
+# ``ellipse_fill_pct`` the longitudinal ratio ``rx`` is exactly 0 and the fill
+# collapses to ``100 * (0 + ry**p)**(1/p) == 100 * ry`` — the exponent cancels
+# out entirely. So in Phase 1 these two tiers differ ONLY in provenance
+# labelling, not in the number they produce. They stop being equivalent the
+# moment Phase 2 threads a real longitudinal value through.
+TIER_SESSION_ENVELOPE_ELLIPSE_FITTED: Final = "session_envelope_ellipse_fitted"
+TIER_SESSION_ENVELOPE_ELLIPSE_DEFAULT_P2: Final = "session_envelope_ellipse_default_p2"
 # Session-scoped only. Cross-session ("driver_best_track") is NOT available:
 # corner_id is a positional index over curvature regions found in one lap of
 # one session, and corner_persistence has zero production callers. Phase 2
@@ -31,15 +58,15 @@ TIER_DRIVER_BEST_SESSION: Final = "driver_best_session"
 TIER_REFUSED: Final = "refused"
 
 TIERS: Final = frozenset({
-    TIER_PHYSICS_ELLIPSE_FITTED,
-    TIER_PHYSICS_ELLIPSE_DEFAULT_P2,
+    TIER_SESSION_ENVELOPE_ELLIPSE_FITTED,
+    TIER_SESSION_ENVELOPE_ELLIPSE_DEFAULT_P2,
     TIER_DRIVER_BEST_SESSION,
     TIER_REFUSED,
 })
 
-_PHYSICS_TIERS: Final = frozenset({
-    TIER_PHYSICS_ELLIPSE_FITTED,
-    TIER_PHYSICS_ELLIPSE_DEFAULT_P2,
+_SESSION_ENVELOPE_TIERS: Final = frozenset({
+    TIER_SESSION_ENVELOPE_ELLIPSE_FITTED,
+    TIER_SESSION_ENVELOPE_ELLIPSE_DEFAULT_P2,
 })
 
 # -- Reason taxonomy (machine-readable).
@@ -54,11 +81,22 @@ REASON_CONDITION_UNKNOWN: Final = "condition_unknown"
 REASON_CORNER_IDENTITY_UNSTABLE: Final = "corner_identity_unstable"
 
 
-def is_quotable_as_physics(tier: str | None) -> bool:
-    """The consumer guard. ONLY a physics tier may be presented to a driver as
-    an absolute claim about the car's limit. Everything else — including an
-    unknown tier — is relative or nothing."""
-    return tier in _PHYSICS_TIERS
+def is_quotable_as_session_envelope(tier: str | None) -> bool:
+    """The consumer guard: may this percentage be quoted against the session's
+    fitted grip envelope?
+
+    Renamed from ``is_quotable_as_physics``, which named the wrong thing. "As
+    physics" implied an absolute claim about the car's limit; the envelope is
+    a p95 over this session's own laps, so no tier in this module supports
+    such a claim. What the guard actually separates is *provenance*: True means
+    the baseline is the session's speed-binned grip envelope, False means it is
+    a single best sample (``driver_best_session``), nothing at all
+    (``refused``), or an unknown tier.
+
+    Every presentation of a True value still has to say "of the grip seen in
+    this session", never "of the car's limit".
+    """
+    return tier in _SESSION_ENVELOPE_TIERS
 
 
 def channel_trust_ratio(
@@ -278,8 +316,8 @@ def decide_anchor(
         baseline_g = None
 
     tier = (
-        TIER_PHYSICS_ELLIPSE_FITTED
+        TIER_SESSION_ENVELOPE_ELLIPSE_FITTED
         if getattr(friction, "exponent_source", "hint") == "fitted"
-        else TIER_PHYSICS_ELLIPSE_DEFAULT_P2
+        else TIER_SESSION_ENVELOPE_ELLIPSE_DEFAULT_P2
     )
     return Anchor(tier, None, pct, baseline_g)

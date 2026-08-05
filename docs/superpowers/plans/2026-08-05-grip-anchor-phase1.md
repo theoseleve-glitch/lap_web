@@ -51,7 +51,7 @@
 
 **Interfaces:**
 - Consumes: nothing.
-- Produces: constants `TIER_PHYSICS_ELLIPSE_FITTED = "physics_ellipse_fitted"`, `TIER_PHYSICS_ELLIPSE_DEFAULT_P2 = "physics_ellipse_default_p2"`, `TIER_DRIVER_BEST_SESSION = "driver_best_session"`, `TIER_REFUSED = "refused"`, `TIERS: frozenset[str]`, the `REASON_*` constants listed below, and `is_quotable_as_physics(tier: str | None) -> bool`.
+- Produces: constants `TIER_SESSION_ENVELOPE_ELLIPSE_FITTED = "session_envelope_ellipse_fitted"`, `TIER_SESSION_ENVELOPE_ELLIPSE_DEFAULT_P2 = "session_envelope_ellipse_default_p2"`, `TIER_DRIVER_BEST_SESSION = "driver_best_session"`, `TIER_REFUSED = "refused"`, `TIERS: frozenset[str]`, the `REASON_*` constants listed below, and `is_quotable_as_session_envelope(tier: str | None) -> bool`.
 
 Modelled on `telemetry_tool/track_surface/honesty.py:13-39` — read that file first; copy its shape, not its values.
 
@@ -74,8 +74,8 @@ def test_tier_vocabulary_is_closed():
     import grip_anchor as ga
 
     assert ga.TIERS == frozenset({
-        ga.TIER_PHYSICS_ELLIPSE_FITTED,
-        ga.TIER_PHYSICS_ELLIPSE_DEFAULT_P2,
+        ga.TIER_SESSION_ENVELOPE_ELLIPSE_FITTED,
+        ga.TIER_SESSION_ENVELOPE_ELLIPSE_DEFAULT_P2,
         ga.TIER_DRIVER_BEST_SESSION,
         ga.TIER_REFUSED,
     })
@@ -88,12 +88,12 @@ def test_tier_vocabulary_is_closed():
 def test_only_physics_tiers_are_quotable_as_physics():
     import grip_anchor as ga
 
-    assert ga.is_quotable_as_physics(ga.TIER_PHYSICS_ELLIPSE_FITTED) is True
-    assert ga.is_quotable_as_physics(ga.TIER_PHYSICS_ELLIPSE_DEFAULT_P2) is True
-    assert ga.is_quotable_as_physics(ga.TIER_DRIVER_BEST_SESSION) is False
-    assert ga.is_quotable_as_physics(ga.TIER_REFUSED) is False
-    assert ga.is_quotable_as_physics(None) is False
-    assert ga.is_quotable_as_physics("something_invented") is False
+    assert ga.is_quotable_as_session_envelope(ga.TIER_SESSION_ENVELOPE_ELLIPSE_FITTED) is True
+    assert ga.is_quotable_as_session_envelope(ga.TIER_SESSION_ENVELOPE_ELLIPSE_DEFAULT_P2) is True
+    assert ga.is_quotable_as_session_envelope(ga.TIER_DRIVER_BEST_SESSION) is False
+    assert ga.is_quotable_as_session_envelope(ga.TIER_REFUSED) is False
+    assert ga.is_quotable_as_session_envelope(None) is False
+    assert ga.is_quotable_as_session_envelope("something_invented") is False
 
 
 def test_reserved_reasons_exist_for_phase_2_prerequisites():
@@ -137,8 +137,8 @@ import numpy as np
 # Two physics tiers, not one: the ellipse exponent is FITTED from boundary
 # samples but silently falls back to a hint when they are thin, and a claim of
 # "fitted ellipse" over a defaulted p=2 would be a false provenance claim.
-TIER_PHYSICS_ELLIPSE_FITTED: Final = "physics_ellipse_fitted"
-TIER_PHYSICS_ELLIPSE_DEFAULT_P2: Final = "physics_ellipse_default_p2"
+TIER_SESSION_ENVELOPE_ELLIPSE_FITTED: Final = "session_envelope_ellipse_fitted"
+TIER_SESSION_ENVELOPE_ELLIPSE_DEFAULT_P2: Final = "session_envelope_ellipse_default_p2"
 # Session-scoped only. Cross-session ("driver_best_track") is NOT available:
 # corner_id is a positional index over curvature regions found in one lap of
 # one session, and corner_persistence has zero production callers. Phase 2
@@ -147,15 +147,15 @@ TIER_DRIVER_BEST_SESSION: Final = "driver_best_session"
 TIER_REFUSED: Final = "refused"
 
 TIERS: Final = frozenset({
-    TIER_PHYSICS_ELLIPSE_FITTED,
-    TIER_PHYSICS_ELLIPSE_DEFAULT_P2,
+    TIER_SESSION_ENVELOPE_ELLIPSE_FITTED,
+    TIER_SESSION_ENVELOPE_ELLIPSE_DEFAULT_P2,
     TIER_DRIVER_BEST_SESSION,
     TIER_REFUSED,
 })
 
-_PHYSICS_TIERS: Final = frozenset({
-    TIER_PHYSICS_ELLIPSE_FITTED,
-    TIER_PHYSICS_ELLIPSE_DEFAULT_P2,
+_SESSION_ENVELOPE_TIERS: Final = frozenset({
+    TIER_SESSION_ENVELOPE_ELLIPSE_FITTED,
+    TIER_SESSION_ENVELOPE_ELLIPSE_DEFAULT_P2,
 })
 
 # -- Reason taxonomy (machine-readable).
@@ -170,11 +170,11 @@ REASON_CONDITION_UNKNOWN: Final = "condition_unknown"
 REASON_CORNER_IDENTITY_UNSTABLE: Final = "corner_identity_unstable"
 
 
-def is_quotable_as_physics(tier: str | None) -> bool:
+def is_quotable_as_session_envelope(tier: str | None) -> bool:
     """The consumer guard. ONLY a physics tier may be presented to a driver as
     an absolute claim about the car's limit. Everything else — including an
     unknown tier — is relative or nothing."""
-    return tier in _PHYSICS_TIERS
+    return tier in _SESSION_ENVELOPE_TIERS
 ```
 
 - [ ] **Step 4: Run to verify it passes**
@@ -184,7 +184,7 @@ Expected: 3 passed.
 
 - [ ] **Step 5: Bite-check**
 
-Temporarily change `is_quotable_as_physics` to `return tier is not None`. Re-run.
+Temporarily change `is_quotable_as_session_envelope` to `return tier is not None`. Re-run.
 Expected: `test_only_physics_tiers_are_quotable_as_physics` goes RED on the `driver_best_session` assertion. Restore.
 
 - [ ] **Step 6: Commit**
@@ -744,7 +744,7 @@ def test_decide_anchor_gives_fitted_physics_when_everything_passes():
     import grip_anchor as ga
 
     a = ga.decide_anchor(**_args(envelope_bin=_measured_bin()))
-    assert a.tier == ga.TIER_PHYSICS_ELLIPSE_FITTED
+    assert a.tier == ga.TIER_SESSION_ENVELOPE_ELLIPSE_FITTED
     assert a.reason is None
     assert a.pct == pytest.approx(75.0)          # 9.0 / 12.0
     assert a.baseline_g == pytest.approx(12.0 / 9.80665)
@@ -756,7 +756,7 @@ def test_decide_anchor_flags_a_defaulted_exponent():
     f = _FakeFriction(lat=12.0)
     f.exponent_source = "hint"
     a = ga.decide_anchor(**_args(friction=f, envelope_bin=_measured_bin()))
-    assert a.tier == ga.TIER_PHYSICS_ELLIPSE_DEFAULT_P2
+    assert a.tier == ga.TIER_SESSION_ENVELOPE_ELLIPSE_DEFAULT_P2
 
 
 def test_decide_anchor_falls_to_session_best_when_the_channel_is_untrusted():
@@ -891,9 +891,9 @@ def decide_anchor(
         baseline_g = None
 
     tier = (
-        TIER_PHYSICS_ELLIPSE_FITTED
+        TIER_SESSION_ENVELOPE_ELLIPSE_FITTED
         if getattr(friction, "exponent_source", "hint") == "fitted"
-        else TIER_PHYSICS_ELLIPSE_DEFAULT_P2
+        else TIER_SESSION_ENVELOPE_ELLIPSE_DEFAULT_P2
     )
     return Anchor(tier, None, pct, baseline_g)
 ```
@@ -1375,7 +1375,7 @@ def test_corner_metric_writer_binds_the_anchor_params(test_db):
         "entry_speed_mps": None, "apex_speed_mps": 25.0, "exit_speed_mps": None,
         "throttle_onset_m": None, "exit_accel_mps2": None,
         "grip_utilization": None, "time_loss_ms": None, "coaching_hint": None,
-        "grip_anchor_tier": "physics_ellipse_fitted",
+        "grip_anchor_tier": "session_envelope_ellipse_fitted",
         "grip_anchor_reason": None,
         "grip_anchor_pct": 137.5,
         "grip_anchor_baseline_g": 1.33,
@@ -1388,7 +1388,7 @@ def test_corner_metric_writer_binds_the_anchor_params(test_db):
         "WHERE session_id='s1' AND lap_number=1 AND corner_id=1"
     ).fetchone()
 
-    assert got[0] == "physics_ellipse_fitted"
+    assert got[0] == "session_envelope_ellipse_fitted"
     assert got[1] == pytest.approx(137.5)   # NOT clamped to 100
 ```
 
@@ -1509,7 +1509,7 @@ def test_grip_anchor_on_real_kart_telemetry(_isolated_track_registry):
 
     physics = [
         m for m in metrics
-        if ga.is_quotable_as_physics(m.get("grip_anchor_tier"))
+        if ga.is_quotable_as_session_envelope(m.get("grip_anchor_tier"))
         and m.get("grip_anchor_pct") is not None
     ]
     for m in physics:
@@ -1557,6 +1557,10 @@ git commit -m "test(grip_anchor): acceptance on real kart telemetry"
 
 State these plainly so nobody assumes otherwise:
 
+- **The top two tiers were RENAMED after review — the task text above is historical.** They shipped as `session_envelope_ellipse_fitted` and `session_envelope_ellipse_default_p2`, guarded by `is_quotable_as_session_envelope`. Everywhere the tasks above say "physics tier", read "session-envelope tier". The rename is not cosmetic: the baseline is `FrictionCircle.lateral_vals`, a per-speed-bin **p95 of `|a_lat|` from this session's own laps** (`friction_model.py:574-577`) — the *same population* as `driver_best_session`, differing only in statistic. Calling it "physics" promised an absolute claim about the car that the number cannot support. A driver who never approached the limit collapses the envelope onto their own performance and still reads ~100% "of available grip", which is exactly why the measured median is 101.51% with 37 of 57 corner-laps above 100%. **An absolute vehicle-limit anchor does not exist in Phase 1 and is not scheduled** — it needs a cross-session or manufacturer-supplied envelope.
+- **The two `session_envelope_*` tiers produce IDENTICAL arithmetic in Phase 1.** The stage passes `a_long_mps2=0.0`, so `rx = 0` in `ellipse_fill_pct` and the fill collapses to `100 * (0 + ry**p)**(1/p) == 100 * ry` — the exponent cancels exactly. The two tiers differ only in provenance labelling until Phase 2 threads a real longitudinal value through.
+- **M3 — the peak `|a_lat|` and the envelope are read at DIFFERENT speeds.** `run_grip_anchor` takes the peak `|a_lat|` from anywhere inside the corner window (`np.nanmax` over the mask) but evaluates the envelope at `apex_speed_mps`. On real kart data the speed at the peak and the apex speed sit up to **2.64 m/s apart**, worth a median **+0.34 pts** of `grip_anchor_pct` but up to **+17.45 pts** on one corner-lap. This is a Phase-2 item and it is nearly free: the stage already computes the corner mask, so replacing `nanmax` with `argmax` yields the matching speed in the same pass, and the envelope can then be read at the speed the peak actually occurred at.
+- **M4 — two differently-scaled grip numbers now sit on one `corner_metrics` row.** The legacy `grip_utilization` is persisted as a **0–1 fraction** (and capped at 100% upstream in `corner_analysis.py:665`), while `grip_anchor_pct` is a **0–131 percentage** measured on real data and deliberately uncapped. Any consumer that reaches for "the grip number" without reading which column it took will be wrong by a factor of ~100 in one direction or the other. Phase 2 decides which the API serves; until then, treat the co-existence as a live hazard, not a tidy migration path.
 - **Cross-session tier 2** (`driver_best_track`). Requires stable corner identity across sessions; `corner_persistence.match_corners` exists but has zero production callers. Phase 2.
 - **Condition scoping.** `sessions.track_state` is `NOT NULL DEFAULT 'dry'` and the upload UI never sets it, so `dry` frequently means "nobody said". `REASON_CONDITION_UNKNOWN` is reserved but never emitted in Phase 1.
 - **Longitudinal usage.** Phase 1 anchors on peak lateral only; `a_long_mps2` is threaded through `decide_anchor` and `ellipse_fill_pct` but passed as `0.0` by the stage. Wiring a real longitudinal value is Phase 2, and the low-speed traction envelope is known-broken (0.07–0.22 g measured at 8–13 m/s against a real 0.33 g) so it needs its own gate.

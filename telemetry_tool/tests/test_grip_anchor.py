@@ -2,7 +2,7 @@
 
 The anchor answers "you used X% of the available grip here" and ALWAYS says
 what "available" was measured against. Fail-safe: any doubt degrades toward
-the lower tier; an unknown signal never yields a physics tier.
+the lower tier; an unknown signal never yields a session-envelope tier.
 """
 import itertools
 import math
@@ -16,8 +16,8 @@ def test_tier_vocabulary_is_closed():
     import grip_anchor as ga
 
     assert ga.TIERS == frozenset({
-        ga.TIER_PHYSICS_ELLIPSE_FITTED,
-        ga.TIER_PHYSICS_ELLIPSE_DEFAULT_P2,
+        ga.TIER_SESSION_ENVELOPE_ELLIPSE_FITTED,
+        ga.TIER_SESSION_ENVELOPE_ELLIPSE_DEFAULT_P2,
         ga.TIER_DRIVER_BEST_SESSION,
         ga.TIER_REFUSED,
     })
@@ -27,15 +27,42 @@ def test_tier_vocabulary_is_closed():
     assert not hasattr(ga, "TIER_DRIVER_BEST_TRACK")
 
 
-def test_only_physics_tiers_are_quotable_as_physics():
+def test_tier_names_do_not_claim_physics():
+    """The tier VALUE strings are what land in ``corner_metrics`` and in every
+    future API payload, so pinning them literally is the only thing that stops
+    a later edit from quietly restoring the ``physics_*`` overclaim.
+
+    The names matter because the baseline is NOT physics: it is
+    ``FrictionCircle.lateral_vals``, a per-speed-bin p95 of |a_lat| over this
+    session's OWN laps -- the same population as ``driver_best_session``,
+    differing only in statistic. That is why the real-data median is 101.51%
+    rather than something safely under 100: a driver who never approached the
+    car's limit collapses the envelope onto their own performance and still
+    reads ~100% "of available grip".
+    """
     import grip_anchor as ga
 
-    assert ga.is_quotable_as_physics(ga.TIER_PHYSICS_ELLIPSE_FITTED) is True
-    assert ga.is_quotable_as_physics(ga.TIER_PHYSICS_ELLIPSE_DEFAULT_P2) is True
-    assert ga.is_quotable_as_physics(ga.TIER_DRIVER_BEST_SESSION) is False
-    assert ga.is_quotable_as_physics(ga.TIER_REFUSED) is False
-    assert ga.is_quotable_as_physics(None) is False
-    assert ga.is_quotable_as_physics("something_invented") is False
+    assert ga.TIER_SESSION_ENVELOPE_ELLIPSE_FITTED == "session_envelope_ellipse_fitted"
+    assert ga.TIER_SESSION_ENVELOPE_ELLIPSE_DEFAULT_P2 == "session_envelope_ellipse_default_p2"
+    for tier in ga.TIERS:
+        assert "physics" not in tier, f"tier {tier!r} claims physics it cannot support"
+
+    # The retired names must be gone, not aliased -- an alias would let a
+    # consumer keep quoting the overclaiming string indefinitely.
+    assert not hasattr(ga, "TIER_PHYSICS_ELLIPSE_FITTED")
+    assert not hasattr(ga, "TIER_PHYSICS_ELLIPSE_DEFAULT_P2")
+    assert not hasattr(ga, "is_quotable_as_physics")
+
+
+def test_only_session_envelope_tiers_are_quotable_as_session_envelope():
+    import grip_anchor as ga
+
+    assert ga.is_quotable_as_session_envelope(ga.TIER_SESSION_ENVELOPE_ELLIPSE_FITTED) is True
+    assert ga.is_quotable_as_session_envelope(ga.TIER_SESSION_ENVELOPE_ELLIPSE_DEFAULT_P2) is True
+    assert ga.is_quotable_as_session_envelope(ga.TIER_DRIVER_BEST_SESSION) is False
+    assert ga.is_quotable_as_session_envelope(ga.TIER_REFUSED) is False
+    assert ga.is_quotable_as_session_envelope(None) is False
+    assert ga.is_quotable_as_session_envelope("something_invented") is False
 
 
 def test_reserved_reasons_exist_for_phase_2_prerequisites():
@@ -534,11 +561,11 @@ def _measured_bin():
     )
 
 
-def test_decide_anchor_gives_fitted_physics_when_everything_passes():
+def test_decide_anchor_gives_the_fitted_session_envelope_tier_when_everything_passes():
     import grip_anchor as ga
 
     a = ga.decide_anchor(**_args(envelope_bin=_measured_bin()))
-    assert a.tier == ga.TIER_PHYSICS_ELLIPSE_FITTED
+    assert a.tier == ga.TIER_SESSION_ENVELOPE_ELLIPSE_FITTED
     assert a.reason is None
     assert a.pct == pytest.approx(75.0)          # 9.0 / 12.0
     assert a.baseline_g == pytest.approx(12.0 / 9.80665)
@@ -550,7 +577,7 @@ def test_decide_anchor_flags_a_defaulted_exponent():
     f = _FakeFriction(lat=12.0)
     f.exponent_source = "hint"
     a = ga.decide_anchor(**_args(friction=f, envelope_bin=_measured_bin()))
-    assert a.tier == ga.TIER_PHYSICS_ELLIPSE_DEFAULT_P2
+    assert a.tier == ga.TIER_SESSION_ENVELOPE_ELLIPSE_DEFAULT_P2
 
 
 def test_decide_anchor_falls_to_session_best_when_the_channel_is_untrusted():

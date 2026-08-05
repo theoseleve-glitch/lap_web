@@ -208,11 +208,11 @@ def test_run_grip_anchor_is_total_against_malformed_corners_and_metrics():
 def test_run_grip_anchor_refuses_to_borrow_a_distant_envelope_bin():
     """A friction envelope with real measured coverage only far from this
     corner's apex speed must NOT be treated as a hit. Everything else this
-    corner-lap needs to reach a PHYSICS tier is deliberately made healthy
+    corner-lap needs to reach a SESSION-ENVELOPE tier is deliberately made healthy
     (a real friction model, a genuinely trusted lateral channel) so that,
-    without the distance guard, it WOULD reach TIER_PHYSICS_ELLIPSE_FITTED
+    without the distance guard, it WOULD reach TIER_SESSION_ENVELOPE_ELLIPSE_FITTED
     off a bin measured 35 m/s away from its own apex speed -- reaching a
-    physics tier off a borrowed, distant bin would claim measured coverage
+    session-envelope tier off a borrowed, distant bin would claim measured coverage
     the data doesn't have. Must instead degrade to the session-relative
     tier, named speed_out_of_bins (not bin_fabricated: the bin IS
     genuinely measured, just at the wrong speed for this sample)."""
@@ -231,7 +231,7 @@ def test_run_grip_anchor_refuses_to_borrow_a_distant_envelope_bin():
     class _FullFriction:
         """A real, healthy friction model -- everything downstream of the
         bin-distance check must pass, so the guard is the ONLY thing
-        standing between this input and a false physics-tier reading."""
+        standing between this input and a false session-envelope-tier reading."""
         exponent = 2.0
         exponent_source = "fitted"
 
@@ -267,7 +267,7 @@ def test_run_grip_anchor_refuses_to_borrow_a_distant_envelope_bin():
     assert out[0]["grip_anchor_pct"] == pytest.approx(100.0)   # only lap, is its own session best
 
 
-def test_run_grip_anchor_reaches_physics_off_a_dict_shaped_envelope():
+def test_run_grip_anchor_reaches_the_session_envelope_tier_off_a_dict_shaped_envelope():
     """Regression for the Task-10 real-data finding: the orchestrator persists
     ``summary["friction_envelope"]`` as ``FrictionEnvelope.to_dict()`` (a plain
     dict) and -- after the Task-10 fix -- still sometimes threads a dict form
@@ -342,9 +342,9 @@ def test_run_grip_anchor_reaches_physics_off_a_dict_shaped_envelope():
         friction_envelope=envelope_dict,   # plain dict, not an object
         curvature_profile=curvature_profile,
     )
-    assert out[0]["grip_anchor_tier"] == ga.TIER_PHYSICS_ELLIPSE_FITTED, (
+    assert out[0]["grip_anchor_tier"] == ga.TIER_SESSION_ENVELOPE_ELLIPSE_FITTED, (
         f"a dict-shaped envelope with a genuinely measured, in-range bin "
-        f"must still reach a physics tier -- got {out[0]!r}"
+        f"must still reach a session-envelope tier -- got {out[0]!r}"
     )
     assert out[0]["grip_anchor_reason"] is None
     assert out[0]["grip_anchor_pct"] is not None
@@ -530,7 +530,7 @@ def test_grip_anchor_on_real_kart_telemetry(_isolated_track_registry):
 
     physics = [
         m for m in metrics
-        if ga.is_quotable_as_physics(m.get("grip_anchor_tier"))
+        if ga.is_quotable_as_session_envelope(m.get("grip_anchor_tier"))
         and m.get("grip_anchor_pct") is not None
     ]
     for m in physics:

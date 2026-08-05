@@ -155,12 +155,16 @@ def decide_anchor(corner, lap, session) -> Anchor
 
 | Tier | Source | Gate |
 |---|---|---|
-| `physics_ellipse_fitted` | in-scope `FrictionCircle`, fitted exponent | bin provenance passes **and** inline channel-trust ratio in band **and** the exponent was genuinely fitted |
-| `physics_ellipse_default_p2` | same, but the exponent fell back to the hint | as above, exponent not fitted — a true ellipse claim would be false |
+| `session_envelope_ellipse_fitted` | in-scope `FrictionCircle`, fitted exponent | bin provenance passes **and** inline channel-trust ratio in band **and** the exponent was genuinely fitted |
+| `session_envelope_ellipse_default_p2` | same, but the exponent fell back to the hint | as above, exponent not fitted — a true ellipse claim would be false |
 | `driver_best_session` | that driver's best execution of that corner **in this session** | ≥2 laps produced a usable window for that corner |
 | `refused` | none | always available; carries a machine-readable reason |
 
 Ordered fail-safe downgrade, vocabulary constants and a single consumer guard, copied literally from `track_surface/honesty.py:13-75`.
+
+**The top two tiers are `session_envelope_*`, NOT `physics_*`.** They were named `physics_ellipse_fitted` / `physics_ellipse_default_p2` in the first draft of this section and renamed after Phase 1's review. The baseline they measure against is `FrictionCircle.lateral_vals`, which `friction_model.build_friction_model` constructs as a per-speed-bin **p95 of `|a_lat|` from the same session's own laps** (`friction_model.py:574-577`). That is the *same population* as the `driver_best_session` tier, differing only in the statistic used. A "physics" label therefore promised an absolute claim about the car that the number cannot support: a driver who never approached the limit collapses the envelope onto their own performance and still reads ~100% "of available grip". Measured on `OK_R4.csv` the median is **101.51%** with 37 of 57 corner-laps over 100% — which is the signature of a self-referential baseline, not of systematic over-driving. The consumer guard is `is_quotable_as_session_envelope`; anything rendering a True value must still say "of the grip seen in this session", never "of the car's limit". An absolute vehicle limit needs a cross-session or manufacturer-supplied envelope, which is out of scope for Phases 1–3.
+
+**Phase 1 only: the two `session_envelope_*` tiers are arithmetically identical.** The stage passes `a_long_mps2=0.0`, so `rx = |a_long| / ax_max` is exactly 0 and `ellipse_fill_pct` collapses to `100 * (0 + ry**p)**(1/p) == 100 * ry` — the exponent cancels. In Phase 1 they differ only in provenance labelling. They diverge the moment Phase 2 threads a real longitudinal value through.
 
 Five corrections from verification, each of which invalidated an earlier draft of this section:
 
