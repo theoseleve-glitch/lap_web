@@ -1044,7 +1044,7 @@ def run_full_analysis(
     # ══════════════════════════════════════════════════════════════
     # PHASE 4: Theoretical Lap + Corner Analysis (step 10)
     # ══════════════════════════════════════════════════════════════
-    from pipeline.stages import s10a_corner_ocp, s10_theoretical, s10b_corners
+    from pipeline.stages import s10a_corner_ocp, s10_theoretical, s10b_corners, s10d2_grip_anchor
 
     # Gate: skip if distance quality is degraded
     _dq = summary.get("distance_quality")
@@ -1186,6 +1186,20 @@ def run_full_analysis(
         friction_model=summary.get("friction_model"),
     )
     _record("10d_per_lap_corners", _plcm, err)
+
+    # Step 10d2 — tiered grip anchor. Runs here because this is the only point
+    # where the friction model, corners, resampled laps and per-lap metrics
+    # all coexist. Every downstream number is quoted against this.
+    if _plcm:
+        _plcm, err = _safe_step(
+            "10d2_grip_anchor", s10d2_grip_anchor.run_grip_anchor,
+            _plcm, corners, resampled_laps,
+            friction_model=summary.get("friction_model"),
+            friction_envelope=summary.get("friction_envelope"),
+            curvature_profile=curvature_profile,
+        )
+        _record("10d2_grip_anchor", _plcm, err)
+
     per_lap_corner_metrics = _plcm or []
     summary["per_lap_corner_metrics"] = per_lap_corner_metrics
 

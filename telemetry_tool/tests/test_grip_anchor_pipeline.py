@@ -1,4 +1,6 @@
 """Grip anchor — schema, stage wiring and persistence."""
+from unittest.mock import patch
+
 import numpy as np
 import pandas as pd
 import pytest
@@ -263,3 +265,83 @@ def test_run_grip_anchor_refuses_to_borrow_a_distant_envelope_bin():
     assert out[0]["grip_anchor_tier"] == ga.TIER_DRIVER_BEST_SESSION
     assert out[0]["grip_anchor_reason"] == ga.REASON_SPEED_OUT_OF_BINS
     assert out[0]["grip_anchor_pct"] == pytest.approx(100.0)   # only lap, is its own session best
+
+
+def _make_pipeline_csv(tmp_path, n_laps=3):
+    """Minimal RaceChrono-style CSV, same column shape as the fixture in
+    test_grip_pipeline.py / test_pipeline_racing_line_trigger.py, which is
+    already proven to clear column discovery and reach the friction/grip
+    stages of ``pipeline.run_full_analysis``."""
+    rng = np.random.default_rng(7)
+    n_per_lap = 150
+    lap_length = 500.0
+    frames = []
+    for lap in range(1, n_laps + 1):
+        t_start = (lap - 1) * 30.0
+        t = np.linspace(t_start, t_start + 25.0, n_per_lap)
+        dist = np.linspace(0, lap_length, n_per_lap)
+        speed = np.full(n_per_lap, 20.0) + rng.normal(0, 0.5, n_per_lap)
+        lat = np.linspace(45.0, 45.002, n_per_lap) + rng.normal(0, 1e-5, n_per_lap)
+        lon = np.linspace(9.0, 9.002, n_per_lap) + rng.normal(0, 1e-5, n_per_lap)
+        frames.append(pd.DataFrame({
+            "Lap #": np.full(n_per_lap, lap),
+            "Time (s)": t,
+            "Distance (m)": dist + (lap - 1) * lap_length,
+            "Speed (m/s)": speed,
+            "Latitude (deg)": lat,
+            "Longitude (deg)": lon,
+            "Bearing (deg)": np.full(n_per_lap, 90.0) + rng.normal(0, 1, n_per_lap),
+            "Longitudinal acceleration (G) *calc": rng.normal(0, 0.02, n_per_lap),
+            "Lateral acceleration (G) *calc": rng.normal(0, 0.4, n_per_lap),
+        }))
+    csv_path = tmp_path / "grip_anchor_wiring_test.csv"
+    pd.concat(frames, ignore_index=True).to_csv(csv_path, index=False)
+    return csv_path
+
+
+def test_orchestrator_calls_grip_anchor_with_the_per_lap_metrics_and_friction_model(tmp_path):
+    """Prove the 10d2 stage is wired into the LIVE orchestrator execution
+    path by observing a real invocation during an actual pipeline run --
+    not by grepping source text for the stage's name, which would pass even
+    if the call sat in dead code (a reviewer concern on this branch).
+
+    Corner DETECTION on a small synthetic CSV isn't reliable enough to
+    assert on deterministically, so ``run_per_lap_corner_metrics`` is
+    patched to hand back a fixed, non-empty per-lap-corner-metrics list --
+    that's the value the orchestrator's own gate (``if _plcm:``) reacts to,
+    and it sits upstream of, and independent from, the wiring under test.
+    ``run_grip_anchor`` itself is spied on (side effect: pass its input
+    through unchanged, matching its documented mutate-in-place-and-return
+    contract) so the rest of the pipeline still completes normally.
+    """
+    csv_path = _make_pipeline_csv(tmp_path)
+    fixed_plcm = [
+        {"lap_number": 1, "corner_id": 1, "apex_speed_mps": 25.0},
+        {"lap_number": 2, "corner_id": 1, "apex_speed_mps": 24.0},
+    ]
+
+    import pipeline
+
+    with (
+        patch(
+            "pipeline.stages.s10b_corners.run_per_lap_corner_metrics",
+            return_value=fixed_plcm,
+        ),
+        patch(
+            "pipeline.stages.s10d2_grip_anchor.run_grip_anchor",
+            side_effect=lambda plcm, *a, **k: plcm,
+        ) as spy,
+    ):
+        summary = pipeline.run_full_analysis(str(csv_path), {})
+
+    spy.assert_called_once()
+    args, kwargs = spy.call_args
+    assert args[0] == fixed_plcm, (
+        "the stage must receive the real per-lap corner metrics list, not a stub"
+    )
+    assert kwargs.get("friction_model") == summary.get("friction_model"), (
+        "the stage must receive the pipeline's live friction model"
+    )
+    # The (pass-through) result must actually land back in the summary --
+    # proving the call sits on the path that feeds summary, not a side branch.
+    assert summary["per_lap_corner_metrics"] == fixed_plcm
