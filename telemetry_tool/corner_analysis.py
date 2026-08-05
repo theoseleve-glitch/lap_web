@@ -721,6 +721,17 @@ def _analyze_single_corner(
         loss_apex    *= scale
         loss_exit    *= scale
 
+    # ⚠ THE `else 0.0` SUBSTITUTIONS BELOW ARE NOT MEASUREMENTS. Each fires
+    # when this corner's slice came back empty or all-NaN, and 0.0 is finite,
+    # so it defeats every downstream finiteness guard. `actual_apex_speed_mps`
+    # in particular is mapped to `apex_speed_mps` on the per-lap corner metric
+    # (s10b_corners.py) and read by the `over_slowing` detector; a 0.0 there
+    # once produced a `validity="measured"` event claiming a 17.82 m/s apex
+    # deficit against an apex speed that was never measured. The guard is
+    # `s10d3_driving_events._positive_float` plus `driving_events.
+    # _all_positive`. Left as 0.0 HERE only because `CornerPerformance` is a
+    # wide, long-standing public shape; any new consumer of these fields must
+    # treat a non-positive speed as ABSENT.
     perf = CornerPerformance(
         corner_id=cid,
         s_start=s_start,

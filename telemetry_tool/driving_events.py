@@ -399,6 +399,43 @@ def _all_finite(*values) -> bool:
     return True
 
 
+def _all_positive(*values) -> bool:
+    """True when every value is finite AND strictly greater than zero.
+
+    A SECOND, DIFFERENT CLASS OF BAD NUMBER FROM ``_all_finite``'s. That
+    guard was built for NaN/inf -- values that are not numbers. This one is
+    for values that ARE numbers and are IMPOSSIBLE: a speed of 0 m/s at the
+    apex of a corner the driver drove through, a corner time of 0 s.
+
+    It exists because ``corner_analysis.py:731`` substitutes
+    ``actual_apex_speed_mps=0.0`` whenever its own corner slice is empty or
+    all-NaN, and that 0.0 sails through every finiteness check there is. The
+    reachable consequence, demonstrated by the final review: an
+    ``over_slowing`` event with ``validity="measured"``, magnitude 17.82 m/s
+    and evidence ``{"apex_speed_mps": 0.0, ...}`` -- telling the driver they
+    were 17.8 m/s slow at an apex whose speed was never measured.
+
+    WHAT MAKES IT REACHABLE IS A TWO-FRAME SPLIT. ``apex_speed_mps`` comes
+    from ``corner_analysis``'s ABSOLUTE-metre mask while ``corner_time_s``
+    comes from ``s10d2``'s NORMALISED mask, and the two disagree on sample
+    count on 35 of 72 corner-laps on the real fixture -- so the absolute mask
+    can fail silently into 0.0 exactly where the normalised mask succeeds and
+    supplies the other field ``over_slowing.requires`` needs.
+
+    Applied to apex SPEED and corner TIME only, on both the window and the
+    reference side. Deliberately NOT applied to ``throttle_onset_m`` /
+    ``throttle_onset_norm`` (0 is a legitimate position -- the start of the
+    lap) nor to ``grip_anchor_pct`` (0% is implausible but arithmetically
+    reachable from a genuine |a_lat| of 0, and inventing an impossibility
+    claim for it would be the same error in the other direction; recorded as
+    checked, not guarded).
+    """
+    for v in values:
+        if v is None or not np.isfinite(v) or v <= 0:
+            return False
+    return True
+
+
 # ── over_slowing ────────────────────────────────────────────────────────
 #
 # Compares this lap's apex speed at a corner against this driver's own best
@@ -440,6 +477,14 @@ class _OverSlowing:
         # incomplete reference (e.g. no admissible lap has established this
         # corner's bests yet) is silence, not a fabricated zero.
         if not _all_finite(apex_speed, corner_time, ref_apex_speed, ref_corner_time):
+            return None
+        # And a SECOND, independent layer for the impossible-but-finite
+        # class -- see `_all_positive`. `s10d3._build_one_window` already
+        # strips non-positive apex speeds and corner times off the window so
+        # `requires` reports "insufficient" (could not look) rather than this
+        # detector reporting None (looked, found nothing); this catch here is
+        # for a window built by any other caller.
+        if not _all_positive(apex_speed, corner_time, ref_apex_speed, ref_corner_time):
             return None
 
         deficit = ref_apex_speed - apex_speed
@@ -618,6 +663,12 @@ class _LateThrottle:
         # onset to compare against, or either value non-finite, means no
         # claim -- not a fabricated one.
         if not _all_finite(onset, corner_time, ref_onset, ref_corner_time):
+            return None
+        # `corner_time` alone gets the positivity check: this detector's own
+        # magnitude is a distance, where 0 is a real position, but its
+        # `time_cost_s` is a corner-time gap and a 0 s corner time is the
+        # same impossible-but-finite substitution `_all_positive` documents.
+        if not _all_positive(corner_time, ref_corner_time):
             return None
 
         delta = onset - ref_onset

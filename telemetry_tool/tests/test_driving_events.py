@@ -552,6 +552,100 @@ def test_late_throttle_refuses_a_nan_reference_onset():
     assert de.LATE_THROTTLE.detect(w) is None
 
 
+# ── Final review, CRITICAL 2: the impossible-but-finite class ────────────
+#
+# `corner_analysis.py:731` substitutes `actual_apex_speed_mps=0.0` when its
+# corner slice is empty or all-NaN. 0.0 is FINITE, so `_all_finite` accepts
+# it and `over_slowing` emitted a `validity="measured"` event with magnitude
+# 17.82 m/s against an apex speed that was never measured. Reachable because
+# `apex_speed_mps` comes from an ABSOLUTE-metre mask while the other half of
+# `requires` (`corner_time_s`) comes from a NORMALISED one, and the two
+# disagree on 35 of 72 real corner-laps.
+
+
+def test_over_slowing_refuses_a_substituted_zero_apex_speed():
+    import driving_events as de
+
+    w = _window(apex_speed_mps=0.0, corner_time_s=8.0,
+                reference={"apex_speed_mps": 17.82, "corner_time_s": 7.5,
+                           "throttle_onset_m": 10.0})
+    assert de.OVER_SLOWING.detect(w) is None, (
+        "a 0.0 apex speed is a substitution, not a measurement -- emitting "
+        "against it tells the driver they were 17.8 m/s slow at an apex "
+        "nobody measured")
+
+
+def test_a_substituted_zero_never_becomes_the_corners_best_time():
+    """The reference side, tested where it can actually discriminate.
+
+    A 0.0 apex speed can never win the reference MAX, so guarding it there is
+    unfalsifiable -- the emit floor rejects the negative deficit anyway. A 0.0
+    corner TIME is the opposite: it always wins the reference MIN, becomes
+    "the driver's best pass through this corner", and poisons every other
+    lap's `time_cost_s` at that corner. That is the case worth pinning.
+    """
+    from pipeline.stages import s10d3_driving_events as s10d3
+
+    metrics = [
+        {"lap_number": 1, "corner_id": 3, "corner_time_s": 8.2,
+         "apex_speed_mps": 12.0},
+        {"lap_number": 2, "corner_id": 3, "corner_time_s": 0.0,
+         "apex_speed_mps": 0.0},          # the substituted pair
+        {"lap_number": 3, "corner_id": 3, "corner_time_s": 7.9,
+         "apex_speed_mps": 13.1},
+    ]
+    refs = s10d3._build_references(metrics, frozenset())
+
+    assert refs[3]["corner_time_s"] == 7.9, (
+        "a substituted 0.0 corner time became the corner's reference best, "
+        "so every other lap is now measured against an impossible lap")
+    assert refs[3]["apex_speed_mps"] == 13.1
+
+
+def test_over_slowing_refuses_a_zero_corner_time():
+    """The other half: `time_cost_s` is a corner-time gap, and a 0 s pass
+    through a corner is the same impossible-but-finite substitution."""
+    import driving_events as de
+
+    assert de.OVER_SLOWING.detect(_window(
+        apex_speed_mps=12.0, corner_time_s=0.0,
+        reference={"apex_speed_mps": 13.5, "corner_time_s": 7.5,
+                   "throttle_onset_m": 10.0})) is None
+    assert de.OVER_SLOWING.detect(_window(
+        apex_speed_mps=12.0, corner_time_s=8.0,
+        reference={"apex_speed_mps": 13.5, "corner_time_s": 0.0,
+                   "throttle_onset_m": 10.0})) is None
+
+
+def test_late_throttle_refuses_a_zero_corner_time():
+    import driving_events as de
+
+    assert de.LATE_THROTTLE.detect(_window(
+        throttle_onset_m=24.0, corner_time_s=0.0,
+        reference={"apex_speed_mps": 12.0, "corner_time_s": 7.5,
+                   "throttle_onset_m": 10.0})) is None
+
+
+def test_a_zero_apex_speed_reads_insufficient_not_not_triggered():
+    """The distinction that matters. A window the stage built from a
+    substituted 0.0 must make `over_slowing` report "could not look", not
+    "looked and found nothing" -- the collapse CAPABILITIES exists to stop.
+    """
+    import driving_events as de
+    from pipeline.stages import s10d3_driving_events as s10d3
+
+    assert s10d3._positive_float(0.0) is None
+    assert s10d3._positive_float(-1.0) is None
+    assert s10d3._positive_float(12.0) == 12.0
+    # ... while the plain finite coercion still lets a legitimate zero
+    # through, which is why the two are separate helpers.
+    assert s10d3._finite_float(0.0) == 0.0
+
+    stripped = _window(apex_speed_mps=None, corner_time_s=8.0)
+    _, cap = de.run_registry([stripped])
+    assert cap["over_slowing"] == de.CAPABILITY_INSUFFICIENT
+
+
 def test_a_measured_event_must_have_a_finite_magnitude():
     """Layer 2 defence: even if a future detector's own NaN guard has a bug,
     the record itself refuses to carry a non-finite 'measured' magnitude --

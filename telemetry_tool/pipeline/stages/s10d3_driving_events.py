@@ -108,6 +108,30 @@ def _finite_float(value: Any) -> float | None:
     return v if np.isfinite(v) else None
 
 
+def _positive_float(value: Any) -> float | None:
+    """``_finite_float``, but a value at or below zero also reads ABSENT.
+
+    For the two fields where a non-positive number is not a measurement but
+    a silent substitution: ``corner_analysis.py:731`` writes
+    ``actual_apex_speed_mps=0.0`` whenever its corner slice comes back empty
+    or all-NaN, and that 0.0 is finite, so every finiteness guard downstream
+    passes it through. The final review demonstrated the consequence: an
+    ``over_slowing`` event carrying ``validity="measured"``, magnitude
+    17.82 m/s, and ``evidence={"apex_speed_mps": 0.0}``.
+
+    Stripping it HERE rather than only inside the detector is the point.
+    A window whose ``apex_speed_mps`` is None fails ``over_slowing``'s
+    ``requires`` and the detector is reported ``insufficient`` -- "could not
+    look". A detector that instead returned None for the same window would
+    be counted as ``not_triggered`` -- "looked, found nothing" -- which is
+    exactly the collapse ``driving_events.CAPABILITIES`` exists to prevent.
+    ``driving_events._all_positive`` re-checks inside the detectors as an
+    independent second layer for windows this stage did not build.
+    """
+    v = _finite_float(value)
+    return v if v is not None and v > 0 else None
+
+
 def _resolve_accel_long_mps2(lap_df: pd.DataFrame) -> np.ndarray | None:
     """Longitudinal acceleration in m/s^2 for the WHOLE lap, or None.
 
@@ -182,7 +206,11 @@ def _build_references(
         if cid is None or lap_num in excluded_laps:
             continue
 
-        apex = _finite_float(m.get("apex_speed_mps"))
+        # `_positive_float` on the two speed/time fields: a substituted 0.0
+        # would never win the apex MAX, but it would always win the corner
+        # time MIN and become "the driver's best pass through this corner",
+        # poisoning every other lap's comparison at that corner.
+        apex = _positive_float(m.get("apex_speed_mps"))
         if apex is not None and apex > best_apex.get(cid, float("-inf")):
             best_apex[cid] = apex
 
@@ -190,7 +218,7 @@ def _build_references(
         if onset is not None and onset < best_onset.get(cid, float("inf")):
             best_onset[cid] = onset
 
-        t = _finite_float(m.get("corner_time_s"))
+        t = _positive_float(m.get("corner_time_s"))
         if t is not None and t < best_time.get(cid, float("inf")):
             best_time[cid] = t
 
@@ -264,10 +292,12 @@ def _build_one_window(
         a_lat_mps2=a_lat_mps2,
         a_long_mps2=a_long_mps2,
         dist_m=dist_m,
-        apex_speed_mps=_finite_float(metric.get("apex_speed_mps")),
+        # `_positive_float`, not `_finite_float`: a 0.0 here is a silent
+        # substitution, not a measurement -- see that helper's docstring.
+        apex_speed_mps=_positive_float(metric.get("apex_speed_mps")),
         apex_idx=apex_idx,
         s_norm_apex=s_norm_apex,
-        corner_time_s=_finite_float(metric.get("corner_time_s")),
+        corner_time_s=_positive_float(metric.get("corner_time_s")),
         throttle_onset_m=_finite_float(metric.get("throttle_onset_m")),
         # The frame-free primitive behind `throttle_onset_m`; see
         # CornerWindow's docstring. Absent on a hand-built metric dict, which
