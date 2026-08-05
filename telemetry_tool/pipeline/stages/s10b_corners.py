@@ -593,6 +593,19 @@ def _enrich_corner_telemetry(d: dict[str, Any], lap_df: pd.DataFrame) -> Optiona
 #   (2) NOT A RESTATEMENT -- |corr(apex, onset)| must stay bounded away from
 #       1.0, or the "metric" is just apex speed rescaled.
 #
+# ⚠ THE TABLE BELOW WAS MEASURED IN THE BROKEN COORDINATE FRAME (final
+# review, Critical 1). At the time it was taken, `_scan_onset` returned a raw
+# per-lap ABSOLUTE metre, so both the redundancy column and the partial column
+# carry a lap-length term. Re-measured in the canonical frame the SHIPPED
+# basis reads med r(apex,onset) = -0.572 (not -0.404) and pooled partial
+# = +0.098 (not +0.360). The other five rows have NOT been re-measured, so
+# the table's RANKINGS on those two columns are not usable evidence any more
+# and no conclusion below rests on them -- see "THE CHOICE" further down,
+# whose two grounds are the degeneracy COUNT (a property of where the scan
+# lands relative to the apex: frame-independent, unchanged) and the DIRECTION
+# of the removed basis's correlation. Re-running the full sweep in the
+# canonical frame is open work, recorded not done.
+#
 # Measured on data/raw/OK_R4.csv (9 laps x 8 corners), same geometric bound,
 # only the threshold basis varied. "degen" counts onsets landing within 2
 # samples of the apex, i.e. corner-laps where the metric has silently
@@ -654,27 +667,38 @@ def _enrich_corner_telemetry(d: dict[str, Any], lap_df: pd.DataFrame) -> Optiona
 #     (29%) and drops two corners entirely -- exactly the censoring bias that
 #     makes naive truncation wrong.
 #
-# HONEST LIMIT, DO NOT OVERSTATE THIS METRIC. "How much does the onset add
-# beyond apex speed" has no single answer; it spans 0.1%-5.6% of within-corner
-# corner-time variance depending on what else is controlled for:
+# HONEST LIMIT, DO NOT OVERSTATE THIS METRIC -- AND IT GOT WORSE, NOT BETTER,
+# WHEN THE FRAME WAS FIXED. "How much does the onset add beyond apex speed",
+# measured on the same 71 corner-laps, before and after the coordinate-frame
+# fix:
 #
-#   specification                        partial r      t      dR^2
-#   corner z-scored (the column above)     +0.360     3.01     5.6%
-#   corner centred only                    +0.259     2.09     2.2%
-#   corner z-scored + lap fixed effects    +0.099     0.77     0.6%
-#   corner + lap dummies (two-way OLS)     +0.042     0.31     0.1%
+#   specification                    broken frame      canonical frame
+#   corner z-scored, pooled          +0.360 t=3.18     +0.098 t=0.81
+#   corner z-scored + lap FE         +0.099 t=0.82     +0.002 t=0.02
+#   corner-cluster bootstrap 95% CI  [+0.024,+0.508]   [-0.265,+0.233]
 #
-# Controlling for lap-level pace is legitimate -- a slow lap tends to be slow
-# at every corner. STATE PLAINLY: under either lap-fixed-effects
-# specification the SELECTED basis's added information is not distinguishable
-# from zero (t = 0.77 and 0.31), while round 1's session-median basis survives
-# one of them (r = +0.260, t = 2.10). The selected basis is therefore NOT the
-# one with the most robust added information; it is the one that never
-# degenerates and is least redundant with apex speed. `late_throttle` is
-# largely, and on some specifications entirely, a restatement of
-# `over_slowing` --
-# which is why events_repo now merges the pair rather than showing two
-# competing corrections (see `_dedupe_by_lap_corner`).
+# THE MECHANISM, CONFIRMED BY TWO INDEPENDENT ROUTES AGREEING: the broken
+# frame's LAP-FE partial (+0.0989) and the canonical frame's POOLED partial
+# (+0.0978) are the same number. A lap's length offset is, to first order, a
+# lap-level constant, so lap dummies were already absorbing the artifact --
+# which means the lap-FE row was ALWAYS the honest one and every other row in
+# the old table was measuring coordinate frame.
+#
+# STATE PLAINLY: in the canonical frame the selected basis's added
+# information beyond apex speed is NOT distinguishable from zero in ANY
+# specification (t = 0.81 pooled, t = 0.02 under lap FE), and 28.6% of
+# corner-cluster bootstrap replicates put it at or below zero. `late_throttle`
+# is, on this session, a restatement of `over_slowing` that we cannot show
+# carries anything of its own. It is retained on the estimator-free grounds
+# only -- zero degeneracy, bounded redundancy, and the cost-ordering of its
+# solo events -- and events_repo merges the pair rather than showing two
+# competing corrections (see `_dedupe_by_lap_corner`), while the payload marks
+# its cost as non-attributable (`driving_events.TIME_COST_ATTRIBUTION`).
+#
+# ESCALATED, NOT DECIDED HERE: this branch's own rule was "if a longer session
+# also shows t<1 under lap FE, DROP the detector, not the threshold". That
+# condition is now met on THIS session and in every specification. Dropping a
+# shipped detector is a product decision.
 #
 # 0.5 m/s is carried over unchanged from the shipped code so this fix
 # introduces no newly-tuned constant; only its reference point moved, from
@@ -699,6 +723,110 @@ def _lap_distance_speed(
             pd.to_numeric(lap_df[spd_col], errors="coerce").values)
 
 
+# ── The coordinate frame the onset scan runs in ────────────────────────
+#
+# THE DEFECT THIS REPLACES (fixed 2026-08-05, second onset fix). The scan
+# used to report ``dist_arr[k]`` -- a raw per-lap ABSOLUTE metre -- and
+# `late_throttle` then differenced two of those ACROSS laps. Every resampled
+# lap is rebased to ITS OWN span (resampling.py:210-226) and real spans on
+# OK_R4 run 1198.65-1217.97 m, so the same piece of tarmac carries a
+# different absolute metre on every lap and the difference is lap LENGTH,
+# not driving.
+#
+# MEASURED, on the fixture, with a control that contains no behaviour at all
+# -- each corner's window MIDPOINT (a fixed NORMALISED point) expressed in
+# each lap's absolute metres:
+#
+#   cid  r(span,onset)  geom drift (m)  onset spread (m)  drift/spread
+#     6      +0.921          11.55            20.06           58%
+#     7      +0.809          15.12            19.83           76%
+#     8      +0.778          17.61            41.20           43%
+#
+# The geometric control's own r against span is exactly +1.000 by
+# arithmetic. Against a 2.0 m emit floor, 43-76% of the observed spread at
+# the back half of the lap was guaranteed frame. The decision to emit
+# flipped on 4 of 71 corner-laps, systematically: a LONGER lap reports a
+# LATER onset, so it was flagged more often and harder.
+#
+# THE FIX: the scan runs, and the metric is stored, in ``distance_norm`` --
+# the lap-length-invariant frame ``s10d2_grip_anchor._corner_mask`` already
+# moved corner slicing to, for exactly this reason. ``throttle_onset_m`` is
+# still published in metres, but converted ONCE, from the normalised value,
+# against ONE session-wide reference length: the detection lap's span. That
+# is the same lap `_corner_mask` normalises the corners' own ``s_start`` /
+# ``s_end`` against, so an onset in metres stays directly comparable to the
+# corner geometry it belongs to -- which it was NOT before.
+#
+# "Metres past the apex" was considered and rejected on measurement, not
+# taste: the apex is located in the absolute frame too, so corner 8's spread
+# under that definition is 41.47 m against 41.20 m absolute -- it removes
+# nothing.
+
+
+def _lap_norm_speed(
+    lap_df: Optional[pd.DataFrame],
+) -> tuple[Optional[np.ndarray], Optional[np.ndarray]]:
+    """(distance_norm, speed) for a whole lap, or (None, None).
+
+    ``distance_norm`` is preferred straight off the resampled frame because
+    that is the identical array ``s10d2_grip_anchor._corner_mask`` slices
+    on: the onset scan and the corner window must not disagree about where
+    a corner is. It is derived from the lap's own distance span only as a
+    fallback, for a frame that never went through the resampler -- the same
+    arithmetic ``resampling.py:226`` applies, not a different definition.
+    """
+    if lap_df is None or not isinstance(lap_df, pd.DataFrame) or lap_df.empty:
+        return None, None
+    spd_col = next((c for c in ("Speed (m/s)", "speed_mps")
+                    if c in lap_df.columns), None)
+    if spd_col is None:
+        return None, None
+    spd = pd.to_numeric(lap_df[spd_col], errors="coerce").values
+
+    if "distance_norm" in lap_df.columns:
+        dn = pd.to_numeric(lap_df["distance_norm"], errors="coerce").values
+        return dn, spd
+
+    dist_col = next((c for c in ("Distance (m)", "distance_m", "dist_m")
+                     if c in lap_df.columns), None)
+    if dist_col is None:
+        return None, None
+    d = pd.to_numeric(lap_df[dist_col], errors="coerce").values
+    d_min, d_max = float(np.nanmin(d)), float(np.nanmax(d))
+    span = d_max - d_min
+    if not np.isfinite(span) or span <= 0:
+        return None, None
+    return (d - d_min) / span, spd
+
+
+def _detection_frame(
+    resampled_laps: Optional[dict[Any, pd.DataFrame]],
+) -> Optional[tuple[float, float]]:
+    """``(d_min, span)`` of the lap the corners were detected on, or None.
+
+    This is THE reference length: the one number every normalised onset is
+    converted to metres against, for the whole session. Derived exactly the
+    way ``s10d2_grip_anchor._corner_mask`` derives it (first sorted lap key,
+    nanmin/nanmax of its distance column) so the metre <-> norm map used
+    here is the inverse of the one used to place the corners.
+    """
+    if not resampled_laps:
+        return None
+    detection_lap = resampled_laps.get(sorted(resampled_laps.keys())[0])
+    if not isinstance(detection_lap, pd.DataFrame) or detection_lap.empty:
+        return None
+    col = next((c for c in ("Distance (m)", "distance_m", "dist_m")
+                if c in detection_lap.columns), None)
+    if col is None:
+        return None
+    d = pd.to_numeric(detection_lap[col], errors="coerce").values
+    d_min, d_max = float(np.nanmin(d)), float(np.nanmax(d))
+    span = d_max - d_min
+    if not np.isfinite(d_min) or not np.isfinite(span) or span <= 0:
+        return None
+    return d_min, span
+
+
 def _onset_search_limit_m(
     corner: dict[str, Any], corners: list[dict[str, Any]],
 ) -> Optional[float]:
@@ -717,6 +845,14 @@ def _onset_search_limit_m(
     on the same scale as the corner itself. The next corner's ``s_start`` is
     the hard stop -- an onset located inside the NEXT corner is not this
     corner's exit at all. The min of the two keeps both guarantees.
+
+    THIS IS NOT THE FRAME THE SCAN RUNS IN. ``s_start``/``s_end`` live in the
+    DETECTION lap's absolute metres, and this bound used to be applied
+    directly to each other lap's own 0-based metres -- systematically
+    shortening the search window on longer laps, the same coordinate-frame
+    error the reported onset itself carried. ``_onset_search_limit_norm``
+    below is what the scan actually uses; this function stays in metres
+    because that is the frame its inputs are in.
     """
     try:
         s_start = float(corner.get("s_start"))
@@ -740,26 +876,52 @@ def _onset_search_limit_m(
     return limit
 
 
+def _onset_search_limit_norm(
+    corner: dict[str, Any],
+    corners: list[dict[str, Any]],
+    frame: Optional[tuple[float, float]],
+) -> Optional[float]:
+    """``_onset_search_limit_m`` expressed in ``distance_norm``.
+
+    ``frame`` is ``_detection_frame``'s ``(d_min, span)``; the map applied
+    here is character-for-character the one ``s10d2_grip_anchor._corner_mask``
+    applies to ``s_start``/``s_end``, so a corner's window and its onset
+    bound are placed by the same arithmetic. Without ``frame`` there is no
+    map and the answer is None -- a refusal, never an unconverted metre
+    quietly compared against a 0-1 array.
+    """
+    limit_m = _onset_search_limit_m(corner, corners)
+    if limit_m is None or frame is None:
+        return None
+    d_min, span = frame
+    return (limit_m - d_min) / span
+
+
 def _scan_onset(
-    dist_arr: np.ndarray,
+    dist_norm_arr: np.ndarray,
     spd_arr: np.ndarray,
     apex_idx: int,
     threshold_mps: float,
-    limit_m: float,
+    limit_norm: float,
 ) -> Optional[float]:
-    """First sample after the apex, and no further than ``limit_m``, that is
-    above ``threshold_mps`` AND still climbing. None when there is no such
-    sample -- an honest "did not cross", never a fabricated distance.
+    """First sample after the apex, and no further than ``limit_norm``, that
+    is above ``threshold_mps`` AND still climbing. Returns the sample's
+    NORMALISED position, or None when there is no such sample -- an honest
+    "did not cross", never a fabricated distance.
+
+    Normalised, not absolute metres: see the frame block comment above
+    ``_lap_norm_speed``. Both the bound and the returned value are in the
+    lap-length-invariant frame, so the same tarmac gets the same number on
+    every lap and a cross-lap difference is driving rather than lap length.
 
     ``threshold_mps`` is a SESSION-FIXED, per-corner speed: the identical
-    number for every lap at this corner. That is the whole fix -- see the
-    block comment above.
+    number for every lap at this corner. That is the earlier fix, kept.
     """
     for k in range(apex_idx + 1, len(spd_arr) - 1):
-        d_k = dist_arr[k]
-        # A non-finite distance means the position frame is lost, so neither
-        # the bound nor the reported onset would mean anything past here.
-        if not np.isfinite(d_k) or d_k > limit_m:
+        d_k = dist_norm_arr[k]
+        # A non-finite position means the frame is lost, so neither the
+        # bound nor the reported onset would mean anything past here.
+        if not np.isfinite(d_k) or d_k > limit_norm:
             return None
         if spd_arr[k] > threshold_mps and spd_arr[k + 1] > spd_arr[k]:
             return float(d_k)
@@ -771,14 +933,23 @@ def _assign_throttle_onsets(
     resampled_laps: dict[int, pd.DataFrame],
     corners: list[dict[str, Any]],
 ) -> None:
-    """Fill ``throttle_onset_m`` + ``throttle_onset_status`` on every metric
-    dict, in place, using a per-corner SESSION-FIXED speed threshold.
+    """Fill ``throttle_onset_norm`` + ``throttle_onset_m`` +
+    ``throttle_onset_status`` on every metric dict, in place, using a
+    per-corner SESSION-FIXED speed threshold.
 
     Runs as a second pass because the threshold is an aggregate over every
     admissible lap at a corner, and no per-corner-lap function can see that.
     ``pending`` carries exactly the corner-laps the first pass produced, so
     the threshold's basis is exactly the admissible set (excluded and
     too-short laps never enter it).
+
+    ``throttle_onset_norm`` is the MEASUREMENT: a 0-1 position in the
+    lap-length-invariant frame, directly comparable across laps.
+    ``throttle_onset_m`` is that same number converted to metres ONCE,
+    against ONE session-wide reference length (``_detection_frame``'s span),
+    for the consumers that speak metres. Both are written so a reader can
+    audit the conversion instead of taking it on trust. See the frame block
+    comment above ``_lap_norm_speed``.
 
     The caller wraps this in its own try/except rather than this function
     swallowing failures itself: the whole stage runs under ``_safe_step``,
@@ -793,7 +964,8 @@ def _assign_throttle_onsets(
     if not by_lap:
         return
 
-    arrays = {lap_num: _lap_distance_speed((resampled_laps or {}).get(lap_num))
+    frame = _detection_frame(resampled_laps)
+    arrays = {lap_num: _lap_norm_speed((resampled_laps or {}).get(lap_num))
               for lap_num in by_lap}
 
     # Pass A: the per-corner apex-speed distribution, read at the SAME index
@@ -817,32 +989,46 @@ def _assign_throttle_onsets(
         for cid, vals in apex_speeds.items() if vals
     }
     limits = {
-        c.get("corner_id"): _onset_search_limit_m(c, corners)
+        c.get("corner_id"): _onset_search_limit_norm(c, corners, frame)
         for c in (corners or []) if isinstance(c, dict)
     }
 
     # Pass B: the scan itself, every lap at a corner against that corner's
-    # one threshold.
+    # one threshold, in the one shared normalised frame.
     n_refused = 0
     for lap_num, entries in by_lap.items():
-        dist_arr, spd_arr = arrays[lap_num]
+        dn_arr, spd_arr = arrays[lap_num]
         for metric, apex_idx in entries:
             cid = metric.get("corner_id")
+            metric["throttle_onset_norm"] = None
             metric["throttle_onset_m"] = None
-            if dist_arr is None or spd_arr is None or apex_idx >= len(spd_arr):
+            if frame is None:
+                # No reference length means no metre value can be produced
+                # without inventing one. Named rather than folded into
+                # ONSET_NO_MEASUREMENT: this is a session-wide frame
+                # failure, not a per-corner-lap one, and an operator seeing
+                # it should look at the resampled laps, not at the driving.
+                metric["throttle_onset_status"] = de.ONSET_NO_REFERENCE_FRAME
+            elif dn_arr is None or spd_arr is None or apex_idx >= len(spd_arr):
                 metric["throttle_onset_status"] = de.ONSET_NO_MEASUREMENT
             elif cid not in thresholds:
                 metric["throttle_onset_status"] = de.ONSET_NO_SESSION_THRESHOLD
             elif limits.get(cid) is None:
                 metric["throttle_onset_status"] = de.ONSET_NO_SEARCH_WINDOW
             else:
-                onset = _scan_onset(
-                    dist_arr, spd_arr, apex_idx, thresholds[cid], limits[cid],
+                onset_norm = _scan_onset(
+                    dn_arr, spd_arr, apex_idx, thresholds[cid], limits[cid],
                 )
-                if onset is None:
+                if onset_norm is None:
                     metric["throttle_onset_status"] = de.ONSET_NO_SPEED_CROSSING
                 else:
-                    metric["throttle_onset_m"] = onset
+                    d_min, span = frame
+                    metric["throttle_onset_norm"] = onset_norm
+                    # The single conversion. Inverse of the exact map
+                    # `_onset_search_limit_norm` and `_corner_mask` apply to
+                    # the corner geometry, so an onset in metres remains
+                    # comparable to that corner's own s_start / s_end.
+                    metric["throttle_onset_m"] = d_min + onset_norm * span
                     metric["throttle_onset_status"] = de.ONSET_MEASURED
             if metric["throttle_onset_status"] != de.ONSET_MEASURED:
                 n_refused += 1

@@ -66,6 +66,12 @@ ONSET_NO_APEX: Final = "onset_no_apex"
 # The corner's geometry gives a degenerate search window (s_end <= s_start),
 # so there is no forward span to scan.
 ONSET_NO_SEARCH_WINDOW: Final = "onset_no_search_window"
+# No session-wide reference length could be derived (the detection lap has no
+# usable distance column / zero span), so there is no map between the
+# normalised frame the scan runs in and the metres the metric is published
+# in. Session-wide, not per-corner-lap: every corner-lap in the session
+# carries this one together. See s10b_corners._detection_frame.
+ONSET_NO_REFERENCE_FRAME: Final = "onset_no_reference_frame"
 # Last resort, mirroring grip_anchor.REASON_NO_MEASUREMENT: the derivation
 # refused and no more specific cause was identifiable.
 ONSET_NO_MEASUREMENT: Final = "onset_no_measurement"
@@ -76,6 +82,7 @@ ONSET_STATUSES: Final = frozenset({
     ONSET_NO_SESSION_THRESHOLD,
     ONSET_NO_APEX,
     ONSET_NO_SEARCH_WINDOW,
+    ONSET_NO_REFERENCE_FRAME,
     ONSET_NO_MEASUREMENT,
 })
 
@@ -156,6 +163,17 @@ class CornerWindow:
     ``Detector.requires`` so the registry can tell "not present" apart from
     "present but nothing found".
 
+    ``throttle_onset_m`` and ``throttle_onset_norm`` are THE SAME
+    MEASUREMENT in two units. ``_norm`` is the primitive -- a 0-1 position
+    in the lap-length-invariant frame -- and ``_m`` is it converted once,
+    session-wide, against the detection lap's span (see
+    ``s10b_corners._assign_throttle_onsets``). Comparing two laps' ``_m``
+    values is therefore legitimate; comparing two laps' RAW per-lap
+    distances is not, and doing so was the coordinate-frame defect fixed on
+    2026-08-05. ``_norm`` is carried onto the window and into the event's
+    evidence so the conversion is auditable from the stored record rather
+    than taken on trust.
+
     ``throttle_onset_status`` is the companion to ``throttle_onset_m`` and
     the field ``late_throttle`` actually gates on. It is one of
     ``ONSET_STATUSES`` whenever the upstream derivation RAN for this
@@ -191,6 +209,7 @@ class CornerWindow:
     s_norm_apex: float | None
     corner_time_s: float | None
     throttle_onset_m: float | None
+    throttle_onset_norm: float | None
     throttle_onset_status: str | None
     reference: dict
     grip_anchor_pct: float | None
@@ -474,12 +493,23 @@ OVER_SLOWING = _OverSlowing()
 # the session's largest magnitude (40.5 m, corner 1 lap 7, the fastest
 # corner-1 lap of the session). The threshold is now per-corner and
 # SESSION-FIXED (the corner's session-best apex + 0.5 m/s), so every lap at a
-# corner is measured against the same absolute speed; the same measurements
-# now read -0.404, 1 of 8 (corner 1 at -0.032, i.e. zero), 5 of 57, and the
-# largest magnitude is 41.2 m on corner 8 lap 4 -- the SLOWEST lap through
-# that corner, costing a measured 0.495 s. Any future change to that
-# derivation has to preserve the session-fixed property or this detector goes
-# back to penalising the driver for going fast.
+# corner is measured against the same absolute speed. Any future change to
+# that derivation has to preserve the session-fixed property or this detector
+# goes back to penalising the driver for going fast.
+#
+# A SECOND, INDEPENDENT DEFECT WAS FIXED ON THE SAME DAY: the onset was
+# reported as a RAW PER-LAP ABSOLUTE METRE and differenced across laps whose
+# spans run 1198.65-1217.97 m, so a longer lap put the same tarmac at a larger
+# metre and was reported as later. The scan and the metric are now in
+# `distance_norm`, converted to metres once against one session reference
+# length (s10b_corners._assign_throttle_onsets). Magnitudes fell accordingly:
+# the largest late_throttle event was 41.2 m at corner 8 lap 4 and is now
+# 28.9 m for the same corner-lap (12.3 m of it was lap length); corner 8's
+# median fell 42%, corner 6's 38%, corner 3's 34%. Two events dropped below
+# the 2.0 m emit floor. See `_LateThrottle`'s selection block in
+# s10b_corners.py for what that did to the metric's measured added
+# information -- it collapsed from +0.360 to +0.098 (t = 0.81), i.e. the
+# apparent signal was largely the frame.
 #
 # HOW MUCH THIS DETECTOR ACTUALLY ADDS, AND WHY THE READ SURFACE MERGES IT.
 # `corr(corner_time, apex_speed)` is about -0.75 on this session, so an onset
@@ -494,12 +524,13 @@ OVER_SLOWING = _OverSlowing()
 # flipped the SIGN of that coupling (it used to report the faster lap as
 # later, which is backwards); it did not and could not remove it.
 #
-# How much is left over is specification-dependent: the partial correlation
-# r(corner_time, onset | apex_speed) ranges from +0.360 (t=3.01, dR^2 5.6%,
-# corner z-scored) down to +0.099 (t=0.77, dR^2 0.6%) once lap-level pace is
-# also controlled for -- i.e. NOT distinguishable from zero under a lap
-# fixed-effects specification. See s10b_corners' `_assign_throttle_onsets`
-# block comment for the full table.
+# How much is left over: in the canonical distance frame, NOT DISTINGUISHABLE
+# FROM ZERO IN ANY SPECIFICATION. The partial correlation
+# r(corner_time, onset | apex_speed) is +0.098 (t = 0.81) pooled and +0.002
+# (t = 0.02) under lap fixed effects, with a corner-cluster bootstrap 95% CI
+# of [-0.265, +0.233]. The +0.360 previously quoted here was measured before
+# the coordinate-frame fix and was largely lap length. See s10b_corners'
+# `_assign_throttle_onsets` block comment for the full before/after table.
 #
 # CONSEQUENCES FOR ANY READ SURFACE (Phase 3, read this):
 #
@@ -608,6 +639,12 @@ class _LateThrottle:
             evidence={
                 "throttle_onset_m": onset,
                 "reference_throttle_onset_m": ref_onset,
+                # The frame both metre values above were converted from,
+                # named so a reader can tell a canonical-frame metre from a
+                # raw per-lap one. `_norm` may be absent on a window built
+                # by hand or by a pre-2026-08-05 metric dict.
+                "onset_frame": "distance_norm_x_detection_lap_span",
+                "throttle_onset_norm": w.throttle_onset_norm,
                 "source": "speed_derivative_proxy",
                 "corner_time_s": corner_time,
                 "reference_corner_time_s": ref_corner_time,

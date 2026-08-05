@@ -1132,6 +1132,174 @@ def test_the_onset_search_limit_is_the_tighter_of_the_two_bounds():
 
 
 # ══════════════════════════════════════════════════════════════════
+# Final review, CRITICAL 1 — the onset's coordinate frame
+# ══════════════════════════════════════════════════════════════════
+#
+# `_scan_onset` used to return a raw per-lap ABSOLUTE metre, and
+# `late_throttle` differenced two of those ACROSS laps. Every resampled lap
+# is rebased to its own span, so a longer lap put the same tarmac at a
+# larger metre and was reported as a later onset. On the real fixture that
+# artifact was 43-76% of the observed spread at corners 6-8 -- six to nine
+# times the 2.0 m emit floor -- and it flipped the emit decision on 4 of 71
+# corner-laps, always in the direction of flagging the longer lap.
+
+_FRAME_STEP_NORM = 1.0 / 1200.0
+_FRAME_APEX_NORM = 0.25
+_FRAME_ACCEL_PER_NORM = 2 * 3.0 * 600.0   # 3 m/s^2 on a 600 m reference lap
+
+
+def _norm_identical_lap(lap_m, apex_speed_mps=14.0):
+    """A lap whose speed is a fixed function of NORMALISED position.
+
+    Two laps built this way are the same driving over the same tarmac; the
+    ONLY difference between them is the lap's absolute length. So any
+    cross-lap difference a distance-valued metric reports between them is
+    coordinate frame, by construction -- there is no behaviour in the
+    fixture for it to be anything else. Same idea as the reviewer's control,
+    which took a fixed normalised point and watched its absolute metre move.
+    """
+    n = np.arange(0.0, 1.0, _FRAME_STEP_NORM)
+    v = np.minimum(
+        _ONSET_CRUISE_MPS,
+        np.sqrt(apex_speed_mps ** 2
+                + _FRAME_ACCEL_PER_NORM * np.abs(n - _FRAME_APEX_NORM)),
+    )
+    return pd.DataFrame({
+        "Distance (m)": n * lap_m,
+        "distance_norm": n,
+        "Speed (m/s)": v,
+    })
+
+
+def test_the_onset_is_reported_in_a_lap_length_invariant_frame():
+    """Two laps, identical driving, lap lengths 600 m and 620 m.
+
+    The onset must come back at the SAME normalised position and, once
+    converted against the ONE session reference length, at the same metre --
+    so `late_throttle`'s cross-lap delta is 0, not 3% of a lap.
+    """
+    import driving_events as de
+    from pipeline.stages import s10b_corners as s10b
+
+    short_m, long_m = 600.0, 620.0
+    corners = [{"corner_id": 1, "s_start": 100.0, "s_end": 200.0}]
+    laps = {1: _norm_identical_lap(short_m), 2: _norm_identical_lap(long_m)}
+
+    metrics, pending = {}, []
+    for lap_number, lap_df in laps.items():
+        m = dict(lap_number=lap_number, corner_id=1,
+                 s_start=100.0, s_end=200.0)
+        pending.append((lap_number, m, s10b._enrich_corner_telemetry(m, lap_df)))
+        metrics[lap_number] = m
+    s10b._assign_throttle_onsets(pending, laps, corners)
+
+    assert all(m["throttle_onset_status"] == de.ONSET_MEASURED
+               for m in metrics.values()), metrics
+
+    n1 = metrics[1]["throttle_onset_norm"]
+    n2 = metrics[2]["throttle_onset_norm"]
+
+    # THE FIXTURE EXHIBITS THE DEFECT. In each lap's OWN absolute metres --
+    # which is exactly what the scan used to return -- the same normalised
+    # onset sits more than a whole emit floor apart.
+    raw_gap = abs(n2 * long_m - n1 * short_m)
+    assert raw_gap > de.LATE_THROTTLE_ONSET_FLOOR_M, (
+        f"the fixture does not exhibit the frame artifact: raw per-lap "
+        f"positions differ by only {raw_gap:.2f} m, under the "
+        f"{de.LATE_THROTTLE_ONSET_FLOOR_M} m floor")
+
+    # THE FIX. Same normalised position, and the published metre is the same
+    # number on both laps because one reference length converts both.
+    assert n1 == pytest.approx(n2, abs=1e-9), (
+        f"normalised onsets differ ({n1} vs {n2}) on identical driving")
+    delta_m = abs(metrics[2]["throttle_onset_m"]
+                  - metrics[1]["throttle_onset_m"])
+    assert delta_m < de.LATE_THROTTLE_ONSET_FLOOR_M, (
+        f"late_throttle would report a {delta_m:.2f} m magnitude between two "
+        f"laps that drove identically -- that is lap length, not throttle "
+        f"timing (floor {de.LATE_THROTTLE_ONSET_FLOOR_M} m)")
+    assert delta_m == pytest.approx(0.0, abs=1e-6)
+
+
+def test_the_onset_search_bound_is_in_the_frame_the_scan_runs_in():
+    """The bound is derived from the DETECTION lap's geometry, so it must be
+    mapped through the DETECTION lap's span -- not applied as a bare metre to
+    whatever frame the lap being scanned happens to use.
+
+    Applying it raw shortened the search window on every lap longer than the
+    detection lap, systematically censoring the latest onsets on exactly the
+    laps most likely to have one.
+    """
+    from pipeline.stages import s10b_corners as s10b
+
+    corner = {"corner_id": 1, "s_start": 100.0, "s_end": 200.0}
+    corners = [corner]
+
+    # Detection lap 600 m long: the 300 m bound is half a lap.
+    assert s10b._onset_search_limit_norm(
+        corner, corners, (0.0, 600.0)) == pytest.approx(0.5)
+    # A detection lap of a different length moves the bound, as it must --
+    # the bound is a piece of that lap's geometry.
+    assert s10b._onset_search_limit_norm(
+        corner, corners, (0.0, 1200.0)) == pytest.approx(0.25)
+    # A non-zero origin is honoured, matching _corner_mask's own map.
+    assert s10b._onset_search_limit_norm(
+        corner, corners, (100.0, 400.0)) == pytest.approx(0.5)
+    # No frame, no map: refuse rather than compare a metre to a 0-1 array.
+    assert s10b._onset_search_limit_norm(corner, corners, None) is None
+    # Degenerate geometry still refuses.
+    assert s10b._onset_search_limit_norm(
+        {"corner_id": 1, "s_start": 200.0, "s_end": 200.0},
+        corners, (0.0, 600.0)) is None
+
+
+def test_a_session_with_no_reference_length_refuses_by_name():
+    """No detection-lap span means no metre <-> norm map. Every corner-lap
+    must say so with its own status rather than publish a normalised number
+    under a metre field name."""
+    import driving_events as de
+    from pipeline.stages import s10b_corners as s10b
+
+    corners = [{"corner_id": 1, "s_start": 100.0, "s_end": 200.0}]
+    lap_df = _norm_identical_lap(600.0)
+    m = dict(lap_number=1, corner_id=1, s_start=100.0, s_end=200.0)
+    apex_idx = s10b._enrich_corner_telemetry(m, lap_df)
+
+    # A frame with zero span: distance present, but no length to convert by.
+    flat = lap_df.copy()
+    flat["Distance (m)"] = 0.0
+    s10b._assign_throttle_onsets([(1, m, apex_idx)], {1: flat}, corners)
+
+    assert m["throttle_onset_m"] is None
+    assert m["throttle_onset_norm"] is None
+    assert m["throttle_onset_status"] == de.ONSET_NO_REFERENCE_FRAME
+    assert de.ONSET_NO_REFERENCE_FRAME in de.ONSET_REFUSAL_REASONS
+
+
+def test_the_corner_mask_refuses_when_distance_norm_is_missing():
+    """The load-bearing frame contract of this whole branch: a frame with no
+    `distance_norm` must produce NO window, never a window silently sliced
+    in absolute metres.
+
+    Unguarded until the final review, and it is the exact contract the
+    coordinate-frame defect in `throttle_onset_m` survived next to.
+    """
+    from pipeline.stages import s10d2_grip_anchor as s10d2
+
+    corner = {"corner_id": 1, "s_start": 100.0, "s_end": 200.0}
+    lap_df = _norm_identical_lap(600.0)
+    detection = lap_df
+
+    # With the column: a real mask.
+    mask = s10d2._corner_mask(lap_df, corner, detection)
+    assert mask is not None and mask.sum() >= 3
+
+    # Without it: refusal, not an absolute-metre fallback.
+    stripped = lap_df.drop(columns=["distance_norm"])
+    assert s10d2._corner_mask(stripped, corner, detection) is None
+
+
+# ══════════════════════════════════════════════════════════════════
 # Task 11 — real-data acceptance. This is the gate.
 # ══════════════════════════════════════════════════════════════════
 
@@ -1168,7 +1336,9 @@ _REAL_CSV = "telemetry_tool/data/raw/OK_R4.csv"
 # 3x headroom below the measured 72 costs nothing in sensitivity.
 _MIN_CORNER_LAPS = 24
 
-# MEASURED: 141 events. Catches the "events collapse to 4" mutation.
+# MEASURED: 139 events (141 before the final review's coordinate-frame fix
+# dropped two late_throttle events below the emit floor). Catches the
+# "events collapse to 4" mutation.
 # With four detectors over >= 24 corner-laps, and the two reference-comparison
 # detectors structurally able to fire on up to 8 of every 9 laps per corner
 # (only the record-holding lap is silent), a functioning session cannot come
@@ -1176,7 +1346,7 @@ _MIN_CORNER_LAPS = 24
 # measured value while being ~7x above the collapse case.
 _MIN_EVENTS = 30
 
-# MEASURED: 140/141 = 99.3% of events are validity="measured" (the one
+# MEASURED: 138/139 = 99.3% of events are validity="measured" (the one
 # exception is a genuine `not_measurable` late_throttle -- see below).
 # Catches every wholesale validity flip. Deliberately NOT pinned at 1.0:
 # the spec explicitly wants a future detector to be able to emit an honest
@@ -1195,7 +1365,7 @@ _MIN_MEASURED_SHARE = 0.80
 _MIN_DISTINCT_CORNERS = 4
 _MIN_DISTINCT_LAPS = 4
 
-# MEASURED: 101 of 141 events carry a time_cost_s (over_slowing +
+# MEASURED: 99 of 139 events carry a time_cost_s (over_slowing +
 # late_throttle; re_braking and envelope_under_use carry None by design).
 # Catches "every time_cost_s = None". time_cost_s is the ranking key -- it
 # is the entire reason the ranked read surface exists -- so a session that
@@ -1209,7 +1379,9 @@ _MIN_DISTINCT_LAPS = 4
 # corner-laps refuses, so 57 of 58 late_throttle events are costed.
 _MIN_COSTED_EVENTS = 20
 
-# MEASURED: median cost 0.163 s, max 0.885 s.
+# MEASURED: median cost 0.163 s, max 0.885 s. Unchanged by the
+# coordinate-frame fix, as it must be: the cost is a corner-TIME gap and
+# never touched the onset's distance frame.
 # Catches "costs uniformly 4.9 s" -- which the old body's `<= 5.0` per-event
 # bound waved straight through. A median corner-time gap above 1.0 s means
 # the driver is losing ~8 s a lap to corner execution against their OWN best
@@ -1246,26 +1418,33 @@ _MIN_WORST_COST_S = 0.10
 # information whatsoever -- scored PERFECTLY on every round-1 assertion.
 # Hence three floors, not one, and the third is the one that bites.
 #
-# MEASURED (session-best basis): corr(corner_time_s, throttle_onset_m) is
-# positive on 7 of 8 corners (corner 1 is -0.032, i.e. zero). BEFORE the fix
-# it was NEGATIVE on 6 of 8. A floor of 2 tolerates one or two genuinely
-# uninformative corners while failing on the systemic inversion, which drives
-# 6+ corners negative at once.
-_MAX_NEGATIVELY_CORRELATED_CORNERS = 2
-
-# MEASURED (session-best basis): median within-corner corr(apex_speed_mps,
-# throttle_onset_m) = -0.404; before the fix, +0.552. The SIGN is the claim:
-# carrying more apex speed must not push the reported onset later. -0.10 sits
-# below the measured -0.404 and far above the +0.552 it catches, and
-# deliberately does not pin the strength -- a session whose apex speeds barely
-# vary would legitimately correlate weakly. Looser than round 1's -0.20
-# because the selected basis is deliberately LESS redundant with apex speed
-# than the one round 1 chose; see _MAX_ABS_APEX_ONSET_CORR.
+# MEASURED (session-best basis, canonical distance frame): corr(corner_time_s,
+# throttle_onset_m) is positive on 6 of 8 corners; the two negatives are
+# corner 7 at -0.089 and corner 1 at -0.160, i.e. both indistinguishable from
+# zero. BEFORE the per-lap-threshold fix it was NEGATIVE on 6 of 8, and with
+# the threshold fixed but the coordinate frame still broken it was 1 of 8.
 #
-# The eight per-corner values are -0.874, -0.835, -0.703, -0.484, -0.324,
-# -0.292, -0.097, +0.249. Their TRUE median is -0.404 (the mean of the two
+# RE-DERIVED UPWARD, 2 -> 3, by the final review's Critical 1. Removing the
+# coordinate-frame artifact from `throttle_onset_m` moved this count from 1 to
+# 2 -- sitting EXACTLY on the old bound, i.e. zero headroom, so an equivalent
+# session with one more near-zero corner would have failed on nothing. 3 of 8
+# still fails instantly on the systemic inversion, which drives 6 of 8
+# negative at once; the gap between "2-3 near-zero corners" and "6 inverted
+# corners" is the whole discriminating range and it is untouched.
+_MAX_NEGATIVELY_CORRELATED_CORNERS = 3
+
+# MEASURED (session-best basis, canonical distance frame): median
+# within-corner corr(apex_speed_mps, throttle_onset_m) = -0.572; before the
+# threshold fix, +0.552; with the threshold fixed but the frame still broken,
+# -0.404. The SIGN is the claim: carrying more apex speed must not push the
+# reported onset later. -0.10 sits below the measured -0.572 and far above the
+# +0.552 it catches, and deliberately does not pin the strength -- a session
+# whose apex speeds barely vary would legitimately correlate weakly.
+#
+# The eight per-corner values are -0.928, -0.870, -0.808, -0.748, -0.396,
+# -0.340, -0.110, +0.004. Their TRUE median is -0.572 (the mean of the two
 # middle values). Fix round 2 caught this assertion evaluating
-# `sorted(...)[len // 2]` instead, which is the upper-middle value -0.324 --
+# `sorted(...)[len // 2]` instead, which is the upper-middle value --
 # still clearing the floor, but overstating the documented headroom by ~25%.
 # `_median` below is now a real median, so the number asserted and the number
 # documented are the same number.
@@ -1274,10 +1453,16 @@ _MAX_MEDIAN_APEX_ONSET_CORR = -0.10
 # THE UPPER BOUND (fix round 2). Without it, `onset := -k * apex_speed`
 # (r = -1.0) satisfies every other assertion here perfectly. An onset that is
 # a near-perfect linear function of apex speed is not a throttle measurement,
-# it is apex speed rescaled. MEASURED: 0.404 on the selected basis, 0.683 on
-# the session-median basis round 1 chose. 0.90 rejects the pure restatement
-# while leaving room for a session whose exits genuinely track apex speed
-# closely.
+# it is apex speed rescaled.
+#
+# MEASURED: 0.572 in the canonical frame, up from 0.404 in the broken one.
+# THE FIX MADE THIS WORSE AND THAT IS THE TRUTH, NOT A REGRESSION: the
+# coordinate-frame artifact was NOISE that decorrelated the onset from apex
+# speed, so removing it exposes how redundant the metric really is. Three of
+# the eight corners now exceed |0.80|. The 0.90 bound survives on the median
+# with 0.33 of headroom, but the honest reading is that ~33% of the onset's
+# within-corner variance is apex speed wearing a different hat. See
+# _MIN_POOLED_PARTIAL_ONSET_R below for what is left after that is removed.
 _MAX_ABS_APEX_ONSET_CORR = 0.90
 
 # THE ADDED-INFORMATION FLOOR (fix round 2). The only assertion here that
@@ -1286,30 +1471,52 @@ _MAX_ABS_APEX_ONSET_CORR = 0.90
 # pooled over all corner-laps with each channel z-scored WITHIN its corner
 # first.
 #
-# MEASURED: +0.360 on the selected basis. This floor exists to catch a
-# DEGENERATE metric, not to rank bases: `onset := -k * apex` scores 0 by
-# construction, and the pre-fix per-lap basis scores +0.206.
+# RE-DERIVED DOWNWARD, 0.10 -> 0.02, BY THE FINAL REVIEW'S CRITICAL 1, AND
+# THE REASON MATTERS MORE THAN THE NUMBER.
 #
-# READ THE FLOOR NARROWLY -- IT IS NOT A CONFIDENCE STATEMENT. A corner-cluster
-# bootstrap (the right resampling unit here, since corner-laps are not
-# independent within a corner) puts the selected basis's partial at
-# +0.360, 95% CI [+0.034, +0.508]. THE 0.10 FLOOR SITS INSIDE THAT INTERVAL.
-# So this assertion can legitimately fail on an equivalent session through
-# sampling alone; if it ever does, re-measure before concluding the metric
-# regressed. It is set where it is because everything it must catch scores at
-# or below ~0.2 while the measurement sits at 0.36, not because 0.10 is a
-# defensible lower confidence bound.
+# The 0.360 this floor was set under was mostly a COORDINATE-FRAME ARTIFACT.
+# `throttle_onset_m` was a raw per-lap absolute metre differenced across laps
+# whose spans differ by ~20 m, so a longer lap reported a later onset; that
+# lap-length term correlates with corner time and inflated the partial. In the
+# canonical frame the same measurement on the same 71 corner-laps reads:
 #
-# HONEST LIMIT: "how much does the onset add" has no single answer. Across
-# four defensible specifications the matching dR^2 spans 0.1%-5.6% of
-# within-corner corner-time variance, and under either specification that also
-# controls for lap-level pace the selected basis's added information is NOT
-# distinguishable from zero (partial +0.099 t=0.77; +0.042 t=0.31). See the
-# `_assign_throttle_onsets` block comment in s10b_corners.py for the table.
-# This floor asserts only that the signal is not identically zero on the
-# shipped specification. Nothing downstream may read it as evidence the metric
-# is strong.
-_MIN_POOLED_PARTIAL_ONSET_R = 0.10
+#   specification                      partial r      t
+#   pooled, corner z-scored              +0.098      0.81
+#   + lap fixed effects                  +0.002      0.02
+#
+# and a corner-cluster bootstrap of the pooled figure gives 95% CI
+# [-0.265, +0.233], with 28.6% of replicates at or below ZERO.
+#
+# THE MECHANISM IS CONFIRMED BY AN INDEPENDENT ROUTE. Before the frame fix
+# the LAP-FIXED-EFFECTS partial was +0.0989; after it, the POOLED partial is
+# +0.0978 -- the same number. Lap dummies were already absorbing the artifact,
+# because a lap's length offset is (to first order) a lap-level constant. The
+# branch's earlier "honest limit" table was therefore already reporting the
+# artifact-free value in its lap-FE rows; every other row was measuring frame.
+#
+# WHAT THIS FLOOR NOW DOES, STATED PLAINLY: it asserts only that the onset's
+# residual after the apex fit is not identically zero and not negative on this
+# fixture. IT IS NOT EVIDENCE THAT `late_throttle` MEASURES ANYTHING. On this
+# session the onset's added information beyond apex speed is not
+# distinguishable from zero in ANY specification (t = 0.81 and 0.02), and the
+# detector is retained on the estimator-free grounds only: zero degeneracy,
+# bounded redundancy, and the cost-ordering of its solo events. See
+# `driving_events.py`'s `_LateThrottle` block comment and
+# `TIME_COST_ATTRIBUTION` for the payload-level constraint that follows.
+#
+# STANDING RECOMMENDATION, recorded rather than acted on: the branch's own
+# rule was "if a longer session also shows t<1 under lap FE, DROP the
+# detector, not the threshold". That condition is now met on THIS session, in
+# every specification. Dropping a shipped detector is a product decision, so
+# it is escalated, not taken here.
+#
+# 0.02 keeps ~4.9x headroom under the measured +0.098 while staying strictly
+# above the zero a signal-free onset produces. No mutation in the battery
+# below depends on this floor: `onset := -k*apex` makes the partial UNDEFINED
+# (caught by the `is not None` assertion) and a constant onset makes the
+# per-corner correlations undefined (caught by the `>= 4 usable corners`
+# assertion). Verified by running the battery after the change.
+_MIN_POOLED_PARTIAL_ONSET_R = 0.02
 
 
 def _median(values):

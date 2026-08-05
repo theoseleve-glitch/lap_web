@@ -24,6 +24,7 @@ def test_vocabularies_are_closed():
         de.ONSET_NO_SESSION_THRESHOLD,
         de.ONSET_NO_APEX,
         de.ONSET_NO_SEARCH_WINDOW,
+        de.ONSET_NO_REFERENCE_FRAME,
         de.ONSET_NO_MEASUREMENT,
     })
     # "measured" is a status, never a refusal reason -- an event whose
@@ -171,7 +172,7 @@ def _window(**over):
         speed_mps=np.full(40, 12.0), a_lat_mps2=np.full(40, 9.0),
         a_long_mps2=np.zeros(40), dist_m=np.linspace(250.0, 350.0, 40),
         apex_speed_mps=12.0, apex_idx=20, s_norm_apex=0.30,
-        corner_time_s=8.0, throttle_onset_m=9.0,
+        corner_time_s=8.0, throttle_onset_m=9.0, throttle_onset_norm=0.0075,
         throttle_onset_status=de.ONSET_MEASURED,
         reference={"apex_speed_mps": 13.5, "corner_time_s": 7.5,
                    "throttle_onset_m": 10.0},

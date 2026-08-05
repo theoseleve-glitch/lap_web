@@ -269,6 +269,11 @@ def _build_one_window(
         s_norm_apex=s_norm_apex,
         corner_time_s=_finite_float(metric.get("corner_time_s")),
         throttle_onset_m=_finite_float(metric.get("throttle_onset_m")),
+        # The frame-free primitive behind `throttle_onset_m`; see
+        # CornerWindow's docstring. Absent on a hand-built metric dict, which
+        # is not fatal -- `late_throttle` compares the metre values, which
+        # were converted from this one against a single session-wide length.
+        throttle_onset_norm=_finite_float(metric.get("throttle_onset_norm")),
         # Passed through as-is, NOT coerced: this is the upstream
         # derivation's own record of whether it ran and what it found. A
         # metric dict without the key (an older run, a caller that builds

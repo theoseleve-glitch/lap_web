@@ -203,10 +203,13 @@ def _dedupe_by_lap_corner(rows: list[dict]) -> list[dict]:
     The priority below is explicit and documented. ``over_slowing`` wins:
     it is the direct measurement (this lap's apex speed against the driver's
     own best at this corner), whereas ``late_throttle`` is largely derived
-    from it -- the onset's partial correlation with corner time after
-    controlling for apex speed is ~0.36, i.e. real but small, so most of what
-    a late_throttle event says is what over_slowing already said. See
-    s10b_corners' `_assign_throttle_onsets` block comment for the numbers.
+    from it -- in the canonical distance frame the onset's partial correlation
+    with corner time after controlling for apex speed is +0.098 (t = 0.81),
+    i.e. NOT distinguishable from zero, so what a late_throttle event says is
+    what over_slowing already said. (An earlier revision of this docstring
+    said "~0.36, real but small"; that figure was measured before the
+    coordinate-frame fix and was largely lap length.) See s10b_corners'
+    `_assign_throttle_onsets` block comment for the before/after table.
 
     THE LOSER IS NOT DISCARDED. Its type and magnitude are recorded on the
     survivor's ``evidence["also_fired"]`` so a read surface can render ONE
