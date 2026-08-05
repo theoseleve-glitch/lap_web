@@ -745,13 +745,15 @@ INSERT OR REPLACE INTO corner_metrics (
     brake_point_m, brake_intensity,
     entry_speed_mps, apex_speed_mps, exit_speed_mps,
     throttle_onset_m, exit_accel_mps2,
-    grip_utilization, time_loss_ms, coaching_hint
+    grip_utilization, time_loss_ms, coaching_hint,
+    grip_anchor_tier, grip_anchor_reason, grip_anchor_pct, grip_anchor_baseline_g
 ) VALUES (
     :session_id, :lap_number, :corner_id,
     :brake_point_m, :brake_intensity,
     :entry_speed_mps, :apex_speed_mps, :exit_speed_mps,
     :throttle_onset_m, :exit_accel_mps2,
-    :grip_utilization, :time_loss_ms, :coaching_hint
+    :grip_utilization, :time_loss_ms, :coaching_hint,
+    :grip_anchor_tier, :grip_anchor_reason, :grip_anchor_pct, :grip_anchor_baseline_g
 );
 """
 

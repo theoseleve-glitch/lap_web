@@ -6,7 +6,7 @@ All CREATE TABLE statements live here as constants so that
 """
 
 # Current schema version -- bump when adding/altering tables.
-SCHEMA_VERSION = 36
+SCHEMA_VERSION = 37
 
 # ------------------------------------------------------------------
 # Phase 1 tables
@@ -450,6 +450,10 @@ CREATE TABLE IF NOT EXISTS corner_metrics (
     grip_utilization REAL,
     time_loss_ms REAL,
     coaching_hint TEXT,
+    grip_anchor_tier TEXT,
+    grip_anchor_reason TEXT,
+    grip_anchor_pct REAL,
+    grip_anchor_baseline_g REAL,
     UNIQUE(session_id, lap_number, corner_id)
 );
 """
