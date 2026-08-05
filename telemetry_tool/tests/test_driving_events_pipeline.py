@@ -96,6 +96,61 @@ def test_stage_returns_events_and_a_capability_record():
     assert any(e.lap_number == 1 for e in out["events"])
 
 
+def test_a_corner_with_no_reference_at_all_still_lets_reference_free_detectors_evaluate():
+    """Fix round 1 regression: a corner where NO admissible lap ever produced
+    a finite apex_speed_mps, corner_time_s or throttle_onset_m (a total
+    reference gap) used to skip building ANY window for that corner --
+    starving `re_braking`/`envelope_under_use`, which never read `reference`
+    at all, of windows they had every field for. The reviewer's own example:
+    a strong clean post-apex decel run plus a low grip_anchor_pct, but no
+    apex speed / corner time / throttle onset anywhere.
+
+    Both halves in the SAME scenario, per the fix request:
+      (1) re_braking / envelope_under_use must NOT read "insufficient" --
+          their own required fields (a_long_mps2+apex_idx, grip_anchor_pct)
+          are present, so they must evaluate and fire here.
+      (2) over_slowing / late_throttle must STILL read "insufficient", not
+          "not_triggered" -- there is genuinely nothing to compare against,
+          and that must not be reported as "compared, found nothing".
+    """
+    from pipeline.stages import s10d3_driving_events
+
+    n = 400
+    d = np.linspace(0.0, 1200.0, n)
+    lap_df = pd.DataFrame({
+        "Distance (m)": d, "distance_norm": d / 1200.0,
+        "Speed (m/s)": np.full(n, 15.0),
+        "Lateral acceleration (G) *calc": np.full(n, 0.9),
+        # Strong, sustained deceleration across the WHOLE lap (well past the
+        # -0.5 m/s^2 floor and the 3-sample run-length floor once masked to
+        # the corner) so re_braking has a genuine event to find.
+        "Longitudinal acceleration (G) *calc": np.full(n, -1.0),
+    })
+    corners = [{"corner_id": 1, "s_start": 300.0, "s_end": 400.0}]
+    # Deliberately NO apex_speed_mps / corner_time_s / throttle_onset_m on
+    # the only lap at this corner -- reference_by_corner[1] will be {}.
+    metrics = [{"lap_number": 1, "corner_id": 1, "grip_anchor_pct": 40.0}]
+
+    out = s10d3_driving_events.run_driving_events(metrics, corners, {1: lap_df})
+    cap = out["capability"]
+
+    # (1) reference-free detectors: not starved.
+    assert cap["re_braking"] == "detected", cap
+    assert cap["envelope_under_use"] == "detected", cap
+    re_brake_events = [e for e in out["events"] if e.event_type == "re_braking"]
+    envelope_events = [e for e in out["events"] if e.event_type == "envelope_under_use"]
+    assert len(re_brake_events) == 1
+    assert re_brake_events[0].magnitude == pytest.approx(9.80665, rel=1e-3)
+    assert len(envelope_events) == 1
+    assert envelope_events[0].magnitude == pytest.approx(40.0)
+
+    # (2) reference-dependent detectors: honestly "insufficient", not a
+    # silently-collapsed "not_triggered".
+    assert cap["over_slowing"] == "insufficient", cap
+    assert cap["late_throttle"] == "insufficient", cap
+    assert not any(e.event_type in ("over_slowing", "late_throttle") for e in out["events"])
+
+
 def test_stage_never_raises_on_malformed_input():
     from pipeline.stages import s10d3_driving_events
 

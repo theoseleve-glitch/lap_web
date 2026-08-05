@@ -32,19 +32,38 @@ compare against" into "compared and found nothing", which is the exact
 distinction this whole layer exists to preserve (see driving_events.py's
 CAPABILITIES docstring).
 
-DECISION (documented here per Task 9's brief): never build a window for a
-corner whose reference is empty. `_build_references` aggregates, per
-corner_id, this driver's own best apex speed / earliest throttle onset /
-fastest corner time across every admissible lap's metric row for that
-corner. If NONE of those three could be resolved for a corner -- no
-admissible lap had a finite value for any of them -- that corner is recorded
-as unevaluable (logged once, by corner_id) and no window is built for any
-lap at that corner, so it never has a chance to read as a false
-"not_triggered" for over_slowing/late_throttle. A corner where only SOME
-reference fields are missing (e.g. no lap ever produced a throttle-onset
-proxy) still gets a window; the individual detector's own `requires` gate
-(which DOES include the window's own `throttle_onset_m`, not `reference`)
-already reports "insufficient" for that specific detector in that case.
+FIX ROUND 1 revised this. The first cut skipped building ANY window for a
+corner whose aggregated reference was completely empty -- but that gate was
+corner-wide, and only `over_slowing`/`late_throttle` ever read `reference`
+at all. `re_braking` (`requires={"a_long_mps2", "apex_idx"}`) and
+`envelope_under_use` (`requires={"grip_anchor_pct"}`) never touch it, so the
+corner-wide skip silently starved them of windows they had every field for
+-- a real corner with a strong clean re-brake and a low grip-anchor
+percentage, but no apex speed / corner time / throttle onset on any lap,
+came back `{"re_braking": "insufficient", "envelope_under_use":
+"insufficient"}` with zero events, when both should have fired.
+
+THE FIX: windows are now built unconditionally -- `reference_by_corner.get
+(cid) or {}` is passed through even when empty, and `requires` alone decides
+what each detector can evaluate. This is safe, not just convenient, because
+of an invariant in how `_build_references` is built: it aggregates each
+field (apex speed / throttle onset / corner time) SELF-INCLUSIVELY -- every
+admissible lap's own metric row is one of the candidates for its own
+corner's reference, including the very lap the window is being built for.
+Consequently, whenever a window's own `apex_speed_mps` (or `corner_time_s`,
+or `throttle_onset_m`) is non-None, `reference` for that corner is
+GUARANTEED to carry that same field too (this window's own value is at
+minimum a candidate). The reverse holds as well: if `reference` for a
+corner is missing a field entirely, EVERY admissible lap's window at that
+corner independently has that same field as None, because both are read via
+the identical `_finite_float(metric.get(...))` call on the identical metric
+dict. So `over_slowing`'s `requires={"apex_speed_mps", "corner_time_s"}`
+and `late_throttle`'s `requires={"throttle_onset_m", "corner_time_s"}`
+already fail on their OWN window-native fields in exactly the scenario that
+used to need the corner-wide skip -- no separate reference-emptiness check
+is needed, and `re_braking`/`envelope_under_use` are no longer collateral
+damage. `_build_windows` still computes `corners_without_reference` and
+logs it once, but purely as a diagnostic -- it no longer gates anything.
 """
 from __future__ import annotations
 
@@ -61,14 +80,6 @@ from pipeline.stages import s10d2_grip_anchor
 logger = logging.getLogger(__name__)
 
 _G_TO_MPS2 = 9.80665
-
-# Real corner windows on this grid measured 10 or fewer samples inside a
-# fully-degenerate lap and dozens on a real one (see driving_events.py's
-# detectors, which independently floor at 5). 3 here only rejects a mask
-# `_corner_mask` itself would already refuse (it floors at 3), so this is
-# not an independent tuned value -- it exists so `_build_one_window` never
-# divides a genuinely empty slice.
-_MIN_WINDOW_SAMPLES = 3
 
 
 def _finite_float(value: Any) -> float | None:
@@ -200,9 +211,12 @@ def _build_one_window(
     if dist_col is None or speed_col is None or "distance_norm" not in lap_df.columns:
         return None
 
+    # No `n_samples < floor` guard here: `_corner_mask` above already
+    # refuses to return a mask with fewer than 3 samples (`mask.sum() >= 3`
+    # is its own return condition), so `mask.sum()` at this point can never
+    # be smaller than that -- a second floor here would be provably dead
+    # code, confirmed by fix round 1's review.
     n_samples = int(mask.sum())
-    if n_samples < _MIN_WINDOW_SAMPLES:
-        return None
 
     dist_m = pd.to_numeric(lap_df[dist_col], errors="coerce").values[mask]
     speed_mps = pd.to_numeric(lap_df[speed_col], errors="coerce").values[mask]
@@ -285,6 +299,14 @@ def _build_windows(
         metrics_by_key[(lap_num, cid)] = m
 
     reference_by_corner = _build_references(metrics, excluded_laps)
+    # Diagnostic only (fix round 1) -- does NOT gate window construction.
+    # `over_slowing`/`late_throttle` already read "insufficient" for these
+    # corners on their own, via their own `requires` on the window's OWN
+    # apex_speed_mps/corner_time_s/throttle_onset_m fields (see the module
+    # docstring's invariant); `re_braking`/`envelope_under_use` still get a
+    # window and evaluate normally. Logged so a real-data run can see how
+    # often this happens without it silently discarding two of four
+    # detectors' evaluability.
     corners_without_reference = {
         cid for cid in corners_by_id if not reference_by_corner.get(cid)
     }
@@ -292,16 +314,16 @@ def _build_windows(
         logger.info(
             "driving_events: %d corner(s) have no established reference "
             "across admissible laps (no lap gave a finite apex_speed_mps, "
-            "corner_time_s or throttle_onset_m) -- skipping windows for "
-            "them rather than reporting 'not_triggered' for a comparison "
-            "that never had anything to compare against: %s",
+            "corner_time_s or throttle_onset_m) -- over_slowing/late_throttle "
+            "will read 'insufficient' for them; re_braking/envelope_under_use "
+            "are unaffected and still evaluate normally: %s",
             len(corners_without_reference),
             sorted(corners_without_reference, key=str),
         )
 
     windows: list[de.CornerWindow] = []
     for (lap_num, cid), metric in metrics_by_key.items():
-        if lap_num not in valid_laps or cid in corners_without_reference:
+        if lap_num not in valid_laps:
             continue
         corner = corners_by_id.get(cid)
         if corner is None:
