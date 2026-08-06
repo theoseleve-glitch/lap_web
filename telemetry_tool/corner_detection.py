@@ -638,33 +638,40 @@ def detect_corners(
 
     regions = [r for r in regions if r.length_m(dist) >= effective_min_length]
 
-    # 6b -- Wrap-around merge for closed circuits: if the first and last
-    #        regions are within merge_gap_m of each other (accounting for
-    #        the lap circumference), merge them into one wrapped region.
-
-    if len(regions) >= 2:
-        lap_circumference = float(dist[-1] - dist[0])
-        gap_wrap = (
-            (dist[regions[0].idx_start] - dist[0])       # first region offset from start
-            + (dist[-1] - dist[regions[-1].idx_end])      # last region offset from end
-        )
-        if gap_wrap < effective_merge_gap and lap_circumference > 0:
-            # Merge: the last region absorbs the first region, wrapping around
-            # the start/finish line.  idx_start stays at the last region's start
-            # (near end of lap), idx_end becomes the first region's end (near
-            # start of lap).  The `wrapped` flag tells length_m() to compute
-            # the distance correctly across the boundary.
-            merged_region = CornerRegion(
-                idx_start=regions[-1].idx_start,
-                idx_end=regions[0].idx_end,
-                wrapped=True,
-            )
-            regions = regions[1:-1]   # drop old first and last
-            regions.append(merged_region)
-            # Re-filter: the merged region might be shorter than min length
-            # (unlikely but safe)
-            regions = [r for r in regions if r.length_m(dist) >= min_corner_length_m]
-            logger.debug("Wrap-around merge applied (gap=%.1f m).", gap_wrap)
+    # 6b -- Wrap-around merge: REMOVED 2026-08-06. See below.
+    #
+    # This step used to merge the first and last regions of a closed circuit
+    # into a single `wrapped=True` region when they were within merge_gap of
+    # each other across the start/finish line. It was correct as a model and
+    # wrong as an interface: `_corner_dict` emits only
+    # {corner_id, s_start, s_end, s_apex, direction} -- the `wrapped` flag was
+    # never included, so it died at this function's boundary. `grep` for it
+    # outside this file returns nothing.
+    #
+    # What every consumer received was a span with s_end < s_start, and all
+    # 44 window masks across the codebase are of the form
+    # `(d >= s_start) & (d <= s_end)`, which is EMPTY for an inverted span.
+    # A corner crossing the line therefore produced no corner metrics, no
+    # coaching, no deltas and no driving events -- silently.
+    #
+    # Measured on production 2026-08-06: a real KCT session detected exactly
+    # one corner, s_start=244.14 s_end=225.98 on a 385.9 m lap. corner_metrics
+    # got 0 rows and all four driving-event detectors reported "insufficient".
+    # Confirmed identical on the full 18-lap export and a 12-lap truncation,
+    # so it was the data, not a fixture artifact.
+    #
+    # The module's own invariant test (`t_valid_extents`, "s_end > s_start for
+    # all corners") never caught it because `_synthetic_lap` lays corners out
+    # with `linspace(0, LAP_LENGTH_M)` and cannot produce one that straddles
+    # the boundary. The guarantee was asserted only on inputs incapable of
+    # breaking it.
+    #
+    # Leaving the two regions unmerged reports one physical corner as two on
+    # affected tracks. That is a real cost, and strictly smaller than
+    # reporting it as nothing everywhere. Restoring the merge requires either
+    # emitting `wrapped` AND teaching all 44 mask sites, or introducing a
+    # shared masking helper that owns the rule -- see the ledger entry for
+    # 2026-08-06.
 
     # 7 -- Build output (with apex and direction)
 
