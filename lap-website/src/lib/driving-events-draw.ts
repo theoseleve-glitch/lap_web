@@ -216,8 +216,8 @@ export interface AnchorSummary {
  * is a bug in this file -- so they must never share a sentence again.
  */
 export type EnvelopeOutcome =
-  | 'drawn' | 'refused' | 'unrecognised_tier' | 'no_baseline'
-  | 'loading' | 'load_failed';
+  | 'drawn' | 'producer_refused' | 'unrecognised_tier' | 'no_baseline'
+  | 'inconsistent' | 'loading' | 'load_failed';
 
 export interface EnvelopeDecision {
   draw: boolean;
@@ -243,6 +243,20 @@ export const REFUSAL_LABEL = 'Grip limit not measured for this session';
 export const TIER_REFUSED = 'refused';
 
 /**
+ * Internal bucket key for corners that recorded NO tier at all.
+ *
+ * Deliberately not a value the backend can send. TIER_REFUSED used to do both
+ * jobs -- the exact match against the producer's tier AND this local bucket
+ * -- so if `grip_anchor.py` ever renamed TIER_REFUSED, `explicitRefusal`
+ * would stop firing (failing open on the STRONGEST refusal signal there is)
+ * while this bucket kept quietly holding the old string and every test kept
+ * passing. Given that these constants have already drifted once, the two
+ * meanings get two symbols, and the sentinel is unrepresentable in the
+ * column so it can never be confused with data.
+ */
+const NO_ANCHOR_BUCKET = '\u0000no-anchor-recorded';
+
+/**
  * Drawable tiers and how each is worded to a driver.
  *
  * EVERY KEY HERE IS A BACKEND VALUE and must match `grip_anchor.py` byte for
@@ -266,7 +280,7 @@ const TIER_LABEL: Record<string, string> = {
  * The set of tiers permitted to draw a boundary -- an ALLOW-list, derived
  * from `TIER_LABEL`'s keys so the two cannot drift apart.
  *
- * This module previously excluded only `'refused'` and `null`/`undefined`
+ * This module previously excluded only the refused tier and `null`/`undefined`
  * (a DENY-list): any other string -- an unrecognised tier from a future
  * `grip_anchor.py` rename, a typo'd migration constant, a corrupted row --
  * fell through and drew a confident circle labelled with the raw string.
@@ -291,9 +305,19 @@ export function resolveEnvelope(
   _maxObservedG: number,
 ): EnvelopeDecision {
   if (!anchor || anchor.tier == null || anchor.tier === TIER_REFUSED) {
+    // A refusal that WE derived, from per-corner baselines that do not agree
+    // well enough to be one circle, is not the producer declining to measure.
+    // Saying "not measured for this session" there would be false: it was
+    // measured, several times, and the answers differ.
+    if (anchor?.reason === REASON_BASELINES_DISAGREE) {
+      return {
+        draw: false, radiusG: null, reason: anchor.reason, outcome: 'inconsistent',
+        label: 'Grip limit differs too much between corners to draw one boundary',
+      };
+    }
     return {
       draw: false, radiusG: null, reason: anchor?.reason ?? null,
-      outcome: 'refused', label: REFUSAL_LABEL,
+      outcome: 'producer_refused', label: REFUSAL_LABEL,
     };
   }
   if (!DRAWABLE_TIERS.has(anchor.tier)) {
@@ -383,16 +407,16 @@ export interface CornerAnchorRow {
  * Aggregate per-corner grip anchors to one session-level answer
  * (Global Constraint 3).
  *
- * - If ANY corner explicitly refused (`grip_anchor_tier === 'refused'`),
+ * - If ANY corner explicitly refused (`grip_anchor_tier === TIER_REFUSED`),
  *   the whole session refuses immediately -- degrading loudly is the
  *   point, not averaging a refusal away. The first refused row's reason
  *   is carried.
  * - A corner whose tier is null/absent recorded NO anchor at all -- that
  *   is not evidence of grip, so rather than being silently dropped from
  *   the vote (which would let a minority of successfully-anchored corners
- *   decide the session), it is folded into the 'refused' bucket for the
+ *   decide the session), it is folded into the NO_ANCHOR_BUCKET for the
  *   modal count below. It does not force refusal outright the way an
- *   explicit 'refused' row does; it only outweighs a good tier once
+ *   explicit TIER_REFUSED row does; it only outweighs a good tier once
  *   enough corners share it, which is the "push toward" the brief asked
  *   for rather than a hard trigger.
  * - Otherwise, the modal (most frequent) tier wins; its first matching
@@ -401,7 +425,7 @@ export interface CornerAnchorRow {
  *   upstream) -- that check is `resolveEnvelope`'s job, not this one's;
  *   aggregation and drawability are deliberately separate concerns.
  * - A TIE at the top of the count -- two or more tiers (which may include
- *   the null-tier 'refused' bucket) sharing the max count -- refuses.
+ *   the null-tier NO_ANCHOR_BUCKET) sharing the max count -- refuses.
  *   The count comparison below reads only `counts[t] === maxCount`, a
  *   value comparison with no dependency on which tier's rows the DB
  *   happened to return first, so the same input in any row order always
@@ -417,14 +441,14 @@ export interface CornerAnchorRow {
 export function aggregateAnchor(rows: CornerAnchorRow[] | null | undefined): AnchorSummary | null {
   if (!rows || rows.length === 0) return null;
 
-  const explicitRefusal = rows.find((r) => r.grip_anchor_tier === 'refused');
+  const explicitRefusal = rows.find((r) => r.grip_anchor_tier === TIER_REFUSED);
   if (explicitRefusal) {
-    return { tier: 'refused', baseline_g: null, reason: explicitRefusal.grip_anchor_reason ?? null };
+    return { tier: TIER_REFUSED, baseline_g: null, reason: explicitRefusal.grip_anchor_reason ?? null };
   }
 
   const counts: Record<string, number> = {};
   for (const r of rows) {
-    const t = r.grip_anchor_tier == null ? 'refused' : r.grip_anchor_tier;
+    const t = r.grip_anchor_tier == null ? NO_ANCHOR_BUCKET : r.grip_anchor_tier;
     counts[t] = (counts[t] ?? 0) + 1;
   }
 
@@ -433,11 +457,11 @@ export function aggregateAnchor(rows: CornerAnchorRow[] | null | undefined): Anc
 
   // leaders.length > 1: a genuine tie (2-way, 3-way, ...) -- ambiguous,
   // refuse regardless of which tiers are tied or what order they arrived
-  // in. leaders[0] === 'refused' with no tie: the null-tier bucket won
-  // outright (a real 'refused' row would already have returned above).
-  if (leaders.length > 1 || leaders[0] === 'refused') {
+  // in. leaders[0] === NO_ANCHOR_BUCKET with no tie: the null-tier bucket
+  // won outright (a real refused row would already have returned above).
+  if (leaders.length > 1 || leaders[0] === NO_ANCHOR_BUCKET) {
     const noAnchorReason = rows.find((r) => r.grip_anchor_tier == null)?.grip_anchor_reason ?? null;
-    return { tier: 'refused', baseline_g: null, reason: noAnchorReason };
+    return { tier: TIER_REFUSED, baseline_g: null, reason: noAnchorReason };
   }
 
   const modalTier = leaders[0];
@@ -449,9 +473,94 @@ export function aggregateAnchor(rows: CornerAnchorRow[] | null | undefined): Anc
   // of silently re-opening a hole noUncheckedIndexedAccess exists to close.
   if (modalTier === undefined) return null;
   const rep = rows.find((r) => r.grip_anchor_tier === modalTier);
+
+  // ── The RADIUS, not just the tier ──────────────────────────────
+  // This used to be `rep.grip_anchor_baseline_g` -- the FIRST modal-tier
+  // row's baseline, and the query orders by (lap_number, corner_id), so the
+  // circle's size was a sorting artifact. `baseline_g` is
+  // `friction.lateral_max(corner_speed)/g` (grip_anchor.py:487), i.e. speed
+  // dependent, so a hairpin and a sweeper legitimately differ. See
+  // MAX_BASELINE_SPREAD for what "legitimately differ" measures out at on
+  // real data, and why a materially split set refuses instead of averaging.
+  const baselines = rows
+    .filter((r) => r.grip_anchor_tier === modalTier)
+    .map((r) => r.grip_anchor_baseline_g)
+    .filter((g): g is number => typeof g === 'number' && Number.isFinite(g) && g > 0);
+
+  const agreed = aggregateBaselines(baselines);
+  if (agreed === 'disagree') {
+    return { tier: TIER_REFUSED, baseline_g: null, reason: REASON_BASELINES_DISAGREE };
+  }
+
   return {
     tier: modalTier,
-    baseline_g: rep?.grip_anchor_baseline_g ?? null,
+    baseline_g: agreed,
     reason: rep?.grip_anchor_reason ?? null,
   };
+}
+
+/**
+ * The largest relative disagreement between per-corner baselines that may
+ * still be collapsed to ONE circle: (max - min) / median.
+ *
+ * MEASURED, not guessed. Rebuilding the friction envelope the way
+ * `friction_model.build_friction_model` does (p95 of |a_lat| per speed bin)
+ * over `fixtures/golden/OK_R3.csv` -- 201,875 real samples, Ouest Karting --
+ * gives, across the speed band where cornering actually happens
+ * (|a_lat| > 0.4 G, p5..p95 = 11.2..18.0 m/s):
+ *
+ *     bin p95 lateral: min 0.591 G, median 0.884 G, max 1.091 G
+ *     spread = (1.091 - 0.591) / 0.884 = 56.6%
+ *
+ * A corner taken at 12 m/s and one at 18 m/s therefore get baselines that
+ * differ by nearly 2x, both entirely correctly. One circle cannot represent
+ * both, and the g-g plots EVERY corner's samples: size it from the wrong end
+ * and a driver at the limit of a high-grip corner reads "I exceeded the
+ * measured grip limit" for no reason but arithmetic.
+ *
+ * The 0.15 threshold comes from what the plot can actually show. The arc is
+ * drawn at `rPx = (radiusG / axisMax) * (pW / 2)`; with axisMax ~1.15*maxG
+ * (~1.25 G) and pW ~500 px on the visualize page that is ~200 px per G, and
+ * the scatter dots have radius 1.2-2.5 px. At a 0.9 G median, 15% spread is
+ * 0.135 G ~= 27 px -- an order of magnitude more than a dot, i.e. plainly
+ * readable as inside-vs-outside. Below it the disagreement is not resolvable
+ * on screen, so collapsing to the median asserts nothing a viewer could
+ * contradict.
+ *
+ * CONSEQUENCE, stated plainly: on a session with the OK_R3 spread this
+ * REFUSES and the g-g draws no boundary. That is the honest answer -- there
+ * is no single measured grip limit for such a session -- but it does mean
+ * the envelope will often not draw on real multi-speed data. Narrowing this
+ * number is not the fix; a per-corner or speed-dependent envelope is.
+ */
+export const MAX_BASELINE_SPREAD = 0.15;
+
+/**
+ * Frontend-derived refusal reason. Namespaced so it can never collide with a
+ * `grip_anchor.REASON_*` value arriving from the DB -- the contract test
+ * asserts that. It is NOT a producer reason: the producer measured fine.
+ */
+export const REASON_BASELINES_DISAGREE = 'frontend:per_corner_baselines_disagree';
+
+/**
+ * One radius from many per-corner baselines, or `'disagree'`.
+ *
+ * The median, not the first row and not the mean: order-independent by
+ * construction (it sorts a COPY, and the caller's array is never reordered),
+ * and unmoved by one outlying corner. `'disagree'` when the set spans more
+ * than `MAX_BASELINE_SPREAD`; `null` when there is nothing usable to
+ * aggregate.
+ */
+export function aggregateBaselines(baselines: number[]): number | null | 'disagree' {
+  const usable = baselines.filter((g) => Number.isFinite(g) && g > 0);
+  if (usable.length === 0) return null;
+
+  const s = [...usable].sort((a, b) => a - b);
+  const mid = s.length >> 1;
+  const median = s.length % 2 === 1 ? s[mid]! : (s[mid - 1]! + s[mid]!) / 2;
+  if (!(median > 0)) return null;
+
+  const spread = (s[s.length - 1]! - s[0]!) / median;
+  if (spread > MAX_BASELINE_SPREAD) return 'disagree';
+  return median;
 }

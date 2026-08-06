@@ -25,9 +25,9 @@ describe('resolveEnvelopeForLoad separates the three not-drawn cases', () => {
     ['could not look', { status: 'error' }, 'load_failed', LOAD_FAILED_LABEL],
     ['looked, producer refused',
       { status: 'loaded', anchor: { baseline_g: null, tier: 'refused', reason: 'channel_untrusted' } },
-      'refused', REFUSAL_LABEL],
+      'producer_refused', REFUSAL_LABEL],
     ['looked, no anchor row at all',
-      { status: 'loaded', anchor: null }, 'refused', REFUSAL_LABEL],
+      { status: 'loaded', anchor: null }, 'producer_refused', REFUSAL_LABEL],
     ['no argument at all', null, 'loading', LOADING_LABEL],
   ];
 

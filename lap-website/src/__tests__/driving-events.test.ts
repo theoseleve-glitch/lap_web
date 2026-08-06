@@ -493,7 +493,7 @@ describe('resolveEnvelope — tier is an ALLOW-list, not a deny-list', () => {
     expect(refused.label).toBe(REFUSAL_LABEL);
     expect(unknown.label).not.toBe(refused.label);
     expect(unknown.outcome).toBe('unrecognised_tier');
-    expect(refused.outcome).toBe('refused');
+    expect(refused.outcome).toBe('producer_refused');
     // The unknown value itself is the one string that identifies the
     // mismatch, so it is named rather than swallowed.
     expect(unknown.label).toContain('not_a_real_tier');
@@ -778,5 +778,133 @@ describe('cost attribution and span are independent axes', () => {
     const r = recorder();
     drawMistakeTape(r.ctx, [e], GEO);
     expect(r.rects().length).toBe(0);
+  });
+});
+
+/* ── the envelope RADIUS, not just its tier ─────────────────────── */
+
+import {
+  aggregateBaselines, MAX_BASELINE_SPREAD, REASON_BASELINES_DISAGREE,
+} from '@/lib/driving-events-draw';
+
+describe('the envelope radius is not one arbitrary corner\'s baseline', () => {
+  function row(over: Partial<CornerAnchorRow> = {}): CornerAnchorRow {
+    return {
+      grip_anchor_tier: 'session_envelope_ellipse_fitted',
+      grip_anchor_reason: null,
+      grip_anchor_baseline_g: 1.0,
+      ...over,
+    };
+  }
+
+  // Tight but not identical: (1.04-0.96)/1.00 = 8% < MAX_BASELINE_SPREAD.
+  const TIGHT = [0.96, 1.00, 1.04];
+  // The real-data case: OK_R3's cornering-speed band spans 0.591..1.091 G
+  // around a 0.884 G median, 56.6% -- see MAX_BASELINE_SPREAD.
+  const REAL = [0.591, 0.884, 1.091];
+
+  it('takes the MEDIAN of the modal tier\'s baselines, not the first row\'s', () => {
+    const a = aggregateAnchor(TIGHT.map((g) => row({ grip_anchor_baseline_g: g })));
+    expect(a?.baseline_g).toBeCloseTo(1.00, 9);
+  });
+
+  it('is INDEPENDENT of row order (the query orders by lap_number, corner_id)', () => {
+    // Every permutation of a 4-corner set, brute-forced. `rows.find(...)`
+    // returned a different radius for several of these; the median cannot.
+    const gs = [0.94, 0.97, 1.00, 1.03];   // (1.03-0.94)/0.985 = 9.1%, agrees
+    const perms: number[][] = [];
+    const permute = (head: number[], rest: number[]) => {
+      if (rest.length === 0) { perms.push(head); return; }
+      rest.forEach((x, i) => permute([...head, x], [...rest.slice(0, i), ...rest.slice(i + 1)]));
+    };
+    permute([], gs);
+    expect(perms.length).toBe(24);
+
+    const results = new Set(perms.map(
+      (p) => aggregateAnchor(p.map((g) => row({ grip_anchor_baseline_g: g })))?.baseline_g));
+    expect(results.size).toBe(1);
+    expect([...results][0]).toBeCloseTo(0.985, 9);
+  });
+
+  it('REFUSES when the per-corner baselines disagree materially', () => {
+    const a = aggregateAnchor(REAL.map((g) => row({ grip_anchor_baseline_g: g })));
+    expect(a?.tier).toBe('refused');
+    expect(a?.baseline_g).toBeNull();
+    expect(a?.reason).toBe(REASON_BASELINES_DISAGREE);
+  });
+
+  it('says WHY it refused, and not "not measured for this session"', () => {
+    // The producer measured fine — several times, disagreeing. Calling that
+    // "not measured" would be false.
+    const a = aggregateAnchor(REAL.map((g) => row({ grip_anchor_baseline_g: g })));
+    const d = resolveEnvelope(a, 1.3);
+    expect(d.draw).toBe(false);
+    expect(d.outcome).toBe('inconsistent');
+    expect(d.label).not.toBe(REFUSAL_LABEL);
+    expect(d.label.toLowerCase()).toContain('differs too much');
+  });
+
+  it('refusal on disagreement is also order-independent', () => {
+    const orders = [REAL, [...REAL].reverse(), [REAL[1]!, REAL[2]!, REAL[0]!]];
+    const outcomes = new Set(orders.map(
+      (o) => aggregateAnchor(o.map((g) => row({ grip_anchor_baseline_g: g })))?.tier));
+    expect(outcomes).toEqual(new Set(['refused']));
+  });
+
+  it('ignores corners of OTHER tiers when sizing the radius', () => {
+    // A minority tier's baseline must not widen the spread of the modal one.
+    const a = aggregateAnchor([
+      ...TIGHT.map((g) => row({ grip_anchor_baseline_g: g })),
+      row({ grip_anchor_tier: 'driver_best_session', grip_anchor_baseline_g: 0.40 }),
+    ]);
+    expect(a?.tier).toBe('session_envelope_ellipse_fitted');
+    expect(a?.baseline_g).toBeCloseTo(1.00, 9);
+  });
+
+  it('yields no baseline when the modal tier carries no usable one', () => {
+    const a = aggregateAnchor([
+      row({ grip_anchor_baseline_g: null }),
+      row({ grip_anchor_baseline_g: NaN }),
+      row({ grip_anchor_baseline_g: 0 }),
+    ]);
+    expect(a?.tier).toBe('session_envelope_ellipse_fitted');
+    expect(a?.baseline_g).toBeNull();
+    expect(resolveEnvelope(a, 1.3).draw).toBe(false);
+  });
+});
+
+describe('aggregateBaselines', () => {
+  it('returns null when nothing is usable', () => {
+    expect(aggregateBaselines([])).toBeNull();
+    expect(aggregateBaselines([NaN, Infinity, 0, -1])).toBeNull();
+  });
+
+  it('returns the single value for one corner', () => {
+    expect(aggregateBaselines([1.02])).toBeCloseTo(1.02, 9);
+  });
+
+  it('averages the two middle values for an even count', () => {
+    expect(aggregateBaselines([1.00, 1.02])).toBeCloseTo(1.01, 9);
+  });
+
+  it('is unmoved by one outlying corner within the spread budget', () => {
+    // median of [0.98,1.00,1.00,1.00,1.02] is 1.00; a mean would drift.
+    expect(aggregateBaselines([1.02, 1.00, 0.98, 1.00, 1.00])).toBeCloseTo(1.00, 9);
+  });
+
+  it('draws the line exactly at MAX_BASELINE_SPREAD, not near it', () => {
+    const med = 1.0;
+    const half = (MAX_BASELINE_SPREAD * med) / 2;
+    // spread exactly at the threshold: allowed (the check is `>`)
+    expect(aggregateBaselines([med - half, med, med + half])).toBeCloseTo(med, 9);
+    // a hair over: refused
+    expect(aggregateBaselines([med - half - 1e-6, med, med + half + 1e-6])).toBe('disagree');
+  });
+
+  it('does not reorder the caller\'s array', () => {
+    const input = [1.03, 0.94, 1.00, 0.97];
+    const copy = [...input];
+    aggregateBaselines(input);
+    expect(input).toEqual(copy);
   });
 });

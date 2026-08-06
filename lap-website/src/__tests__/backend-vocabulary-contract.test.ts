@@ -25,7 +25,7 @@ import { describe, it, expect } from 'vitest';
 import fs from 'node:fs';
 import path from 'node:path';
 
-import { DRAWABLE_TIERS, TIER_REFUSED } from '@/lib/driving-events-draw';
+import { DRAWABLE_TIERS, TIER_REFUSED, REASON_BASELINES_DISAGREE } from '@/lib/driving-events-draw';
 import { MAGNITUDE_UNITS } from '@/lib/driving-events';
 
 // lap-website/src/__tests__ -> lap-website/src -> lap-website -> repo root
@@ -165,6 +165,46 @@ describe('grip anchor tier vocabulary matches telemetry_tool/grip_anchor.py', ()
 
   it('does not claim the refused tier is drawable', () => {
     expect(DRAWABLE_TIERS.has(TIER_REFUSED)).toBe(false);
+  });
+});
+
+describe("the backend's refused tier and our internal sentinel are separate things", () => {
+  const MODULE = path.resolve(__dirname, '..', 'lib', 'driving-events-draw.ts');
+  const src = fs.readFileSync(MODULE, 'utf8');
+  // Strip comments; they legitimately discuss the string.
+  const code = src.replace(/\/\*[\s\S]*?\*\//g, ' ').replace(/\/\/[^\n]*/g, ' ');
+
+  it('has exactly one literal "refused" in the module, the constant itself', () => {
+    // `'refused'` used to do two jobs: the exact match against the producer's
+    // tier value AND the internal bucket for corners with no tier. If the
+    // backend renamed TIER_REFUSED, `explicitRefusal` would stop firing —
+    // failing OPEN on the strongest refusal signal there is — while the
+    // bucket kept holding the old string and every test stayed green. One
+    // literal, one meaning; the sentinel is NOT a backend value.
+    const literals = code.match(/'refused'/g) ?? [];
+    expect(literals.length).toBe(1);
+    expect(code).toContain("export const TIER_REFUSED = 'refused'");
+  });
+
+  it('the no-anchor bucket sentinel cannot be a legal tier value', () => {
+    const m = /const NO_ANCHOR_BUCKET = '([^']*)'/.exec(code);
+    expect(m).not.toBeNull();
+    const sentinel = JSON.parse(`"${m![1]!}"`) as string;
+    const backendTiers = frozensetOf(readBackend('grip_anchor.py'), 'TIERS');
+    expect(backendTiers.has(sentinel)).toBe(false);
+    // and it is unrepresentable in the column, not merely unused today
+    expect(/[ -]/.test(sentinel)).toBe(true);
+  });
+
+  it('our own refusal reason cannot collide with a grip_anchor REASON_*', () => {
+    const consts = stringConstants(readBackend('grip_anchor.py'));
+    const backendReasons = new Set(
+      [...consts.entries()].filter(([k]) => k.startsWith('REASON_')).map(([, v]) => v));
+    expect(backendReasons.size).toBeGreaterThanOrEqual(5);  // parser sanity
+    expect(backendReasons.has(REASON_BASELINES_DISAGREE)).toBe(false);
+    // Namespaced on purpose: resolveEnvelope switches on this value to pick
+    // a different sentence, so a collision would relabel a producer refusal.
+    expect(REASON_BASELINES_DISAGREE.startsWith('frontend:')).toBe(true);
   });
 });
 
