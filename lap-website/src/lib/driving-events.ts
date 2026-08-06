@@ -75,7 +75,13 @@ export function describeCapability(
     return 'unavailable';
   }
   const values = Object.values(r.capability);
-  if (values.some((v) => v === 'insufficient')) return 'degraded';
+  // Allow-list: only these values indicate a healthy measurement.
+  // If ANY value is not recognised, treat it as degraded (the honest claim is
+  // "something here we cannot interpret"), not clean. This prevents new backend
+  // status values (e.g. 'timed_out') from falsely reassuring the driver that
+  // all detectors ran and found nothing.
+  const goodValues = new Set<string>(['detected', 'not_triggered']);
+  if (values.some((v) => !goodValues.has(v))) return 'degraded';
   return 'clean';
 }
 

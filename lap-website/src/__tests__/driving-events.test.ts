@@ -108,4 +108,17 @@ describe('an empty event list is not one state', () => {
   it('calls a null response unavailable', () => {
     expect(describeCapability(null)).toBe('unavailable');
   });
+
+  it('treats an unrecognised capability value as degraded, not clean', () => {
+    const r = res();
+    r.capability.over_slowing = 'timed_out' as never;
+    expect(describeCapability(r)).toBe('degraded');
+  });
+
+  it('treats a mix of recognised and unrecognised values as degraded', () => {
+    const r = res();
+    r.capability.over_slowing = 'timed_out' as never;
+    r.capability.late_throttle = 'not_triggered';
+    expect(describeCapability(r)).toBe('degraded');
+  });
 });
