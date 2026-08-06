@@ -37,7 +37,6 @@ export interface DrivingEvent {
   /** "caused" | "context" | "no_cost" — see driving_events.TIME_COST_ATTRIBUTION */
   time_cost_attribution: string;
   magnitude_is_standalone_quotable: boolean;
-  also_fired?: AlsoFired[];
 }
 
 export interface DrivingEventsResponse {
@@ -59,6 +58,21 @@ export function canAttributeCost(e: DrivingEvent): boolean {
   // must read as "not attributable", never as permissive.
   if (e.time_cost_attribution !== 'caused') return false;
   return typeof e.time_cost_s === 'number' && Number.isFinite(e.time_cost_s);
+}
+
+/**
+ * Co-firing events attached to this one, e.g. the `late_throttle` that rode
+ * along with an `over_slowing` detection. The backend (`events_repo.py`'s
+ * `_dedupe_by_lap_corner`) writes this ONLY as `evidence.also_fired` -- never
+ * as a top-level field on the event -- and every Python consumer reads it
+ * the same nested way. `evidence` is `Record<string, unknown>`, so read it
+ * through this accessor rather than hand-indexing at each call site: that
+ * keeps the one place that knows where this lives from drifting out of sync
+ * with the producer again.
+ */
+export function alsoFired(e: DrivingEvent): AlsoFired[] {
+  const v = e.evidence?.also_fired;
+  return Array.isArray(v) ? (v as AlsoFired[]) : [];
 }
 
 // Allow-list: only these values indicate a healthy measurement. Anything

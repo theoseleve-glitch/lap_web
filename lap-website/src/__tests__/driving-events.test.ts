@@ -3,6 +3,7 @@ import {
   canQuoteMagnitude,
   canAttributeCost,
   describeCapability,
+  alsoFired,
   type DrivingEvent,
   type DrivingEventsResponse,
 } from '@/lib/driving-events';
@@ -25,7 +26,6 @@ function ev(over: Partial<DrivingEvent> = {}): DrivingEvent {
     evidence: {},
     time_cost_attribution: 'caused',
     magnitude_is_standalone_quotable: true,
-    also_fired: [],
     ...over,
   };
 }
@@ -617,13 +617,18 @@ describe('a full realistic payload survives the whole render path', () => {
       re_braking: 'detected', envelope_under_use: 'detected',
     },
     events: [
+      // also_fired lives in evidence.also_fired, NOT as a top-level field --
+      // the real producer (events_repo.py's _dedupe_by_lap_corner) writes it
+      // nested, and every Python consumer reads it the same way. A top-level
+      // `also_fired` here would compile (evidence is Record<string, unknown>)
+      // but silently mismatch the real payload shape.
       ev({ event_type: 'over_slowing', corner_id: 1, lap_number: 4,
            s_norm_start: 0.04, s_norm_end: 0.11, magnitude: 1.62,
            magnitude_unit: 'm/s', time_cost_s: 0.885,
            time_cost_attribution: 'caused', magnitude_is_standalone_quotable: true,
-           also_fired: [{ event_type: 'late_throttle', magnitude: 12.4,
+           evidence: { also_fired: [{ event_type: 'late_throttle', magnitude: 12.4,
                           magnitude_unit: 'm', validity: 'measured',
-                          magnitude_is_standalone_quotable: false }] }),
+                          magnitude_is_standalone_quotable: false }] } }),
       ev({ event_type: 'late_throttle', corner_id: 3, lap_number: 7,
            s_norm_start: 0.31, s_norm_end: 0.39, magnitude: 9.7,
            magnitude_unit: 'm', time_cost_s: 0.176,
@@ -683,5 +688,30 @@ describe('a full realistic payload survives the whole render path', () => {
 
   it('lets exactly one event in this payload claim its cost', () => {
     expect(RESPONSE.events.filter(canAttributeCost).length).toBe(1);
+  });
+
+  it('reads the co-firing companion through the evidence-nested accessor, not a top-level field', () => {
+    const overSlowing = RESPONSE.events.find((e) => e.corner_id === 1)!;
+    const companions = alsoFired(overSlowing);
+    expect(companions).toHaveLength(1);
+    expect(companions[0]!.event_type).toBe('late_throttle');
+    expect(companions[0]!.magnitude).toBe(12.4);
+  });
+});
+
+describe('cost attribution and span are independent axes', () => {
+  it('lets a spanless event claim its cost, while the tape still draws nothing for it', () => {
+    // Neither module's contract ties "has no span" to "cannot be attributed a
+    // cost" -- they read different fields entirely. Nothing in the suite so
+    // far exercises a spanless event with time_cost_attribution: 'caused';
+    // both existing spanless fixtures are 'no_cost'.
+    const e = ev({
+      s_norm_start: null, s_norm_end: null,
+      time_cost_attribution: 'caused', time_cost_s: 0.42,
+    });
+    expect(canAttributeCost(e)).toBe(true);
+    const r = recorder();
+    drawMistakeTape(r.ctx, [e], GEO);
+    expect(r.rects().length).toBe(0);
   });
 });
