@@ -315,7 +315,10 @@ git commit -m "feat(events-ui): client type and the two rendering constraints"
   - `drawCornerShade(ctx, events: DrivingEvent[], geo: TapeGeometry): void`
   - `eventColor(e: DrivingEvent): string`
   - `eventLabel(e: DrivingEvent): string` — gates the magnitude through `canQuoteMagnitude`
+  - `makeTapeGeometry(a: { xMin: number; xMax: number; xToPixel: (m: number) => number; plotX: number; plotY: number; plotW: number; plotH: number }): TapeGeometry | null`
   - `TAPE_HEIGHT_PX = 8`
+
+**Why `makeTapeGeometry` is exported rather than built inline in the component:** the `s_norm` → pixel conversion is the one place a coordinate-frame bug can re-enter this program (Phase 2 spent four review rounds removing exactly that class of defect). If the component builds the geometry inline, no unit test can reach it — a test would have to rebuild the same expression, and would then pass no matter what the component does. Exporting it means Task 3's bite-check mutates *shipped code*.
 
 **Why pure and geometry-injected:** `SpeedTraceChart`'s existing bottom strip (`crossRefDeltaS`, around line 519) already proves this shape works on this canvas. Taking `xToPixel` as a parameter means these can be tested against a recording stub with no DOM and no canvas mock library.
 
@@ -496,6 +499,31 @@ function spanPx(e: DrivingEvent, geo: TapeGeometry): { x: number; w: number } | 
   return { x: l, w: Math.max(1, r - l) };  // a zero-width span must stay visible
 }
 
+/**
+ * Build the geometry a chart hands to the tape drawers.
+ *
+ * The `xMin` offset is the whole point. `s_norm` is a fraction of the LAP,
+ * but the chart's x-axis may be cropped by a zoom (`distRange`), so the
+ * fraction must be measured from the visible window's start, not from zero.
+ * Getting this wrong shifts every event by the crop offset -- silently, and
+ * proportionally to how far the user has zoomed.
+ *
+ * Exported so a test can exercise THIS expression rather than a copy of it.
+ */
+export function makeTapeGeometry(a: {
+  xMin: number; xMax: number;
+  xToPixel: (metres: number) => number;
+  plotX: number; plotY: number; plotW: number; plotH: number;
+}): TapeGeometry | null {
+  const lapLengthM = a.xMax - a.xMin;
+  if (!Number.isFinite(lapLengthM) || lapLengthM <= 0) return null;
+  return {
+    xToPixel: (m: number) => a.xToPixel(a.xMin + m),
+    plotX: a.plotX, plotY: a.plotY, plotW: a.plotW, plotH: a.plotH,
+    lapLengthM,
+  };
+}
+
 /** The tape: one coloured segment per event along the bottom of the plot. */
 export function drawMistakeTape(
   ctx: CanvasRenderingContext2D,
@@ -650,42 +678,59 @@ Inside `drawSpeedTrace`, immediately BEFORE the `// ── Drag selection overla
 ```ts
   // ── Driving-event tape ────────────────────────────────────
   if (opts.drivingEvents && opts.drivingEvents.length > 0) {
-    const lapLengthM = xMax - xMin;
-    if (lapLengthM > 0) {
-      const geo = {
-        xToPixel: (m: number) => xToPixel(xMin + m),
-        plotX: pad.left, plotY: pad.top, plotW: pW, plotH: pH,
-        lapLengthM,
-      };
+    const geo = makeTapeGeometry({
+      xMin, xMax, xToPixel,
+      plotX: pad.left, plotY: pad.top, plotW: pW, plotH: pH,
+    });
+    if (geo) {
       drawCornerShade(ctx, opts.drivingEvents, geo);
       drawMistakeTape(ctx, opts.drivingEvents, geo);
     }
   }
 ```
 
-Note `xToPixel(xMin + m)`: `s_norm` is a fraction of the LAP, but the chart's x-axis may be cropped by `distRange`, so the fraction is measured from `xMin`, not from zero.
+Import `makeTapeGeometry` alongside `drawMistakeTape` and `drawCornerShade`. Do NOT rebuild the geometry inline here — the `xMin` offset it applies is the one place a coordinate-frame bug can re-enter, and inlining it puts that expression beyond the reach of any test.
 
 - [ ] **Step 4: Write the geometry test**
 
 Append to `lap-website/src/__tests__/driving-events.test.ts`:
 
 ```ts
-describe('the tape geometry respects a cropped x-axis', () => {
+import { makeTapeGeometry } from '@/lib/driving-events-draw';
+
+describe('makeTapeGeometry — the one place a frame bug can re-enter', () => {
+  // A chart cropped to 400..900 m at 2 px per metre. This is the SHIPPED
+  // helper, not a copy: mutating it in the source must turn these red.
+  const build = () => makeTapeGeometry({
+    xMin: 400, xMax: 900,
+    xToPixel: (m: number) => (m - 400) * 2,
+    plotX: 0, plotY: 0, plotW: 1000, plotH: 300,
+  });
+
   it('anchors s_norm to xMin, not to zero, when the chart is zoomed', () => {
-    // A chart cropped to 400..900 m. An event at s_norm 0.2 of that window
-    // must land at 400 + 0.2*500 = 500 m, NOT at 0.2 * 900.
-    const xMin = 400, xMax = 900;
-    const lapLengthM = xMax - xMin;
-    const xToPixel = (m: number) => (m - xMin) * 2;   // 2 px per metre
-    const geo: TapeGeometry = {
-      xToPixel: (m: number) => xToPixel(xMin + m),
-      plotX: 0, plotY: 0, plotW: 1000, plotH: 300, lapLengthM,
-    };
+    const geo = build()!;
     const r = recorder();
     drawMistakeTape(r.ctx, [ev({ s_norm_start: 0.2, s_norm_end: 0.4 })], geo);
     const [x, , w] = r.rects()[0]!.args as number[];
-    expect(x).toBeCloseTo(200, 5);   // (400+100 - 400) * 2
-    expect(w).toBeCloseTo(200, 5);   // 0.2 * 500 * 2
+    // s_norm 0.2 of the 500 m window = 500 m absolute = (500-400)*2 = 200 px.
+    // Anchoring to zero instead would give (0.2*500 - 400)*2 = -600 px,
+    // which clips to plotX and silently mislocates every event.
+    expect(x).toBeCloseTo(200, 5);
+    expect(w).toBeCloseTo(200, 5);   // 0.2 * 500 m * 2 px/m
+  });
+
+  it('derives lapLengthM from the visible window', () => {
+    expect(build()!.lapLengthM).toBe(500);
+  });
+
+  it('refuses a degenerate or inverted window instead of dividing by it', () => {
+    const bad = (xMin: number, xMax: number) => makeTapeGeometry({
+      xMin, xMax, xToPixel: (m) => m,
+      plotX: 0, plotY: 0, plotW: 100, plotH: 100,
+    });
+    expect(bad(400, 400)).toBeNull();
+    expect(bad(900, 400)).toBeNull();
+    expect(bad(NaN, 900)).toBeNull();
   });
 });
 ```
@@ -697,9 +742,14 @@ Expected: all PASS, no type errors.
 
 - [ ] **Step 6: Bite-check**
 
-In the geometry test, that assertion is the guard. Change the component's `xToPixel: (m: number) => xToPixel(xMin + m)` to `xToPixel: (m: number) => xToPixel(m)` in `SpeedTraceChart.tsx`, then re-run the test with the same substitution applied to the test's `geo`. Confirm the expected pixel changes and the assertion fails. Restore both.
+Mutate the SHIPPED helper, not the test. In `src/lib/driving-events-draw.ts`, change `makeTapeGeometry`'s returned `xToPixel` from `(m) => a.xToPixel(a.xMin + m)` to `(m) => a.xToPixel(m)` — dropping the crop offset, which is the real bug this guards. Re-run.
 
-Paste the output.
+Expected: `anchors s_norm to xMin, not to zero, when the chart is zoomed` goes RED, with the received x at the clipped plot edge rather than 200. Restore.
+
+Then change the degenerate-window guard to `if (lapLengthM < 0) return null;`. Re-run.
+Expected: `refuses a degenerate or inverted window instead of dividing by it` goes RED on the `bad(400, 400)` case. Restore.
+
+Paste both outputs. Note the test file never rebuilds the geometry expression — if you find yourself editing the test to make it fail, stop: that is the defect this task exists to avoid.
 
 - [ ] **Step 7: Commit**
 
