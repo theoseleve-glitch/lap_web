@@ -199,3 +199,33 @@ def test_no_exception_is_swallowed_during_coaching(serialised_events, caplog):
         f"{len(swallowed)} section(s) raised inside the coaching try/except: "
         f"{[r.getMessage() for r in swallowed]}"
     )
+
+
+# ---------------------------------------------------------------------------
+# The shapes run_handling_analysis_v2 ACTUALLY returns
+# ---------------------------------------------------------------------------
+#
+# The first version of this fix assumed `handling` was always
+# ``{section_id: [event_dict]}`` -- the shape generate_basic_coaching's
+# signature declares. It is not. run_handling_analysis_v2 returns a
+# STRING-keyed dict, and the reconstruction died on ``for h in (True or [])``
+# from the legacy path's ``"legacy": True`` entry. Stage 10g4 then failed on
+# all five golden datasets, which the unit tests above did not catch because
+# every one of them passed the declared shape.
+
+@pytest.mark.parametrize("handling_shape", [
+    pytest.param({"events": [], "summary": {"n_corners": 3}, "setup_recommendations": []},
+                 id="new_path"),
+    pytest.param({"events_by_corner": {1: []}, "legacy": True}, id="legacy_path"),
+    pytest.param({"legacy": True}, id="bare_bool_value"),
+    pytest.param({"summary": {"tendency": "neutral"}}, id="nested_dict_value"),
+    pytest.param({}, id="empty"),
+])
+def test_real_handling_shapes_do_not_break_the_stage(serialised_events, handling_shape):
+    """Whatever run_handling_analysis_v2 returns, 10g4 must not fail."""
+    result = s10b_corners.run_coaching_v2(
+        _section_dicts(), serialised_events, handling_shape, _lap(),
+    )
+    assert result, f"stage returned nothing for handling shape {handling_shape!r}"
+    for sc in result:
+        assert NO_DATA not in (sc.get("coaching_hints") or [])

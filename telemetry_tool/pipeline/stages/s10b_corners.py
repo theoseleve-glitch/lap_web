@@ -1500,10 +1500,30 @@ def run_coaching_v2(
         sid: (mrp_mod.CornerEvents(**ev) if isinstance(ev, dict) else ev)
         for sid, ev in events.items()
     } if mrp_mod is not None else events
-    handling = {
-        sid: [(hd_mod.HandlingEvent(**h) if isinstance(h, dict) else h) for h in (evs or [])]
-        for sid, evs in handling.items()
-    } if hd_mod is not None else handling
+    # `handling` is NOT reliably ``{section_id: [event]}``. run_handling_analysis_v2
+    # returns a STRING-keyed dict -- ``{"events": [...], "summary": {...},
+    # "setup_recommendations": [...]}`` on the new path and
+    # ``{"events_by_corner": {...}, "legacy": True}`` on the legacy fallback --
+    # even though generate_basic_coaching's signature says
+    # ``dict[int, list[HandlingEvent]]``. An earlier version of this fix
+    # rebuilt every value unconditionally and died on ``for h in (True or [])``
+    # from the ``"legacy": True`` entry, failing stage 10g4 on all five golden
+    # datasets. Only entries that actually match the declared contract are
+    # rebuilt; anything else is passed through exactly as before.
+    #
+    # That pass-through preserves a SEPARATE latent bug rather than guessing at
+    # a fix: because the keys are strings, coaching's ``handling.get(section_id)``
+    # never matches, so handling events have never reached v2 coaching at all.
+    # Fixing that means settling which shape is canonical -- out of scope here.
+    if hd_mod is not None:
+        handling = {
+            sid: (
+                [(hd_mod.HandlingEvent(**h) if isinstance(h, dict) else h) for h in evs]
+                if isinstance(sid, int) and isinstance(evs, list)
+                else evs
+            )
+            for sid, evs in handling.items()
+        }
 
     if tier == "advanced" and adv_mod is not None:
         coaching = adv_mod.generate_advanced_coaching(
