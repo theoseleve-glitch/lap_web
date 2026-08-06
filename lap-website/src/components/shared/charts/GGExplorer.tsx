@@ -66,6 +66,47 @@ function densityColor(t: number): string {
 
 const PAD = { top: 30, right: 20, bottom: 45, left: 55 };
 
+/**
+ * Greedy word-wrap measured against the canvas's real font metrics (not a
+ * character-count guess) -- `ctx.fillText` never wraps on its own, so a
+ * one-line label silently gets clipped by the plot's `ctx.clip()` at narrow
+ * widths. This is what stood between "Grip limit not measured for this
+ * session" and "Grip limit not measure…" at laptop widths (Task 7, fix
+ * round 2): the refusal is the one sentence on this page this phase exists
+ * to make legible, and it must never be truncated.
+ */
+function wrapLabel(ctx: CanvasRenderingContext2D, text: string, maxWidth: number): string[] {
+  const words = text.split(' ');
+  const lines: string[] = [];
+  let line = '';
+  for (const word of words) {
+    const candidate = line ? `${line} ${word}` : word;
+    if (line && ctx.measureText(candidate).width > maxWidth) {
+      lines.push(line);
+      line = word;
+    } else {
+      line = candidate;
+    }
+  }
+  if (line) lines.push(line);
+  return lines;
+}
+
+function drawWrappedLabel(
+  ctx: CanvasRenderingContext2D,
+  text: string,
+  x: number,
+  y: number,
+  maxWidth: number,
+  lineHeight = 11,
+) {
+  let ly = y;
+  for (const line of wrapLabel(ctx, text, maxWidth)) {
+    ctx.fillText(line, x, ly);
+    ly += lineHeight;
+  }
+}
+
 interface CrossRefGG {
   accel_lat: number[];
   accel_long: number[];
@@ -223,14 +264,28 @@ function drawGG(
 
   // Grip envelope label -- states the measurement and its tier, or, when
   // draw is false, states plainly that grip was not measured. Never falls
-  // back to a maxG-derived figure (see resolveEnvelope).
+  // back to a maxG-derived figure (see resolveEnvelope). Wrapped via
+  // drawWrappedLabel (above) so neither string is ever clipped by the plot
+  // area's ctx.clip() at narrow widths -- previously a single ctx.fillText
+  // call, which does not wrap on its own.
   ctx.fillStyle = 'rgba(201, 168, 76, 0.7)';
   ctx.font = '600 9px "Space Mono", monospace';
   ctx.textAlign = 'left';
+  const MIN_LABEL_WIDTH = 70; // below this, wrapping the tier label beside
+  // the arc has nowhere useful to go -- fall back to the same top-left
+  // anchor the refusal label uses, which always has the full plot width.
   if (envelope.draw && envelope.radiusG != null) {
-    ctx.fillText(envelope.label, ox + rPx + 6, oy - rPx + 12);
+    let lx = ox + rPx + 6;
+    let ly = oy - rPx + 12;
+    let maxWidth = PAD.left + pW - lx - 4;
+    if (maxWidth < MIN_LABEL_WIDTH) {
+      lx = PAD.left + 6;
+      ly = PAD.top + 12;
+      maxWidth = pW - 12;
+    }
+    drawWrappedLabel(ctx, envelope.label, lx, ly, maxWidth);
   } else {
-    ctx.fillText(envelope.label, PAD.left + 6, PAD.top + 12);
+    drawWrappedLabel(ctx, envelope.label, PAD.left + 6, PAD.top + 12, pW - 12);
   }
 
   // Quadrant labels
