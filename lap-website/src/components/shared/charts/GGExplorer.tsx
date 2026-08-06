@@ -74,8 +74,26 @@ const PAD = { top: 30, right: 20, bottom: 45, left: 55 };
  * session" and "Grip limit not measure…" at laptop widths (Task 7, fix
  * round 2): the refusal is the one sentence on this page this phase exists
  * to make legible, and it must never be truncated.
+ *
+ * Exported for direct unit testing (Task 7, fix round 3), same reason
+ * `drawSpeedTrace` is exported from SpeedTraceChart.tsx: the barrel
+ * (`components/shared/charts/index.ts`) does not re-export it, so the
+ * public surface stays closed.
+ *
+ * `maxWidth <= 0` is not special-cased: any candidate has width > 0, so the
+ * `> maxWidth` check degrades to one word per line on its own, with no
+ * separate branch to maintain or forget.
+ *
+ * DECISION -- a whitespace-only `text` (e.g. `' '`) is an accepted,
+ * documented precondition, not guarded: `' '.split(' ')` yields two empty
+ * strings, and the trailing `if (line)` never fires on either, so this
+ * returns `[]` -- zero lines for non-empty input. Left unguarded because
+ * every real caller passes one of `resolveEnvelope`'s two hardcoded label
+ * literals (never user- or DB-sourced text), none of which are blank, so
+ * the path is unreachable today; see the locked-in regression test in
+ * gg-label-wrap.test.ts.
  */
-function wrapLabel(ctx: CanvasRenderingContext2D, text: string, maxWidth: number): string[] {
+export function wrapLabel(ctx: CanvasRenderingContext2D, text: string, maxWidth: number): string[] {
   const words = text.split(' ');
   const lines: string[] = [];
   let line = '';
@@ -92,7 +110,8 @@ function wrapLabel(ctx: CanvasRenderingContext2D, text: string, maxWidth: number
   return lines;
 }
 
-function drawWrappedLabel(
+/** Exported alongside `wrapLabel` for the same test-only reason. */
+export function drawWrappedLabel(
   ctx: CanvasRenderingContext2D,
   text: string,
   x: number,
