@@ -4,11 +4,11 @@ from __future__ import annotations
 from datetime import date, timedelta
 from typing import Any
 
-from gamification import queries as Q
+from . import queries as Q
 # The XP award is per WEEK now (weekly streak). The shared constant in
 # gamification.xp keeps its historic name; alias it locally so this module
 # reads correctly and isn't mistaken for a daily award.
-from gamification.xp import XP_STREAK_PER_DAY as XP_STREAK_PER_WEEK
+from .xp import XP_STREAK_PER_DAY as XP_STREAK_PER_WEEK
 
 
 def _week_monday(d: date) -> date:
@@ -38,7 +38,7 @@ def update_streak(
     - A gap of 2+ weeks (or 1 missed week with no passes): reset streak to 1, +XP
     - First ever: start streak at 1, +XP
     """
-    from gamification.catalog import PIT_PASS_CAP, PIT_PASS_EARN_WEEKS
+    from .catalog import PIT_PASS_CAP, PIT_PASS_EARN_WEEKS
 
     current = Q.get_driver_xp(conn, driver_id, workspace_id)
 

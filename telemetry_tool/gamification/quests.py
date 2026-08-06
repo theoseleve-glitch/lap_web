@@ -7,7 +7,7 @@ from __future__ import annotations
 import json
 from datetime import datetime, timedelta, timezone
 
-from gamification.quest_metrics import (
+from .quest_metrics import (
     APEX_SPEED_DELTA_KMH, BEST_LAP_TARGET_PCT, CLEAN_LAP_MAX_RATIO,
     CONSISTENCY_DELTA_PCT, LAPS_FALLBACK, QUEST_XP,
     comparator_for, render_label,

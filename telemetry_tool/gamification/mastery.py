@@ -10,7 +10,7 @@ import json
 from datetime import datetime, timezone
 from typing import Any
 
-from gamification.catalog import (
+from .catalog import (
     SILVER_SESSIONS_REQUIRED, STAR_BRONZE_SCORE, STAR_GOLD_SCORE,
     STAR_SILVER_SCORE, TIER_ORDER, TIME_LOSS_FULL_PENALTY_MS, XP_STAR, tier_rank,
 )

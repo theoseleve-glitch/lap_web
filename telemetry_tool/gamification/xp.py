@@ -4,7 +4,7 @@ from __future__ import annotations
 import math
 from typing import Any
 
-from gamification import queries as Q
+from . import queries as Q
 
 # ── XP Constants ──────────────────────────────────────────────
 XP_SESSION = 50
