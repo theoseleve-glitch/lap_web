@@ -538,4 +538,68 @@ describe('aggregateAnchor — per-corner anchors collapse to one session-level a
     expect(a?.tier).toBe('refused');
     expect(a?.reason).toBe('channel_untrusted');
   });
+
+  describe('an exact tie refuses regardless of row order', () => {
+    const nullRows = [row({ grip_anchor_tier: null }), row({ grip_anchor_tier: null }),
+                       row({ grip_anchor_tier: null }), row({ grip_anchor_tier: null })];
+    const goodRows = [row({ grip_anchor_tier: 'driver_best_session' }), row({ grip_anchor_tier: 'driver_best_session' }),
+                       row({ grip_anchor_tier: 'driver_best_session' }), row({ grip_anchor_tier: 'driver_best_session' })];
+
+    // THIS is the test the coordinator asked for: one ordering alone would
+    // have passed by luck under the old `>` scan (whichever tier's first
+    // row came first in the array won). Both orders must agree, or the
+    // fix isn't order-independent.
+    it('null-tier rows first, then good rows (4 vs 4) -> refuses', () => {
+      const a = aggregateAnchor([...nullRows, ...goodRows]);
+      expect(a?.tier).toBe('refused');
+      expect(a?.baseline_g).toBeNull();
+    });
+
+    it('good rows first, then null-tier rows (4 vs 4) -> refuses, SAME result', () => {
+      const a = aggregateAnchor([...goodRows, ...nullRows]);
+      expect(a?.tier).toBe('refused');
+      expect(a?.baseline_g).toBeNull();
+    });
+
+    it('interleaved order (4 vs 4) -> refuses, SAME result', () => {
+      const interleaved = [
+        goodRows[0], nullRows[0], goodRows[1], nullRows[1],
+        goodRows[2], nullRows[2], goodRows[3], nullRows[3],
+      ];
+      const a = aggregateAnchor(interleaved);
+      expect(a?.tier).toBe('refused');
+    });
+  });
+
+  it('refuses on a 3-way tie between three distinct good tiers', () => {
+    const a = aggregateAnchor([
+      row({ grip_anchor_tier: 'session_envelope_ellipse_fitted' }),
+      row({ grip_anchor_tier: 'session_envelope_ellipse_fitted' }),
+      row({ grip_anchor_tier: 'session_envelope_default_p2' }),
+      row({ grip_anchor_tier: 'session_envelope_default_p2' }),
+      row({ grip_anchor_tier: 'driver_best_session' }),
+      row({ grip_anchor_tier: 'driver_best_session' }),
+    ]);
+    expect(a?.tier).toBe('refused');
+  });
+
+  it('a clear majority (not a tie) still wins outright, either direction', () => {
+    // 5 good vs 3 null: good has a real plurality, no tie -> draws.
+    const goodWins = aggregateAnchor([
+      row({ grip_anchor_tier: 'driver_best_session' }), row({ grip_anchor_tier: 'driver_best_session' }),
+      row({ grip_anchor_tier: 'driver_best_session' }), row({ grip_anchor_tier: 'driver_best_session' }),
+      row({ grip_anchor_tier: 'driver_best_session' }),
+      row({ grip_anchor_tier: null }), row({ grip_anchor_tier: null }), row({ grip_anchor_tier: null }),
+    ]);
+    expect(goodWins?.tier).toBe('driver_best_session');
+
+    // 5 null vs 3 good: absence has a real plurality, no tie -> refuses.
+    const nullWins = aggregateAnchor([
+      row({ grip_anchor_tier: null }), row({ grip_anchor_tier: null }), row({ grip_anchor_tier: null }),
+      row({ grip_anchor_tier: null }), row({ grip_anchor_tier: null }),
+      row({ grip_anchor_tier: 'driver_best_session' }), row({ grip_anchor_tier: 'driver_best_session' }),
+      row({ grip_anchor_tier: 'driver_best_session' }),
+    ]);
+    expect(nullWins?.tier).toBe('refused');
+  });
 });

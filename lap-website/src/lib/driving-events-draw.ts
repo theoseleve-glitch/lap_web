@@ -264,6 +264,19 @@ export interface CornerAnchorRow {
  *   still be a tier `resolveEnvelope` does not recognise (e.g. renamed
  *   upstream) -- that check is `resolveEnvelope`'s job, not this one's;
  *   aggregation and drawability are deliberately separate concerns.
+ * - A TIE at the top of the count -- two or more tiers (which may include
+ *   the null-tier 'refused' bucket) sharing the max count -- refuses.
+ *   The count comparison below reads only `counts[t] === maxCount`, a
+ *   value comparison with no dependency on which tier's rows the DB
+ *   happened to return first, so the same input in any row order always
+ *   resolves the same way. (An earlier version picked the first tier to
+ *   reach the max via a `>` scan, which kept whichever tier's key was
+ *   inserted into `counts` first -- i.e. whichever corner the `SELECT *`
+ *   happened to return first. On an exact tie that made an identical
+ *   session draw a confident circle or draw nothing depending on row
+ *   order alone. An evenly split vote is not grounds for asserting a
+ *   measured limit, so ties resolve toward refusal, not toward whoever
+ *   arrived first.)
  */
 export function aggregateAnchor(rows: CornerAnchorRow[] | null | undefined): AnchorSummary | null {
   if (!rows || rows.length === 0) return null;
@@ -279,16 +292,19 @@ export function aggregateAnchor(rows: CornerAnchorRow[] | null | undefined): Anc
     counts[t] = (counts[t] ?? 0) + 1;
   }
 
-  let modalTier = Object.keys(counts)[0];
-  for (const t of Object.keys(counts)) {
-    if (counts[t] > counts[modalTier]) modalTier = t;
-  }
+  const maxCount = Math.max(...Object.values(counts));
+  const leaders = Object.keys(counts).filter((t) => counts[t] === maxCount);
 
-  if (modalTier === 'refused') {
+  // leaders.length > 1: a genuine tie (2-way, 3-way, ...) -- ambiguous,
+  // refuse regardless of which tiers are tied or what order they arrived
+  // in. leaders[0] === 'refused' with no tie: the null-tier bucket won
+  // outright (a real 'refused' row would already have returned above).
+  if (leaders.length > 1 || leaders[0] === 'refused') {
     const noAnchorReason = rows.find((r) => r.grip_anchor_tier == null)?.grip_anchor_reason ?? null;
     return { tier: 'refused', baseline_g: null, reason: noAnchorReason };
   }
 
+  const modalTier = leaders[0];
   const rep = rows.find((r) => r.grip_anchor_tier === modalTier);
   return {
     tier: modalTier,
