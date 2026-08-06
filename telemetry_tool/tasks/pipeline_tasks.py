@@ -939,6 +939,35 @@ def _load_intermediate_state(ctx: PipelineContext) -> tuple[dict | None, list | 
     return resampled_laps, corners
 
 
+def _apply_corner_selection(selected_corner_ids, corners: list) -> list:
+    """Filter detected corners by a client-supplied selection.
+
+    An EMPTY selection means "no filter -- keep every detected corner". That
+    is what the only caller means by it: the upload page posts
+    ``{selected_corner_ids: []}`` under the comment
+    "V1: skip corner editor -- auto-accept detected corners"
+    (lap-website ``src/app/app/sessions/upload/page.tsx``).
+
+    This used to read ``if selected_corner_ids is not None`` inline. ``[]``
+    passed that guard, ``set([])`` matched nothing, and EVERY corner was
+    discarded -- silently, with the job still reporting status "ok".
+
+    Measured on production 2026-08-06: corner detection found 6 corners in
+    12 ms, the resume filtered them to 0, and every corner-derived surface in
+    the product -- sector analysis, corner coaching, theoretical corner
+    delta, driving events -- had been empty on EVERY session since it
+    shipped. ``corner_metrics`` held 0 rows across 7 sessions while each
+    upload reported success.
+
+    A caller that genuinely wants zero corners analysed has no way to say so
+    and no reason to: the result is an analysis containing nothing.
+    """
+    if not selected_corner_ids:
+        return corners
+    selected_set = set(selected_corner_ids)
+    return [c for c in corners if c.get("corner_id") in selected_set]
+
+
 def _run_finalize_stages(ctx: PipelineContext, job_id: Optional[str] = None, conn=None) -> None:
     """Run pipeline stages 8-14 and persist all results to DB.
 
@@ -985,13 +1014,14 @@ def _run_finalize_stages(ctx: PipelineContext, job_id: Optional[str] = None, con
                 "Job %s: using %d custom corners (user-defined)",
                 ctx.job_id, len(corners),
             )
-        elif ctx.selected_corner_ids is not None and corners:
-            selected_set = set(ctx.selected_corner_ids)
-            corners = [c for c in corners if c.get("corner_id") in selected_set]
-            logger.info(
-                "Job %s: filtered to %d selected corners (from user selection)",
-                ctx.job_id, len(corners),
-            )
+        else:
+            _before = len(corners)
+            corners = _apply_corner_selection(ctx.selected_corner_ids, corners)
+            if len(corners) != _before:
+                logger.info(
+                    "Job %s: filtered to %d selected corners (from user selection)",
+                    ctx.job_id, len(corners),
+                )
 
         logger.info("Job %s: resuming from step 8 with %d laps, %d corners",
                      ctx.job_id, len(resampled_laps), len(corners))

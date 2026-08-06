@@ -189,3 +189,46 @@ class TestFinalizeWithCustomCorners:
         ctx.set_selected_corner_ids([1, 3, 5])
         assert ctx.selected_corner_ids == [1, 3, 5]
         assert ctx.custom_corners is None
+
+
+class TestEmptyCornerSelectionKeepsAllCorners:
+    """The bug that emptied every corner surface in production.
+
+    The upload page posts `{selected_corner_ids: []}` meaning "auto-accept
+    the detected corners". The backend read `[] is not None` as a real
+    selection, matched nothing, and discarded all of them -- while the job
+    still reported status "ok". Every session in production carried zero
+    corner_metrics as a result.
+    """
+
+    @staticmethod
+    def _corners():
+        return [{"corner_id": i, "s_start": i * 100.0} for i in range(6)]
+
+    def test_empty_list_keeps_every_detected_corner(self):
+        from tasks.pipeline_tasks import _apply_corner_selection
+        out = _apply_corner_selection([], self._corners())
+        assert [c["corner_id"] for c in out] == [0, 1, 2, 3, 4, 5]
+
+    def test_none_keeps_every_detected_corner(self):
+        from tasks.pipeline_tasks import _apply_corner_selection
+        out = _apply_corner_selection(None, self._corners())
+        assert len(out) == 6
+
+    def test_a_real_selection_still_filters(self):
+        from tasks.pipeline_tasks import _apply_corner_selection
+        out = _apply_corner_selection([1, 3, 5], self._corners())
+        assert [c["corner_id"] for c in out] == [1, 3, 5]
+
+    def test_a_selection_naming_unknown_ids_yields_nothing(self):
+        # An explicit, non-empty selection is honoured literally even when it
+        # matches nothing -- that is a caller error, not the empty-means-all
+        # case, and must stay distinguishable from it.
+        from tasks.pipeline_tasks import _apply_corner_selection
+        out = _apply_corner_selection([99], self._corners())
+        assert out == []
+
+    def test_no_detected_corners_stays_empty(self):
+        from tasks.pipeline_tasks import _apply_corner_selection
+        assert _apply_corner_selection([], []) == []
+        assert _apply_corner_selection([1, 2], []) == []
