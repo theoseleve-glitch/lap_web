@@ -105,6 +105,11 @@ export function drawMistakeTape(
   geo: TapeGeometry,
 ): void {
   if (!events?.length) return;
+  // Reject non-positive plot dimensions. A zero-width or zero-height plot has
+  // no room for marks; drawing anyway violates the invariant "nothing paints
+  // outside the plot". This can occur transiently during window resize.
+  if (geo.plotW <= 0 || geo.plotH <= 0) return;
+
   ctx.save();
   const y = geo.plotY + geo.plotH - TAPE_HEIGHT_PX;
   for (const e of events) {
@@ -123,6 +128,9 @@ export function drawCornerShade(
   geo: TapeGeometry,
 ): void {
   if (!events?.length) return;
+  // Reject non-positive plot dimensions to maintain the invariant.
+  if (geo.plotW <= 0 || geo.plotH <= 0) return;
+
   ctx.save();
   for (const e of events) {
     const s = spanPx(e, geo);

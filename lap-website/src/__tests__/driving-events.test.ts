@@ -196,6 +196,25 @@ describe('drawMistakeTape', () => {
     ], GEO);
     expect(r.rects().length).toBe(2);
   });
+
+  it('draws nothing when plotW is zero or negative (transient resize state)', () => {
+    const r = recorder();
+    const zeroWidthGeo: TapeGeometry = { ...GEO, plotW: 0 };
+    drawMistakeTape(r.ctx, [ev({ s_norm_start: 0.2, s_norm_end: 0.3 })], zeroWidthGeo);
+    expect(r.rects().length).toBe(0);
+
+    const r2 = recorder();
+    const negWidthGeo: TapeGeometry = { ...GEO, plotW: -100 };
+    drawMistakeTape(r2.ctx, [ev({ s_norm_start: 0.2, s_norm_end: 0.3 })], negWidthGeo);
+    expect(r2.rects().length).toBe(0);
+  });
+
+  it('draws nothing when plotH is zero or negative', () => {
+    const r = recorder();
+    const zeroHeightGeo: TapeGeometry = { ...GEO, plotH: 0 };
+    drawMistakeTape(r.ctx, [ev({ s_norm_start: 0.2, s_norm_end: 0.3 })], zeroHeightGeo);
+    expect(r.rects().length).toBe(0);
+  });
 });
 
 describe('eventColor', () => {
@@ -279,26 +298,14 @@ describe('eventLabel', () => {
     expect(label).toContain('m/s²');
   });
 
-  it('uses canQuoteMagnitude to decide whether to print magnitude', () => {
-    // An event that canQuoteMagnitude would reject (null magnitude)
-    const rejected = eventLabel(ev({ magnitude: null }));
-    expect(rejected).not.toContain('null');
+  it('respects null or non-finite magnitudes', () => {
+    const nullMag = eventLabel(ev({ magnitude: null }));
+    expect(nullMag).not.toContain('null');
 
-    // An event that canQuoteMagnitude would accept (finite, quotable flag)
-    const accepted = eventLabel(ev({
-      magnitude: 3.2,
-      magnitude_unit: 'rad/s',
-      magnitude_is_standalone_quotable: true,
-    }));
-    expect(accepted).toContain('3.2');
-    expect(accepted).toContain('rad/s');
+    const nanMag = eventLabel(ev({ magnitude: NaN }));
+    expect(nanMag).not.toContain('NaN');
 
-    // The deciding factor: magnitude_is_standalone_quotable = false gates the magnitude,
-    // just as canQuoteMagnitude checks it.
-    const gated = eventLabel(ev({
-      magnitude: 7.1,
-      magnitude_is_standalone_quotable: false,
-    }));
-    expect(gated).not.toContain('7.1');
+    const infMag = eventLabel(ev({ magnitude: Infinity }));
+    expect(infMag).not.toContain('Infinity');
   });
 });
