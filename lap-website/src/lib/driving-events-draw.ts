@@ -154,3 +154,67 @@ export function eventLabel(e: DrivingEvent): string {
   }
   return `${where} · ${e.event_type}`;
 }
+
+/* ── Grip envelope (g-g diagram boundary) ────────────────────────
+ *
+ * The g-g diagram used to draw `frictionR = maxG * 0.95`, where `maxG` was
+ * the largest magnitude among the very points being plotted. A boundary
+ * derived from the data it is drawn over cannot diagnose that data: it
+ * moves whenever the data moves, so the driver can never be outside it.
+ * Migration 085 supplies the honest alternative -- a per-corner measured
+ * grip baseline (`grip_anchor_baseline_g`) tagged with a tier naming what
+ * it was measured against (`grip_anchor_tier`). `resolveEnvelope` decides
+ * what boundary, if any, may be drawn from that anchor.
+ */
+
+export interface AnchorSummary {
+  baseline_g: number | null;
+  tier: string | null;
+  reason: string | null;
+}
+
+export interface EnvelopeDecision {
+  draw: boolean;
+  radiusG: number | null;
+  label: string;
+  reason: string | null;
+}
+
+const TIER_LABEL: Record<string, string> = {
+  session_envelope_ellipse_fitted: 'session envelope (fitted)',
+  session_envelope_default_p2: 'session envelope (default p=2)',
+  driver_best_session: 'your best this session',
+};
+
+/**
+ * Decide what boundary, if any, the g-g diagram may draw.
+ *
+ * This replaces `frictionR = maxG * 0.95` -- a circle computed from the very
+ * points it was drawn over, so it moved whenever the data moved and could
+ * never place the driver outside it. `maxObservedG` is accepted ONLY so this
+ * function can be given the whole picture; it is deliberately never used to
+ * size the boundary. If the anchor refused, we draw nothing and say so.
+ */
+export function resolveEnvelope(
+  anchor: AnchorSummary | null,
+  _maxObservedG: number,
+): EnvelopeDecision {
+  if (!anchor || anchor.tier === 'refused' || anchor.tier == null) {
+    return {
+      draw: false, radiusG: null, reason: anchor?.reason ?? null,
+      label: 'Grip limit not measured for this session',
+    };
+  }
+  const g = anchor.baseline_g;
+  if (typeof g !== 'number' || !Number.isFinite(g) || g <= 0) {
+    return {
+      draw: false, radiusG: null, reason: anchor.reason ?? null,
+      label: 'Grip limit not measured for this session',
+    };
+  }
+  const tier = TIER_LABEL[anchor.tier] ?? anchor.tier;
+  return {
+    draw: true, radiusG: g, reason: anchor.reason ?? null,
+    label: `${g.toFixed(2)}G — ${tier}`,
+  };
+}

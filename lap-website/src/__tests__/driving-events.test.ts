@@ -356,3 +356,53 @@ describe('makeTapeGeometry — the one place a frame bug can re-enter', () => {
     expect(bad(NaN, 900)).toBeNull();
   });
 });
+
+import { resolveEnvelope } from '@/lib/driving-events-draw';
+
+describe('resolveEnvelope — never a boundary drawn from its own data', () => {
+  it('uses the anchored baseline and names the tier', () => {
+    const d = resolveEnvelope(
+      { baseline_g: 1.02, tier: 'session_envelope_ellipse_fitted', reason: null }, 1.30);
+    expect(d.draw).toBe(true);
+    expect(d.radiusG).toBeCloseTo(1.02, 6);
+    expect(d.label).toContain('1.02');
+    expect(d.label.toLowerCase()).toContain('fitted');
+  });
+
+  it('still draws on the weaker driver-best tier, but says so', () => {
+    const d = resolveEnvelope(
+      { baseline_g: 0.94, tier: 'driver_best_session', reason: null }, 1.10);
+    expect(d.draw).toBe(true);
+    expect(d.label.toLowerCase()).toContain('your best');
+  });
+
+  it('DRAWS NOTHING when the anchor refused, and never falls back to maxG', () => {
+    const d = resolveEnvelope(
+      { baseline_g: null, tier: 'refused', reason: 'channel_untrusted' }, 1.30);
+    expect(d.draw).toBe(false);
+    expect(d.radiusG).toBeNull();
+    expect(d.label.toLowerCase()).toContain('not measured');
+    // The old defect: 1.30 * 0.95 = 1.235. It must appear nowhere.
+    expect(d.label).not.toContain('1.23');
+  });
+
+  it('draws nothing when there is no anchor at all (pre-085 session)', () => {
+    const d = resolveEnvelope(null, 1.30);
+    expect(d.draw).toBe(false);
+    expect(d.radiusG).toBeNull();
+  });
+
+  it('draws nothing for a non-finite or non-positive baseline', () => {
+    for (const g of [NaN, Infinity, 0, -1]) {
+      const d = resolveEnvelope(
+        { baseline_g: g, tier: 'session_envelope_default_p2', reason: null }, 1.3);
+      expect(d.draw).toBe(false);
+    }
+  });
+
+  it('carries the refusal reason so the UI can explain itself', () => {
+    const d = resolveEnvelope(
+      { baseline_g: null, tier: 'refused', reason: 'channel_untrusted' }, 1.0);
+    expect(d.reason).toBe('channel_untrusted');
+  });
+});

@@ -11,10 +11,11 @@
 'use client';
 
 import { useEffect, useRef, useState, useCallback, useMemo } from 'react';
-import { apiFetch } from '@/lib/api-client';
+import { apiFetch, api } from '@/lib/api-client';
 import { useChartHoverStore } from '@/lib/chart-hover-store';
 import { chartColor } from '@/components/shared/chart-kit';
 import { useReferenceOverlay } from '@/components/app/reference';
+import { resolveEnvelope, type AnchorSummary } from '@/lib/driving-events-draw';
 
 /* ── Types ──────────────────────────────────────────────── */
 
@@ -32,6 +33,53 @@ interface GGExplorerProps {
   gpsLaps?: number[];
   bestLap?: number | null;
   controlledLap?: boolean;
+  /** Grip envelope anchor. When omitted (undefined), fetched from corner-metrics by sessionId. */
+  anchor?: AnchorSummary | null;
+}
+
+/** One row of `GET /sessions/<id>/corner-metrics` -- a `SELECT *`, so the
+ * grip_anchor_* columns from migration 085 are already present; only the
+ * fields this module reads are declared here. */
+interface CornerAnchorRow {
+  grip_anchor_tier?: string | null;
+  grip_anchor_reason?: string | null;
+  grip_anchor_baseline_g?: number | null;
+}
+
+/**
+ * Aggregate per-corner grip anchors to one session-level answer.
+ *
+ * Takes the modal tier across corners, but if ANY corner refused, the whole
+ * session's envelope prefers `refused` -- degrading loudly is the point,
+ * not averaging a refusal away.
+ */
+function aggregateAnchor(rows: CornerAnchorRow[] | null | undefined): AnchorSummary | null {
+  if (!rows || rows.length === 0) return null;
+
+  const refused = rows.find((r) => r.grip_anchor_tier === 'refused');
+  if (refused) {
+    return { tier: 'refused', baseline_g: null, reason: refused.grip_anchor_reason ?? null };
+  }
+
+  const counts: Record<string, number> = {};
+  for (const r of rows) {
+    const t = r.grip_anchor_tier;
+    if (!t) continue;
+    counts[t] = (counts[t] ?? 0) + 1;
+  }
+  const tiers = Object.keys(counts);
+  if (tiers.length === 0) return null;
+
+  let modalTier = tiers[0];
+  for (const t of tiers) {
+    if (counts[t] > counts[modalTier]) modalTier = t;
+  }
+  const rep = rows.find((r) => r.grip_anchor_tier === modalTier);
+  return {
+    tier: modalTier,
+    baseline_g: rep?.grip_anchor_baseline_g ?? null,
+    reason: rep?.grip_anchor_reason ?? null,
+  };
 }
 
 /* ── Density color (blue → cyan → green → yellow → red) ── */
@@ -67,6 +115,7 @@ function drawGG(
   hoverIdx: number | null,
   crossRefGG?: CrossRefGG | null,
   crossRefHoverIdx?: number | null,
+  anchor?: AnchorSummary | null,
 ) {
   const ctx = canvas.getContext('2d');
   if (!ctx) return;
@@ -102,7 +151,11 @@ function drawGG(
   }
   let axisMax = Math.ceil(maxG * 1.15 * 10) / 10;
   if (axisMax < 0.5) axisMax = 0.5;
-  const frictionR = maxG * 0.95;
+  // The grip envelope is a MEASURED baseline (grip_anchor_*), never a
+  // boundary sized from maxG -- see resolveEnvelope's doc comment. When the
+  // anchor refused (or there isn't one), envelope.draw is false and nothing
+  // is drawn; the label below states that absence instead of guessing.
+  const envelope = resolveEnvelope(anchor ?? null, maxG);
 
   // Coordinate transforms
   const xToPixel = (v: number) => PAD.left + ((v + axisMax) / (2 * axisMax)) * pW;
@@ -137,14 +190,17 @@ function drawGG(
   ctx.beginPath(); ctx.moveTo(ox, PAD.top); ctx.lineTo(ox, PAD.top + pH); ctx.stroke();
   ctx.beginPath(); ctx.moveTo(PAD.left, oy); ctx.lineTo(PAD.left + pW, oy); ctx.stroke();
 
-  // Friction circle
-  const rPx = (frictionR / axisMax) * (pW / 2);
-  if (rPx > 0) {
-    ctx.strokeStyle = 'rgba(201, 168, 76, 0.5)';
-    ctx.lineWidth = 1.5;
-    ctx.setLineDash([6, 4]);
-    ctx.beginPath(); ctx.arc(ox, oy, rPx, 0, 2 * Math.PI); ctx.stroke();
-    ctx.setLineDash([]);
+  // Grip envelope arc -- only when the anchor supplied a measured radius.
+  let rPx = 0;
+  if (envelope.draw && envelope.radiusG != null) {
+    rPx = (envelope.radiusG / axisMax) * (pW / 2);
+    if (rPx > 0) {
+      ctx.strokeStyle = 'rgba(201, 168, 76, 0.5)';
+      ctx.lineWidth = 1.5;
+      ctx.setLineDash([6, 4]);
+      ctx.beginPath(); ctx.arc(ox, oy, rPx, 0, 2 * Math.PI); ctx.stroke();
+      ctx.setLineDash([]);
+    }
   }
 
   // Reference scatter (drawn BEFORE density so it appears behind primary dots)
@@ -202,11 +258,17 @@ function drawGG(
   }
   ctx.globalAlpha = 1;
 
-  // Friction circle label
+  // Grip envelope label -- states the measurement and its tier, or, when
+  // draw is false, states plainly that grip was not measured. Never falls
+  // back to a maxG-derived figure (see resolveEnvelope).
   ctx.fillStyle = 'rgba(201, 168, 76, 0.7)';
   ctx.font = '600 9px "Space Mono", monospace';
   ctx.textAlign = 'left';
-  ctx.fillText(`${frictionR.toFixed(2)}G`, ox + rPx + 6, oy - rPx + 12);
+  if (envelope.draw && envelope.radiusG != null) {
+    ctx.fillText(envelope.label, ox + rPx + 6, oy - rPx + 12);
+  } else {
+    ctx.fillText(envelope.label, PAD.left + 6, PAD.top + 12);
+  }
 
   // Quadrant labels
   ctx.fillStyle = 'rgba(240, 237, 229, 0.15)';
@@ -313,6 +375,7 @@ export function GGExplorer({
   gpsLaps = [],
   bestLap = null,
   controlledLap = false,
+  anchor: anchorProp,
 }: GGExplorerProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const [ggData, setGgData] = useState<GGData | null>(preFetchedData ?? null);
@@ -320,6 +383,34 @@ export function GGExplorer({
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [hoverIdx, setHoverIdx] = useState<number | null>(null);
+  const [fetchedAnchor, setFetchedAnchor] = useState<AnchorSummary | null>(null);
+  const anchor = anchorProp !== undefined ? anchorProp : fetchedAnchor;
+
+  // ── Fetch grip anchor (dual-mode, same shape as `data`/`sessionId`) ────
+  // GET /sessions/<id>/corner-metrics is a SELECT *, so grip_anchor_tier,
+  // grip_anchor_reason and grip_anchor_baseline_g (migration 085) are
+  // already in the response -- no separate endpoint needed.
+  useEffect(() => {
+    if (anchorProp !== undefined) return; // caller supplied the anchor directly
+    if (!sessionId) { setFetchedAnchor(null); return; }
+
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await api.get<{ corners: CornerAnchorRow[]; available: boolean }>(
+          `/sessions/${encodeURIComponent(sessionId)}/corner-metrics`,
+        );
+        if (cancelled) return;
+        setFetchedAnchor(aggregateAnchor(res.corners));
+      } catch {
+        // Grip anchor is optional context for the diagram -- silently skip
+        // on 404 or error; resolveEnvelope treats a null anchor as refused.
+        if (!cancelled) setFetchedAnchor(null);
+      }
+    })();
+
+    return () => { cancelled = true; };
+  }, [sessionId, anchorProp]);
 
   // Reference overlay
   const { referenceData } = useReferenceOverlay();
@@ -396,13 +487,13 @@ export function GGExplorer({
   // ── Draw on canvas ──────────────────────────────────────
   useEffect(() => {
     if (!ggData || !canvasRef.current) return;
-    drawGG(canvasRef.current, ggData, hoverIdx, crossRefGG, crossRefHoverIdx);
-  }, [ggData, hoverIdx, crossRefGG, crossRefHoverIdx]);
+    drawGG(canvasRef.current, ggData, hoverIdx, crossRefGG, crossRefHoverIdx, anchor);
+  }, [ggData, hoverIdx, crossRefGG, crossRefHoverIdx, anchor]);
 
   // Stable draw ref for ResizeObserver — avoids re-attaching on every hover
   const drawRef = useRef<() => void>(() => {});
   drawRef.current = () => {
-    if (ggData && canvasRef.current) drawGG(canvasRef.current, ggData, hoverIdx, crossRefGG, crossRefHoverIdx);
+    if (ggData && canvasRef.current) drawGG(canvasRef.current, ggData, hoverIdx, crossRefGG, crossRefHoverIdx, anchor);
   };
 
   // Redraw on resize — attached once per data change, not per hover
@@ -412,7 +503,7 @@ export function GGExplorer({
     const ro = new ResizeObserver(() => drawRef.current());
     ro.observe(canvas);
     return () => ro.disconnect();
-  }, [ggData, crossRefGG]);
+  }, [ggData, crossRefGG, anchor]);
 
   // ── Hover handling ──────────────────────────────────────
   const handleCanvasMove = useCallback(
