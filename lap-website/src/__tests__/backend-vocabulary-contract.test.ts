@@ -96,7 +96,7 @@ function frozensetOf(src: string, name: string): Set<string> {
   return members;
 }
 
-const sorted = (s: Iterable<string>) => [...s].sort();
+const sorted = (s: Iterable<string>) => Array.from(s).sort();
 
 describe('the parser itself is not vacuous', () => {
   // A contract test whose parser silently returns nothing would pass forever.
@@ -151,14 +151,14 @@ describe('grip anchor tier vocabulary matches telemetry_tool/grip_anchor.py', ()
     // would have failed. DRAWABLE_TIERS is TIER_LABEL's key set, so a label
     // added, removed or misspelled here shows up as a set difference naming
     // both sides.
-    const frontend = new Set<string>([...DRAWABLE_TIERS, TIER_REFUSED]);
+    const frontend = new Set<string>(Array.from(DRAWABLE_TIERS).concat(TIER_REFUSED));
     expect(sorted(frontend)).toEqual(sorted(backendTiers));
   });
 
   it('every drawable tier is a real backend tier, individually', () => {
     // Same fact, reported per value, so a failure names the offender rather
     // than dumping two sorted arrays.
-    for (const tier of DRAWABLE_TIERS) {
+    for (const tier of Array.from(DRAWABLE_TIERS)) {
       expect({ tier, known: backendTiers.has(tier) }).toEqual({ tier, known: true });
     }
   });
@@ -199,7 +199,7 @@ describe("the backend's refused tier and our internal sentinel are separate thin
   it('our own refusal reason cannot collide with a grip_anchor REASON_*', () => {
     const consts = stringConstants(readBackend('grip_anchor.py'));
     const backendReasons = new Set(
-      [...consts.entries()].filter(([k]) => k.startsWith('REASON_')).map(([, v]) => v));
+      Array.from(consts.entries()).filter(([k]) => k.startsWith('REASON_')).map(([, v]) => v));
     expect(backendReasons.size).toBeGreaterThanOrEqual(5);  // parser sanity
     expect(backendReasons.has(REASON_BASELINES_DISAGREE)).toBe(false);
     // Namespaced on purpose: resolveEnvelope switches on this value to pick

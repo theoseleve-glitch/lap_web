@@ -823,7 +823,7 @@ describe('the envelope radius is not one arbitrary corner\'s baseline', () => {
     const results = new Set(perms.map(
       (p) => aggregateAnchor(p.map((g) => row({ grip_anchor_baseline_g: g })))?.baseline_g));
     expect(results.size).toBe(1);
-    expect([...results][0]).toBeCloseTo(0.985, 9);
+    expect(Array.from(results)[0]).toBeCloseTo(0.985, 9);
   });
 
   it('REFUSES when the per-corner baselines disagree materially', () => {

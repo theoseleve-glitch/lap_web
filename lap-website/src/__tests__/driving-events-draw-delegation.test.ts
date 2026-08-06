@@ -20,8 +20,9 @@ vi.mock('@/lib/driving-events', async () => {
 
 // Import AFTER the mock is set up
 import { eventLabel, type TapeGeometry } from '@/lib/driving-events-draw';
+import type { DrivingEvent } from '@/lib/driving-events';
 
-function ev(over: Record<string, unknown> = {}) {
+function ev(over: Partial<DrivingEvent> = {}): DrivingEvent {
   return {
     lap_number: 3,
     corner_id: 4,
