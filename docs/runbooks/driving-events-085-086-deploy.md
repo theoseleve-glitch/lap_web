@@ -20,7 +20,7 @@ Session records indicate production may be at **078**, with **082** and **083 ne
 
 ```bash
 ssh root@46.225.227.24 "cd /opt/lap-api && docker compose -f docker-compose.prod.yml exec -T api \
-  alembic -c telemetry_tool/alembic.ini current"
+  sh -c 'cd /app/telemetry_tool && alembic current'"
 ```
 
 Then reconcile against the local chain:
@@ -155,7 +155,7 @@ Do not rely on `init_pg`. Run it yourself, in the foreground, where a failure is
 
 ```bash
 ssh root@46.225.227.24 "cd /opt/lap-api && docker compose -f docker-compose.prod.yml run --rm api \
-  alembic -c telemetry_tool/alembic.ini upgrade head"
+  sh -c 'cd /app/telemetry_tool && alembic upgrade head'"
 ```
 
 Read the output. A non-zero exit or a traceback here means **stop** — do not start the workers.
@@ -169,7 +169,7 @@ This gate is the entire point of the runbook. Both checks must pass.
 ```bash
 # 1. the revision
 ssh root@46.225.227.24 "cd /opt/lap-api && docker compose -f docker-compose.prod.yml exec -T api \
-  alembic -c telemetry_tool/alembic.ini current"
+  sh -c 'cd /app/telemetry_tool && alembic current'"
 ```
 
 Expected: **`086_driving_events (head)`**. `085_grip_anchor` alone means the chain stopped half way — the corner-metric columns exist but the driving-events table does not, which is exactly §1b's state. Anything else — including an empty line — is a failed deploy.
@@ -290,7 +290,7 @@ ssh root@46.225.227.24 "cd /opt/lap-api && docker compose -f docker-compose.prod
 
 # 3-alt. SCHEMA ROLLBACK TOO — this DESTROYS every driving_events row:
 ssh root@46.225.227.24 "cd /opt/lap-api && docker compose -f docker-compose.prod.yml run --rm api \
-  alembic -c telemetry_tool/alembic.ini downgrade 084_merge_chain_ab"
+  sh -c 'cd /app/telemetry_tool && alembic downgrade 084_merge_chain_ab'"
 ```
 
 Rolling the schema back while the new code is still serving reproduces §1's silent total loss exactly. Order matters in both directions.
