@@ -39,7 +39,6 @@ function ev(over: Record<string, unknown> = {}) {
     evidence: {},
     time_cost_attribution: 'caused',
     magnitude_is_standalone_quotable: true,  // Flag says yes, but mock overrides it
-    also_fired: [],
     ...over,
   };
 }

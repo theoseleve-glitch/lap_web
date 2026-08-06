@@ -73,7 +73,7 @@ describe('DrivingEventsPanel obeys the attribution constraint', () => {
     lap_number: 3, corner_id: 4, s_norm_start: 0.2, s_norm_end: 0.3,
     validity: 'measured', reason: null, n_samples_in_window: 40,
     anchor_tier: 'session_envelope_ellipse_fitted', anchor_reason: null,
-    evidence: {}, also_fired: [],
+    evidence: {},
   };
 
   it('shows the cost as attributable for a caused event', async () => {
