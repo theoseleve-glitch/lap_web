@@ -603,3 +603,85 @@ describe('aggregateAnchor — per-corner anchors collapse to one session-level a
     expect(nullWins?.tier).toBe('refused');
   });
 });
+
+describe('a full realistic payload survives the whole render path', () => {
+  // Keys mirror Task 1's DrivingEvent exactly. If the API adds a field, this
+  // fixture is the first place that should be updated -- and if it is NOT
+  // updated, the type will still compile, which is why Step 2's check against
+  // a live session is part of this task and not optional.
+  const RESPONSE: DrivingEventsResponse = {
+    available: true,
+    capability_available: true,
+    capability: {
+      over_slowing: 'detected', late_throttle: 'detected',
+      re_braking: 'detected', envelope_under_use: 'detected',
+    },
+    events: [
+      ev({ event_type: 'over_slowing', corner_id: 1, lap_number: 4,
+           s_norm_start: 0.04, s_norm_end: 0.11, magnitude: 1.62,
+           magnitude_unit: 'm/s', time_cost_s: 0.885,
+           time_cost_attribution: 'caused', magnitude_is_standalone_quotable: true,
+           also_fired: [{ event_type: 'late_throttle', magnitude: 12.4,
+                          magnitude_unit: 'm', validity: 'measured',
+                          magnitude_is_standalone_quotable: false }] }),
+      ev({ event_type: 'late_throttle', corner_id: 3, lap_number: 7,
+           s_norm_start: 0.31, s_norm_end: 0.39, magnitude: 9.7,
+           magnitude_unit: 'm', time_cost_s: 0.176,
+           time_cost_attribution: 'context', magnitude_is_standalone_quotable: false }),
+      ev({ event_type: 're_braking', corner_id: 6, lap_number: 2,
+           s_norm_start: 0.55, s_norm_end: 0.61, magnitude: 9.80665,
+           magnitude_unit: 'm/s2', time_cost_s: null,
+           time_cost_attribution: 'no_cost', magnitude_is_standalone_quotable: true }),
+      ev({ event_type: 'envelope_under_use', corner_id: 8, lap_number: 5,
+           s_norm_start: 0.82, s_norm_end: 0.90, magnitude: 78.4,
+           magnitude_unit: 'pct', time_cost_s: null,
+           anchor_tier: 'driver_best_session',
+           time_cost_attribution: 'no_cost', magnitude_is_standalone_quotable: true }),
+      // An honest refusal: reached the payload, carries no magnitude.
+      ev({ event_type: 'envelope_under_use', corner_id: 7, lap_number: 5,
+           validity: 'not_measurable', reason: 'anchor_bound_self_referential',
+           magnitude: null, magnitude_unit: null, time_cost_s: null,
+           anchor_tier: 'driver_best_session',
+           time_cost_attribution: 'no_cost', magnitude_is_standalone_quotable: true }),
+      // No span at all -- must be skipped by the tape, not crash it. Explicit
+      // no_cost/null here: this event exists only to prove the tape skips a
+      // spanless event, not to carry a cost -- leave it defaulted to `ev()`'s
+      // 'caused' and it silently becomes a second attributable event below.
+      ev({ event_type: 'over_slowing', corner_id: 2, lap_number: 9,
+           s_norm_start: null, s_norm_end: null,
+           time_cost_attribution: 'no_cost', time_cost_s: null }),
+    ],
+  };
+
+  it('reports has-events and never throws through the whole path', () => {
+    expect(describeCapability(RESPONSE)).toBe('has-events');
+    const r = recorder();
+    expect(() => {
+      for (const e of RESPONSE.events) {
+        canQuoteMagnitude(e); canAttributeCost(e); eventLabel(e); eventColor(e);
+      }
+      drawCornerShade(r.ctx, RESPONSE.events, GEO);
+      drawMistakeTape(r.ctx, RESPONSE.events, GEO);
+    }).not.toThrow();
+  });
+
+  it('draws a segment for every event that has a span, and none for those without', () => {
+    const r = recorder();
+    drawMistakeTape(r.ctx, RESPONSE.events, GEO);
+    const withSpan = RESPONSE.events.filter(
+      (e) => typeof e.s_norm_start === 'number' && typeof e.s_norm_end === 'number').length;
+    expect(r.rects().length).toBe(withSpan);
+  });
+
+  it('never renders a magnitude for the refusal or for the context event', () => {
+    const refusal = RESPONSE.events.find((e) => e.validity === 'not_measurable')!;
+    const context = RESPONSE.events.find((e) => e.time_cost_attribution === 'context')!;
+    expect(canQuoteMagnitude(refusal)).toBe(false);       // magnitude is null
+    expect(eventLabel(context)).not.toContain('9.7');
+    expect(canAttributeCost(context)).toBe(false);
+  });
+
+  it('lets exactly one event in this payload claim its cost', () => {
+    expect(RESPONSE.events.filter(canAttributeCost).length).toBe(1);
+  });
+});
