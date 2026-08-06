@@ -16,6 +16,8 @@ import { api } from '@/lib/api-client';
 import { useChartHoverStore } from '@/lib/chart-hover-store';
 import { useReferenceOverlay } from '@/components/app/reference';
 import { chartColor } from '@/components/shared/chart-kit';
+import { fetchDrivingEvents, type DrivingEvent, type DrivingEventsResponse } from '@/lib/driving-events';
+import { makeTapeGeometry, drawMistakeTape, drawCornerShade } from '@/lib/driving-events-draw';
 
 // ── Types ────────────────────────────────────────────────────────
 interface SpeedTraceData {
@@ -50,6 +52,8 @@ interface SpeedTraceChartProps {
   showTheoretical?: boolean;
   /** When true, fetches and overlays the aggregate physics ceiling */
   showPhysicsCeiling?: boolean;
+  /** When true, fetches Phase 2 driving events and overlays the mistake tape */
+  showDrivingEvents?: boolean;
 }
 
 // ── Helpers ──────────────────────────────────────────────────────
@@ -126,6 +130,8 @@ interface DrawOptions {
   crossRefSpeeds?: number[] | null;   // m/s
   crossRefDeltaS?: number[] | null;   // delta_s: positive = ref slower = primary faster
   crossRefLabel?: string | null;
+  /** Phase 2 driving events to overlay as a tape. Null = not requested or unavailable. */
+  drivingEvents?: DrivingEvent[] | null;
 }
 
 function drawSpeedTrace(
@@ -502,6 +508,18 @@ function drawSpeedTrace(
     }
   }
 
+  // ── Driving-event tape ────────────────────────────────────
+  if (opts.drivingEvents && opts.drivingEvents.length > 0) {
+    const geo = makeTapeGeometry({
+      xMin, xMax, xToPixel,
+      plotX: pad.left, plotY: pad.top, plotW: pW, plotH: pH,
+    });
+    if (geo) {
+      drawCornerShade(ctx, opts.drivingEvents, geo);
+      drawMistakeTape(ctx, opts.drivingEvents, geo);
+    }
+  }
+
   // ── Drag selection overlay ────────────────────────────────
   if (opts.dragSelection) {
     const [sx, ex] = opts.dragSelection;
@@ -763,6 +781,7 @@ export function SpeedTraceChart({
   onDistRangeChange,
   showTheoretical = false,
   showPhysicsCeiling = false,
+  showDrivingEvents = false,
 }: SpeedTraceChartProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const boundsRef = useRef<ReturnType<typeof drawSpeedTrace>>(null);
@@ -778,6 +797,7 @@ export function SpeedTraceChart({
   const [dragSelection, setDragSelection] = useState<[number, number] | null>(null);
   const [theoreticalData, setTheoreticalData] = useState<{ distances: number[]; speeds: number[] } | null>(null);
   const [ceilingData, setCeilingData] = useState<{ distances: number[]; speeds: number[]; sessions: number } | null>(null);
+  const [drivingEvents, setDrivingEvents] = useState<DrivingEventsResponse | null>(null);
 
   const hoverDistance = useChartHoverStore((s) => s.hoverDistance);
   const setHover = useChartHoverStore((s) => s.setHover);
@@ -909,6 +929,20 @@ export function SpeedTraceChart({
     return () => { cancelled = true; };
   }, [showPhysicsCeiling, sessionId]);
 
+  // ── Fetch driving events ─────────────────────────────────────
+  useEffect(() => {
+    if (!showDrivingEvents || !sessionId) {
+      setDrivingEvents(null);
+      return;
+    }
+    let cancelled = false;
+    (async () => {
+      const res = await fetchDrivingEvents(sessionId);
+      if (!cancelled) setDrivingEvents(res);
+    })();
+    return () => { cancelled = true; };
+  }, [showDrivingEvents, sessionId]);
+
   // ── Fetch canonical anchored delta from backend ───────────────
   //
   // Every delta curve in the product routes through the canonical
@@ -1004,6 +1038,7 @@ export function SpeedTraceChart({
       crossRefSpeeds: referenceData?.speed.reference ?? null,
       crossRefDeltaS: referenceData?.speed.delta_s ?? null,
       crossRefLabel,
+      drivingEvents: drivingEvents?.events ?? null,
     });
 
     if (hasDelta && deltaSeconds) {
@@ -1013,7 +1048,7 @@ export function SpeedTraceChart({
         hoverDistance, activeLap!, activeCompareLap!,
       );
     }
-  }, [chartData, avgSpeeds, refSpeeds, theoreticalData, ceilingData, deltaSeconds, activeCompareLap, hoverDistance, distRange, dragSelection, referenceData]);
+  }, [chartData, avgSpeeds, refSpeeds, theoreticalData, ceilingData, deltaSeconds, activeCompareLap, hoverDistance, distRange, dragSelection, referenceData, drivingEvents]);
 
   useEffect(() => {
     render();

@@ -309,3 +309,41 @@ describe('eventLabel', () => {
     expect(infMag).not.toContain('Infinity');
   });
 });
+
+import { makeTapeGeometry } from '@/lib/driving-events-draw';
+
+describe('makeTapeGeometry — the one place a frame bug can re-enter', () => {
+  // A chart cropped to 400..900 m at 2 px per metre. This is the SHIPPED
+  // helper, not a copy: mutating it in the source must turn these red.
+  const build = () => makeTapeGeometry({
+    xMin: 400, xMax: 900,
+    xToPixel: (m: number) => (m - 400) * 2,
+    plotX: 0, plotY: 0, plotW: 1000, plotH: 300,
+  });
+
+  it('anchors s_norm to xMin, not to zero, when the chart is zoomed', () => {
+    const geo = build()!;
+    const r = recorder();
+    drawMistakeTape(r.ctx, [ev({ s_norm_start: 0.2, s_norm_end: 0.4 })], geo);
+    const [x, , w] = r.rects()[0]!.args as number[];
+    // s_norm 0.2 of the 500 m window = 500 m absolute = (500-400)*2 = 200 px.
+    // Anchoring to zero instead would give (0.2*500 - 400)*2 = -600 px,
+    // which clips to plotX and silently mislocates every event.
+    expect(x).toBeCloseTo(200, 5);
+    expect(w).toBeCloseTo(200, 5);   // 0.2 * 500 m * 2 px/m
+  });
+
+  it('derives lapLengthM from the visible window', () => {
+    expect(build()!.lapLengthM).toBe(500);
+  });
+
+  it('refuses a degenerate or inverted window instead of dividing by it', () => {
+    const bad = (xMin: number, xMax: number) => makeTapeGeometry({
+      xMin, xMax, xToPixel: (m) => m,
+      plotX: 0, plotY: 0, plotW: 100, plotH: 100,
+    });
+    expect(bad(400, 400)).toBeNull();
+    expect(bad(900, 400)).toBeNull();
+    expect(bad(NaN, 900)).toBeNull();
+  });
+});
