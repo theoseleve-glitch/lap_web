@@ -449,12 +449,34 @@ def extract_style_features(
             delay = cp.get("throttle_onset_delay_m") or cp.get("exit_delay_m")
             if delay is not None and math.isfinite(delay):
                 delays.append(delay)
-    # Fallback: use per-lap corner metrics from DB
-    if not delays and per_lap_corner_metrics:
-        for cm in per_lap_corner_metrics:
-            onset = cm.get("throttle_onset_m")
-            if onset is not None and math.isfinite(onset):
-                delays.append(onset)
+    # NO FALLBACK TO `throttle_onset_m` -- see below.
+    #
+    # THE DEFECT THIS REPLACES (live in production until 2026-08-06). This
+    # used to fall back to `cm["throttle_onset_m"]` from the per-lap corner
+    # metrics. That field is an ABSOLUTE position along the lap --
+    # s10b_corners.py computes it as `d_min + onset_norm * span`, so it runs
+    # to hundreds of metres -- while this feature is "distance AFTER the apex
+    # before meaningful throttle" and is normalised over 0-15 m below.
+    #
+    # `_normalise_01(hundreds, 0.0, 15.0)` clamps to exactly 1.0. Combined
+    # with the branch above (nothing in the repo ever writes
+    # `throttle_onset_delay_m` or `exit_delay_m` onto a corner performance,
+    # so it never fires), this feature was the constant 1.0 for every driver
+    # on every session. Not a weak signal -- a constant one, and a biasing
+    # one: 1.0 sits inside "Smooth Precision"'s expected 0.4-1.0 and outside
+    # "Aggressive Attack"'s 0.0-0.3, so every classification was pushed
+    # toward "patient on exit" regardless of how the driver actually drove.
+    #
+    # The delay cannot be reconstructed here: per-lap corner metrics carry no
+    # apex position to subtract from the onset. Computing it honestly means
+    # emitting it where the apex index is already in hand, alongside
+    # `throttle_onset_m` itself, and respecting that site's refusal statuses
+    # (a refused onset must yield a refused delay, not a zero).
+    #
+    # Until then this stays NaN -- the dataclass default for every feature in
+    # StyleFeatures, meaning "not measured". `score_style` skips non-finite
+    # features rather than scoring them, so a refusal costs a signal; the old
+    # behaviour actively injected a false one.
     if delays:
         mean_delay = float(np.mean(delays))
         # Higher delay = more patient. Normalise 0-20m range.
