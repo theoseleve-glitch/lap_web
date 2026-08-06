@@ -16,8 +16,8 @@ import { useChartHoverStore } from '@/lib/chart-hover-store';
 import { chartColor } from '@/components/shared/chart-kit';
 import { useReferenceOverlay } from '@/components/app/reference';
 import {
-  resolveEnvelope, aggregateAnchor,
-  type AnchorSummary, type CornerAnchorRow,
+  resolveEnvelopeForLoad, aggregateAnchor,
+  type AnchorLoad, type AnchorSummary, type CornerAnchorRow,
 } from '@/lib/driving-events-draw';
 
 /* ── Types ──────────────────────────────────────────────── */
@@ -88,8 +88,10 @@ const PAD = { top: 30, right: 20, bottom: 45, left: 55 };
  * documented precondition, not guarded: `' '.split(' ')` yields two empty
  * strings, and the trailing `if (line)` never fires on either, so this
  * returns `[]` -- zero lines for non-empty input. Left unguarded because
- * every real caller passes one of `resolveEnvelope`'s two hardcoded label
- * literals (never user- or DB-sourced text), none of which are blank, so
+ * every real caller passes one of `resolveEnvelopeForLoad`'s hardcoded label
+ * literals, none of which are blank. (The unrecognised-tier label does
+ * interpolate a DB-sourced tier value, but only into an otherwise non-blank
+ * sentence, so the blank-input path stays unreachable.) So
  * the path is unreachable today; see the locked-in regression test in
  * gg-label-wrap.test.ts.
  */
@@ -132,13 +134,16 @@ interface CrossRefGG {
   distances: number[];
 }
 
-function drawGG(
+// Exported for direct testing of the envelope label/arc against a canvas
+// recorder, the same reason drawSpeedTrace is exported. Takes ctx via the
+// canvas it is handed and keeps no module state.
+export function drawGG(
   canvas: HTMLCanvasElement,
   ggData: GGData,
   hoverIdx: number | null,
   crossRefGG?: CrossRefGG | null,
   crossRefHoverIdx?: number | null,
-  anchor?: AnchorSummary | null,
+  anchorLoad?: AnchorLoad | null,
 ) {
   const ctx = canvas.getContext('2d');
   if (!ctx) return;
@@ -178,7 +183,10 @@ function drawGG(
   // boundary sized from maxG -- see resolveEnvelope's doc comment. When the
   // anchor refused (or there isn't one), envelope.draw is false and nothing
   // is drawn; the label below states that absence instead of guessing.
-  const envelope = resolveEnvelope(anchor ?? null, maxG);
+  // `anchorLoad` distinguishes "not looked up yet" and "the lookup failed"
+  // from "looked up and refused" -- see resolveEnvelopeForLoad. An absent
+  // argument means the caller has not looked, not that grip was unmeasured.
+  const envelope = resolveEnvelopeForLoad(anchorLoad ?? null, maxG);
 
   // Coordinate transforms
   const xToPixel = (v: number) => PAD.left + ((v + axisMax) / (2 * axisMax)) * pW;
@@ -420,8 +428,14 @@ export function GGExplorer({
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [hoverIdx, setHoverIdx] = useState<number | null>(null);
-  const [fetchedAnchor, setFetchedAnchor] = useState<AnchorSummary | null>(null);
-  const anchor = anchorProp !== undefined ? anchorProp : fetchedAnchor;
+  const [fetchedAnchor, setFetchedAnchor] = useState<AnchorLoad>({ status: 'loading' });
+  // A caller-supplied anchor has, by definition, already been looked up.
+  // Memoised: this value is a render dependency of the draw effects, and a
+  // fresh object literal every render would redraw the canvas in a loop.
+  const anchorLoad = useMemo<AnchorLoad>(
+    () => (anchorProp !== undefined ? { status: 'loaded', anchor: anchorProp } : fetchedAnchor),
+    [anchorProp, fetchedAnchor],
+  );
 
   // ── Fetch grip anchor (dual-mode, same shape as `data`/`sessionId`) ────
   // GET /sessions/<id>/corner-metrics is a SELECT *, so grip_anchor_tier,
@@ -429,20 +443,25 @@ export function GGExplorer({
   // already in the response -- no separate endpoint needed.
   useEffect(() => {
     if (anchorProp !== undefined) return; // caller supplied the anchor directly
-    if (!sessionId) { setFetchedAnchor(null); return; }
+    // No session to look up: there is nothing to fetch, and that IS the
+    // final answer -- 'loaded' with no anchor, which reads as a refusal.
+    if (!sessionId) { setFetchedAnchor({ status: 'loaded', anchor: null }); return; }
 
     let cancelled = false;
+    setFetchedAnchor({ status: 'loading' });
     (async () => {
       try {
         const res = await api.get<{ corners: CornerAnchorRow[]; available: boolean }>(
           `/sessions/${encodeURIComponent(sessionId)}/corner-metrics`,
         );
         if (cancelled) return;
-        setFetchedAnchor(aggregateAnchor(res.corners));
+        setFetchedAnchor({ status: 'loaded', anchor: aggregateAnchor(res.corners) });
       } catch {
-        // Grip anchor is optional context for the diagram -- silently skip
-        // on 404 or error; resolveEnvelope treats a null anchor as refused.
-        if (!cancelled) setFetchedAnchor(null);
+        // A 404 or a 500 means we could not look, NOT that the producer
+        // refused to measure. Turning a transport failure into "Grip limit
+        // not measured for this session" states something about the
+        // driver's data that this component has no evidence for.
+        if (!cancelled) setFetchedAnchor({ status: 'error' });
       }
     })();
 
@@ -524,13 +543,13 @@ export function GGExplorer({
   // ── Draw on canvas ──────────────────────────────────────
   useEffect(() => {
     if (!ggData || !canvasRef.current) return;
-    drawGG(canvasRef.current, ggData, hoverIdx, crossRefGG, crossRefHoverIdx, anchor);
-  }, [ggData, hoverIdx, crossRefGG, crossRefHoverIdx, anchor]);
+    drawGG(canvasRef.current, ggData, hoverIdx, crossRefGG, crossRefHoverIdx, anchorLoad);
+  }, [ggData, hoverIdx, crossRefGG, crossRefHoverIdx, anchorLoad]);
 
   // Stable draw ref for ResizeObserver — avoids re-attaching on every hover
   const drawRef = useRef<() => void>(() => {});
   drawRef.current = () => {
-    if (ggData && canvasRef.current) drawGG(canvasRef.current, ggData, hoverIdx, crossRefGG, crossRefHoverIdx, anchor);
+    if (ggData && canvasRef.current) drawGG(canvasRef.current, ggData, hoverIdx, crossRefGG, crossRefHoverIdx, anchorLoad);
   };
 
   // Redraw on resize — attached once per data change, not per hover
@@ -540,7 +559,7 @@ export function GGExplorer({
     const ro = new ResizeObserver(() => drawRef.current());
     ro.observe(canvas);
     return () => ro.disconnect();
-  }, [ggData, crossRefGG, anchor]);
+  }, [ggData, crossRefGG, anchorLoad]);
 
   // ── Hover handling ──────────────────────────────────────
   const handleCanvasMove = useCallback(

@@ -215,7 +215,9 @@ export interface AnchorSummary {
  * opposite failures -- one is a statement about the driver's data, the other
  * is a bug in this file -- so they must never share a sentence again.
  */
-export type EnvelopeOutcome = 'drawn' | 'refused' | 'unrecognised_tier' | 'no_baseline';
+export type EnvelopeOutcome =
+  | 'drawn' | 'refused' | 'unrecognised_tier' | 'no_baseline'
+  | 'loading' | 'load_failed';
 
 export interface EnvelopeDecision {
   draw: boolean;
@@ -319,6 +321,53 @@ export function resolveEnvelope(
     draw: true, radiusG: g, reason: anchor.reason ?? null,
     outcome: 'drawn', label: `${g.toFixed(2)}G — ${tier}`,
   };
+}
+
+/**
+ * Whether the anchor has been LOOKED UP yet, distinct from what it said.
+ *
+ * `GGExplorer` held a bare `AnchorSummary | null` initialised to `null`, and
+ * `/gg-data` and `/corner-metrics` are independent fetches. Whenever gg-data
+ * won the race the canvas painted "Grip limit not measured for this session"
+ * and only later redrew with the arc -- a statement about the driver's data
+ * made before anything had been looked at. The same `null` also absorbed a
+ * network failure, so a 500 read as a measurement refusal too.
+ *
+ * `DrivingEventsPanel` already had this right with an explicit `loaded` gate;
+ * this is the same idea in a form the g-g's pure draw path can consume.
+ */
+export type AnchorLoad =
+  | { status: 'loading' }
+  | { status: 'error' }
+  | { status: 'loaded'; anchor: AnchorSummary | null };
+
+/** Said while the corner-metrics fetch is still in flight. */
+export const LOADING_LABEL = 'Grip limit — loading…';
+/** Said when that fetch failed. NOT a claim about the session's grip. */
+export const LOAD_FAILED_LABEL =
+  'Grip limit unavailable — could not load this session\'s corner data';
+
+/**
+ * `resolveEnvelope`, but for a lookup that may not have happened yet.
+ *
+ * The three not-drawn cases are deliberately three different sentences:
+ * "we have not looked", "we could not look", and "we looked and the
+ * producer refused". Only the last is a fact about the driver's data.
+ */
+export function resolveEnvelopeForLoad(
+  load: AnchorLoad | null | undefined,
+  maxObservedG: number,
+): EnvelopeDecision {
+  if (!load || load.status === 'loading') {
+    return { draw: false, radiusG: null, reason: null, outcome: 'loading', label: LOADING_LABEL };
+  }
+  if (load.status === 'error') {
+    return {
+      draw: false, radiusG: null, reason: null,
+      outcome: 'load_failed', label: LOAD_FAILED_LABEL,
+    };
+  }
+  return resolveEnvelope(load.anchor, maxObservedG);
 }
 
 /** One row of `GET /sessions/<id>/corner-metrics` -- a `SELECT *`, so the
