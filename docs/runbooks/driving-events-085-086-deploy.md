@@ -57,7 +57,13 @@ and **all three writers swallow it**:
 | `telemetry_tool/tasks/pipeline_tasks.py:1161-1163` | logs a warning, rolls back, continues |
 | `telemetry_tool/tasks/endurance_tasks.py:781-782` | **bare `except`, no log at all** |
 
-The session then persists **zero** corner metrics. Not "the grip anchor is missing" — *the whole row is missing*: brake points, entry/apex/exit speeds, throttle onset, exit acceleration, time loss, coaching hints, and the legacy `grip_utilization`. None of it is recoverable without reprocessing the session, and nothing alerts. The user sees a session that uploaded successfully and simply has no corner data.
+The session then persists **zero** corner metrics. Not "the grip anchor is missing" — *the whole row is missing*: brake points, entry/apex/exit speeds, throttle onset, exit acceleration, time loss, coaching hints, and the legacy `grip_utilization`. None of it is recoverable without reprocessing the session, and nothing alerts.
+
+⚠ **CORRECTED (2026-08-06). On the `s15_persist` path it is worse than "a session with no corner data" — THERE IS NO SESSION AT ALL.** An earlier revision of this line said the user sees a successful upload missing its corner data. That is true only of the two celery paths, which commit per step. `s15_persist` is ONE transaction, so on PostgreSQL the failed corner-metrics INSERT aborts it and the later `COMMIT` is a silent `ROLLBACK` — laps, GPS traces, score details, condition phases, theoretical data and the session row itself all disappear.
+
+Proven on a real PostgreSQL 16 against the shipped code with 085's four columns dropped: `run_persist_to_db` left `sessions / laps / gps_traces / score_details / condition_phases / driving_events` **all at 0 rows**.
+
+The code-side half is fixed on this branch — `_persist_corner_metrics` now runs inside a SAVEPOINT (`_write_in_savepoint`) so the failure is contained and everything else still commits, and if the savepoint itself cannot be taken the exception is re-raised rather than swallowed, which makes the failure loud instead of silent. **That is a containment, not a licence to deploy out of order:** with the columns missing you still lose every corner metric in the window, unrecoverably without reprocessing.
 
 ### 1b — 086 has the SAME ordering hazard, with a WIDER blast radius
 
@@ -69,14 +75,15 @@ applied therefore raises on every session that produces events:
 UndefinedTable: relation "driving_events" does not exist
 ```
 
-Where 085's failure loses the corner-metrics ROW, 086's failure can lose
-**the whole session**, because of a transaction-shape difference:
+**BOTH MIGRATIONS HAVE THE SAME BLAST RADIUS — it is a property of the WRITER, not of which migration is missing.** An earlier revision of this table attributed whole-session loss to 086 alone; that was wrong. What decides the cost is the transaction shape of the path doing the writing:
 
-| Writer | Transaction shape | What a failed 086 write costs |
+| Writer | Transaction shape | What a failed 085 **or** 086 write costs |
 |---|---|---|
-| `pipeline/stages/s15_persist.py` | **ONE** transaction: a single `conn.commit()` at the end, a single `conn.rollback()` in the handler, and psycopg2 does not autocommit | Laps, GPS traces, score details, condition phases, theoretical data, reference line, corner metrics, driver progression, weather timeline — **all of it** |
-| `tasks/pipeline_tasks.py` step 6b | its own `commit()`/`rollback()` per step | driving events only |
-| `tasks/endurance_tasks.py` step 6b | its own `commit()`/`rollback()` per step | driving events only |
+| `pipeline/stages/s15_persist.py` | **ONE** transaction: a single `conn.commit()` at the end, a single `conn.rollback()` in the handler, and psycopg2 does not autocommit | Laps, GPS traces, score details, condition phases, theoretical data, reference line, corner metrics, driving events, driver progression, weather timeline, **and the `sessions` row itself** — all of it |
+| `tasks/pipeline_tasks.py` steps 6 / 6b | its own `commit()`/`rollback()` per step | that step's table only |
+| `tasks/endurance_tasks.py` steps 6 / 6b | its own `commit()`/`rollback()` per step | that step's table only |
+
+Both s15 child writes are now SAVEPOINT-guarded on this branch, so a failure of either is contained. Note also that under the orchestrator, `pipeline/helpers.py`'s `_safe_step` never re-raises, so even the loud "savepoint unavailable" path does not stop the run — it records a step error and continues. Read the step errors, not just the exit status.
 
 The s15 mechanism: the write fails, PostgreSQL marks the transaction aborted,
 the exception is caught and logged as a WARNING, and the later `COMMIT` in an

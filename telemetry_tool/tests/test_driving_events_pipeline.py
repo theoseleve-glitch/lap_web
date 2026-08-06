@@ -524,6 +524,118 @@ def test_the_consistency_surface_has_its_own_hard_cap():
     assert "logger.warning" in src
 
 
+# ── NEW-1: the same hazard one door down, opened by OUR migration 085 ────
+#
+# `_persist_corner_metrics` had the identical bare swallow, and it is
+# reachable in this branch's own deploy window: 085 adds four columns that
+# `INSERT_CORNER_METRIC` names unconditionally. Proven on a real PostgreSQL
+# 16 with 085's columns dropped -- `run_persist_to_db` returned None and left
+# sessions / laps / gps_traces / score_details / condition_phases /
+# driving_events ALL at zero.
+
+
+_CM_SUMMARY = {"per_lap_corner_metrics": [
+    {"lap_number": 1, "corner_id": 1, "apex_speed_mps": 12.0,
+     "grip_anchor_tier": "driver_best_session", "grip_anchor_pct": 94.0},
+]}
+"""The key `insert_corner_metrics` actually reads. A summary keyed `corners`
+returns 0 WITHOUT touching the database, so a fixture built that way never
+reaches the INSERT and the paired tests below would prove nothing -- caught
+by the fixture-guard test."""
+
+
+def _corner_metrics_session(seeded_db):
+    """A connection carrying uncommitted session data whose corner-metrics
+    write is guaranteed to fail -- the 085-missing shape, reproduced by
+    removing the table the INSERT names."""
+    seeded_db.execute("DROP TABLE corner_metrics")
+    seeded_db.commit()
+    conn = _AbortsLikePostgres(seeded_db)
+    conn.execute("INSERT INTO laps (session_id, lap_number, lap_time_s, "
+                 "is_valid) VALUES ('s1', 98, 61.0, 1)")
+    return conn
+
+
+def _surviving_lap_98(seeded_db):
+    return seeded_db.execute(
+        "SELECT count(*) FROM laps WHERE session_id='s1' AND lap_number=98"
+    ).fetchone()[0]
+
+
+def test_the_corner_metrics_abort_model_reproduces_the_total_loss(seeded_db):
+    """Guards the FIXTURE. The paired test below is worthless unless a bare
+    swallow really does lose the session here, so prove it with the swallow
+    written out."""
+    conn = _corner_metrics_session(seeded_db)
+
+    try:                                    # the shape s15 used to have
+        from web.models import insert_corner_metrics
+        insert_corner_metrics(conn, "s1", _CM_SUMMARY)
+    except Exception:
+        pass                                # "logged a warning, continued"
+    conn.commit()
+
+    assert conn.silently_rolled_back, (
+        "the model did not abort, so it does not reproduce the defect")
+    assert _surviving_lap_98(seeded_db) == 0
+
+
+def test_a_failed_corner_metrics_write_does_not_discard_the_session(seeded_db):
+    """NEW-1: 085's deploy window must not cost the whole session either."""
+    from pipeline.stages import s15_persist
+
+    conn = _corner_metrics_session(seeded_db)
+
+    s15_persist._persist_corner_metrics(conn, "s1", _CM_SUMMARY)
+    conn.commit()
+
+    assert not conn.silently_rolled_back, (
+        "COMMIT became a silent ROLLBACK -- the failed corner-metrics write "
+        "poisoned the outer transaction, exactly as 086's did before it was "
+        "guarded")
+    assert _surviving_lap_98(seeded_db) == 1, (
+        "a failed corner-metrics write discarded the rest of the session")
+
+
+def test_corner_metrics_without_isolation_raises_rather_than_swallowing(seeded_db):
+    """Same contract as the driving-events guard: no savepoint, no pretending
+    the failure was contained."""
+    from pipeline.stages import s15_persist
+
+    conn = _corner_metrics_session(seeded_db)
+    real_execute = conn.execute
+
+    def no_savepoints(sql, params=None):
+        if " ".join(str(sql).split()).upper().startswith("SAVEPOINT"):
+            raise RuntimeError("savepoints unavailable")
+        return real_execute(sql, params)
+
+    conn.execute = no_savepoints
+
+    with pytest.raises(Exception):
+        s15_persist._persist_corner_metrics(conn, "s1", _CM_SUMMARY)
+
+
+def test_both_child_writers_share_one_savepoint_implementation():
+    """Two hand-rolled copies of a guard whose non-obvious branch costs the
+    whole session when copied wrong is not a pattern worth repeating. A third
+    writer must reuse this, not re-derive it."""
+    import inspect
+    from pipeline.stages import s15_persist
+
+    for fn in (s15_persist._persist_corner_metrics,
+               s15_persist._persist_driving_events):
+        src = inspect.getsource(fn)
+        assert "_write_in_savepoint" in src, fn.__name__
+        # Strip the docstring before looking for hand-rolled SQL: both
+        # functions legitimately DESCRIBE the savepoint in prose.
+        body = src.split('"""')[-1]
+        assert "conn.execute(f\"SAVEPOINT" not in body, (
+            f"{fn.__name__} hand-rolls savepoint SQL instead of reusing the "
+            f"shared helper")
+        assert "ROLLBACK TO SAVEPOINT" not in body, fn.__name__
+
+
 def test_an_empty_event_list_writes_nothing_and_does_not_raise(seeded_db):
     from pipeline.stages import s15_persist
 

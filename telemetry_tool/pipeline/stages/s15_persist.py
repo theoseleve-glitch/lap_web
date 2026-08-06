@@ -233,102 +233,145 @@ def _persist_theoretical(
         logger.warning("Reference line persistence FAILED: %s", exc, exc_info=True)
 
 
-def _persist_corner_metrics(conn: Any, session_id: str, summary: dict) -> None:
-    """Persist per-lap corner metrics."""
+# ── SAVEPOINT-GUARDED CHILD WRITES ───────────────────────────────────────
+#
+# `run_persist_to_db` is ONE transaction: a single `conn.commit()` at the end
+# and a single `conn.rollback()` in its handler, and psycopg2 does not
+# autocommit (`web/db_pg.py`). So ANY child write that fails and is then
+# SWALLOWED leaves the PostgreSQL transaction in the aborted state, and the
+# later `COMMIT` in an aborted block is a silent `ROLLBACK` -- the entire
+# session disappears behind one WARNING line naming a single child table.
+#
+# BOTH of this branch's migrations open that window during their own deploy:
+#
+#   085  adds four columns that `db/queries.py`'s INSERT_CORNER_METRIC names
+#        unconditionally -> UndefinedColumn in `_persist_corner_metrics`
+#   086  adds a table that INSERT_DRIVING_EVENT names unconditionally
+#        -> UndefinedTable in `_persist_driving_events`
+#
+# Both were PROVEN on a real PostgreSQL 16 with the shipped code: with 085's
+# columns dropped, `run_persist_to_db` left sessions / laps / gps_traces /
+# score_details / condition_phases / driving_events ALL AT ZERO.
+#
+# One helper rather than two hand-rolled copies, deliberately: the guard has
+# a non-obvious branch (see `sp_taken` below) that a third writer copying the
+# shape by eye would very likely get wrong, and getting it wrong is not a
+# degraded write -- it is the whole session.
+_SAVEPOINT_CORNER_METRICS = "sp_corner_metrics"
+_SAVEPOINT_DRIVING_EVENTS = "sp_driving_events"
+
+
+def _write_in_savepoint(conn: Any, savepoint: str, label: str, write: Any) -> Any:
+    """Run ``write()`` inside a SAVEPOINT so a failure cannot poison the
+    outer transaction. Returns ``write()``'s value, or None if it failed and
+    was contained.
+
+    IF THE SAVEPOINT CANNOT BE TAKEN, THE EXCEPTION IS RE-RAISED RATHER THAN
+    SWALLOWED. That branch is the point of the helper and it is the opposite
+    of what looks safe: without isolation, swallowing is the DANGEROUS
+    choice, because the caller then commits an aborted transaction and
+    reports success. A loud failure that rolls the session back is strictly
+    better than a silent one that discards it. (Verified on real PG: this is
+    what turned a silent total loss into an `InFailedSqlTransaction` the
+    operator can see.)
+
+    ``savepoint`` is always a module-level constant, never caller data.
+    """
+    sp_taken = False
     try:
-        from web.models import insert_corner_metrics
-        cm_count = insert_corner_metrics(conn, session_id, summary)
-        if cm_count > 0:
-            logger.info(
-                "Persisted %d corner metrics for session %s.", cm_count, session_id,
-            )
+        conn.execute(f"SAVEPOINT {savepoint}")
+        sp_taken = True
     except Exception as exc:
-        logger.warning("Corner metrics persistence skipped: %s", exc)
+        logger.warning(
+            "%s: could not open a savepoint (%s); a write failure will now "
+            "propagate rather than be swallowed, because without isolation a "
+            "swallowed failure discards the whole session.", label, exc,
+        )
+
+    try:
+        result = write()
+        if sp_taken:
+            conn.execute(f"RELEASE SAVEPOINT {savepoint}")
+        return result
+    except Exception as exc:
+        if not sp_taken:
+            # No isolation: do not pretend this was contained.
+            raise
+        try:
+            conn.execute(f"ROLLBACK TO SAVEPOINT {savepoint}")
+            conn.execute(f"RELEASE SAVEPOINT {savepoint}")
+        except Exception:
+            logger.error(
+                "%s: rollback to savepoint FAILED after %s — the outer "
+                "transaction may be aborted and this session's other data "
+                "lost at COMMIT.", label, exc, exc_info=True,
+            )
+            raise
+        # exc_info=True (unlike endurance_tasks.py's bare except at the same
+        # call site) so a skipped write is diagnosable rather than merely
+        # survivable.
+        logger.warning(
+            "%s persistence skipped (rolled back to savepoint, the rest of "
+            "the session is unaffected): %s", label, exc, exc_info=True,
+        )
+        return None
 
 
-_DRIVING_EVENTS_SAVEPOINT = "sp_driving_events"
+def _persist_corner_metrics(conn: Any, session_id: str, summary: dict) -> None:
+    """Persist per-lap corner metrics, contained by a SAVEPOINT.
+
+    This guard used to be a bare swallow, and it is reachable in THIS
+    branch's own deploy window: migration 085 adds four columns that
+    `INSERT_CORNER_METRIC` names unconditionally, so code serving before the
+    migration raises UndefinedColumn here. Proven on real PostgreSQL 16 with
+    085's columns dropped: `run_persist_to_db` returned None and left every
+    child table at ZERO rows.
+
+    See `_write_in_savepoint` and
+    `docs/runbooks/driving-events-085-086-deploy.md` §1b.
+    """
+    def _write():
+        from web.models import insert_corner_metrics
+        return insert_corner_metrics(conn, session_id, summary)
+
+    cm_count = _write_in_savepoint(
+        conn, _SAVEPOINT_CORNER_METRICS, "Corner metrics", _write)
+    if cm_count:
+        logger.info(
+            "Persisted %d corner metrics for session %s.", cm_count, session_id,
+        )
 
 
 def _persist_driving_events(conn: Any, session_id: str, summary: dict) -> None:
     """Persist Phase 2 driving events (over_slowing, late_throttle,
     re_braking, envelope_under_use) — see s10d3_driving_events.py.
 
-    WRAPPED IN A SAVEPOINT, AND THAT IS NOT DEFENSIVE PROGRAMMING — IT IS THE
-    FIX FOR A TOTAL-SESSION-LOSS BUG.
-
-    ``run_persist_to_db`` is ONE transaction: a single ``conn.commit()`` at
-    the end and a single ``conn.rollback()`` in its handler, and psycopg2
-    does not autocommit (``web/db_pg.py``). So if this function's write
-    fails on PostgreSQL — the concrete case being code deployed before
-    ``alembic upgrade`` runs migration 086, where every session producing
-    events hits ``UndefinedTable`` — the failure ABORTS the surrounding
-    transaction. Swallowing the exception then lets the function return
-    normally, and the ``COMMIT`` at the end of an aborted block is a silent
-    ``ROLLBACK``: laps, GPS traces, score details, condition phases,
-    theoretical data, the reference line, corner metrics, driver
-    progression and the weather timeline are ALL discarded, with one WARNING
-    line naming only driving events.
-
-    A SAVEPOINT confines the damage to this one write. On failure we roll
-    back to it, the outer transaction is healthy again, and everything else
-    still commits — which is what the swallow was always claiming to do.
-
-    IF THE SAVEPOINT CANNOT BE TAKEN, THE EXCEPTION IS RE-RAISED RATHER THAN
-    SWALLOWED. Without isolation, swallowing is the dangerous branch: a loud
-    failure that rolls back and raises is strictly better than a silent one
-    that discards the whole session and reports success.
+    Contained by a SAVEPOINT for the same reason as
+    `_persist_corner_metrics` above, and against the same class of failure:
+    code deployed before `alembic upgrade` runs 086 hits UndefinedTable on
+    every session that produces events, and a swallowed failure there used to
+    take laps, GPS traces, scores, theoretical data and corner metrics with
+    it. See `_write_in_savepoint`.
 
     An earlier revision of this comment described the swallow as benign
-    parity with ``_persist_corner_metrics``'s sibling guard just above. That
-    was wrong on the part that matters: the sibling has the same defect (see
-    ``docs/runbooks/driving-events-085-086-deploy.md``), so matching it propagated a
-    bug rather than a convention.
+    parity with `_persist_corner_metrics`'s sibling guard. That was wrong on
+    the part that mattered: the sibling had the SAME defect, so matching it
+    propagated a bug rather than a convention. Both are now guarded, by one
+    implementation.
     """
     events = summary.get("driving_events")
     if not events:
         return
 
-    sp_taken = False
-    try:
-        conn.execute(f"SAVEPOINT {_DRIVING_EVENTS_SAVEPOINT}")
-        sp_taken = True
-    except Exception as exc:
-        logger.warning(
-            "Driving events: could not open a savepoint (%s); a write failure "
-            "will now propagate rather than be swallowed, because without "
-            "isolation a swallowed failure discards the whole session.", exc,
-        )
-
-    try:
+    def _write():
         from web.repos.events_repo import insert_driving_events
-        n = insert_driving_events(conn, session_id, events)
-        if sp_taken:
-            conn.execute(f"RELEASE SAVEPOINT {_DRIVING_EVENTS_SAVEPOINT}")
-        if n > 0:
-            logger.info(
-                "Persisted %d driving events for session %s.", n, session_id,
-            )
-    except Exception as exc:
-        if not sp_taken:
-            # No isolation: do not pretend this was contained.
-            raise
-        try:
-            conn.execute(f"ROLLBACK TO SAVEPOINT {_DRIVING_EVENTS_SAVEPOINT}")
-            conn.execute(f"RELEASE SAVEPOINT {_DRIVING_EVENTS_SAVEPOINT}")
-        except Exception:
-            logger.error(
-                "Driving events: rollback to savepoint FAILED after %s — the "
-                "outer transaction may be aborted and this session's other "
-                "data lost at COMMIT.", exc, exc_info=True,
-            )
-            raise
-        # Logged with exc_info=True (unlike endurance_tasks.py's bare
-        # except at the same call site — Task 10's brief calls that out by
-        # name as the pattern NOT to repeat) so a skipped write is
-        # diagnosable rather than merely survivable.
-        logger.warning(
-            "Driving events persistence skipped (rolled back to savepoint, "
-            "the rest of the session is unaffected): %s", exc, exc_info=True,
+        return insert_driving_events(conn, session_id, events)
+
+    n = _write_in_savepoint(
+        conn, _SAVEPOINT_DRIVING_EVENTS, "Driving events", _write)
+    if n:
+        logger.info(
+            "Persisted %d driving events for session %s.", n, session_id,
         )
 
 
