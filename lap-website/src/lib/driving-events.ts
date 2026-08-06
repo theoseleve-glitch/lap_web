@@ -11,6 +11,21 @@ import { api } from '@/lib/api-client';
 
 export type CapabilityValue = 'detected' | 'not_triggered' | 'insufficient';
 
+/**
+ * The closed unit vocabulary, verbatim from `driving_events.MAGNITUDE_UNITS`.
+ *
+ * A runtime array first, with the type derived from it, so
+ * `backend-vocabulary-contract.test.ts` can diff it against the Python that
+ * produces it. A type alone is erased at runtime and could not be checked --
+ * and an unchecked hand-copied vocabulary is precisely how TIER_LABEL shipped
+ * a tier the backend never emits.
+ *
+ * `m/s2`, NOT `m/s²`: the superscript spelling is what a human writes and is
+ * not a value the producer can emit (`driving_events.py:211-221`).
+ */
+export const MAGNITUDE_UNITS = ['m', 'm/s', 'm/s2', 'pct'] as const;
+export type MagnitudeUnit = (typeof MAGNITUDE_UNITS)[number];
+
 export interface AlsoFired {
   event_type: string;
   magnitude: number | null;

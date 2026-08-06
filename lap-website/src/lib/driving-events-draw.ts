@@ -241,7 +241,7 @@ const TIER_LABEL: Record<string, string> = {
  * silently replaced with a plausible-looking one. Only a tier this build
  * actually recognises may draw; everything else refuses.
  */
-const DRAWABLE_TIERS = new Set(Object.keys(TIER_LABEL));
+export const DRAWABLE_TIERS: ReadonlySet<string> = new Set(Object.keys(TIER_LABEL));
 
 /**
  * Decide what boundary, if any, the g-g diagram may draw.
