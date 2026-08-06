@@ -12,13 +12,40 @@ import path from 'node:path';
  */
 const SRC = path.resolve(__dirname, '..');
 
+// A file is "product code" only if it is a .ts/.tsx file that is NOT itself
+// a test -- by directory (`__tests__/...`, handled in the walk below) AND by
+// filename (colocated `*.test.ts(x)` / `*.spec.ts(x)`, e.g.
+// `src/lib/safe-redirect.test.ts`, `src/middleware.test.ts`,
+// `src/app/(marketing)/billing/page.test.tsx`). Directory-only filtering
+// missed those six colocated files, so their string literals and comments
+// were being scanned as if they were the real page/component code.
+const TEST_FILE = /\.(test|spec)\.tsx?$/;
+
+function isProductFile(name: string): boolean {
+  return /\.tsx?$/.test(name) && !TEST_FILE.test(name);
+}
+
+// Strip comments before scanning. A `// showDrivingEvents` or
+// `// <DrivingEventsPanel sessionId="x" />` left behind by a refactor (or
+// planted as a decoy) must NOT satisfy these assertions -- only a live
+// mount may. This is deliberately a simple, non-tokenizing stripper (it
+// does not understand string/template literals, so a literal `//` or
+// `/*` inside a string could theoretically be mis-stripped); that's an
+// accepted trade-off for a test-only guard scanning our own source, not a
+// general-purpose JS/TS parser.
+function stripComments(code: string): string {
+  return code
+    .replace(/\/\*[\s\S]*?\*\//g, ' ')
+    .replace(/\/\/[^\n]*/g, '');
+}
+
 function readAllSources(): string {
   const out: string[] = [];
   const walk = (dir: string) => {
     for (const e of fs.readdirSync(dir, { withFileTypes: true })) {
       const p = path.join(dir, e.name);
       if (e.isDirectory()) { if (e.name !== '__tests__') walk(p); }
-      else if (/\.tsx?$/.test(e.name)) out.push(fs.readFileSync(p, 'utf8'));
+      else if (isProductFile(e.name)) out.push(stripComments(fs.readFileSync(p, 'utf8')));
     }
   };
   walk(SRC);

@@ -235,58 +235,65 @@ export default function VisualizeSessionPage() {
             </FullscreenToggle>
           </div>
 
-          {/* Right panels — Speed Trace + GG Diagram, stacked */}
-          <div className="flex-1 min-w-0 min-h-0 flex flex-col">
-            {/* Speed Trace — top right */}
-            <div className="flex-1 min-h-0 relative border-b border-steel/10">
-              <span className="absolute top-1 left-2 z-10 text-[9px] font-monument text-steel/40 uppercase tracking-wider pointer-events-none">
-                speed trace
-              </span>
-              <FullscreenToggle className="h-full w-full overflow-hidden" label="Speed Trace fullscreen">
-                <ChartErrorBoundary chartName="SpeedTrace">
-                  <SpeedTraceZoom
-                    sessionId={sessionId}
-                    apiBase={apiBase}
-                    gpsLaps={[]}
-                    bestLap={primaryLap}
-                    compareLap={compareLap}
-                    primaryLapTime={primaryLapTime}
-                    compareLapTime={compareLapTime}
-                    showDrivingEvents
-                    className="w-full h-full"
-                  />
-                </ChartErrorBoundary>
-              </FullscreenToggle>
+          {/* Right side — chart stack + driving-events rail. Row at lg+
+              (matches this app's existing lg:grid-cols-3 rail convention,
+              e.g. AnalyticsTab), column below lg so the rail's w-80 never
+              squeezes the charts at laptop widths (was clipping the g-g
+              envelope's refusal text at 834px logical width). */}
+          <div className="flex-1 min-w-0 min-h-0 flex flex-col lg:flex-row overflow-y-auto lg:overflow-hidden">
+            {/* Speed Trace + GG Diagram, stacked */}
+            <div className="flex-1 min-w-0 min-h-[50vh] lg:min-h-0 flex flex-col">
+              {/* Speed Trace — top right */}
+              <div className="flex-1 min-h-0 relative border-b border-steel/10">
+                <span className="absolute top-1 left-2 z-10 text-[9px] font-monument text-steel/40 uppercase tracking-wider pointer-events-none">
+                  speed trace
+                </span>
+                <FullscreenToggle className="h-full w-full overflow-hidden" label="Speed Trace fullscreen">
+                  <ChartErrorBoundary chartName="SpeedTrace">
+                    <SpeedTraceZoom
+                      sessionId={sessionId}
+                      apiBase={apiBase}
+                      gpsLaps={[]}
+                      bestLap={primaryLap}
+                      compareLap={compareLap}
+                      primaryLapTime={primaryLapTime}
+                      compareLapTime={compareLapTime}
+                      showDrivingEvents
+                      className="w-full h-full"
+                    />
+                  </ChartErrorBoundary>
+                </FullscreenToggle>
+              </div>
+
+              {/* GG Diagram — bottom right */}
+              <div className="flex-1 min-h-0 relative">
+                <span className="absolute top-1 left-2 z-10 text-[9px] font-monument text-steel/40 uppercase tracking-wider pointer-events-none">
+                  g-g diagram
+                </span>
+                <FullscreenToggle className="h-full w-full overflow-hidden" label="G-G Diagram fullscreen">
+                  <ChartErrorBoundary chartName="GGExplorer">
+                    <GGExplorer
+                      sessionId={sessionId}
+                      apiBase={apiBase}
+                      gpsLaps={[]}
+                      bestLap={primaryLap}
+                      className="w-full h-full"
+                    />
+                  </ChartErrorBoundary>
+                </FullscreenToggle>
+              </div>
             </div>
 
-            {/* GG Diagram — bottom right */}
-            <div className="flex-1 min-h-0 relative">
-              <span className="absolute top-1 left-2 z-10 text-[9px] font-monument text-steel/40 uppercase tracking-wider pointer-events-none">
-                g-g diagram
+            {/* Driving Events — rail at lg+, full-width band below on narrower viewports */}
+            <div className="w-full lg:w-80 shrink-0 min-h-0 relative border-t lg:border-t-0 lg:border-l border-steel/10 overflow-y-auto">
+              <span className="sticky top-0 z-10 block px-2 py-1 text-[9px] font-monument text-steel/40 uppercase tracking-wider bg-asphalt pointer-events-none">
+                driving events
               </span>
-              <FullscreenToggle className="h-full w-full overflow-hidden" label="G-G Diagram fullscreen">
-                <ChartErrorBoundary chartName="GGExplorer">
-                  <GGExplorer
-                    sessionId={sessionId}
-                    apiBase={apiBase}
-                    gpsLaps={[]}
-                    bestLap={primaryLap}
-                    className="w-full h-full"
-                  />
+              <div className="px-2 pb-2">
+                <ChartErrorBoundary chartName="DrivingEvents">
+                  <DrivingEventsPanel sessionId={sessionId} />
                 </ChartErrorBoundary>
-              </FullscreenToggle>
-            </div>
-          </div>
-
-          {/* Driving Events — right rail, ranked list */}
-          <div className="w-80 shrink-0 min-h-0 relative border-l border-steel/10 overflow-y-auto">
-            <span className="sticky top-0 z-10 block px-2 py-1 text-[9px] font-monument text-steel/40 uppercase tracking-wider bg-asphalt pointer-events-none">
-              driving events
-            </span>
-            <div className="px-2 pb-2">
-              <ChartErrorBoundary chartName="DrivingEvents">
-                <DrivingEventsPanel sessionId={sessionId} />
-              </ChartErrorBoundary>
+              </div>
             </div>
           </div>
 
