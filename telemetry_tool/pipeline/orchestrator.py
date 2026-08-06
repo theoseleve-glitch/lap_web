@@ -61,6 +61,34 @@ except ImportError:
         apply_discovery = None
 
 
+def _best_lap_time(valid_times) -> float | None:
+    """Return the fastest lap TIME from ``s08_metrics.select_best_lap``'s output.
+
+    ``select_best_lap`` returns ``valid_times`` as ``list[tuple[int, float]]``
+    -- ``(lap_key, time)`` PAIRS, not bare times.
+
+    THE DEFECT THIS REPLACES (live in production until 2026-08-06). The call
+    site did a plain ``min(valid_times)``, which is wrong twice over:
+
+    1. It returns a TUPLE. That was then passed as ``current_best_lap`` into
+       ``award_session_xp``, where ``gamification/xp.py:68`` compares it to a
+       float -- ``TypeError: '<' not supported between tuple and float``. The
+       orchestrator's own "Gamification stage failed (non-fatal)" handler
+       swallowed it, so no personal-best XP was ever awarded on this path and
+       nothing surfaced.
+    2. Tuples compare element-wise, so even unpacked it would have ordered by
+       LAP NUMBER first and returned the earliest lap rather than the fastest.
+
+    Extracted into a function purely so it can be tested. The bug survived
+    because it lived as one expression inside a 1,700-line function, in a
+    branch that needed a database connection to reach.
+    """
+    if not valid_times:
+        return None
+    times = [t for _, t in valid_times]
+    return min(times) if times else None
+
+
 def _fetch_user_corners(conn, session_id: str) -> list[dict] | None:
     """Fetch user-placed corner definitions for a session.
 
@@ -1641,7 +1669,7 @@ def run_full_analysis(
                         pass
 
                 _prev_best = get_driver_best_lap(_v2_conn, _gam_driver, _gam_wid)
-                _cur_best = min(valid_times) if valid_times else None
+                _cur_best = _best_lap_time(valid_times)
 
                 xp_result = award_session_xp(
                     _v2_conn, _gam_driver, _gam_wid, _gam_sid,
