@@ -52,10 +52,18 @@ function readAllSources(): string {
   return out.join('\n');
 }
 
-describe('the driving-events surfaces are actually reachable', () => {
+// NAMING. These are SOURCE SCANS over concatenated product files, not
+// import-graph resolution: they prove the tokens appear somewhere in
+// non-test source, which is strictly weaker than "this page renders this
+// component". The previous names ("...are actually reachable", "mounts
+// DrivingEventsPanel on a page") claimed the stronger thing, so a reader
+// trusting them would over-trust the guard. The weaker property is still
+// worth having -- it is what caught Tasks 1-6 shipping unmounted components
+// -- but it should be called what it is.
+describe('the driving-events surfaces are opted into somewhere in product source', () => {
   const sources = readAllSources();
 
-  it('sets showDrivingEvents somewhere outside its own definition', () => {
+  it('some product source file writes showDrivingEvents as an enabled prop', () => {
     // A page must opt in, not merely the prop existing on the component.
     // Matches `showDrivingEvents={true}`, `showDrivingEvents=true`,
     // the JSX boolean-shorthand `showDrivingEvents` immediately followed by
@@ -67,7 +75,7 @@ describe('the driving-events surfaces are actually reachable', () => {
     expect(sources).toMatch(/showDrivingEvents(\s*=\s*\{?\s*true|\s*\/>|\s*\n)/);
   });
 
-  it('mounts DrivingEventsPanel on a page', () => {
+  it('some product source file writes the <DrivingEventsPanel JSX tag', () => {
     // The component's own file only ever *declares*
     // `function DrivingEventsPanel(...)` -- it never writes the JSX tag
     // `<DrivingEventsPanel`, so this can only be satisfied by a caller.
