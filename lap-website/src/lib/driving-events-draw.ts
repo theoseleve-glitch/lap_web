@@ -305,6 +305,13 @@ export function aggregateAnchor(rows: CornerAnchorRow[] | null | undefined): Anc
   }
 
   const modalTier = leaders[0];
+  // Unreachable in practice: counts always has >=1 key (rows.length > 0 was
+  // checked above), so leaders always has >=1 entry here -- the ties/refused
+  // branch above already returned for leaders.length > 1. Written as an
+  // explicit guard rather than a `leaders[0]!` assertion so a future change
+  // to the leader-selection logic above fails safely (returns null) instead
+  // of silently re-opening a hole noUncheckedIndexedAccess exists to close.
+  if (modalTier === undefined) return null;
   const rep = rows.find((r) => r.grip_anchor_tier === modalTier);
   return {
     tier: modalTier,

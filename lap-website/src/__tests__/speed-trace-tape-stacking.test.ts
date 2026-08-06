@@ -33,7 +33,6 @@ function ev(over: Partial<DrivingEvent> = {}): DrivingEvent {
     evidence: {},
     time_cost_attribution: 'caused',
     magnitude_is_standalone_quotable: true,
-    also_fired: [],
     ...over,
   };
 }

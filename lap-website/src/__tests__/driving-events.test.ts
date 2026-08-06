@@ -176,7 +176,7 @@ describe('drawMistakeTape', () => {
   it('clips a segment to the plot area instead of painting outside it', () => {
     const r = recorder();
     drawMistakeTape(r.ctx, [ev({ s_norm_start: -0.5, s_norm_end: 1.5 })], GEO);
-    const [x, , w] = r.rects()[0]!.args as number[];
+    const [x, , w] = r.rects()[0]!.args as [number, number, number, number];
     expect(x).toBeGreaterThanOrEqual(GEO.plotX);
     expect(x + w).toBeLessThanOrEqual(GEO.plotX + GEO.plotW);
   });
@@ -262,7 +262,7 @@ describe('spanPx edge cases', () => {
   it('clips and draws a segment that straddles the left edge', () => {
     const r = recorder();
     drawMistakeTape(r.ctx, [ev({ s_norm_start: -0.1, s_norm_end: 0.2 })], GEO);
-    const [x, , w] = r.rects()[0]!.args as number[];
+    const [x, , w] = r.rects()[0]!.args as [number, number, number, number];
     expect(x).toBe(GEO.plotX);  // clipped to left edge
     expect(x + w).toBeGreaterThan(GEO.plotX);  // has non-zero width
   });
@@ -270,7 +270,7 @@ describe('spanPx edge cases', () => {
   it('clips and draws a segment that straddles the right edge, staying within bounds', () => {
     const r = recorder();
     drawMistakeTape(r.ctx, [ev({ s_norm_start: 0.8, s_norm_end: 1.2 })], GEO);
-    const [x, , w] = r.rects()[0]!.args as number[];
+    const [x, , w] = r.rects()[0]!.args as [number, number, number, number];
     expect(x).toBeGreaterThanOrEqual(GEO.plotX);
     expect(x + w).toBeLessThanOrEqual(GEO.plotX + GEO.plotW);  // never paints outside right boundary
   });
@@ -334,7 +334,7 @@ describe('makeTapeGeometry — the one place a frame bug can re-enter', () => {
     // misread as "the xMin bug is back". This assertion names the actual
     // failure (wrong rect count) instead.
     expect(r.rects().length).toBe(1);
-    const [x, , w] = r.rects()[0]!.args as number[];
+    const [x, , w] = r.rects()[0]!.args as [number, number, number, number];
     // s_norm 0.2 of the 500 m window = 500 m absolute = (500-400)*2 = 200 px.
     // Anchoring to zero instead would give (0.2*500 - 400)*2 = -600 px,
     // which clips to plotX and silently mislocates every event.
@@ -563,8 +563,8 @@ describe('aggregateAnchor — per-corner anchors collapse to one session-level a
 
     it('interleaved order (4 vs 4) -> refuses, SAME result', () => {
       const interleaved = [
-        goodRows[0], nullRows[0], goodRows[1], nullRows[1],
-        goodRows[2], nullRows[2], goodRows[3], nullRows[3],
+        goodRows[0]!, nullRows[0]!, goodRows[1]!, nullRows[1]!,
+        goodRows[2]!, nullRows[2]!, goodRows[3]!, nullRows[3]!,
       ];
       const a = aggregateAnchor(interleaved);
       expect(a?.tier).toBe('refused');

@@ -54,7 +54,10 @@ describe('DrivingEventsPanel distinguishes the empty states', () => {
   it('names a detector reporting an unrecognised capability value, not just "insufficient"', async () => {
     vi.mocked(fetchDrivingEvents).mockResolvedValue({
       events: [], available: false,
-      capability: { ...CLEAN_CAP, over_slowing: 'timed_out' }, capability_available: true,
+      // Deliberately a value this build's CapabilityValue union does not
+      // include -- that's the point of the test. Matches the `as never`
+      // convention already used for the same purpose in driving-events.test.ts.
+      capability: { ...CLEAN_CAP, over_slowing: 'timed_out' as never }, capability_available: true,
     });
     render(<DrivingEventsPanel sessionId="s1" />);
     const el = await waitFor(() => screen.getByTestId('events-empty-degraded'));
