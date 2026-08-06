@@ -180,9 +180,35 @@ export interface EnvelopeDecision {
   reason: string | null;
 }
 
+/**
+ * The tier this build refuses on, verbatim from `grip_anchor.TIER_REFUSED`.
+ *
+ * Exported and named because it is a BACKEND value, not a local flag: it is
+ * matched against `grip_anchor_tier` as it arrives from the DB. The null-tier
+ * bucket `aggregateAnchor` builds internally is deliberately NOT this string
+ * (see `NO_ANCHOR_BUCKET`) -- when the two shared one value, a backend rename
+ * would have stopped `explicitRefusal` from firing while the sentinel kept
+ * every test green.
+ */
+export const TIER_REFUSED = 'refused';
+
+/**
+ * Drawable tiers and how each is worded to a driver.
+ *
+ * EVERY KEY HERE IS A BACKEND VALUE and must match `grip_anchor.py` byte for
+ * byte -- `driving-events-tier-contract.test.ts` parses that file and fails
+ * if they drift. `session_envelope_ellipse_default_p2` is spelled out in
+ * full: it shipped for five review rounds as `session_envelope_default_p2`
+ * (no `ellipse_`), a typo carried from the plan's Global Constraint 6 into
+ * the brief and then into this table. Because `DRAWABLE_TIERS` is an exact
+ * allow-list, the effect was that the tier the backend selects whenever
+ * `friction.exponent_source !== 'fitted'` -- its DEFAULT, not its exception
+ * (`grip_anchor.py:491-494`) -- could never draw, and every driver on it was
+ * told "Grip limit not measured for this session".
+ */
 const TIER_LABEL: Record<string, string> = {
   session_envelope_ellipse_fitted: 'session envelope (fitted)',
-  session_envelope_default_p2: 'session envelope (default p=2)',
+  session_envelope_ellipse_default_p2: 'session envelope (default p=2)',
   driver_best_session: 'your best this session',
 };
 

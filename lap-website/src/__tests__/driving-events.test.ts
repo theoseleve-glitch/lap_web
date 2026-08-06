@@ -398,7 +398,7 @@ describe('resolveEnvelope — never a boundary drawn from its own data', () => {
   it('draws nothing for a non-finite or non-positive baseline', () => {
     for (const g of [NaN, Infinity, 0, -1]) {
       const d = resolveEnvelope(
-        { baseline_g: g, tier: 'session_envelope_default_p2', reason: null }, 1.3);
+        { baseline_g: g, tier: 'session_envelope_ellipse_default_p2', reason: null }, 1.3);
       expect(d.draw).toBe(false);
     }
   });
@@ -413,7 +413,7 @@ describe('resolveEnvelope — never a boundary drawn from its own data', () => {
 describe('resolveEnvelope — tier is an ALLOW-list, not a deny-list', () => {
   it('draws for each of the three tiers this build recognises', () => {
     for (const tier of [
-      'session_envelope_ellipse_fitted', 'session_envelope_default_p2', 'driver_best_session',
+      'session_envelope_ellipse_fitted', 'session_envelope_ellipse_default_p2', 'driver_best_session',
     ]) {
       const d = resolveEnvelope({ baseline_g: 1.0, tier, reason: null }, 1.3);
       expect(d.draw).toBe(true);
@@ -474,7 +474,7 @@ describe('aggregateAnchor — per-corner anchors collapse to one session-level a
     const a = aggregateAnchor([
       row({ grip_anchor_tier: 'driver_best_session', grip_anchor_baseline_g: 0.9 }),
       row({ grip_anchor_tier: 'driver_best_session', grip_anchor_baseline_g: 0.9 }),
-      row({ grip_anchor_tier: 'session_envelope_default_p2', grip_anchor_baseline_g: 1.1 }),
+      row({ grip_anchor_tier: 'session_envelope_ellipse_default_p2', grip_anchor_baseline_g: 1.1 }),
     ]);
     expect(a?.tier).toBe('driver_best_session');
     expect(a?.baseline_g).toBe(0.9);
@@ -575,8 +575,8 @@ describe('aggregateAnchor — per-corner anchors collapse to one session-level a
     const a = aggregateAnchor([
       row({ grip_anchor_tier: 'session_envelope_ellipse_fitted' }),
       row({ grip_anchor_tier: 'session_envelope_ellipse_fitted' }),
-      row({ grip_anchor_tier: 'session_envelope_default_p2' }),
-      row({ grip_anchor_tier: 'session_envelope_default_p2' }),
+      row({ grip_anchor_tier: 'session_envelope_ellipse_default_p2' }),
+      row({ grip_anchor_tier: 'session_envelope_ellipse_default_p2' }),
       row({ grip_anchor_tier: 'driver_best_session' }),
       row({ grip_anchor_tier: 'driver_best_session' }),
     ]);
