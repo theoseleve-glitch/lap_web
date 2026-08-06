@@ -11,7 +11,7 @@
  * tested with in driving-events.test.ts.
  */
 import { describe, it, expect } from 'vitest';
-import { drawSpeedTrace } from '@/components/shared/charts/SpeedTraceChart';
+import { drawSpeedTrace, CROSS_SESSION_BAR_H } from '@/components/shared/charts/SpeedTraceChart';
 import { TAPE_HEIGHT_PX } from '@/lib/driving-events-draw';
 import type { DrivingEvent } from '@/lib/driving-events';
 
@@ -96,7 +96,7 @@ describe('driving-event tape vs. cross-session delta bar stacking', () => {
     });
     const tapeY = tapeRectY(r.calls);
 
-    const barRects = r.calls.filter((c) => c.op === 'fillRect' && (c.args as number[])[3] === 10);
+    const barRects = r.calls.filter((c) => c.op === 'fillRect' && (c.args as number[])[3] === CROSS_SESSION_BAR_H);
     expect(barRects.length).toBeGreaterThan(0);
     const barY = (barRects[0]!.args as number[])[1]!;
 
@@ -105,6 +105,6 @@ describe('driving-event tape vs. cross-session delta bar stacking', () => {
     // hide the delta bar — this asserts NEITHER is covered by the other.
     expect(tapeY + TAPE_HEIGHT_PX).toBeLessThanOrEqual(barY);
     // And it should be exactly one bar-height higher than the unstacked case.
-    expect(tapeY).toBeCloseTo(PAD_TOP + PLOT_H - 10 - TAPE_HEIGHT_PX, 5); // 302
+    expect(tapeY).toBeCloseTo(PAD_TOP + PLOT_H - CROSS_SESSION_BAR_H - TAPE_HEIGHT_PX, 5);
   });
 });

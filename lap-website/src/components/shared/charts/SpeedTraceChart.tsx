@@ -151,7 +151,10 @@ interface DrawOptions {
 // below). Shared with the driving-event tape's stacking offset so the two
 // can never drift apart — the tape sits directly above this band instead of
 // under it, rather than each side hardcoding its own copy of "10".
-const CROSS_SESSION_BAR_H = 10;
+// Exported so the stacking test shares this ONE source of truth. It used
+// to keep its own literal 10, which is the same drift risk the constant
+// exists to remove -- just pushed one layer out into the test.
+export const CROSS_SESSION_BAR_H = 10;
 
 // Exported for direct testing of layering/stacking behaviour (e.g. the
 // mistake tape vs. the cross-session delta bar) with a canvas-recorder

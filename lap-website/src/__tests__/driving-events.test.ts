@@ -122,10 +122,11 @@ describe('an empty event list is not one state', () => {
     expect(describeCapability(r)).toBe('degraded');
   });
 });
-
 import {
   drawMistakeTape, drawCornerShade, eventColor, eventLabel, TAPE_HEIGHT_PX,
-  type TapeGeometry,
+  makeTapeGeometry, resolveEnvelope, aggregateAnchor, REFUSAL_LABEL,
+  aggregateBaselines, MAX_BASELINE_SPREAD, REASON_BASELINES_DISAGREE,
+  type TapeGeometry, type AnchorSummary, type CornerAnchorRow,
 } from '@/lib/driving-events-draw';
 
 /** Records every call instead of painting. No DOM, no canvas mock. */
@@ -335,8 +336,6 @@ describe('eventLabel', () => {
   });
 });
 
-import { makeTapeGeometry } from '@/lib/driving-events-draw';
-
 describe('makeTapeGeometry — the one place a frame bug can re-enter', () => {
   // An 1100 m lap on a chart CROPPED to 400..900 m at 2 px per metre.
   // The lap length and the window length are deliberately different; when
@@ -404,11 +403,6 @@ describe('makeTapeGeometry — the one place a frame bug can re-enter', () => {
     expect(bad(Infinity)).toBeNull();
   });
 });
-
-import {
-  resolveEnvelope, aggregateAnchor, REFUSAL_LABEL,
-  type AnchorSummary, type CornerAnchorRow,
-} from '@/lib/driving-events-draw';
 
 describe('resolveEnvelope — never a boundary drawn from its own data', () => {
   it('uses the anchored baseline and names the tier', () => {
@@ -782,10 +776,6 @@ describe('cost attribution and span are independent axes', () => {
 });
 
 /* ── the envelope RADIUS, not just its tier ─────────────────────── */
-
-import {
-  aggregateBaselines, MAX_BASELINE_SPREAD, REASON_BASELINES_DISAGREE,
-} from '@/lib/driving-events-draw';
 
 describe('the envelope radius is not one arbitrary corner\'s baseline', () => {
   function row(over: Partial<CornerAnchorRow> = {}): CornerAnchorRow {
