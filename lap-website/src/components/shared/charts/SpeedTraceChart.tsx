@@ -134,7 +134,17 @@ interface DrawOptions {
   drivingEvents?: DrivingEvent[] | null;
 }
 
-function drawSpeedTrace(
+// Height of the cross-session delta bar strip (see "Cross-session delta bar"
+// below). Shared with the driving-event tape's stacking offset so the two
+// can never drift apart — the tape sits directly above this band instead of
+// under it, rather than each side hardcoding its own copy of "10".
+const CROSS_SESSION_BAR_H = 10;
+
+// Exported for direct testing of layering/stacking behaviour (e.g. the
+// mistake tape vs. the cross-session delta bar) with a canvas-recorder
+// stub, mirroring how driving-events-draw.ts's pure draw functions are
+// tested — no DOM, no real canvas.
+export function drawSpeedTrace(
   ctx: CanvasRenderingContext2D,
   w: number,
   h: number,
@@ -509,10 +519,20 @@ function drawSpeedTrace(
   }
 
   // ── Driving-event tape ────────────────────────────────────
+  // The cross-session delta bar (below) is a bottom-anchored strip painted
+  // LATER in this same pass, so if the tape used the full plot height it
+  // would paint the tape and then immediately cover it. When that bar will
+  // render, shrink the geometry handed to the tape by its height so
+  // drawMistakeTape's own "bottom of the plot" math lands one band higher —
+  // directly above the delta bar instead of under it.
   if (opts.drivingEvents && opts.drivingEvents.length > 0) {
+    const hasCrossSessionDeltaBar = !!(
+      opts.crossRefDistances && opts.crossRefDeltaS && opts.crossRefDistances.length > 1
+    );
     const geo = makeTapeGeometry({
       xMin, xMax, xToPixel,
-      plotX: pad.left, plotY: pad.top, plotW: pW, plotH: pH,
+      plotX: pad.left, plotY: pad.top, plotW: pW,
+      plotH: pH - (hasCrossSessionDeltaBar ? CROSS_SESSION_BAR_H : 0),
     });
     if (geo) {
       drawCornerShade(ctx, opts.drivingEvents, geo);
@@ -536,7 +556,7 @@ function drawSpeedTrace(
 
   // ── Cross-session delta bar ───────────────────────────────
   if (opts.crossRefDistances && opts.crossRefDeltaS && opts.crossRefDistances.length > 1) {
-    const barH = 10;
+    const barH = CROSS_SESSION_BAR_H;
     const barY = pad.top + pH - barH; // sits at the very bottom of the plot area
     const xRefDist = opts.crossRefDistances;
     const deltaS = opts.crossRefDeltaS;

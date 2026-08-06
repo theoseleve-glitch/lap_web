@@ -325,6 +325,15 @@ describe('makeTapeGeometry — the one place a frame bug can re-enter', () => {
     const geo = build()!;
     const r = recorder();
     drawMistakeTape(r.ctx, [ev({ s_norm_start: 0.2, s_norm_end: 0.4 })], geo);
+    // Assert the rect exists BEFORE destructuring it: with the offset
+    // dropped, this fixture's mislocated span falls fully outside the plot
+    // and Task 2's reject-before-clip guard discards it, so zero rects are
+    // emitted. Destructuring straight into `.args` would then throw
+    // TypeError on undefined — a crash that a future, unrelated regression
+    // in that reject-before-clip guard would also produce, and could be
+    // misread as "the xMin bug is back". This assertion names the actual
+    // failure (wrong rect count) instead.
+    expect(r.rects().length).toBe(1);
     const [x, , w] = r.rects()[0]!.args as number[];
     // s_norm 0.2 of the 500 m window = 500 m absolute = (500-400)*2 = 200 px.
     // Anchoring to zero instead would give (0.2*500 - 400)*2 = -600 px,
