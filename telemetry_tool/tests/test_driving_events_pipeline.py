@@ -727,6 +727,168 @@ def test_both_child_writers_share_one_savepoint_implementation():
             f"helper")
 
 
+def test_a_failed_theoretical_write_does_not_discard_the_session(seeded_db):
+    """The sibling case the reviewer proved on real PostgreSQL 16: dropping
+    `theoretical_data.session_scalars_json` gave `InFailedSqlTransaction`
+    with ALL SEVEN tables at 0 rows.
+
+    Reproduced here against the PostgreSQL abort model (SQLite does not abort
+    a transaction on a failed statement, so a test written directly against
+    it passes against the broken code). The column is dropped if this SQLite
+    supports it and the whole table otherwise -- either way the INSERT that
+    `insert_theoretical_data` issues fails, which is the shape under test.
+    """
+    from pipeline.stages import s15_persist
+
+    try:
+        seeded_db.execute(
+            "ALTER TABLE theoretical_data DROP COLUMN session_scalars_json")
+    except Exception:
+        seeded_db.execute("DROP TABLE theoretical_data")
+    seeded_db.commit()
+
+    conn = _AbortsLikePostgres(seeded_db)
+    conn.execute("INSERT INTO laps (session_id, lap_number, lap_time_s, "
+                 "is_valid) VALUES ('s1', 97, 61.0, 1)")
+
+    from web.models import insert_theoretical_data, insert_reference_line
+    s15_persist._persist_theoretical(
+        conn, "s1",
+        {"theoretical_metrics": {"theoretical_best_s": 60.0},
+         "theoretical_lap": {"distance_m": [0.0, 1.0], "speed_mps": [10.0, 11.0]},
+         "session_scalars": {"x": 1}},
+        insert_theoretical_data, insert_reference_line)
+    conn.commit()
+
+    assert not conn.silently_rolled_back, (
+        "COMMIT became a silent ROLLBACK -- the failed theoretical write "
+        "poisoned the outer transaction")
+    assert seeded_db.execute(
+        "SELECT count(*) FROM laps WHERE session_id='s1' AND lap_number=97"
+    ).fetchone()[0] == 1, (
+        "a failed theoretical-data write discarded the rest of the session")
+
+
+def _child_writers_of_run_persist():
+    """Every `_persist_*` / `_enrich_*` helper `run_persist_to_db` calls.
+
+    DISCOVERED from its source, not enumerated: the property these tests
+    hold is "no child writer swallows a DB failure", and a test that lists
+    two names by hand cannot see the third one somebody adds -- which is the
+    entire thing it exists to catch.
+    """
+    import ast
+    import inspect
+    import textwrap
+    from pipeline.stages import s15_persist
+
+    tree = ast.parse(textwrap.dedent(
+        inspect.getsource(s15_persist.run_persist_to_db)))
+    names = set()
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Call) and isinstance(node.func, ast.Name):
+            n = node.func.id
+            if n.startswith(("_persist_", "_enrich_", "_upsert_")):
+                names.add(n)
+    found = {n: getattr(s15_persist, n) for n in sorted(names)
+             if callable(getattr(s15_persist, n, None))}
+    assert found, "discovery found no child writers -- the walk is broken"
+    return found
+
+
+def _swallowing_db_handlers(fn) -> list:
+    """Exception handlers in `fn` that swallow (never re-raise) AND whose
+    guarded block touches `conn`.
+
+    The `conn` condition is what keeps this honest without an allowlist.
+    `_upsert_track_record` legitimately swallows around
+    `track_detection.load_track_database()` -- a FILE read, where a
+    savepoint would be meaningless -- while its actual write
+    (`upsert_track`) is deliberately left to propagate to the outer
+    rollback. Only a swallow over a DB operation is the defect.
+    """
+    import ast
+    import inspect
+    import textwrap
+
+    tree = ast.parse(textwrap.dedent(inspect.getsource(fn)))
+    out = []
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.Try):
+            continue
+        guarded = chr(10).join(ast.unparse(x) for x in node.body)
+        if "conn" not in guarded:
+            continue
+        for handler in node.handlers:
+            if not any(isinstance(x, ast.Raise) for x in ast.walk(handler)):
+                out.append(ast.unparse(handler)[:120])
+    return out
+
+
+def test_no_child_writer_swallows_a_database_failure():
+    """The invariant, held over EVERY child writer `run_persist_to_db` calls
+    -- discovered, so a newly added one is covered automatically.
+
+    `run_persist_to_db` is ONE transaction. A swallowed DB failure leaves
+    PostgreSQL's transaction aborted and turns the later COMMIT into a
+    silent ROLLBACK, losing the whole session behind one WARNING line. That
+    was proven on real PostgreSQL 16 for corner metrics, for driving events,
+    and for theoretical data.
+    """
+    writers = _child_writers_of_run_persist()
+    offenders = {}
+    for name, fn in writers.items():
+        bad = _swallowing_db_handlers(fn)
+        if bad:
+            offenders[name] = bad
+
+    assert not offenders, (
+        "child writer(s) swallow a database failure without a savepoint, so "
+        "a failure there discards the WHOLE session at COMMIT: "
+        f"{offenders}. Route the write through "
+        f"`s15_persist._write_in_savepoint`.")
+
+
+def test_the_discovery_actually_finds_every_writer():
+    """Guards the DISCOVERY. `test_no_child_writer_swallows...` passes
+    vacuously if the walk returns nothing or misses the writers, so pin what
+    it must find -- including the two this branch guarded and one it did
+    not."""
+    writers = _child_writers_of_run_persist()
+
+    for expected in ("_persist_corner_metrics", "_persist_driving_events",
+                     "_persist_theoretical", "_enrich_historical",
+                     "_persist_driver_progression", "_persist_weather",
+                     "_upsert_track_record"):
+        assert expected in writers, (writers.keys(), expected)
+
+
+def test_the_conn_condition_exempts_only_non_database_swallows():
+    """`_upsert_track_record` keeps a swallow, legitimately: it wraps a FILE
+    read (`load_track_database`), where a savepoint would be meaningless,
+    while its actual write is left to propagate. Pin that this is why it is
+    exempt -- not an allowlist someone can quietly extend."""
+    import ast
+    import inspect
+    import textwrap
+    from pipeline.stages import s15_persist
+
+    assert not _swallowing_db_handlers(s15_persist._upsert_track_record)
+
+    tree = ast.parse(textwrap.dedent(
+        inspect.getsource(s15_persist._upsert_track_record)))
+    tries = [n for n in ast.walk(tree) if isinstance(n, ast.Try)]
+    assert tries, "the exemption is vacuous -- there is no swallow to exempt"
+    for t in tries:
+        guarded = chr(10).join(ast.unparse(x) for x in t.body)
+        assert "conn" not in guarded, (
+            "the exempt handler now guards a DB operation, so the exemption "
+            "no longer holds")
+    # ...and the write it performs is NOT swallowed.
+    src = inspect.getsource(s15_persist._upsert_track_record)
+    assert src.rstrip().endswith("upsert_track(conn, track_entry)")
+
+
 def test_an_empty_event_list_writes_nothing_and_does_not_raise(seeded_db):
     from pipeline.stages import s15_persist
 

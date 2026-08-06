@@ -124,7 +124,7 @@ def run_persist_to_db(
 
         # Driving style features
         if driving_style_result:
-            try:
+            def _driving_style():
                 insert_driving_style_features(
                     conn, driver_id, session_id, driving_style_result,
                 )
@@ -132,8 +132,11 @@ def run_persist_to_db(
                     "Persisted driving style: %s",
                     driving_style_result.get("style_label"),
                 )
-            except Exception as exc:
-                logger.warning("Driving style persistence skipped: %s", exc)
+                return True
+
+            _write_in_savepoint(
+                conn, _SAVEPOINT_DRIVING_STYLE, "Driving style",
+                _driving_style)
 
         # Driver progression snapshot
         _persist_driver_progression(
@@ -209,28 +212,48 @@ def _persist_theoretical(
     insert_theoretical_data: Any,
     insert_reference_line: Any,
 ) -> None:
-    """Persist theoretical data and reference line."""
-    try:
+    """Persist theoretical data and reference line, each contained by its own
+    SAVEPOINT -- see `_write_in_savepoint`.
+
+    Pre-existing hazard, not opened by 085/086: this was a bare swallow, and
+    the reviewer proved it costs the whole session. Dropping
+    `theoretical_data.session_scalars_json` on real PostgreSQL 16 gave
+    `InFailedSqlTransaction` with ALL SEVEN tables at 0 rows -- byte-for-byte
+    the NEW-1 defect, one door down.
+
+    Three savepoints rather than two: `auto_set_track_reference` runs INSIDE
+    the reference-line block and had its own nested swallow, so a failure
+    there aborted the transaction while the outer block reported success.
+    """
+    def _theoretical():
         insert_theoretical_data(conn, session_id, summary)
         logger.info("Persisted theoretical data for session %s.", session_id)
-    except Exception as exc:
-        logger.warning("Theoretical data persistence FAILED: %s", exc, exc_info=True)
+        return True
 
-    try:
+    _write_in_savepoint(
+        conn, _SAVEPOINT_THEORETICAL, "Theoretical data", _theoretical)
+
+    def _reference_line():
         insert_reference_line(conn, session_id, summary)
         logger.info("Persisted reference line for session %s.", session_id)
-        # Auto-set track condition reference if first for this condition
-        try:
-            from web.models import auto_set_track_reference
-            cond = auto_set_track_reference(conn, session_id)
-            if cond:
-                logger.info(
-                    "Set %s reference line for track from session %s.", cond, session_id,
-                )
-        except Exception as exc:
-            logger.debug("Auto-set track reference skipped: %s", exc)
-    except Exception as exc:
-        logger.warning("Reference line persistence FAILED: %s", exc, exc_info=True)
+        return True
+
+    _write_in_savepoint(
+        conn, _SAVEPOINT_REFERENCE_LINE, "Reference line", _reference_line)
+
+    # Auto-set track condition reference if first for this condition.
+    def _auto_reference():
+        from web.models import auto_set_track_reference
+        cond = auto_set_track_reference(conn, session_id)
+        if cond:
+            logger.info(
+                "Set %s reference line for track from session %s.", cond, session_id,
+            )
+        return True
+
+    _write_in_savepoint(
+        conn, _SAVEPOINT_AUTO_REFERENCE, "Auto-set track reference",
+        _auto_reference)
 
 
 # ── SAVEPOINT-GUARDED CHILD WRITES ───────────────────────────────────────
@@ -259,6 +282,16 @@ def _persist_theoretical(
 # degraded write -- it is the whole session.
 _SAVEPOINT_CORNER_METRICS = "sp_corner_metrics"
 _SAVEPOINT_DRIVING_EVENTS = "sp_driving_events"
+# The five PRE-EXISTING sibling swallows, guarded opportunistically (see
+# `_persist_theoretical`). Distinct names so a log line names the writer.
+_SAVEPOINT_THEORETICAL = "sp_theoretical"
+_SAVEPOINT_REFERENCE_LINE = "sp_reference_line"
+_SAVEPOINT_AUTO_REFERENCE = "sp_auto_reference"
+_SAVEPOINT_DRIVING_STYLE = "sp_driving_style"
+_SAVEPOINT_HISTORICAL = "sp_historical"
+_SAVEPOINT_PROGRESSION = "sp_progression"
+_SAVEPOINT_DRIVER_PROFILE = "sp_driver_profile"
+_SAVEPOINT_WEATHER = "sp_weather"
 
 
 def _write_in_savepoint(conn: Any, savepoint: str, label: str, write: Any) -> Any:
@@ -383,19 +416,27 @@ def _enrich_historical(
     score_result: Optional[dict],
     summary: dict,
 ) -> None:
-    """Enrich score_result with historical context."""
-    try:
+    """Enrich score_result with historical context, contained by a SAVEPOINT.
+
+    Pre-existing hazard, guarded opportunistically -- see
+    `_persist_theoretical`. This one QUERIES rather than writes, but a failed
+    query aborts a PostgreSQL transaction exactly as a failed write does, so
+    the swallow was the same total-session-loss shape.
+    """
+    def _enrich():
         cross_mod = lazy_import("cross_session")
         if cross_mod is None:
-            return
+            return None
         if score_result and track_id:
             enriched = cross_mod.enrich_with_historical(
                 conn, session_id, track_id, driver_id, score_result,
             )
             summary["score_result"] = enriched
             logger.info("Enriched score with historical context.")
-    except Exception as exc:
-        logger.warning("Historical enrichment skipped: %s", exc)
+        return True
+
+    _write_in_savepoint(
+        conn, _SAVEPOINT_HISTORICAL, "Historical enrichment", _enrich)
 
 
 def _persist_driver_progression(
@@ -409,8 +450,16 @@ def _persist_driver_progression(
     insert_driver_progression: Any,
     upsert_driver_profile: Any,
 ) -> None:
-    """Persist driver progression snapshot and update driver profile."""
-    try:
+    """Persist driver progression snapshot and update driver profile, each
+    contained by its own SAVEPOINT.
+
+    Pre-existing hazard, guarded opportunistically -- see
+    `_persist_theoretical`. Two savepoints, because the two blocks were two
+    independent swallows: the profile update also QUERIES
+    `driver_progression`, and on PostgreSQL a failed query aborts the
+    transaction exactly as a failed write does.
+    """
+    def _progression():
         lap_times = summary.get("lap_times") or []
         valid_lt = [
             t
@@ -458,11 +507,13 @@ def _persist_driver_progression(
         }
         insert_driver_progression(conn, driver_id, session_id, prog_data)
         logger.info("Persisted driver progression for session %s.", session_id)
-    except Exception as exc:
-        logger.warning("Driver progression persistence skipped: %s", exc)
+        return True
+
+    _write_in_savepoint(
+        conn, _SAVEPOINT_PROGRESSION, "Driver progression", _progression)
 
     # Update driver profile computed fields
-    try:
+    def _profile():
         all_prog = conn.execute(
             "SELECT pace_delta_s, consistency_cv_pct, aggression_index, "
             "smoothness_index, total_score, n_laps "
@@ -514,8 +565,10 @@ def _persist_driver_progression(
                 total_sess,
                 total_laps,
             )
-    except Exception as exc:
-        logger.warning("Driver profile update skipped: %s", exc)
+        return True
+
+    _write_in_savepoint(
+        conn, _SAVEPOINT_DRIVER_PROFILE, "Driver profile", _profile)
 
 
 def _persist_weather(
@@ -527,7 +580,7 @@ def _persist_weather(
     if weather_timeline is None or weather_timeline.empty:
         return
 
-    try:
+    def _weather():
         for _, wrow in weather_timeline.iterrows():
             conn.execute(
                 "INSERT OR IGNORE INTO session_weather_laps "
@@ -553,5 +606,8 @@ def _persist_weather(
                 ),
             )
         logger.info("Saved weather timeline for %d laps", len(weather_timeline))
-    except Exception as exc:
-        logger.warning("Failed to persist weather timeline: %s", exc)
+        return True
+
+    # Pre-existing hazard, guarded opportunistically -- see
+    # `_persist_theoretical`.
+    _write_in_savepoint(conn, _SAVEPOINT_WEATHER, "Weather timeline", _weather)
