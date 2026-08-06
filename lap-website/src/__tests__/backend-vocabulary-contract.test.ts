@@ -192,8 +192,19 @@ describe("the backend's refused tier and our internal sentinel are separate thin
     const sentinel = JSON.parse(`"${m![1]!}"`) as string;
     const backendTiers = frozensetOf(readBackend('grip_anchor.py'), 'TIERS');
     expect(backendTiers.has(sentinel)).toBe(false);
-    // and it is unrepresentable in the column, not merely unused today
-    expect(/[ -]/.test(sentinel)).toBe(true);
+    // and it is unrepresentable in the column, not merely unused today: it
+    // starts with a C0 control character, which no tier value can contain.
+    //
+    // Written with charCodeAt rather than a character-class regex ON PURPOSE.
+    // The regex form needs literal control-character escapes, and the first
+    // attempt at it had those escapes collapsed into RAW control bytes by the
+    // shell that wrote the file -- which made ripgrep and GNU grep classify
+    // this whole file as binary and print "Binary file ... matches" instead
+    // of the line. The contract test guarding the tier vocabulary was then
+    // invisible to every content search over src/, including searches for
+    // the very constants it guards. No escapes here, so that cannot recur.
+    expect(sentinel.length).toBeGreaterThan(0);
+    expect(sentinel.charCodeAt(0)).toBeLessThan(0x20);
   });
 
   it('our own refusal reason cannot collide with a grip_anchor REASON_*', () => {

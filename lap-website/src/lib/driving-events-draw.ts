@@ -260,8 +260,8 @@ const NO_ANCHOR_BUCKET = '\u0000no-anchor-recorded';
  * Drawable tiers and how each is worded to a driver.
  *
  * EVERY KEY HERE IS A BACKEND VALUE and must match `grip_anchor.py` byte for
- * byte -- `driving-events-tier-contract.test.ts` parses that file and fails
- * if they drift. `session_envelope_ellipse_default_p2` is spelled out in
+ * byte -- `src/__tests__/backend-vocabulary-contract.test.ts` parses that
+ * file and fails if they drift. `session_envelope_ellipse_default_p2` is spelled out in
  * full: it shipped for five review rounds as `session_envelope_default_p2`
  * (no `ellipse_`), a typo carried from the plan's Global Constraint 6 into
  * the brief and then into this table. Because `DRAWABLE_TIERS` is an exact
@@ -503,20 +503,33 @@ export function aggregateAnchor(rows: CornerAnchorRow[] | null | undefined): Anc
  * The largest relative disagreement between per-corner baselines that may
  * still be collapsed to ONE circle: (max - min) / median.
  *
- * MEASURED, not guessed. Rebuilding the friction envelope the way
- * `friction_model.build_friction_model` does (p95 of |a_lat| per speed bin)
- * over `fixtures/golden/OK_R3.csv` -- 201,875 real samples, Ouest Karting --
- * gives, across the speed band where cornering actually happens
- * (|a_lat| > 0.4 G, p5..p95 = 11.2..18.0 m/s):
+ * MEASURED THROUGH THE REAL PIPELINE, not guessed and not reconstructed:
+ * `s01 ingest -> ... -> s09_physics.run_friction_model` with production
+ * defaults over `fixtures/golden/OK_R3.csv` (201,875 real samples, Ouest
+ * Karting), then reproducing what `s10d2_grip_anchor` feeds `decide_anchor`,
+ * i.e. the actual `grip_anchor_baseline_g` each corner-lap would persist:
  *
- *     bin p95 lateral: min 0.591 G, median 0.884 G, max 1.091 G
- *     spread = (1.091 - 0.591) / 0.884 = 56.6%
+ *     all 54 corner-laps:  min 0.748  median 1.068  max 1.081  ->  31.1%
+ *     per-corner medians:  min 0.853  median 1.070  max 1.075  ->  20.7%
  *
- * A corner taken at 12 m/s and one at 18 m/s therefore get baselines that
- * differ by nearly 2x, both entirely correctly. One circle cannot represent
- * both, and the g-g plots EVERY corner's samples: size it from the wrong end
- * and a driver at the limit of a high-grip corner reads "I exceeded the
- * measured grip limit" for no reason but arithmetic.
+ * SHAPE, which matters more than the headline: four of the six corners agree
+ * within 1% (1.069..1.081). The disagreement is driven entirely by the two
+ * FAST corners, C1 and C6, apex 17-18 m/s. So this is not noise to be
+ * averaged out -- it is the speed dependence of `lateral_max(v)` showing up
+ * exactly where the physics says it should.
+ *
+ * (An earlier version of this comment said 56.6%, from a hand reconstruction
+ * of the envelope that skipped `min_samples_per_bin`, the NaN interpolation,
+ * the 5 g clip and the Gaussian smoothing -- all of which flatten the thin
+ * low-speed end. It overstated the spread 2.7x. The conclusion is unchanged,
+ * since both real figures still exceed this threshold, but a shipped
+ * constant may not be justified by a number nobody can reproduce.)
+ *
+ * A corner taken at 12 m/s and one at 18 m/s therefore get different
+ * baselines, both entirely correctly. One circle cannot represent both, and
+ * the g-g plots EVERY corner's samples: size it from the wrong end and a
+ * driver at the limit of a high-grip corner reads "I exceeded the measured
+ * grip limit" for no reason but arithmetic.
  *
  * The 0.15 threshold comes from what the plot can actually show. The arc is
  * drawn at `rPx = (radiusG / axisMax) * (pW / 2)`; with axisMax ~1.15*maxG
@@ -530,8 +543,29 @@ export function aggregateAnchor(rows: CornerAnchorRow[] | null | undefined): Anc
  * CONSEQUENCE, stated plainly: on a session with the OK_R3 spread this
  * REFUSES and the g-g draws no boundary. That is the honest answer -- there
  * is no single measured grip limit for such a session -- but it does mean
- * the envelope will often not draw on real multi-speed data. Narrowing this
- * number is not the fix; a per-corner or speed-dependent envelope is.
+ * the envelope will often not draw on real multi-speed data.
+ *
+ * DO NOT RAISE THIS NUMBER TO MAKE THE FIXTURE PASS. ~0.35 would clear
+ * OK_R3 and would restore precisely the false-accusation failure this gate
+ * exists to prevent; it is also tuning a legibility number to a product
+ * outcome. Three named follow-ups instead, none of them a threshold change:
+ *
+ *  1. Draw the speed dependence rather than collapsing it.
+ *     `FrictionCircle.lateral_max(v)` is a function of speed and every g-g
+ *     point carries a speed, so bin or colour the scatter by speed and draw
+ *     a boundary per band. That turns the 21-31% spread into the
+ *     information instead of the blocker -- and it is the only version that
+ *     can ever place a driver OUTSIDE the limit, which is the whole point.
+ *  2. `(max - min) / median` is the wrong statistic for a gate. It is
+ *     full-range, so it is maximally outlier-driven and gets monotonically
+ *     more likely to refuse as corners are added: a 20-corner circuit could
+ *     essentially never draw even with 19 corners agreeing. Use a robust
+ *     measure (IQR or MAD against the median, or "at least N% of corners
+ *     within X").
+ *  3. 0.15 is derived from a LEGIBILITY floor ("below this the disagreement
+ *     is invisible") but used as an HONESTY ceiling ("above this one circle
+ *     is a false claim"). Those are different quantities and this constant
+ *     currently conflates them.
  */
 export const MAX_BASELINE_SPREAD = 0.15;
 
