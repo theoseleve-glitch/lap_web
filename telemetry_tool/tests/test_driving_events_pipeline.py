@@ -216,7 +216,18 @@ def test_without_isolation_the_failure_is_raised_rather_than_swallowed(seeded_db
     """If the SAVEPOINT itself cannot be taken there is nothing to contain
     the failure, and swallowing it is the dangerous branch. A loud failure
     that rolls the transaction back is strictly better than a silent one
-    that discards the session and reports success."""
+    that discards the session and reports success.
+
+    ⚠ THE EXCEPTION'S IDENTITY IS THE ASSERTION, and this test was worthless
+    without it. `pytest.raises(Exception)` alone passes with the
+    `if not sp_taken: raise` branch INVERTED **and** with it DELETED -- both
+    mutations still raise, just from a different place: the rollback attempt
+    fails with `sqlite3.OperationalError: no such savepoint`, and a bare
+    `raises(Exception)` cannot tell that apart from the write's own failure.
+    That is the branch a third writer is most likely to invert, at the cost
+    of the whole session, so it needs the tightest assertion here rather
+    than the loosest.
+    """
     from pipeline.stages import s15_persist
 
     conn = _session_mid_transaction(seeded_db)
@@ -229,9 +240,17 @@ def test_without_isolation_the_failure_is_raised_rather_than_swallowed(seeded_db
 
     conn.execute = no_savepoints
 
-    with pytest.raises(Exception):
+    with pytest.raises(Exception) as ei:
         s15_persist._persist_driving_events(
             conn, "s1", {"driving_events": [_one_event()]})
+
+    msg = str(ei.value)
+    assert "no such table: driving_events" in msg, (
+        f"the exception that reached the caller is {msg!r} -- that is not "
+        f"the WRITE failing, it is the rollback attempt failing afterwards. "
+        f"The `if not sp_taken: raise` branch is not doing the work; a "
+        f"swallow here would look identical to the caller.")
+    assert "savepoint" not in msg.lower(), msg
 
 
 def test_the_anchor_provenance_survives_the_round_trip(seeded_db):
@@ -600,7 +619,10 @@ def test_a_failed_corner_metrics_write_does_not_discard_the_session(seeded_db):
 
 def test_corner_metrics_without_isolation_raises_rather_than_swallowing(seeded_db):
     """Same contract as the driving-events guard: no savepoint, no pretending
-    the failure was contained."""
+    the failure was contained. The exception's IDENTITY is the assertion --
+    see the sibling test for why `pytest.raises(Exception)` alone passes
+    against both a deleted and an inverted branch.
+    """
     from pipeline.stages import s15_persist
 
     conn = _corner_metrics_session(seeded_db)
@@ -613,8 +635,16 @@ def test_corner_metrics_without_isolation_raises_rather_than_swallowing(seeded_d
 
     conn.execute = no_savepoints
 
-    with pytest.raises(Exception):
+    with pytest.raises(Exception) as ei:
         s15_persist._persist_corner_metrics(conn, "s1", _CM_SUMMARY)
+
+    msg = str(ei.value)
+    assert "no such table: corner_metrics" in msg, (
+        f"the exception that reached the caller is {msg!r} -- that is not "
+        f"the WRITE failing, it is the rollback attempt failing afterwards. "
+        f"The `if not sp_taken: raise` branch is not doing the work; a "
+        f"swallow here would look identical to the caller.")
+    assert "savepoint" not in msg.lower(), msg
 
 
 def test_both_child_writers_share_one_savepoint_implementation():
