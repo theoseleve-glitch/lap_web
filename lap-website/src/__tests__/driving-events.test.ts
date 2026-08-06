@@ -124,7 +124,7 @@ describe('an empty event list is not one state', () => {
 });
 
 import {
-  drawMistakeTape, drawCornerShade, eventColor, TAPE_HEIGHT_PX,
+  drawMistakeTape, drawCornerShade, eventColor, eventLabel, TAPE_HEIGHT_PX,
   type TapeGeometry,
 } from '@/lib/driving-events-draw';
 
@@ -220,5 +220,85 @@ describe('drawCornerShade', () => {
     const [, y, , h] = r.rects()[0]!.args as number[];
     expect(y).toBe(GEO.plotY);
     expect(h).toBe(GEO.plotH);
+  });
+});
+
+describe('spanPx edge cases', () => {
+  it('draws nothing for an event entirely left of the window', () => {
+    const r = recorder();
+    // s_norm -0.5 to -0.1: lap is 1000m (0..1000), so this is -500 to -100m
+    // xToPixel(-500) = 100 + (-500) = -400, xToPixel(-100) = 0, both left of plotX=100
+    drawMistakeTape(r.ctx, [ev({ s_norm_start: -0.5, s_norm_end: -0.1 })], GEO);
+    expect(r.rects().length).toBe(0);
+  });
+
+  it('draws nothing for an event entirely right of the window', () => {
+    const r = recorder();
+    // s_norm 1.2 to 1.8: lap is 1000m, so this is 1200 to 1800m
+    // xToPixel(1200) = 100 + 1200 = 1300, xToPixel(1800) = 1900, both right of plotX+plotW=1100
+    drawMistakeTape(r.ctx, [ev({ s_norm_start: 1.2, s_norm_end: 1.8 })], GEO);
+    expect(r.rects().length).toBe(0);
+  });
+
+  it('clips and draws a segment that straddles the left edge', () => {
+    const r = recorder();
+    drawMistakeTape(r.ctx, [ev({ s_norm_start: -0.1, s_norm_end: 0.2 })], GEO);
+    const [x, , w] = r.rects()[0]!.args as number[];
+    expect(x).toBe(GEO.plotX);  // clipped to left edge
+    expect(x + w).toBeGreaterThan(GEO.plotX);  // has non-zero width
+  });
+
+  it('clips and draws a segment that straddles the right edge, staying within bounds', () => {
+    const r = recorder();
+    drawMistakeTape(r.ctx, [ev({ s_norm_start: 0.8, s_norm_end: 1.2 })], GEO);
+    const [x, , w] = r.rects()[0]!.args as number[];
+    expect(x).toBeGreaterThanOrEqual(GEO.plotX);
+    expect(x + w).toBeLessThanOrEqual(GEO.plotX + GEO.plotW);  // never paints outside right boundary
+  });
+});
+
+describe('eventLabel', () => {
+  it('does not print magnitude for a non-quotable event', () => {
+    const label = eventLabel(ev({
+      magnitude: 12.4,
+      magnitude_unit: 'm',
+      magnitude_is_standalone_quotable: false,
+    }));
+    expect(label).not.toContain('12.4');
+    expect(label).not.toContain('12');
+    expect(label).toContain('over_slowing');  // event type is present
+  });
+
+  it('prints magnitude and unit for a quotable event', () => {
+    const label = eventLabel(ev({
+      magnitude: 9.8,
+      magnitude_unit: 'm/s²',
+      magnitude_is_standalone_quotable: true,
+    }));
+    expect(label).toContain('9.8');
+    expect(label).toContain('m/s²');
+  });
+
+  it('uses canQuoteMagnitude to decide whether to print magnitude', () => {
+    // An event that canQuoteMagnitude would reject (null magnitude)
+    const rejected = eventLabel(ev({ magnitude: null }));
+    expect(rejected).not.toContain('null');
+
+    // An event that canQuoteMagnitude would accept (finite, quotable flag)
+    const accepted = eventLabel(ev({
+      magnitude: 3.2,
+      magnitude_unit: 'rad/s',
+      magnitude_is_standalone_quotable: true,
+    }));
+    expect(accepted).toContain('3.2');
+    expect(accepted).toContain('rad/s');
+
+    // The deciding factor: magnitude_is_standalone_quotable = false gates the magnitude,
+    // just as canQuoteMagnitude checks it.
+    const gated = eventLabel(ev({
+      magnitude: 7.1,
+      magnitude_is_standalone_quotable: false,
+    }));
+    expect(gated).not.toContain('7.1');
   });
 });

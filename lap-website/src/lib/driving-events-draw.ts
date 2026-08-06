@@ -51,10 +51,26 @@ function spanPx(e: DrivingEvent, geo: TapeGeometry): { x: number; w: number } | 
   if (!Number.isFinite(rawL) || !Number.isFinite(rawR)) return null;
 
   const right = geo.plotX + geo.plotW;
+
+  // Reject spans that do not intersect the visible window at all. This must come
+  // before clipping: if we clamp both ends to the boundary, we lose the ability
+  // to distinguish a span that straddles the edge from one entirely outside it.
+  // An event outside the window should not mark the chart.
+  if (rawR < geo.plotX || rawL > right) return null;
+
+  // Now clip to the plot area.
   const l = Math.max(geo.plotX, Math.min(rawL, right));
   const r = Math.max(geo.plotX, Math.min(rawR, right));
-  if (r < geo.plotX || l > right) return null;
-  return { x: l, w: Math.max(1, r - l) };  // a zero-width span must stay visible
+
+  // Apply minimum width, but keep within bounds. When at the right boundary,
+  // grow leftward (shift the span) rather than rightward, so a 1px indicator
+  // stays inside the plot.
+  let w = Math.max(1, r - l);
+  let x = l;
+  if (x + w > right) {
+    x = Math.max(geo.plotX, right - w);
+  }
+  return { x, w };
 }
 
 /**
