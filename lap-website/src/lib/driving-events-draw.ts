@@ -174,8 +174,14 @@ export function drawCornerShade(
  */
 export function eventLabel(e: DrivingEvent): string {
   const where = `C${e.corner_id} L${e.lap_number}`;
-  if (canQuoteMagnitude(e)) {
-    return `${where} · ${e.event_type} ${e.magnitude!.toFixed(1)}${e.magnitude_unit ?? ''}`;
+  const unit = typeof e.magnitude_unit === 'string' ? e.magnitude_unit.trim() : '';
+  // A magnitude with no unit is not a smaller claim, it is an unreadable
+  // one: `re_braking 9.8` says nothing about whether that is metres, m/s or
+  // m/s². This used to emit exactly that, via `${e.magnitude_unit ?? ''}` --
+  // the null-unit case silently produced a bare number in front of a driver.
+  // No unit means no figure; the event still names itself.
+  if (canQuoteMagnitude(e) && unit !== '') {
+    return `${where} · ${e.event_type} ${e.magnitude!.toFixed(1)} ${unit}`;
   }
   return `${where} · ${e.event_type}`;
 }

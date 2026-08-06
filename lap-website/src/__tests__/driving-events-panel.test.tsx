@@ -103,3 +103,76 @@ describe('DrivingEventsPanel obeys the attribution constraint', () => {
     expect(screen.getByTestId('event-row-0').textContent).not.toContain('12.4');
   });
 });
+
+describe('DrivingEventsPanel renders a row a driver can read', () => {
+  // Everything here was checked by reading the JSX and ruled cosmetic. It was
+  // not: rendered, the row read `C4 L5 · late_throttlein a corner losing
+  // 0.31s` with an invisible colour chip. These assert the RENDER.
+  const base = {
+    lap_number: 3, corner_id: 4, s_norm_start: 0.2, s_norm_end: 0.3,
+    validity: 'measured', reason: null, n_samples_in_window: 40,
+    anchor_tier: 'session_envelope_ellipse_fitted', anchor_reason: null,
+    evidence: {},
+  };
+
+  async function renderRow(over: Record<string, unknown>) {
+    vi.mocked(fetchDrivingEvents).mockResolvedValue({
+      events: [{ ...base, ...over } as never],
+      available: true, capability: { ...CLEAN_CAP, over_slowing: 'detected' },
+      capability_available: true,
+    });
+    render(<DrivingEventsPanel sessionId="s1" />);
+    return waitFor(() => screen.getByTestId('event-row-0'));
+  }
+
+  it('separates the label from the cost instead of gluing them', async () => {
+    const row = await renderRow({
+      event_type: 'late_throttle', magnitude: 12.4, magnitude_unit: 'm',
+      time_cost_s: 0.31, time_cost_attribution: 'context',
+      magnitude_is_standalone_quotable: false,
+    });
+    // The defect, exactly: "late_throttlein a corner losing".
+    expect(row.textContent).not.toMatch(/late_throttlein/);
+    expect(row.textContent).toMatch(/late_throttle\s+in a corner losing/);
+  });
+
+  it('separates the label from an attributed cost too', async () => {
+    const row = await renderRow({
+      event_type: 'over_slowing', magnitude: 1.4, magnitude_unit: 'm/s',
+      time_cost_s: 0.31, time_cost_attribution: 'caused',
+      magnitude_is_standalone_quotable: true,
+    });
+    expect(row.textContent).not.toMatch(/m\/scosts/);
+    expect(row.textContent).toMatch(/1\.4 m\/s\s+costs 0\.31s/);
+  });
+
+  it('gives the colour swatch real dimensions so it actually paints', async () => {
+    await renderRow({
+      event_type: 'over_slowing', magnitude: 1.4, magnitude_unit: 'm/s',
+      time_cost_s: 0.31, time_cost_attribution: 'caused',
+      magnitude_is_standalone_quotable: true,
+    });
+    const chip = screen.getByTestId('event-swatch-0') as HTMLElement;
+    // A bare <span style={{background}}/> is an empty inline box: zero width,
+    // zero height, nothing on screen — and it is the only link between this
+    // row and its band on the tape.
+    expect(chip.style.width).not.toBe('');
+    expect(parseFloat(chip.style.width)).toBeGreaterThan(0);
+    expect(parseFloat(chip.style.height)).toBeGreaterThan(0);
+    expect(chip.style.display).toBe('inline-block');
+    // and it carries the same colour the tape paints for this event type
+    expect(chip.style.background || chip.style.backgroundColor).toContain('255, 42, 42');
+  });
+
+  it('never shows a magnitude with no unit', async () => {
+    const row = await renderRow({
+      event_type: 're_braking', magnitude: 9.8, magnitude_unit: null,
+      time_cost_s: null, time_cost_attribution: 'no_cost',
+      magnitude_is_standalone_quotable: true,
+    });
+    // "C4 L3 · re_braking 9.8" — 9.8 of what?
+    expect(row.textContent).not.toContain('9.8');
+    expect(row.textContent).toContain('re_braking');
+  });
+});
+

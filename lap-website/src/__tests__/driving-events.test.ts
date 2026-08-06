@@ -290,12 +290,37 @@ describe('eventLabel', () => {
 
   it('prints magnitude and unit for a quotable event', () => {
     const label = eventLabel(ev({
+      // `m/s2`, not `m/s²`. The superscript spelling was in this fixture and
+      // is not a value the producer can emit — see MAGNITUDE_UNITS and
+      // backend-vocabulary-contract.test.ts.
       magnitude: 9.8,
-      magnitude_unit: 'm/s²',
+      magnitude_unit: 'm/s2',
       magnitude_is_standalone_quotable: true,
     }));
     expect(label).toContain('9.8');
-    expect(label).toContain('m/s²');
+    expect(label).toContain('m/s2');
+  });
+
+  it('refuses to print a magnitude that has no unit, rather than printing it bare', () => {
+    // The old expression was `${magnitude.toFixed(1)}${magnitude_unit ?? ''}`,
+    // so a null unit emitted a DIMENSIONLESS number to a driver:
+    // "C4 L6 · re_braking 9.8" — 9.8 what? metres, m/s, m/s²? Each is a
+    // different claim and one of them is nonsense. No unit, no figure.
+    for (const unit of [null, '', '   ']) {
+      const label = eventLabel(ev({
+        magnitude: 9.8, magnitude_unit: unit as never,
+        magnitude_is_standalone_quotable: true,
+      }));
+      expect(label).not.toContain('9.8');
+      expect(label).toBe('C4 L3 · over_slowing');
+    }
+  });
+
+  it('separates the figure from its unit', () => {
+    const label = eventLabel(ev({
+      magnitude: 1.4, magnitude_unit: 'm/s', magnitude_is_standalone_quotable: true,
+    }));
+    expect(label).toContain('1.4 m/s');
   });
 
   it('respects null or non-finite magnitudes', () => {

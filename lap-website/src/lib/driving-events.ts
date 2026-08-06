@@ -29,7 +29,7 @@ export type MagnitudeUnit = (typeof MAGNITUDE_UNITS)[number];
 export interface AlsoFired {
   event_type: string;
   magnitude: number | null;
-  magnitude_unit: string | null;
+  magnitude_unit: MagnitudeUnit | null;
   validity: string | null;
   magnitude_is_standalone_quotable: boolean;
 }
@@ -41,7 +41,7 @@ export interface DrivingEvent {
   s_norm_start: number | null;
   s_norm_end: number | null;
   magnitude: number | null;
-  magnitude_unit: string | null;
+  magnitude_unit: MagnitudeUnit | null;
   time_cost_s: number | null;
   validity: string | null;
   reason: string | null;

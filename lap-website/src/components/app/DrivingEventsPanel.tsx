@@ -39,13 +39,15 @@ export default function DrivingEventsPanel({ sessionId }: { sessionId: string })
     return () => { cancelled = true; };
   }, [sessionId]);
 
-  if (!loaded) return <div data-testid="events-loading">Loading…</div>;
+  if (!loaded) {
+    return <div data-testid="events-loading" className="text-[11px] text-steel/60 py-1">Loading…</div>;
+  }
 
   const state = describeCapability(res);
 
   if (state === 'clean') {
     return (
-      <div data-testid="events-empty-clean">
+      <div data-testid="events-empty-clean" className="text-[11px] text-steel/80 py-1">
         Every detector ran and found nothing to flag on this session.
       </div>
     );
@@ -61,7 +63,7 @@ export default function DrivingEventsPanel({ sessionId }: { sessionId: string })
       .filter(([, v]) => !isHealthyCapabilityValue(v))
       .map(([name]) => name);
     return (
-      <div data-testid="events-empty-degraded">
+      <div data-testid="events-empty-degraded" className="text-[11px] text-steel/80 py-1">
         No events — but this is not a clean session. These detectors could not
         measure anything here: {blind.join(', ')}.
       </div>
@@ -70,27 +72,53 @@ export default function DrivingEventsPanel({ sessionId }: { sessionId: string })
 
   if (state === 'unavailable') {
     return (
-      <div data-testid="events-empty-unavailable">
+      <div data-testid="events-empty-unavailable" className="text-[11px] text-steel/60 py-1">
         Driving events were not computed for this session.
       </div>
     );
   }
 
   return (
-    <ol data-testid="events-list">
+    <ol data-testid="events-list" className="flex flex-col gap-1 text-[11px] leading-snug">
       {res!.events.map((e, i) => (
         <li key={`${e.lap_number}-${e.corner_id}-${e.event_type}`}
-            data-testid={`event-row-${i}`}>
-          <span style={{ background: eventColor(e) }} aria-hidden />
-          <span>{eventLabel(e)}</span>
+            data-testid={`event-row-${i}`}
+            // `gap-x-2` is the separator. Two adjacent inline spans with no
+            // whitespace between them render glued together --
+            // "late_throttlein a corner losing 0.31s" -- and the earlier
+            // ruling that distinct DOM nodes made this cosmetic was wrong;
+            // it was checked by reading the JSX, not by rendering it.
+            className="flex flex-wrap items-baseline gap-x-2 border-b border-steel/10 pb-1">
+          {/* The ONLY link between a list row and its band on the tape, so
+              it has to actually paint: with no width/height/display an
+              empty <span> occupies zero pixels and the colour was
+              invisible. */}
+          <span
+            aria-hidden
+            data-testid={`event-swatch-${i}`}
+            style={{
+              background: eventColor(e),
+              display: 'inline-block',
+              width: '10px',
+              height: '10px',
+              borderRadius: '2px',
+              flex: '0 0 auto',
+              alignSelf: 'center',
+            }}
+          />
+          <span className="font-mono">{eventLabel(e)}</span>
+          {/* A real space in the DOM, not only a CSS gap: `gap-x-2` separates
+              the boxes but leaves textContent (and anything that reads the
+              text rather than the layout) glued. */}
+          {' '}
           {canAttributeCost(e) ? (
-            <span data-testid={`event-cost-${i}`}>
+            <span data-testid={`event-cost-${i}`} className="text-steel">
               costs {e.time_cost_s!.toFixed(2)}s
             </span>
           ) : typeof e.time_cost_s === 'number' && Number.isFinite(e.time_cost_s) ? (
             // Deliberately non-causal wording: the corner costs this much,
             // and this event happened in it. It did not necessarily cause it.
-            <span data-testid={`event-cost-context-${i}`}>
+            <span data-testid={`event-cost-context-${i}`} className="text-steel/70">
               in a corner losing {e.time_cost_s.toFixed(2)}s
             </span>
           ) : null}
