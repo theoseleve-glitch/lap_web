@@ -122,3 +122,103 @@ describe('an empty event list is not one state', () => {
     expect(describeCapability(r)).toBe('degraded');
   });
 });
+
+import {
+  drawMistakeTape, drawCornerShade, eventColor, TAPE_HEIGHT_PX,
+  type TapeGeometry,
+} from '@/lib/driving-events-draw';
+
+/** Records every call instead of painting. No DOM, no canvas mock. */
+function recorder() {
+  const calls: Array<{ op: string; args: unknown[] }> = [];
+  const ctx = new Proxy({} as CanvasRenderingContext2D, {
+    get(_t, prop: string) {
+      if (prop === 'canvas') return undefined;
+      return (...args: unknown[]) => { calls.push({ op: prop, args }); };
+    },
+    set(_t, prop: string, value) { calls.push({ op: `set:${prop}`, args: [value] }); return true; },
+  });
+  return { ctx, calls, rects: () => calls.filter((c) => c.op === 'fillRect') };
+}
+
+const GEO: TapeGeometry = {
+  xToPixel: (m) => 100 + m,     // 1 px per metre, origin at 100
+  plotX: 100, plotY: 20, plotW: 1000, plotH: 300, lapLengthM: 1000,
+};
+
+describe('drawMistakeTape', () => {
+  it('places a segment at the event span converted from s_norm', () => {
+    const r = recorder();
+    drawMistakeTape(r.ctx, [ev({ s_norm_start: 0.2, s_norm_end: 0.3 })], GEO);
+    const rects = r.rects();
+    expect(rects.length).toBe(1);
+    const [x, , w, h] = rects[0]!.args as number[];
+    expect(x).toBeCloseTo(300, 5);   // 100 + 0.2*1000
+    expect(w).toBeCloseTo(100, 5);   // (0.3-0.2)*1000
+    expect(h).toBe(TAPE_HEIGHT_PX);
+  });
+
+  it('draws nothing for an event with no span', () => {
+    const r = recorder();
+    drawMistakeTape(r.ctx, [ev({ s_norm_start: null, s_norm_end: null })], GEO);
+    expect(r.rects().length).toBe(0);
+  });
+
+  it('draws nothing for a non-finite or inverted span', () => {
+    const r = recorder();
+    drawMistakeTape(r.ctx, [
+      ev({ s_norm_start: NaN, s_norm_end: 0.3 }),
+      ev({ s_norm_start: 0.5, s_norm_end: 0.4 }),
+    ], GEO);
+    expect(r.rects().length).toBe(0);
+  });
+
+  it('clips a segment to the plot area instead of painting outside it', () => {
+    const r = recorder();
+    drawMistakeTape(r.ctx, [ev({ s_norm_start: -0.5, s_norm_end: 1.5 })], GEO);
+    const [x, , w] = r.rects()[0]!.args as number[];
+    expect(x).toBeGreaterThanOrEqual(GEO.plotX);
+    expect(x + w).toBeLessThanOrEqual(GEO.plotX + GEO.plotW);
+  });
+
+  it('gives a zero-width span a minimum visible width', () => {
+    const r = recorder();
+    drawMistakeTape(r.ctx, [ev({ s_norm_start: 0.4, s_norm_end: 0.4 })], GEO);
+    const [, , w] = r.rects()[0]!.args as number[];
+    expect(w).toBeGreaterThanOrEqual(1);
+  });
+
+  it('draws one segment per event', () => {
+    const r = recorder();
+    drawMistakeTape(r.ctx, [
+      ev({ s_norm_start: 0.1, s_norm_end: 0.2 }),
+      ev({ s_norm_start: 0.5, s_norm_end: 0.6 }),
+    ], GEO);
+    expect(r.rects().length).toBe(2);
+  });
+});
+
+describe('eventColor', () => {
+  it('distinguishes a costed event from a context one', () => {
+    const caused = ev();
+    const context = ev({ event_type: 'late_throttle', time_cost_attribution: 'context',
+                         magnitude_is_standalone_quotable: false });
+    expect(eventColor(caused)).not.toBe(eventColor(context));
+  });
+
+  it('returns a parseable rgba string for every event type', () => {
+    for (const t of ['over_slowing', 'late_throttle', 're_braking', 'envelope_under_use', 'unknown']) {
+      expect(eventColor(ev({ event_type: t }))).toMatch(/^rgba?\(/);
+    }
+  });
+});
+
+describe('drawCornerShade', () => {
+  it('shades the full plot height over the event span', () => {
+    const r = recorder();
+    drawCornerShade(r.ctx, [ev({ s_norm_start: 0.2, s_norm_end: 0.3 })], GEO);
+    const [, y, , h] = r.rects()[0]!.args as number[];
+    expect(y).toBe(GEO.plotY);
+    expect(h).toBe(GEO.plotH);
+  });
+});
