@@ -647,24 +647,84 @@ def test_corner_metrics_without_isolation_raises_rather_than_swallowing(seeded_d
     assert "savepoint" not in msg.lower(), msg
 
 
+def _writer_body(fn) -> str:
+    """A function's source with its docstring REMOVED.
+
+    Load-bearing: the previous version of the test below grepped
+    `inspect.getsource(fn)`, which INCLUDES the docstring -- and both
+    writers' docstrings name `_write_in_savepoint` in prose. Replacing a
+    body with a bare swallow while leaving the docstring intact kept the
+    test green. A structural test that a comment can satisfy proves nothing.
+    """
+    import ast
+    import inspect
+    import textwrap
+
+    tree = ast.parse(textwrap.dedent(inspect.getsource(fn)))
+    node = tree.body[0]
+    body = node.body
+    if (body and isinstance(body[0], ast.Expr)
+            and isinstance(body[0].value, ast.Constant)
+            and isinstance(body[0].value.value, str)):
+        body = body[1:]          # drop the docstring node
+    return chr(10).join(ast.unparse(stmt) for stmt in body)
+
+
+def _savepoint_sql_literals(fn) -> list:
+    """String literals in `fn`'s body that look like hand-rolled savepoint
+    SQL. Checked on the AST, not the text: the helper's own name
+    (`_write_in_savepoint`) and the savepoint-name constants
+    (`_SAVEPOINT_CORNER_METRICS`) both contain the word, so a plain
+    substring search over the source can never distinguish reuse from
+    re-implementation."""
+    import ast
+    import inspect
+    import textwrap
+
+    tree = ast.parse(textwrap.dedent(inspect.getsource(fn)))
+    fn_node = tree.body[0]
+    stmts = fn_node.body
+    if (stmts and isinstance(stmts[0], ast.Expr)
+            and isinstance(stmts[0].value, ast.Constant)
+            and isinstance(stmts[0].value.value, str)):
+        stmts = stmts[1:]        # the docstring DESCRIBES the savepoint
+    out = []
+    for stmt in stmts:
+        for node in ast.walk(stmt):
+            if isinstance(node, ast.Constant) and isinstance(node.value, str):
+                if "SAVEPOINT" in node.value.upper():
+                    out.append(node.value)
+            elif isinstance(node, ast.JoinedStr):      # f-strings
+                text = "".join(v.value for v in node.values
+                               if isinstance(v, ast.Constant)
+                               and isinstance(v.value, str))
+                if "SAVEPOINT" in text.upper():
+                    out.append(text)
+    return out
+
+
 def test_both_child_writers_share_one_savepoint_implementation():
     """Two hand-rolled copies of a guard whose non-obvious branch costs the
-    whole session when copied wrong is not a pattern worth repeating. A third
-    writer must reuse this, not re-derive it."""
-    import inspect
+    whole session when copied wrong is not a pattern worth repeating.
+
+    Checks the BODY, not the source: see `_writer_body`.
+    """
     from pipeline.stages import s15_persist
 
     for fn in (s15_persist._persist_corner_metrics,
                s15_persist._persist_driving_events):
-        src = inspect.getsource(fn)
-        assert "_write_in_savepoint" in src, fn.__name__
-        # Strip the docstring before looking for hand-rolled SQL: both
-        # functions legitimately DESCRIBE the savepoint in prose.
-        body = src.split('"""')[-1]
-        assert "conn.execute(f\"SAVEPOINT" not in body, (
-            f"{fn.__name__} hand-rolls savepoint SQL instead of reusing the "
-            f"shared helper")
-        assert "ROLLBACK TO SAVEPOINT" not in body, fn.__name__
+        body = _writer_body(fn)
+        assert "_write_in_savepoint" in body, (
+            f"{fn.__name__} does not route its write through the shared "
+            f"savepoint helper (its DOCSTRING may still mention it -- that "
+            f"is exactly the check that used to pass here and prove nothing)")
+        # Hand-rolled SQL means a STRING LITERAL containing SAVEPOINT --
+        # checked on the AST rather than the text, because the helper's own
+        # name and the savepoint-name constants both contain the word.
+        assert not _savepoint_sql_literals(fn), (
+            f"{fn.__name__} hand-rolls savepoint SQL "
+            f"({_savepoint_sql_literals(fn)}) instead of reusing the shared "
+            f"helper")
 
 
 def test_an_empty_event_list_writes_nothing_and_does_not_raise(seeded_db):
