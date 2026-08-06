@@ -65,6 +65,7 @@ function baseOpts() {
     speeds: SPEEDS,
     hoverDistanceM: null,
     drivingEvents: [ev({ s_norm_start: 0.2, s_norm_end: 0.3 })],
+    drivingEventsLap: 3,  // ev() defaults to lap 3; the tape is per-lap
   };
 }
 

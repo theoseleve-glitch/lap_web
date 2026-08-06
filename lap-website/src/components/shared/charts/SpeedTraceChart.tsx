@@ -132,6 +132,19 @@ interface DrawOptions {
   crossRefLabel?: string | null;
   /** Phase 2 driving events to overlay as a tape. Null = not requested or unavailable. */
   drivingEvents?: DrivingEvent[] | null;
+  /**
+   * The lap number the speed curve below the tape belongs to. REQUIRED
+   * whenever `drivingEvents` is set; without it no tape is drawn.
+   *
+   * `GET /driving-events` returns the session's top-N ranked corner-laps
+   * across EVERY lap, while `GET /speed-trace?lap=` returns exactly one.
+   * Painting the former over the latter puts another lap's mistake on this
+   * lap's curve: a red band at turn 3 with nothing wrong in the speed trace
+   * underneath it, because the event was lap 2. The ranked panel discloses
+   * the lap ("C3 L1"); the tape is a pixel-level claim about THIS trace and
+   * cannot. Spec §2 line 27 and §5 line 214 both say per-lap.
+   */
+  drivingEventsLap?: number | null;
 }
 
 // Height of the cross-session delta bar strip (see "Cross-session delta bar"
@@ -525,18 +538,27 @@ export function drawSpeedTrace(
   // render, shrink the geometry handed to the tape by its height so
   // drawMistakeTape's own "bottom of the plot" math lands one band higher —
   // directly above the delta bar instead of under it.
-  if (opts.drivingEvents && opts.drivingEvents.length > 0) {
+  //
+  // The event list spans the whole session, the curve is ONE lap: keep only
+  // the events belonging to the lap being drawn. When the caller did not say
+  // which lap that is, draw nothing — an unverifiable claim about which lap
+  // a band belongs to is exactly the kind this surface must not make.
+  if (opts.drivingEvents && opts.drivingEvents.length > 0
+      && typeof opts.drivingEventsLap === 'number'
+      && Number.isFinite(opts.drivingEventsLap)) {
+    const lap = opts.drivingEventsLap;
+    const thisLap = opts.drivingEvents.filter((e) => e.lap_number === lap);
     const hasCrossSessionDeltaBar = !!(
       opts.crossRefDistances && opts.crossRefDeltaS && opts.crossRefDistances.length > 1
     );
-    const geo = makeTapeGeometry({
+    const geo = thisLap.length > 0 ? makeTapeGeometry({
       xMin, xMax, xToPixel,
       plotX: pad.left, plotY: pad.top, plotW: pW,
       plotH: pH - (hasCrossSessionDeltaBar ? CROSS_SESSION_BAR_H : 0),
-    });
+    }) : null;
     if (geo) {
-      drawCornerShade(ctx, opts.drivingEvents, geo);
-      drawMistakeTape(ctx, opts.drivingEvents, geo);
+      drawCornerShade(ctx, thisLap, geo);
+      drawMistakeTape(ctx, thisLap, geo);
     }
   }
 
@@ -1059,6 +1081,9 @@ export function SpeedTraceChart({
       crossRefDeltaS: referenceData?.speed.delta_s ?? null,
       crossRefLabel,
       drivingEvents: drivingEvents?.events ?? null,
+      // The lap the fetch at :848 asked for — the tape may only mark events
+      // belonging to the curve actually drawn.
+      drivingEventsLap: activeLap,
     });
 
     if (hasDelta && deltaSeconds) {
@@ -1068,7 +1093,7 @@ export function SpeedTraceChart({
         hoverDistance, activeLap!, activeCompareLap!,
       );
     }
-  }, [chartData, avgSpeeds, refSpeeds, theoreticalData, ceilingData, deltaSeconds, activeCompareLap, hoverDistance, distRange, dragSelection, referenceData, drivingEvents]);
+  }, [chartData, avgSpeeds, refSpeeds, theoreticalData, ceilingData, deltaSeconds, activeCompareLap, hoverDistance, distRange, dragSelection, referenceData, drivingEvents, activeLap]);
 
   useEffect(() => {
     render();
