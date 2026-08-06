@@ -112,3 +112,56 @@ def test_an_ordinary_mid_lap_corner_is_unaffected():
     for cid, s, e in _spans(corners):
         assert e > s
         assert 0.0 <= s <= 400.0 and 0.0 <= e <= 400.0
+
+
+def _lap_with_shallow_gaps(lap_len_m: float = 400.0, n: int = 1000) -> pd.DataFrame:
+    """Three corners separated by SHALLOW gaps rather than true straights.
+
+    At a strict threshold the gaps fall below the bar and three corners
+    separate cleanly. Relax the threshold and the gaps clear it too, so the
+    three merge into one blob spanning most of the lap. This is the shape
+    that made the adaptive retry counter-productive on a real KCT lap.
+    """
+    dist = np.linspace(0.0, lap_len_m, n)
+    frac = dist / lap_len_m
+
+    def bump(centre: float, width: float = 0.035) -> np.ndarray:
+        return np.exp(-((frac - centre) ** 2) / (2 * width ** 2))
+
+    curvature = 0.02 + 0.10 * (bump(0.15) + bump(0.50) + bump(0.85))
+    speed = np.full(n, 14.0)
+    return pd.DataFrame({
+        "Distance (m)": dist,
+        "Speed (m/s)": speed,
+        "yaw_rate_dps": np.degrees(curvature * speed),
+    })
+
+
+def test_relaxing_the_threshold_merges_rather_than_splits_on_this_lap():
+    """Pins the premise the next test depends on -- not the behaviour itself."""
+    df = _lap_with_shallow_gaps()
+    strict = corner_detection.detect_corners(df, curvature_threshold=0.09)
+    relaxed = corner_detection.detect_corners(df, curvature_threshold=0.045)
+    assert len(strict) > len(relaxed), (
+        "fixture no longer exhibits merge-on-relax "
+        f"(strict={len(strict)}, relaxed={len(relaxed)}); the retry test below "
+        "would then prove nothing"
+    )
+
+
+def test_the_adaptive_retry_is_not_allowed_to_lose_corners():
+    """The retry exists to find MORE corners; if it finds fewer it must not win.
+
+    It used to `return` the relaxed pass unconditionally. On a real KCT lap
+    that turned 3 plausible corners (25-114, 173-219, 349-372) into 2 blobs
+    spanning 59% and 37% of a 386 m lap -- so everything downstream measured
+    "corners" that were really most of a lap.
+    """
+    df = _lap_with_shallow_gaps()
+    strict = corner_detection.detect_corners(df, curvature_threshold=0.09)
+    adaptive = corner_detection.detect_corners(df)
+    assert len(adaptive) >= len(strict), (
+        f"adaptive detection returned {len(adaptive)} corner(s) but a strict "
+        f"threshold finds {len(strict)} on the same lap -- the relaxed retry "
+        "was accepted despite finding fewer"
+    )

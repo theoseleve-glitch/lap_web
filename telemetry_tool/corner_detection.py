@@ -732,7 +732,7 @@ def detect_corners(
             "(min=%d); retrying at %.5f with reduced smoothing.",
             len(corners), curvature_threshold, adaptive_min_corners, relaxed,
         )
-        return detect_corners(
+        retried = detect_corners(
             resampled_lap, curvature_threshold=relaxed,
             min_corner_length_m=min(effective_min_length, 5.0),
             smooth_window=max(3, effective_smooth // 2),
@@ -741,6 +741,28 @@ def detect_corners(
             min_peak_separation_m=effective_peak_sep,
             adaptive_percentile=adaptive_percentile,
             adaptive_min_corners=adaptive_min_corners,
+        )
+        # Only accept the relaxed pass if it actually found MORE corners.
+        #
+        # This used to `return` unconditionally, which inverted the retry's own
+        # purpose. Lowering a curvature threshold does not reliably yield more
+        # corners: on a twisty circuit it yields FEWER, LARGER ones, because
+        # more of the lap clears the bar and adjacent regions merge into blobs.
+        #
+        # Measured on a real KCT lap (386 m):
+        #     threshold 0.11144 -> 3 corners  (25-114, 173-219, 349-372)
+        #     threshold 0.05572 -> 2 corners  (0-226, 244-386)   <- the retry
+        #     threshold 0.02    -> 1 corner   (0-386)  the whole lap
+        # The retry discarded three plausible corners for two blobs spanning
+        # 59% and 37% of the lap. Everything downstream then measured "corners"
+        # that are really most of a lap.
+        if len(retried) > len(corners):
+            return retried
+        logger.warning(
+            "Adaptive retry at %.5f found %d corner(s), not more than the "
+            "%d at %.5f -- keeping the original. Relaxing the threshold "
+            "merges regions on this lap rather than splitting them.",
+            relaxed, len(retried), len(corners), curvature_threshold,
         )
 
     # 7c -- Chicane annotation: detect alternating-direction sequences
