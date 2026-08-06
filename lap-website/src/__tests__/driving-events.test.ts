@@ -313,47 +313,70 @@ describe('eventLabel', () => {
 import { makeTapeGeometry } from '@/lib/driving-events-draw';
 
 describe('makeTapeGeometry — the one place a frame bug can re-enter', () => {
-  // A chart cropped to 400..900 m at 2 px per metre. This is the SHIPPED
-  // helper, not a copy: mutating it in the source must turn these red.
+  // An 1100 m lap on a chart CROPPED to 400..900 m at 2 px per metre.
+  // The lap length and the window length are deliberately different; when
+  // they were the same number this whole describe agreed with the bug.
+  // This is the SHIPPED helper, not a copy.
+  const LAP_M = 1100;
   const build = () => makeTapeGeometry({
+    lapLengthM: LAP_M,
     xMin: 400, xMax: 900,
     xToPixel: (m: number) => (m - 400) * 2,
     plotX: 0, plotY: 0, plotW: 1000, plotH: 300,
   });
 
-  it('anchors s_norm to xMin, not to zero, when the chart is zoomed', () => {
+  it('measures s_norm against the LAP, not against the visible window', () => {
     const geo = build()!;
     const r = recorder();
-    drawMistakeTape(r.ctx, [ev({ s_norm_start: 0.2, s_norm_end: 0.4 })], geo);
-    // Assert the rect exists BEFORE destructuring it: with the offset
-    // dropped, this fixture's mislocated span falls fully outside the plot
-    // and Task 2's reject-before-clip guard discards it, so zero rects are
-    // emitted. Destructuring straight into `.args` would then throw
-    // TypeError on undefined — a crash that a future, unrelated regression
-    // in that reject-before-clip guard would also produce, and could be
-    // misread as "the xMin bug is back". This assertion names the actual
-    // failure (wrong rect count) instead.
+    // 0.5..0.7 of an 1100 m lap = 550..770 m, inside the 400..900 window.
+    drawMistakeTape(r.ctx, [ev({ s_norm_start: 0.5, s_norm_end: 0.7 })], geo);
+    // Assert the rect exists BEFORE destructuring it, so a regression that
+    // drops the event entirely fails as a rect count rather than as a
+    // TypeError on undefined.
     expect(r.rects().length).toBe(1);
     const [x, , w] = r.rects()[0]!.args as [number, number, number, number];
-    // s_norm 0.2 of the 500 m window = 500 m absolute = (500-400)*2 = 200 px.
-    // Anchoring to zero instead would give (0.2*500 - 400)*2 = -600 px,
-    // which clips to plotX and silently mislocates every event.
-    expect(x).toBeCloseTo(200, 5);
-    expect(w).toBeCloseTo(200, 5);   // 0.2 * 500 m * 2 px/m
+    // (550-400)*2 = 300 px, width (770-550)*2 = 440 px.
+    // The old frame (`lapLengthM = xMax - xMin`, then `xToPixel(xMin + m)`)
+    // would put this at xToPixel(400 + 0.5*500) = 500 px, width 200 —
+    // wrong position AND wrong scale, both proportional to the crop.
+    expect(x).toBeCloseTo(300, 5);
+    expect(w).toBeCloseTo(440, 5);
   });
 
-  it('derives lapLengthM from the visible window', () => {
-    expect(build()!.lapLengthM).toBe(500);
+  it('does not draw an event that lies OUTSIDE the cropped window', () => {
+    // The failure the old frame could not even express: s_norm 0.2 of an
+    // 1100 m lap is 220 m, which is before the window starts at 400 m, so
+    // nothing may be marked. The old frame rescaled it into view and drew
+    // it at 500 m — mid-plot, under curve it has nothing to do with.
+    const r = recorder();
+    drawMistakeTape(r.ctx, [ev({ s_norm_start: 0.15, s_norm_end: 0.2 })], build()!);
+    expect(r.rects().length).toBe(0);
+  });
+
+  it('carries the LAP length through, not the window length', () => {
+    expect(build()!.lapLengthM).toBe(LAP_M);
+    expect(build()!.lapLengthM).not.toBe(500);   // the window
   });
 
   it('refuses a degenerate or inverted window instead of dividing by it', () => {
     const bad = (xMin: number, xMax: number) => makeTapeGeometry({
-      xMin, xMax, xToPixel: (m) => m,
+      lapLengthM: 1100, xMin, xMax, xToPixel: (m) => m,
       plotX: 0, plotY: 0, plotW: 100, plotH: 100,
     });
     expect(bad(400, 400)).toBeNull();
     expect(bad(900, 400)).toBeNull();
     expect(bad(NaN, 900)).toBeNull();
+  });
+
+  it('refuses a missing or non-positive lap length rather than scaling by it', () => {
+    const bad = (lapLengthM: number) => makeTapeGeometry({
+      lapLengthM, xMin: 0, xMax: 1100, xToPixel: (m) => m,
+      plotX: 0, plotY: 0, plotW: 100, plotH: 100,
+    });
+    expect(bad(0)).toBeNull();
+    expect(bad(-1100)).toBeNull();
+    expect(bad(NaN)).toBeNull();
+    expect(bad(Infinity)).toBeNull();
   });
 });
 

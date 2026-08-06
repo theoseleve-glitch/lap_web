@@ -552,6 +552,9 @@ export function drawSpeedTrace(
       opts.crossRefDistances && opts.crossRefDeltaS && opts.crossRefDistances.length > 1
     );
     const geo = thisLap.length > 0 ? makeTapeGeometry({
+      // The LAP's length, not the window's: xMax is the crop end when
+      // distRange is set, and s_norm is a fraction of the lap.
+      lapLengthM: safeMax(distances) || 1,
       xMin, xMax, xToPixel,
       plotX: pad.left, plotY: pad.top, plotW: pW,
       plotH: pH - (hasCrossSessionDeltaBar ? CROSS_SESSION_BAR_H : 0),

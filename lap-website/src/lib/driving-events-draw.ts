@@ -18,11 +18,16 @@ import { canQuoteMagnitude, type DrivingEvent } from '@/lib/driving-events';
 export const TAPE_HEIGHT_PX = 8;
 
 export interface TapeGeometry {
+  /** Maps an ABSOLUTE lap distance in metres to a pixel x on this chart. */
   xToPixel: (metres: number) => number;
   plotX: number;
   plotY: number;
   plotW: number;
   plotH: number;
+  /**
+   * The TRUE length of the lap in metres — the denominator `s_norm` is a
+   * fraction of. NOT the visible window: see `makeTapeGeometry`.
+   */
   lapLengthM: number;
 }
 
@@ -76,25 +81,45 @@ function spanPx(e: DrivingEvent, geo: TapeGeometry): { x: number; w: number } | 
 /**
  * Build the geometry a chart hands to the tape drawers.
  *
- * The `xMin` offset is the whole point. `s_norm` is a fraction of the LAP,
- * but the chart's x-axis may be cropped by a zoom (`distRange`), so the
- * fraction must be measured from the visible window's start, not from zero.
- * Getting this wrong shifts every event by the crop offset -- silently, and
- * proportionally to how far the user has zoomed.
+ * TWO DIFFERENT LENGTHS, and conflating them is the bug this signature
+ * exists to make impossible:
+ *
+ *  - `lapLengthM` is the LAP. `s_norm` is a fraction of it, so an event at
+ *    `s_norm 0.2` on a 1100 m lap is at 220 m, full stop — that does not
+ *    change when the driver zooms.
+ *  - `xMin`/`xMax` are the VISIBLE WINDOW (`distRange`). They belong to
+ *    `xToPixel`, which already maps absolute metres through the crop.
+ *
+ * This function previously set `lapLengthM = xMax - xMin` and then mapped
+ * `xToPixel(xMin + s_norm * lapLengthM)`, i.e. it spread `s_norm ∈ [0,1]`
+ * across the visible window whatever the crop. On a 1100 m lap cropped to
+ * 400–900 m, an event at `s_norm 0.2` (220 m, outside the window, should not
+ * draw at all) was drawn at 500 m — mid-plot, confidently, under a stretch of
+ * curve it has nothing to do with. The field name, the doc comment and the
+ * test all described the wrong thing in the same words, which is why the
+ * reviewer who checked "the xMin offset by construction" confirmed it.
+ *
+ * Not reachable at the current visualize-page mount (`distRange` stays null
+ * there), but `FocusMode.tsx:116,361` already wires both into this chart.
  *
  * Exported so a test can exercise THIS expression rather than a copy of it.
  */
 export function makeTapeGeometry(a: {
+  /** True lap length in metres. */
+  lapLengthM: number;
+  /** Visible window in metres — used only to reject a degenerate x-axis. */
   xMin: number; xMax: number;
+  /** Absolute lap metres -> pixel x. Already accounts for the crop. */
   xToPixel: (metres: number) => number;
   plotX: number; plotY: number; plotW: number; plotH: number;
 }): TapeGeometry | null {
-  const lapLengthM = a.xMax - a.xMin;
-  if (!Number.isFinite(lapLengthM) || lapLengthM <= 0) return null;
+  if (!Number.isFinite(a.lapLengthM) || a.lapLengthM <= 0) return null;
+  const windowM = a.xMax - a.xMin;
+  if (!Number.isFinite(windowM) || windowM <= 0) return null;
   return {
-    xToPixel: (m: number) => a.xToPixel(a.xMin + m),
+    xToPixel: a.xToPixel,
     plotX: a.plotX, plotY: a.plotY, plotW: a.plotW, plotH: a.plotH,
-    lapLengthM,
+    lapLengthM: a.lapLengthM,
   };
 }
 
