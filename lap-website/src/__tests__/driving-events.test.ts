@@ -358,7 +358,7 @@ describe('makeTapeGeometry — the one place a frame bug can re-enter', () => {
 });
 
 import {
-  resolveEnvelope, aggregateAnchor,
+  resolveEnvelope, aggregateAnchor, REFUSAL_LABEL,
   type AnchorSummary, type CornerAnchorRow,
 } from '@/lib/driving-events-draw';
 
@@ -430,8 +430,25 @@ describe('resolveEnvelope — tier is an ALLOW-list, not a deny-list', () => {
     const d = resolveEnvelope({ baseline_g: 1.02, tier: 'not_a_real_tier', reason: null }, 1.3);
     expect(d.draw).toBe(false);
     expect(d.radiusG).toBeNull();
-    expect(d.label.toLowerCase()).toContain('not measured');
-    expect(d.label).not.toContain('not_a_real_tier');
+  });
+
+  // The `session_envelope_ellipse_default_p2` typo was invisible from the UI,
+  // from logs and from every test for five review rounds because this branch
+  // and the genuine-refusal branch emitted the IDENTICAL sentence. A build
+  // that cannot read the tier the backend sends is a bug in this file; a
+  // producer that refused to measure is a fact about the driver's data. They
+  // must never be confusable again.
+  it('does NOT say "not measured" for a tier it merely fails to recognise', () => {
+    const unknown = resolveEnvelope({ baseline_g: 1.02, tier: 'not_a_real_tier', reason: null }, 1.3);
+    const refused = resolveEnvelope({ baseline_g: null, tier: 'refused', reason: null }, 1.3);
+
+    expect(refused.label).toBe(REFUSAL_LABEL);
+    expect(unknown.label).not.toBe(refused.label);
+    expect(unknown.outcome).toBe('unrecognised_tier');
+    expect(refused.outcome).toBe('refused');
+    // The unknown value itself is the one string that identifies the
+    // mismatch, so it is named rather than swallowed.
+    expect(unknown.label).toContain('not_a_real_tier');
   });
 
   it('refuses a null tier', () => {

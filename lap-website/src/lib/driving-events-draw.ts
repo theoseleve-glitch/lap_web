@@ -173,12 +173,29 @@ export interface AnchorSummary {
   reason: string | null;
 }
 
+/**
+ * Why `resolveEnvelope` decided what it decided.
+ *
+ * `refused` and `unrecognised_tier` were ONE outcome with ONE sentence until
+ * the `session_envelope_ellipse_default_p2` typo was found. That is precisely
+ * why it survived five review rounds: a build that does not recognise the
+ * tier the backend actually sends is indistinguishable, on screen and in
+ * every test, from a backend that honestly refused to measure. They are
+ * opposite failures -- one is a statement about the driver's data, the other
+ * is a bug in this file -- so they must never share a sentence again.
+ */
+export type EnvelopeOutcome = 'drawn' | 'refused' | 'unrecognised_tier' | 'no_baseline';
+
 export interface EnvelopeDecision {
   draw: boolean;
   radiusG: number | null;
   label: string;
   reason: string | null;
+  outcome: EnvelopeOutcome;
 }
+
+/** Said only when the producer refused, or recorded no anchor at all. */
+export const REFUSAL_LABEL = 'Grip limit not measured for this session';
 
 /**
  * The tier this build refuses on, verbatim from `grip_anchor.TIER_REFUSED`.
@@ -240,23 +257,36 @@ export function resolveEnvelope(
   anchor: AnchorSummary | null,
   _maxObservedG: number,
 ): EnvelopeDecision {
-  if (!anchor || anchor.tier == null || !DRAWABLE_TIERS.has(anchor.tier)) {
+  if (!anchor || anchor.tier == null || anchor.tier === TIER_REFUSED) {
     return {
       draw: false, radiusG: null, reason: anchor?.reason ?? null,
-      label: 'Grip limit not measured for this session',
+      outcome: 'refused', label: REFUSAL_LABEL,
+    };
+  }
+  if (!DRAWABLE_TIERS.has(anchor.tier)) {
+    // NOT the refusal sentence. The anchor did not refuse -- it named a tier
+    // this build has no label for, which means either the backend added or
+    // renamed one, or this table is wrong (it has been, exactly once, and
+    // the shared sentence is what hid it). Naming the value is the whole
+    // point: it is the one string that identifies the mismatch. Drawing
+    // still refuses -- an unrecognised tier is not grounds for a boundary.
+    return {
+      draw: false, radiusG: null, reason: anchor.reason ?? null,
+      outcome: 'unrecognised_tier',
+      label: `Grip limit unreadable — this build does not recognise tier "${anchor.tier}"`,
     };
   }
   const g = anchor.baseline_g;
   if (typeof g !== 'number' || !Number.isFinite(g) || g <= 0) {
     return {
       draw: false, radiusG: null, reason: anchor.reason ?? null,
-      label: 'Grip limit not measured for this session',
+      outcome: 'no_baseline', label: REFUSAL_LABEL,
     };
   }
   const tier = TIER_LABEL[anchor.tier];
   return {
     draw: true, radiusG: g, reason: anchor.reason ?? null,
-    label: `${g.toFixed(2)}G — ${tier}`,
+    outcome: 'drawn', label: `${g.toFixed(2)}G — ${tier}`,
   };
 }
 
