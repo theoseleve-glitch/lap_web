@@ -1282,6 +1282,106 @@ git commit -m "test(events-ui): real-payload round trip through the render path"
 
 ---
 
+### Task 7: Mount it — the surface Phase 3 exists to produce
+
+**Added after Task 6.** Task 6's gate could not verify either live visual check, and established why: `showDrivingEvents` is never set `true` anywhere in `src/`, and `DrivingEventsPanel` is not mounted on any page. Both appear only in their own tests. Tasks 1–6 each passed their own review while collectively delivering nothing a user can see — the spec's Phase 3 is *"one visible surface proves the events mean something"*, and six green tasks produced no visible surface. This is a defect in the plan's decomposition, not in any task.
+
+**Files:**
+- Modify: `lap-website/src/app/app/visualize/[id]/page.tsx` (the `SpeedTraceZoom` mount near line 246; the layout grid)
+- Test: `lap-website/src/__tests__/driving-events-mounted.test.tsx` (new)
+
+**Interfaces:**
+- Consumes: `SpeedTraceChartProps.showDrivingEvents` (Task 3), `<DrivingEventsPanel sessionId />` (Task 5).
+- Produces: nothing downstream. This is the terminal task.
+
+**What does NOT need wiring:** `GGExplorer` fetches its own anchor internally (Task 4 put the fetch inside the component), so the honest envelope is already live at every existing `GGExplorer` mount — `visualize/[id]`, `AnalyticsTab`, `CompareChartPanel`, `FocusMode`. Do not add a prop for it. Verify this claim before assuming it.
+
+- [ ] **Step 1: Turn the tape on where the chart already lives**
+
+`src/app/app/visualize/[id]/page.tsx:246` currently mounts:
+
+```tsx
+<SpeedTraceZoom
+  sessionId={sessionId}
+  apiBase={apiBase}
+  gpsLaps={[]}
+  bestLap={primaryLap}
+  compareLap={compareLap}
+  primaryLapTime={primaryLapTime}
+  compareLapTime={compareLapTime}
+  className="w-full h-full"
+/>
+```
+
+Add `showDrivingEvents`. This is an additive overlay on a chart that already exists — no layout change, and the fetch fails silently to `null` on a pre-086 session, so nothing regresses for sessions without events.
+
+- [ ] **Step 2: Mount the ranked panel**
+
+Place `<DrivingEventsPanel sessionId={sessionId} />` in the visualize page, inside the existing grid, wrapped in the same `ChartErrorBoundary` pattern the neighbouring charts use (`<ChartErrorBoundary chartName="DrivingEvents">`). Match the surrounding layout conventions rather than inventing a new one — read how the neighbouring panels are wrapped before placing it.
+
+- [ ] **Step 3: Write the test that would have caught this**
+
+```tsx
+import { describe, it, expect } from 'vitest';
+import fs from 'node:fs';
+import path from 'node:path';
+
+/**
+ * Tasks 1-6 all passed their own reviews while shipping nothing a user could
+ * see: `showDrivingEvents` was never set true anywhere, and the panel was
+ * mounted on no page. Unit tests could not catch that -- each component was
+ * correct in isolation. This test asserts the components are actually
+ * REACHED, which is the one property no component test can assert about
+ * itself.
+ */
+const SRC = path.resolve(__dirname, '..');
+
+function readAllSources(): string {
+  const out: string[] = [];
+  const walk = (dir: string) => {
+    for (const e of fs.readdirSync(dir, { withFileTypes: true })) {
+      const p = path.join(dir, e.name);
+      if (e.isDirectory()) { if (e.name !== '__tests__') walk(p); }
+      else if (/\.tsx?$/.test(e.name)) out.push(fs.readFileSync(p, 'utf8'));
+    }
+  };
+  walk(SRC);
+  return out.join('\n');
+}
+
+describe('the driving-events surfaces are actually reachable', () => {
+  const sources = readAllSources();
+
+  it('sets showDrivingEvents somewhere outside its own definition', () => {
+    // A page must opt in, not merely the prop existing on the component.
+    expect(sources).toMatch(/showDrivingEvents(\s*=\s*\{?\s*true|\s*\/>|\s*\n)/);
+  });
+
+  it('mounts DrivingEventsPanel on a page', () => {
+    expect(sources).toContain('<DrivingEventsPanel');
+  });
+});
+```
+
+Refine those matchers against the real source once written — the requirement is that each assertion fails if the corresponding mount is removed, and neither may be satisfied by the component's own definition file.
+
+- [ ] **Step 4: Bite-check both**
+
+Remove `showDrivingEvents` from the page, run, confirm the first test goes RED. Restore. Remove the `<DrivingEventsPanel ...>` mount, run, confirm the second goes RED. Restore. Paste both outputs.
+
+- [ ] **Step 5: Verify the page still builds and renders**
+
+Run `npx tsc --noEmit` (expect only the 4 pre-existing `TS1382` showcase errors) and `npx vitest run` unfiltered. Then attempt what Task 6 could not: start `npm run dev`, load the visualize route, and report what actually renders — including the honest empty states, since no backend is available. If it cannot be reached, say which parts you could not verify rather than claiming a check you did not perform.
+
+- [ ] **Step 6: Commit**
+
+```bash
+git add "lap-website/src/app/app/visualize/[id]/page.tsx" lap-website/src/__tests__/driving-events-mounted.test.tsx
+git commit -m "feat(events-ui): mount the tape and the ranked panel on the visualize page"
+```
+
+---
+
 ## Known not covered by Phase 3
 
 - **Per-lap phase segmentation.** Spec §6 assigns it to Phase 2 and it was never built — `_EnvelopeUnderUse`'s docstring says "a per-phase slice" but the number is whole-corner. So §5.8's `/gg-data` extension can deliver per-sample `corner_id` but not `phase`. Deferred deliberately rather than half-built.
