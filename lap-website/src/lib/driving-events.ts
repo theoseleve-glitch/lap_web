@@ -61,6 +61,25 @@ export function canAttributeCost(e: DrivingEvent): boolean {
   return typeof e.time_cost_s === 'number' && Number.isFinite(e.time_cost_s);
 }
 
+// Allow-list: only these values indicate a healthy measurement. Anything
+// else -- an unrecognised status from a future backend build, a typo, a new
+// 'timed_out' state nobody has named to this build yet -- must read as
+// "could not measure", never as clean.
+//
+// Exported (not inlined into describeCapability) so any caller that needs to
+// name WHICH detectors are unhealthy -- e.g. a UI listing them by name --
+// reads the same set describeCapability used to decide the session is
+// degraded in the first place. A second, hand-copied list in a second file
+// is exactly the kind of thing that drifts: this module has already had
+// that defect once (`'insufficient'` copied as the sole "bad" value instead
+// of reusing the allow-list), so there is now only one place this rule
+// lives.
+const HEALTHY_CAPABILITY_VALUES = new Set<string>(['detected', 'not_triggered']);
+
+export function isHealthyCapabilityValue(v: string): boolean {
+  return HEALTHY_CAPABILITY_VALUES.has(v);
+}
+
 /**
  * Collapse the response into the four states a UI must tell apart.
  * `events: []` alone is ambiguous — it is both "nothing to fix" and
@@ -75,13 +94,11 @@ export function describeCapability(
     return 'unavailable';
   }
   const values = Object.values(r.capability);
-  // Allow-list: only these values indicate a healthy measurement.
   // If ANY value is not recognised, treat it as degraded (the honest claim is
   // "something here we cannot interpret"), not clean. This prevents new backend
   // status values (e.g. 'timed_out') from falsely reassuring the driver that
   // all detectors ran and found nothing.
-  const goodValues = new Set<string>(['detected', 'not_triggered']);
-  if (values.some((v) => !goodValues.has(v))) return 'degraded';
+  if (values.some((v) => !isHealthyCapabilityValue(v))) return 'degraded';
   return 'clean';
 }
 

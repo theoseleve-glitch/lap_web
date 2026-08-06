@@ -44,6 +44,25 @@ describe('DrivingEventsPanel distinguishes the empty states', () => {
     await waitFor(() =>
       expect(screen.getByTestId('events-empty-degraded').textContent).toContain('re_braking'));
   });
+
+  // Regression: describeCapability is an allow-list (only 'detected' and
+  // 'not_triggered' are healthy), so ANY other string -- including one this
+  // build has never seen, like a future backend's 'timed_out' -- makes the
+  // session degraded. The naming logic must inherit that same allow-list,
+  // not re-derive its own deny-list of just 'insufficient', or an
+  // unrecognised value renders degraded with nothing named.
+  it('names a detector reporting an unrecognised capability value, not just "insufficient"', async () => {
+    vi.mocked(fetchDrivingEvents).mockResolvedValue({
+      events: [], available: false,
+      capability: { ...CLEAN_CAP, over_slowing: 'timed_out' }, capability_available: true,
+    });
+    render(<DrivingEventsPanel sessionId="s1" />);
+    const el = await waitFor(() => screen.getByTestId('events-empty-degraded'));
+    expect(el.textContent).toContain('over_slowing');
+    // The old bug: an unnamed blind list left a bare "here: ." trailing
+    // punctuation artifact that reads as a rendering bug, not a message.
+    expect(el.textContent).not.toMatch(/here:\s*\.$/);
+  });
 });
 
 describe('DrivingEventsPanel obeys the attribution constraint', () => {

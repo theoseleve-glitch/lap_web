@@ -18,7 +18,7 @@
  */
 import { useEffect, useState } from 'react';
 import {
-  fetchDrivingEvents, describeCapability, canAttributeCost,
+  fetchDrivingEvents, describeCapability, canAttributeCost, isHealthyCapabilityValue,
   type DrivingEventsResponse,
 } from '@/lib/driving-events';
 import { eventLabel, eventColor } from '@/lib/driving-events-draw';
@@ -52,8 +52,13 @@ export default function DrivingEventsPanel({ sessionId }: { sessionId: string })
   }
 
   if (state === 'degraded') {
+    // Name every detector whose value made describeCapability say "degraded"
+    // -- the SAME allow-list, not a re-derived deny-list of one known-bad
+    // string. Any status this build does not recognise (a future
+    // 'timed_out', a typo, a stale enum) is unhealthy by definition of that
+    // allow-list, so it must be named here too.
     const blind = Object.entries(res!.capability)
-      .filter(([, v]) => v === 'insufficient')
+      .filter(([, v]) => !isHealthyCapabilityValue(v))
       .map(([name]) => name);
     return (
       <div data-testid="events-empty-degraded">
