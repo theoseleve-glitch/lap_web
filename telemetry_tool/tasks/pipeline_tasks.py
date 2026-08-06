@@ -991,8 +991,16 @@ def _run_finalize_stages(ctx: PipelineContext, job_id: Optional[str] = None, con
     resampled_laps, corners = _load_intermediate_state(ctx)
 
     if resampled_laps:
-        # Custom corners override auto-detected; legacy filter as fallback
-        if ctx.custom_corners is not None:
+        # Custom corners override auto-detected; legacy filter as fallback.
+        # TRUTHY, not `is not None` -- an empty custom-corner list means "I
+        # defined none", which must fall through to the selection logic, NOT
+        # replace six detected corners with zero. Identical in shape to the
+        # `selected_corner_ids` defect below, which emptied every corner
+        # surface in production for months; not reachable from today's client
+        # (the upload page posts `selected_corner_ids`, never `corners`) but
+        # it becomes reachable the moment the corner editor referenced by
+        # "V1: skip corner editor" is actually built.
+        if ctx.custom_corners:
             import json as _json
             from pipeline.helpers import enrich_custom_corners
             import numpy as np
@@ -1040,7 +1048,11 @@ def _run_finalize_stages(ctx: PipelineContext, job_id: Optional[str] = None, con
         # Fallback: full re-run (intermediate state expired or missing)
         logger.warning("Job %s: intermediate state missing, running full pipeline", ctx.job_id)
         _fallback_corners = None
-        if ctx.custom_corners is not None:
+        # TRUTHY, not `is not None` -- see the override branch above. An
+        # empty list here would pass `preloaded_corners=[]` instead of None
+        # and suppress fresh detection on the very path that exists because
+        # the cached state was already lost.
+        if ctx.custom_corners:
             _fallback_corners = [
                 {**cn, "corner_id": i, "lat": 0.0, "lon": 0.0, "direction": "S"}
                 for i, cn in enumerate(ctx.custom_corners)

@@ -232,3 +232,26 @@ class TestEmptyCornerSelectionKeepsAllCorners:
         from tasks.pipeline_tasks import _apply_corner_selection
         assert _apply_corner_selection([], []) == []
         assert _apply_corner_selection([1, 2], []) == []
+
+
+class TestEmptyCustomCornersFallsThrough:
+    """The same defect as the selection filter, one branch above it.
+
+    `custom_corners = []` means "I defined no custom corners", so it must
+    fall through to the selection logic rather than replacing every detected
+    corner with zero. Not reachable from today's client, which posts
+    `selected_corner_ids`; it becomes reachable the moment the corner editor
+    that "V1: skip corner editor" refers to is actually built.
+    """
+
+    def test_the_source_guard_is_truthy_not_is_not_none(self):
+        import inspect
+        from tasks import pipeline_tasks
+        src = inspect.getsource(pipeline_tasks._run_finalize_stages)
+        assert "if ctx.custom_corners:" in src, (
+            "the custom-corner override must use a TRUTHY guard -- with "
+            "`is not None`, an empty list replaces every detected corner "
+            "with zero, which is the defect that emptied corner_metrics "
+            "across all of production"
+        )
+        assert "if ctx.custom_corners is not None:" not in src
