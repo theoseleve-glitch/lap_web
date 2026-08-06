@@ -15,7 +15,10 @@ import { apiFetch, api } from '@/lib/api-client';
 import { useChartHoverStore } from '@/lib/chart-hover-store';
 import { chartColor } from '@/components/shared/chart-kit';
 import { useReferenceOverlay } from '@/components/app/reference';
-import { resolveEnvelope, type AnchorSummary } from '@/lib/driving-events-draw';
+import {
+  resolveEnvelope, aggregateAnchor,
+  type AnchorSummary, type CornerAnchorRow,
+} from '@/lib/driving-events-draw';
 
 /* ── Types ──────────────────────────────────────────────── */
 
@@ -37,50 +40,10 @@ interface GGExplorerProps {
   anchor?: AnchorSummary | null;
 }
 
-/** One row of `GET /sessions/<id>/corner-metrics` -- a `SELECT *`, so the
- * grip_anchor_* columns from migration 085 are already present; only the
- * fields this module reads are declared here. */
-interface CornerAnchorRow {
-  grip_anchor_tier?: string | null;
-  grip_anchor_reason?: string | null;
-  grip_anchor_baseline_g?: number | null;
-}
-
-/**
- * Aggregate per-corner grip anchors to one session-level answer.
- *
- * Takes the modal tier across corners, but if ANY corner refused, the whole
- * session's envelope prefers `refused` -- degrading loudly is the point,
- * not averaging a refusal away.
- */
-function aggregateAnchor(rows: CornerAnchorRow[] | null | undefined): AnchorSummary | null {
-  if (!rows || rows.length === 0) return null;
-
-  const refused = rows.find((r) => r.grip_anchor_tier === 'refused');
-  if (refused) {
-    return { tier: 'refused', baseline_g: null, reason: refused.grip_anchor_reason ?? null };
-  }
-
-  const counts: Record<string, number> = {};
-  for (const r of rows) {
-    const t = r.grip_anchor_tier;
-    if (!t) continue;
-    counts[t] = (counts[t] ?? 0) + 1;
-  }
-  const tiers = Object.keys(counts);
-  if (tiers.length === 0) return null;
-
-  let modalTier = tiers[0];
-  for (const t of tiers) {
-    if (counts[t] > counts[modalTier]) modalTier = t;
-  }
-  const rep = rows.find((r) => r.grip_anchor_tier === modalTier);
-  return {
-    tier: modalTier,
-    baseline_g: rep?.grip_anchor_baseline_g ?? null,
-    reason: rep?.grip_anchor_reason ?? null,
-  };
-}
+// CornerAnchorRow and aggregateAnchor (Global Constraint 3's per-corner ->
+// session-level aggregation) live in driving-events-draw.ts, alongside
+// resolveEnvelope, so both get real unit coverage with no DOM/canvas
+// involved. This component only fetches and wires them together.
 
 /* ── Density color (blue → cyan → green → yellow → red) ── */
 

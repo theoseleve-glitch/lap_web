@@ -187,19 +187,34 @@ const TIER_LABEL: Record<string, string> = {
 };
 
 /**
+ * The set of tiers permitted to draw a boundary -- an ALLOW-list, derived
+ * from `TIER_LABEL`'s keys so the two cannot drift apart.
+ *
+ * This module previously excluded only `'refused'` and `null`/`undefined`
+ * (a DENY-list): any other string -- an unrecognised tier from a future
+ * `grip_anchor.py` rename, a typo'd migration constant, a corrupted row --
+ * fell through and drew a confident circle labelled with the raw string.
+ * That is Global Constraint 2 inverted: an unknown measurement state
+ * silently replaced with a plausible-looking one. Only a tier this build
+ * actually recognises may draw; everything else refuses.
+ */
+const DRAWABLE_TIERS = new Set(Object.keys(TIER_LABEL));
+
+/**
  * Decide what boundary, if any, the g-g diagram may draw.
  *
  * This replaces `frictionR = maxG * 0.95` -- a circle computed from the very
  * points it was drawn over, so it moved whenever the data moved and could
  * never place the driver outside it. `maxObservedG` is accepted ONLY so this
  * function can be given the whole picture; it is deliberately never used to
- * size the boundary. If the anchor refused, we draw nothing and say so.
+ * size the boundary. If the anchor refused -- or names any tier this build
+ * does not recognise -- we draw nothing and say so.
  */
 export function resolveEnvelope(
   anchor: AnchorSummary | null,
   _maxObservedG: number,
 ): EnvelopeDecision {
-  if (!anchor || anchor.tier === 'refused' || anchor.tier == null) {
+  if (!anchor || anchor.tier == null || !DRAWABLE_TIERS.has(anchor.tier)) {
     return {
       draw: false, radiusG: null, reason: anchor?.reason ?? null,
       label: 'Grip limit not measured for this session',
@@ -212,9 +227,72 @@ export function resolveEnvelope(
       label: 'Grip limit not measured for this session',
     };
   }
-  const tier = TIER_LABEL[anchor.tier] ?? anchor.tier;
+  const tier = TIER_LABEL[anchor.tier];
   return {
     draw: true, radiusG: g, reason: anchor.reason ?? null,
     label: `${g.toFixed(2)}G — ${tier}`,
+  };
+}
+
+/** One row of `GET /sessions/<id>/corner-metrics` -- a `SELECT *`, so the
+ * grip_anchor_* columns from migration 085 are already present; only the
+ * fields this module reads are declared here. */
+export interface CornerAnchorRow {
+  grip_anchor_tier?: string | null;
+  grip_anchor_reason?: string | null;
+  grip_anchor_baseline_g?: number | null;
+}
+
+/**
+ * Aggregate per-corner grip anchors to one session-level answer
+ * (Global Constraint 3).
+ *
+ * - If ANY corner explicitly refused (`grip_anchor_tier === 'refused'`),
+ *   the whole session refuses immediately -- degrading loudly is the
+ *   point, not averaging a refusal away. The first refused row's reason
+ *   is carried.
+ * - A corner whose tier is null/absent recorded NO anchor at all -- that
+ *   is not evidence of grip, so rather than being silently dropped from
+ *   the vote (which would let a minority of successfully-anchored corners
+ *   decide the session), it is folded into the 'refused' bucket for the
+ *   modal count below. It does not force refusal outright the way an
+ *   explicit 'refused' row does; it only outweighs a good tier once
+ *   enough corners share it, which is the "push toward" the brief asked
+ *   for rather than a hard trigger.
+ * - Otherwise, the modal (most frequent) tier wins; its first matching
+ *   row supplies the representative baseline_g/reason. Note this may
+ *   still be a tier `resolveEnvelope` does not recognise (e.g. renamed
+ *   upstream) -- that check is `resolveEnvelope`'s job, not this one's;
+ *   aggregation and drawability are deliberately separate concerns.
+ */
+export function aggregateAnchor(rows: CornerAnchorRow[] | null | undefined): AnchorSummary | null {
+  if (!rows || rows.length === 0) return null;
+
+  const explicitRefusal = rows.find((r) => r.grip_anchor_tier === 'refused');
+  if (explicitRefusal) {
+    return { tier: 'refused', baseline_g: null, reason: explicitRefusal.grip_anchor_reason ?? null };
+  }
+
+  const counts: Record<string, number> = {};
+  for (const r of rows) {
+    const t = r.grip_anchor_tier == null ? 'refused' : r.grip_anchor_tier;
+    counts[t] = (counts[t] ?? 0) + 1;
+  }
+
+  let modalTier = Object.keys(counts)[0];
+  for (const t of Object.keys(counts)) {
+    if (counts[t] > counts[modalTier]) modalTier = t;
+  }
+
+  if (modalTier === 'refused') {
+    const noAnchorReason = rows.find((r) => r.grip_anchor_tier == null)?.grip_anchor_reason ?? null;
+    return { tier: 'refused', baseline_g: null, reason: noAnchorReason };
+  }
+
+  const rep = rows.find((r) => r.grip_anchor_tier === modalTier);
+  return {
+    tier: modalTier,
+    baseline_g: rep?.grip_anchor_baseline_g ?? null,
+    reason: rep?.grip_anchor_reason ?? null,
   };
 }

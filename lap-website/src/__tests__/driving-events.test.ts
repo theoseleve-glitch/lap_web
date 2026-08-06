@@ -357,7 +357,10 @@ describe('makeTapeGeometry — the one place a frame bug can re-enter', () => {
   });
 });
 
-import { resolveEnvelope } from '@/lib/driving-events-draw';
+import {
+  resolveEnvelope, aggregateAnchor,
+  type AnchorSummary, type CornerAnchorRow,
+} from '@/lib/driving-events-draw';
 
 describe('resolveEnvelope — never a boundary drawn from its own data', () => {
   it('uses the anchored baseline and names the tier', () => {
@@ -404,5 +407,135 @@ describe('resolveEnvelope — never a boundary drawn from its own data', () => {
     const d = resolveEnvelope(
       { baseline_g: null, tier: 'refused', reason: 'channel_untrusted' }, 1.0);
     expect(d.reason).toBe('channel_untrusted');
+  });
+});
+
+describe('resolveEnvelope — tier is an ALLOW-list, not a deny-list', () => {
+  it('draws for each of the three tiers this build recognises', () => {
+    for (const tier of [
+      'session_envelope_ellipse_fitted', 'session_envelope_default_p2', 'driver_best_session',
+    ]) {
+      const d = resolveEnvelope({ baseline_g: 1.0, tier, reason: null }, 1.3);
+      expect(d.draw).toBe(true);
+    }
+  });
+
+  it('refuses the explicit refused tier', () => {
+    const d = resolveEnvelope({ baseline_g: 1.0, tier: 'refused', reason: null }, 1.3);
+    expect(d.draw).toBe(false);
+  });
+
+  it('refuses an unrecognised tier string even with a finite positive baseline -- ' +
+     'the exact bug: an upstream rename/typo must not draw a confident circle', () => {
+    const d = resolveEnvelope({ baseline_g: 1.02, tier: 'not_a_real_tier', reason: null }, 1.3);
+    expect(d.draw).toBe(false);
+    expect(d.radiusG).toBeNull();
+    expect(d.label.toLowerCase()).toContain('not measured');
+    expect(d.label).not.toContain('not_a_real_tier');
+  });
+
+  it('refuses a null tier', () => {
+    expect(resolveEnvelope({ baseline_g: 1.02, tier: null, reason: null }, 1.3).draw).toBe(false);
+  });
+
+  it('refuses an undefined tier', () => {
+    const anchor = { baseline_g: 1.02, reason: null } as unknown as AnchorSummary;
+    expect(resolveEnvelope(anchor, 1.3).draw).toBe(false);
+  });
+
+  it('refuses an empty-string tier', () => {
+    expect(resolveEnvelope({ baseline_g: 1.02, tier: '', reason: null }, 1.3).draw).toBe(false);
+  });
+});
+
+describe('aggregateAnchor — per-corner anchors collapse to one session-level answer', () => {
+  function row(over: Partial<CornerAnchorRow> = {}): CornerAnchorRow {
+    return {
+      grip_anchor_tier: 'session_envelope_ellipse_fitted',
+      grip_anchor_reason: null,
+      grip_anchor_baseline_g: 1.0,
+      ...over,
+    };
+  }
+
+  it('returns null for an empty list', () => {
+    expect(aggregateAnchor([])).toBeNull();
+    expect(aggregateAnchor(null)).toBeNull();
+    expect(aggregateAnchor(undefined)).toBeNull();
+  });
+
+  it('takes the shared tier when every corner agrees', () => {
+    const a = aggregateAnchor([row(), row(), row()]);
+    expect(a?.tier).toBe('session_envelope_ellipse_fitted');
+    expect(a?.baseline_g).toBe(1.0);
+  });
+
+  it('takes the modal tier across mixed tiers with no refusal', () => {
+    const a = aggregateAnchor([
+      row({ grip_anchor_tier: 'driver_best_session', grip_anchor_baseline_g: 0.9 }),
+      row({ grip_anchor_tier: 'driver_best_session', grip_anchor_baseline_g: 0.9 }),
+      row({ grip_anchor_tier: 'session_envelope_default_p2', grip_anchor_baseline_g: 1.1 }),
+    ]);
+    expect(a?.tier).toBe('driver_best_session');
+    expect(a?.baseline_g).toBe(0.9);
+  });
+
+  it('prefers refused when ONE corner refuses among many good ones -- ' +
+     'degrading loudly is the point, not averaging a refusal away', () => {
+    const a = aggregateAnchor([
+      row(), row(), row(), row(),
+      row({ grip_anchor_tier: 'refused', grip_anchor_reason: 'channel_untrusted', grip_anchor_baseline_g: null }),
+    ]);
+    expect(a?.tier).toBe('refused');
+    expect(a?.baseline_g).toBeNull();
+    expect(a?.reason).toBe('channel_untrusted');
+  });
+
+  it('returns refused when every corner refused', () => {
+    const a = aggregateAnchor([
+      row({ grip_anchor_tier: 'refused', grip_anchor_baseline_g: null }),
+      row({ grip_anchor_tier: 'refused', grip_anchor_baseline_g: null }),
+    ]);
+    expect(a?.tier).toBe('refused');
+  });
+
+  it('folds a null/absent per-corner tier into the refused vote rather than ' +
+     'dropping it -- a corner with no anchor recorded is not evidence of grip', () => {
+    // 2 corners recorded nothing, 1 recorded a good tier: absence outvotes it.
+    const a = aggregateAnchor([
+      row({ grip_anchor_tier: null }),
+      row({ grip_anchor_tier: null }),
+      row({ grip_anchor_tier: 'driver_best_session' }),
+    ]);
+    expect(a?.tier).toBe('refused');
+  });
+
+  it('a minority null/absent tier does not overrule a good majority', () => {
+    const a = aggregateAnchor([
+      row({ grip_anchor_tier: 'driver_best_session' }),
+      row({ grip_anchor_tier: 'driver_best_session' }),
+      row({ grip_anchor_tier: null }),
+    ]);
+    expect(a?.tier).toBe('driver_best_session');
+  });
+
+  it('aggregates an unrecognised tier string as-is -- drawability is ' +
+     'resolveEnvelope\'s job, not aggregateAnchor\'s', () => {
+    const a = aggregateAnchor([
+      row({ grip_anchor_tier: 'not_a_real_tier' }),
+      row({ grip_anchor_tier: 'not_a_real_tier' }),
+    ]);
+    expect(a?.tier).toBe('not_a_real_tier');
+    // But it must still refuse to draw once resolved -- the allow-list catches it.
+    expect(resolveEnvelope(a, 1.3).draw).toBe(false);
+  });
+
+  it('prefers refused when an unrecognised tier and an explicit refusal both appear', () => {
+    const a = aggregateAnchor([
+      row({ grip_anchor_tier: 'not_a_real_tier' }),
+      row({ grip_anchor_tier: 'refused', grip_anchor_reason: 'channel_untrusted', grip_anchor_baseline_g: null }),
+    ]);
+    expect(a?.tier).toBe('refused');
+    expect(a?.reason).toBe('channel_untrusted');
   });
 });
