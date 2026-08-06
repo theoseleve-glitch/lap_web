@@ -357,7 +357,9 @@ def _persist_corner_metrics(conn: Any, session_id: str, summary: dict) -> None:
     branch's own deploy window: migration 085 adds four columns that
     `INSERT_CORNER_METRIC` names unconditionally, so code serving before the
     migration raises UndefinedColumn here. Proven on real PostgreSQL 16 with
-    085's columns dropped: `run_persist_to_db` returned None and left every
+    085's columns dropped: `run_persist_to_db` raised InFailedSqlTransaction
+    -- the already-guarded driving-events writer re-raises when its savepoint
+    cannot be taken inside an already-aborted transaction -- and left every
     child table at ZERO rows.
 
     See `_write_in_savepoint` and

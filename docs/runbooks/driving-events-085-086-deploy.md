@@ -49,11 +49,11 @@ Note: `git log` on the branch tells you what SHOULD be deployed, not what IS. On
 UndefinedColumn: column "grip_anchor_tier" of relation "corner_metrics" does not exist
 ```
 
-and **all three writers swallow it**:
+and, before this branch, **all three writers swallowed it**:
 
 | Writer | Behaviour on failure |
 |---|---|
-| `telemetry_tool/pipeline/stages/s15_persist.py:243` | logs a warning, continues |
+| `telemetry_tool/pipeline/stages/s15_persist.py:353` | **SAVEPOINT-contained on this branch** — was: logs a warning, continues (see §1b) |
 | `telemetry_tool/tasks/pipeline_tasks.py:1161-1163` | logs a warning, rolls back, continues |
 | `telemetry_tool/tasks/endurance_tasks.py:781-782` | **bare `except`, no log at all** |
 
@@ -65,7 +65,7 @@ Proven on a real PostgreSQL 16 against the shipped code with 085's four columns 
 
 The code-side half is fixed on this branch — `_persist_corner_metrics` now runs inside a SAVEPOINT (`_write_in_savepoint`) so the failure is contained and everything else still commits, and if the savepoint itself cannot be taken the exception is re-raised rather than swallowed, which makes the failure loud instead of silent. **That is a containment, not a licence to deploy out of order:** with the columns missing you still lose every corner metric in the window, unrecoverably without reprocessing.
 
-### 1b — 086 has the SAME ordering hazard, with a WIDER blast radius
+### 1b — 086 has the SAME ordering hazard, and the SAME blast radius
 
 `086_driving_events` creates a whole TABLE, and `db/queries.py`'s
 `INSERT_DRIVING_EVENT` names it unconditionally. Code serving before 086 is

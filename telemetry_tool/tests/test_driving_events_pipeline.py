@@ -2251,14 +2251,24 @@ def test_the_real_fixture_path_is_anchored_not_cwd_relative():
     56 deselected", exit 0. A green run that proved nothing, in the one place
     this branch's numbers are established.
 
-    `isabs` rather than `exists`: this must fail from ANY working directory
-    the moment the path stops being anchored, including on a clone where the
-    fixture is genuinely absent and the skip is legitimate.
+    `isabs` alone is WEAKER than the property. An earlier revision asserted
+    only that, reasoning that `exists` would false-red on a clone lacking the
+    fixture -- but `telemetry_tool/data/raw/OK_R4.csv` is TRACKED (it is the
+    only file in that directory and it is committed), so that clone does not
+    exist. Meanwhile `parents[2]` instead of `parents[1]` yields a path that
+    is absolute, passes `isabs`, resolves to nothing, and sends all 32
+    real-data tests back to silently skipping -- the same failure one step
+    removed. Assert both: anchored AND actually there.
     """
     assert os.path.isabs(_REAL_CSV), (
         f"_REAL_CSV is {_REAL_CSV!r} -- a relative path under a skipif "
         f"silently turns the entire real-data gate into 'skipped, exit 0' "
         f"depending on where pytest was invoked from")
+    assert os.path.exists(_REAL_CSV), (
+        f"_REAL_CSV is anchored but resolves to nothing: {_REAL_CSV!r}. The "
+        f"fixture is tracked in git, so this means the anchor is wrong (a "
+        f"parents[] off-by-one), and the skipif is about to turn the whole "
+        f"real-data gate green without running it")
 
 # ── The floors this gate enforces ─────────────────────────────────────────
 #
