@@ -17,7 +17,7 @@ Every task's requirements implicitly include this section.
 3. **Never draw a diagnostic boundary derived from the data it is drawn over.** This is the specific defect Phase 3 exists to remove (`GGExplorer.tsx:105`, `frictionR = maxG * 0.95`). If the grip anchor refused, draw no envelope and say so — do not fall back to a self-referential circle.
 4. **Tests must import the shipped code, not a copy of it.** `src/__tests__/chart-guards.test.ts` re-declares its guard helpers inline, so it passes no matter what the components do. Do not follow that pattern; import the real exported functions.
 5. **Bite-check every test.** Break the code the test guards, run it, confirm it goes RED *for the stated reason*, restore. Paste the actual failure output in your report. Note `pytest`-style caching has a JS analogue: if a test behaves oddly after a mutate-and-restore, clear `node_modules/.vite`.
-6. `magnitude_unit` is a closed vocabulary: `m`, `m/s`, `m/s2`, `pct`. `anchor_tier` is one of `session_envelope_ellipse_fitted`, `session_envelope_default_p2`, `driver_best_session`, `refused`.
+6. `magnitude_unit` is a closed vocabulary: `m`, `m/s`, `m/s2`, `pct`. `anchor_tier` is one of `session_envelope_ellipse_fitted`, `session_envelope_ellipse_default_p2`, `driver_best_session`, `refused`. **CORRECTED 2026-08-06 (final fix wave).** This line originally read `session_envelope_default_p2`, missing `ellipse_`. `telemetry_tool/grip_anchor.py:52` defines `TIER_SESSION_ENVELOPE_ELLIPSE_DEFAULT_P2 = "session_envelope_ellipse_default_p2"`. The typo was copied verbatim into the Task 4 brief and from there into `TIER_LABEL`, where — because `DRAWABLE_TIERS` is correctly an exact-match allow-list — it made the tier the backend selects by DEFAULT (`friction.exponent_source !== 'fitted'`, grip_anchor.py:491-494) permanently undrawable, telling those drivers "Grip limit not measured for this session". Do not retype backend constants into this plan; `lap-website/src/__tests__/backend-vocabulary-contract.test.ts` now parses them from the Python instead.
 7. Do not grow `SpeedTraceChart.tsx` (already 1198 lines against this repo's 500-line guidance). New logic goes in `src/lib/`.
 8. **Do not reuse `ChartAnnotations.tsx`** (spec §5.8). It paints onto the canvas externally, so the chart's next `clearRect` erases whatever it drew — an overlay routed through it will appear to work and then vanish on the first resize or hover. Overlays must be parameters of the pure draw functions, drawn inside the same pass. This is why Task 2's functions take a `ctx` and are called from within `drawSpeedTrace`, not after it.
 8. Run frontend commands from `lap-website/`. Stage explicit paths; `git add -u` is forbidden in this repo (antivirus quarantine causes spurious deletions).
@@ -771,7 +771,7 @@ git commit -m "feat(events-ui): overlay the mistake tape on the speed trace"
 
 **The defect being removed.** `GGExplorer.tsx:105` is `const frictionR = maxG * 0.95;` where `maxG` is the largest magnitude among the very points being plotted (computed at lines 96-102). It is then drawn as a boundary at line 141 and LABELLED with a G figure at line 209. A boundary derived from the data it is drawn over cannot diagnose that data — it moves whenever the data moves, so the driver can never be outside it and can never learn anything from it. Migration 085 gives the honest alternative: a per-corner `grip_anchor_baseline_g` with a `grip_anchor_tier` naming what it was measured against.
 
-**Tiers**, from `telemetry_tool/grip_anchor.py`, in descending strength: `session_envelope_ellipse_fitted`, `session_envelope_default_p2`, `driver_best_session`, `refused`.
+**Tiers**, from `telemetry_tool/grip_anchor.py`, in descending strength: `session_envelope_ellipse_fitted`, `session_envelope_ellipse_default_p2` (CORRECTED — see Global Constraint 6), `driver_best_session`, `refused`.
 
 - [ ] **Step 1: Write the failing tests**
 
@@ -816,7 +816,7 @@ describe('resolveEnvelope — never a boundary drawn from its own data', () => {
   it('draws nothing for a non-finite or non-positive baseline', () => {
     for (const g of [NaN, Infinity, 0, -1]) {
       const d = resolveEnvelope(
-        { baseline_g: g, tier: 'session_envelope_default_p2', reason: null }, 1.3);
+        { baseline_g: g, tier: 'session_envelope_ellipse_default_p2', reason: null }, 1.3);
       expect(d.draw).toBe(false);
     }
   });
@@ -854,7 +854,7 @@ export interface EnvelopeDecision {
 
 const TIER_LABEL: Record<string, string> = {
   session_envelope_ellipse_fitted: 'session envelope (fitted)',
-  session_envelope_default_p2: 'session envelope (default p=2)',
+  session_envelope_ellipse_default_p2: 'session envelope (default p=2)',
   driver_best_session: 'your best this session',
 };
 
