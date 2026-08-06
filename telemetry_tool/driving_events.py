@@ -653,7 +653,27 @@ def run_registry(windows: Iterable[CornerWindow]) -> tuple[list["DrivingEvent"],
                 continue
             if result is not None:
                 events.append(result)
-                any_detected = True
+                # A REFUSAL IS AN EVENT, AND IT IS NOT A DETECTION.
+                #
+                # This used to be a bare `any_detected = True` on any
+                # returned event, which is wrong for the same reason
+                # CANNOT_JUDGE exists: `not_measurable` events are the
+                # detector saying it could NOT judge this window, located and
+                # named. Counting them as "detected" made the
+                # partial-degradation case invisible -- with
+                # `friction_model=None` every corner-lap goes to a
+                # self-referential tier-2 anchor, `envelope_under_use` emits
+                # 72/72 refusals, and the capability record read "detected",
+                # byte-identical to a clean run. That is the exact silent
+                # degradation the capability record exists to expose, and it
+                # is the scenario the original probe used to find it.
+                #
+                # A detector whose ONLY events are refusals has not detected
+                # anything, so refusals fall through to `insufficient` just
+                # like CANNOT_JUDGE. They are still EMITTED -- the located,
+                # named refusal is the useful part and is unaffected.
+                if result.validity == VALIDITY_MEASURED:
+                    any_detected = True
             else:
                 any_looked_clean = True
 

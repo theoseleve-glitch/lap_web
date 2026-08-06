@@ -628,7 +628,12 @@ def test_late_throttle_emits_not_measurable_when_the_scan_found_no_crossing():
     ev, cap = _late_throttle_via_registry(**w_kwargs)
 
     assert ev is not None, "the corner-lap vanished instead of being reported"
-    assert cap["late_throttle"] == "detected", cap
+    # `insufficient`, NOT `detected` (2026-08-06, NEW-2). The event IS still
+    # emitted -- located and named, which is the useful part -- but a
+    # detector whose only output is a refusal has not detected anything, and
+    # saying otherwise is what made a wholesale degradation look like a clean
+    # run. See run_registry.
+    assert cap["late_throttle"] == de.CAPABILITY_INSUFFICIENT, cap
     assert ev.validity == de.VALIDITY_NOT_MEASURABLE
     assert ev.reason == de.ONSET_NO_SPEED_CROSSING
     # A refusal carries no numbers -- DrivingEvent.__post_init__ enforces
@@ -639,6 +644,62 @@ def test_late_throttle_emits_not_measurable_when_the_scan_found_no_crossing():
     reference = _window(**w_kwargs)
     assert ev.s_norm_start == reference.s_norm_start
     assert ev.s_norm_end == reference.s_norm_end
+
+
+def test_a_detector_whose_only_events_are_refusals_reads_insufficient():
+    """NEW-2, the partial-degradation case -- the exact probe that exposed
+    the original silent degradation.
+
+    With `friction_model=None`, step 09c degrades while 10d succeeds (a
+    reachable split), every corner-lap falls to a self-referential tier-2
+    anchor, and `envelope_under_use` refuses on all of them. Counting those
+    refusals as detections made the capability record byte-identical to a
+    clean run -- so the one signal that distinguishes "could not measure"
+    from "nothing to fix" said the wrong thing precisely when it mattered.
+    """
+    import driving_events as de
+
+    degraded = [_window(lap_number=n, grip_anchor_pct=62.0,
+                        anchor_tier=de.ANCHOR_DRIVER_BEST_SESSION)
+                for n in range(1, 10)]
+    events, cap = de.run_registry(degraded)
+
+    euu = [e for e in events if e.event_type == "envelope_under_use"]
+    assert len(euu) == 9, "the refusals must still be EMITTED"
+    assert all(e.validity == de.VALIDITY_NOT_MEASURABLE for e in euu)
+    assert cap["envelope_under_use"] == de.CAPABILITY_INSUFFICIENT, (
+        f"a detector whose only events are refusals reported "
+        f"{cap['envelope_under_use']!r} -- indistinguishable from a run where "
+        f"it actually measured something")
+
+    # And the clean run it must NOT resemble.
+    clean = [_window(lap_number=n, grip_anchor_pct=62.0,
+                     anchor_tier=de.ANCHOR_SESSION_ENVELOPE_FITTED)
+             for n in range(1, 10)]
+    _, cap_clean = de.run_registry(clean)
+    assert cap_clean["envelope_under_use"] == de.CAPABILITY_DETECTED
+    assert cap_clean["envelope_under_use"] != cap["envelope_under_use"]
+
+
+def test_one_real_measurement_among_refusals_still_reads_detected():
+    """The classification is per DETECTOR over all windows, not per event:
+    a detector that measured even one corner-lap HAS detected something, and
+    must not be dragged to `insufficient` by refusals elsewhere."""
+    import driving_events as de
+
+    mixed = (
+        [_window(lap_number=1, grip_anchor_pct=62.0,
+                 anchor_tier=de.ANCHOR_SESSION_ENVELOPE_FITTED)]
+        + [_window(lap_number=n, grip_anchor_pct=62.0,
+                   anchor_tier=de.ANCHOR_DRIVER_BEST_SESSION)
+           for n in range(2, 10)]
+    )
+    events, cap = de.run_registry(mixed)
+
+    euu = [e for e in events if e.event_type == "envelope_under_use"]
+    assert sum(1 for e in euu if e.validity == de.VALIDITY_MEASURED) == 1
+    assert sum(1 for e in euu if e.validity == de.VALIDITY_NOT_MEASURABLE) == 8
+    assert cap["envelope_under_use"] == de.CAPABILITY_DETECTED
 
 
 def test_every_onset_refusal_reason_reaches_the_event_unchanged():
@@ -692,9 +753,12 @@ def test_a_refused_onset_still_lets_the_other_three_detectors_evaluate():
                 a_long_mps2=a_long, grip_anchor_pct=70.0)
     _, cap = de.run_registry([w])
 
-    assert cap["late_throttle"] == "detected"
-    assert cap["re_braking"] == "detected"
-    assert cap["envelope_under_use"] == "detected"
+    # late_throttle's ONLY event here is the refusal, so it reads
+    # `insufficient` (NEW-2) -- but the point of this test is the other two,
+    # which must still have LOOKED and MEASURED.
+    assert cap["late_throttle"] == de.CAPABILITY_INSUFFICIENT
+    assert cap["re_braking"] == de.CAPABILITY_DETECTED
+    assert cap["envelope_under_use"] == de.CAPABILITY_DETECTED
 
 
 # ── fix round 1: NaN must never fabricate a "measured" claim ──────────────
