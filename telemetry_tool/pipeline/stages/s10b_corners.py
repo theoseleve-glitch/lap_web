@@ -1448,6 +1448,8 @@ def run_coaching_v2(
     adv_mod = lazy_import("coaching_advanced")
     basic_mod = lazy_import("coaching_basic")
     td_mod = lazy_import("track_decomposition")
+    mrp_mod = lazy_import("mrp_detector")
+    hd_mod = lazy_import("handling_detector")
 
     if sections is None or best_lap_df is None:
         return None
@@ -1476,6 +1478,32 @@ def run_coaching_v2(
 
     events = events or {}
     handling = handling or {}
+
+    # Reconstruct CornerEvents / HandlingEvent objects, exactly as the
+    # TrackSections above are reconstructed.
+    #
+    # THE DEFECT THIS REPLACES (live in production until 2026-08-06). The two
+    # producing stages serialise their output so it can sit in the JSON
+    # summary -- run_mrp_detection_v2 with `.to_dict()`, run_handling_analysis_v2
+    # with `e.__dict__` -- and the orchestrator feeds those dicts straight in
+    # here (orchestrator.py:1304-1306). Both coaching modules do ATTRIBUTE
+    # access on them (`corner_events.mrp_m`, `ev.cause`), so every section
+    # raised AttributeError inside the per-section `except Exception` in
+    # generate_basic_coaching, which substituted _empty_coaching. Every corner
+    # of every session with MRP events reported "No data available for this
+    # section." with all four time losses 0.0, while the stage logged success.
+    #
+    # Deliberately NOT wrapped in a try/except: a dict that no longer fits the
+    # dataclass is a real contract break, and _safe_step records a raised
+    # error as a failed step. Swallowing it here is what hid this for months.
+    events = {
+        sid: (mrp_mod.CornerEvents(**ev) if isinstance(ev, dict) else ev)
+        for sid, ev in events.items()
+    } if mrp_mod is not None else events
+    handling = {
+        sid: [(hd_mod.HandlingEvent(**h) if isinstance(h, dict) else h) for h in (evs or [])]
+        for sid, evs in handling.items()
+    } if hd_mod is not None else handling
 
     if tier == "advanced" and adv_mod is not None:
         coaching = adv_mod.generate_advanced_coaching(
