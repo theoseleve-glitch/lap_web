@@ -1,6 +1,7 @@
 """Driving events — schema, persistence, stage wiring and real-data acceptance."""
 import inspect
 import os
+import pathlib
 from collections import Counter
 from pathlib import Path
 from unittest.mock import MagicMock, patch
@@ -1973,7 +1974,39 @@ def test_the_corner_mask_refuses_when_distance_norm_is_missing():
 # Task 11 — real-data acceptance. This is the gate.
 # ══════════════════════════════════════════════════════════════════
 
-_REAL_CSV = "telemetry_tool/data/raw/OK_R4.csv"
+# ⚠ ANCHORED TO `__file__`, NOT TO THE CWD. This was
+# `"telemetry_tool/data/raw/OK_R4.csv"`, a CWD-relative path sitting under a
+# `skipif(not os.path.exists(...))`. Run pytest from `telemetry_tool/` -- an
+# entirely reasonable thing to do, and what the package's own `pytest.ini`
+# testpaths invite -- and the path missed, every real-data test SKIPPED, and
+# pytest exited 0. Measured before the fix: "32 skipped, 56 deselected",
+# exit 0.
+#
+# That is a green run that proved nothing, in the one place this branch's
+# numbers are established: the same failure class as a test that cannot
+# fail, which is the failure this project cares about most. The skip is
+# still there (the fixture is genuinely optional for a clone without it),
+# but it can no longer fire just because of where pytest was invoked.
+_REAL_CSV = str(
+    pathlib.Path(__file__).resolve().parents[1] / "data" / "raw" / "OK_R4.csv"
+)
+
+
+def test_the_real_fixture_path_is_anchored_not_cwd_relative():
+    """NEW-3. `_REAL_CSV` sits under a `skipif`, so a CWD-relative path does
+    not fail -- it makes every real-data test SKIP and pytest exit 0. Measured
+    before the fix, running pytest from `telemetry_tool/`: "32 skipped,
+    56 deselected", exit 0. A green run that proved nothing, in the one place
+    this branch's numbers are established.
+
+    `isabs` rather than `exists`: this must fail from ANY working directory
+    the moment the path stops being anchored, including on a clone where the
+    fixture is genuinely absent and the skip is legitimate.
+    """
+    assert os.path.isabs(_REAL_CSV), (
+        f"_REAL_CSV is {_REAL_CSV!r} -- a relative path under a skipif "
+        f"silently turns the entire real-data gate into 'skipped, exit 0' "
+        f"depending on where pytest was invoked from")
 
 # ── The floors this gate enforces ─────────────────────────────────────────
 #
