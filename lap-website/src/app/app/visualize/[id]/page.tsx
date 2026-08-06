@@ -5,6 +5,7 @@ import { useParams } from 'next/navigation';
 import Link from 'next/link';
 import { api, BACKEND_URL } from '@/lib/api-client';
 import { SpeedTraceZoom, GpsTrace, GGExplorer } from '@/components/app/charts';
+import DrivingEventsPanel from '@/components/app/DrivingEventsPanel';
 import { ChartErrorBoundary } from '@/components/shared/ChartErrorBoundary';
 import { FullscreenToggle } from '@/components/shared/charts/FullscreenToggle';
 import { ReferenceOverlayProvider, ReferenceFAB } from '@/components/app/reference';
@@ -251,6 +252,7 @@ export default function VisualizeSessionPage() {
                     compareLap={compareLap}
                     primaryLapTime={primaryLapTime}
                     compareLapTime={compareLapTime}
+                    showDrivingEvents
                     className="w-full h-full"
                   />
                 </ChartErrorBoundary>
@@ -273,6 +275,18 @@ export default function VisualizeSessionPage() {
                   />
                 </ChartErrorBoundary>
               </FullscreenToggle>
+            </div>
+          </div>
+
+          {/* Driving Events — right rail, ranked list */}
+          <div className="w-80 shrink-0 min-h-0 relative border-l border-steel/10 overflow-y-auto">
+            <span className="sticky top-0 z-10 block px-2 py-1 text-[9px] font-monument text-steel/40 uppercase tracking-wider bg-asphalt pointer-events-none">
+              driving events
+            </span>
+            <div className="px-2 pb-2">
+              <ChartErrorBoundary chartName="DrivingEvents">
+                <DrivingEventsPanel sessionId={sessionId} />
+              </ChartErrorBoundary>
             </div>
           </div>
 
