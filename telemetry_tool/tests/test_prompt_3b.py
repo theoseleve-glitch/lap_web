@@ -131,45 +131,100 @@ class FakeRedisPipeline:
 
 
 class TestRedisEventDedup:
-    """Redis fast-path dedup for Stripe events."""
+    """Redis fast-path dedup for Stripe events.
+
+    These used to exercise ``_redis_event_check``, a single check-AND-set via
+    SETNX. It was split (bfd362c) into a read (``_redis_event_is_seen``) and a
+    separate write (``_redis_event_mark_seen``) so that a handler which raises
+    leaves the key ABSENT and Stripe retries the event. The old tests mocked
+    ``r.set`` and kept patching a name that no longer existed, so all four
+    errored at collection-time mock setup and this dedup path has been
+    untested since.
+    """
 
     def test_redis_dedup_new_event(self):
-        """New event returns False (not a duplicate)."""
-        from web.routes.billing import _redis_event_check
+        """Unseen event returns False (not a duplicate)."""
+        from web.routes.billing import _redis_event_is_seen
 
         mock_redis = MagicMock()
-        mock_redis.set.return_value = True  # was_set = True → key was new
+        mock_redis.get.return_value = None  # key absent
         with patch("web.rate_limit.get_redis", return_value=mock_redis):
-            result = _redis_event_check("evt_new_123")
+            result = _redis_event_is_seen("evt_new_123")
         assert result is False
 
     def test_redis_dedup_duplicate_event(self):
-        """Existing event returns True (is a duplicate)."""
-        from web.routes.billing import _redis_event_check
+        """Previously-seen event returns True (is a duplicate)."""
+        from web.routes.billing import _redis_event_is_seen
 
         mock_redis = MagicMock()
-        mock_redis.set.return_value = None  # was_set = None → key already existed
+        mock_redis.get.return_value = b"1"  # key present
         with patch("web.rate_limit.get_redis", return_value=mock_redis):
-            result = _redis_event_check("evt_dup_123")
+            result = _redis_event_is_seen("evt_dup_123")
         assert result is True
 
     def test_redis_dedup_no_redis(self):
-        """Without Redis, falls through (returns False)."""
-        from web.routes.billing import _redis_event_check
+        """Without Redis, falls through to the DB check (returns False)."""
+        from web.routes.billing import _redis_event_is_seen
 
         with patch("web.rate_limit.get_redis", return_value=None):
-            result = _redis_event_check("evt_any")
+            result = _redis_event_is_seen("evt_any")
         assert result is False
 
     def test_redis_dedup_redis_error(self):
-        """Redis error falls through (returns False)."""
-        from web.routes.billing import _redis_event_check
+        """Redis error falls through to the DB check (returns False).
+
+        Fail-open is deliberate: the DB dedup still guards idempotency, and
+        failing closed would drop every webhook whenever Redis blips.
+        """
+        from web.routes.billing import _redis_event_is_seen
+
+        mock_redis = MagicMock()
+        mock_redis.get.side_effect = ConnectionError("Redis down")
+        with patch("web.rate_limit.get_redis", return_value=mock_redis):
+            result = _redis_event_is_seen("evt_any")
+        assert result is False
+
+    def test_reading_does_not_mark_the_event_seen(self):
+        """The whole point of the split: the READ must have no side effect.
+
+        Under the old SETNX implementation the check itself claimed the event,
+        so a handler that then raised left Stripe unable to retry -- the
+        payment event was lost. Guards against anyone folding the write back
+        into the read.
+        """
+        from web.routes.billing import _redis_event_is_seen
+
+        mock_redis = MagicMock()
+        mock_redis.get.return_value = None
+        with patch("web.rate_limit.get_redis", return_value=mock_redis):
+            _redis_event_is_seen("evt_no_write")
+        assert not mock_redis.set.called, (
+            "the dedup READ wrote to Redis -- a handler failure after this "
+            "point would leave the event marked processed and Stripe would "
+            "not retry it"
+        )
+        assert not mock_redis.setnx.called
+
+    def test_mark_seen_sets_the_key_with_a_ttl(self):
+        """The write half, which nothing covered."""
+        from web.routes.billing import _redis_event_mark_seen
+
+        mock_redis = MagicMock()
+        with patch("web.rate_limit.get_redis", return_value=mock_redis):
+            _redis_event_mark_seen("evt_done_123")
+        assert mock_redis.set.called, "successful processing must mark the event seen"
+        args, kwargs = mock_redis.set.call_args
+        assert "evt_done_123" in args[0]
+        assert kwargs.get("ex"), "the dedup key must expire, or Redis grows without bound"
+
+    def test_mark_seen_survives_a_redis_outage(self):
+        """Non-fatal by design -- DB dedup still guards idempotency."""
+        from web.routes.billing import _redis_event_mark_seen
 
         mock_redis = MagicMock()
         mock_redis.set.side_effect = ConnectionError("Redis down")
         with patch("web.rate_limit.get_redis", return_value=mock_redis):
-            result = _redis_event_check("evt_any")
-        assert result is False
+            _redis_event_mark_seen("evt_any")  # must not raise
 
 
 class TestEventOrdering:

@@ -64,7 +64,7 @@ class TestWebhookLogging:
             with patch.object(billing_mod, "STRIPE_SECRET_KEY", "sk_test"):
                 with patch.object(billing_mod, "STRIPE_WEBHOOK_SECRET", "whsec_test"):
                     with patch.object(billing_mod, "_get_conn", return_value=conn):
-                        with patch.object(billing_mod, "_redis_event_check", return_value=False):
+                        with patch.object(billing_mod, "_redis_event_is_seen", return_value=False):
                             with patch.object(billing_mod, "_is_event_processed", return_value=False):
                                 with patch.object(billing_mod, "_check_event_ordering", return_value=True):
                                     with patch("admin.audit.log_stripe_webhook") as mock_log_wh:
@@ -100,7 +100,7 @@ class TestWebhookLogging:
             with patch.object(billing_mod, "STRIPE_SECRET_KEY", "sk_test"):
                 with patch.object(billing_mod, "STRIPE_WEBHOOK_SECRET", "whsec_test"):
                     with patch.object(billing_mod, "_get_conn", return_value=conn):
-                        with patch.object(billing_mod, "_redis_event_check", return_value=False):
+                        with patch.object(billing_mod, "_redis_event_is_seen", return_value=False):
                             with patch.object(billing_mod, "_is_event_processed", return_value=False):
                                 with patch.object(billing_mod, "_check_event_ordering", return_value=True):
                                     with patch.object(billing_mod, "_update_webhook_status") as mock_update:
@@ -133,7 +133,7 @@ class TestWebhookLogging:
             with patch.object(billing_mod, "STRIPE_SECRET_KEY", "sk_test"):
                 with patch.object(billing_mod, "STRIPE_WEBHOOK_SECRET", "whsec_test"):
                     with patch.object(billing_mod, "_get_conn", return_value=conn):
-                        with patch.object(billing_mod, "_redis_event_check", return_value=False):
+                        with patch.object(billing_mod, "_redis_event_is_seen", return_value=False):
                             with patch.object(billing_mod, "_is_event_processed", return_value=False):
                                 with patch.object(billing_mod, "_check_event_ordering", return_value=True):
                                     with patch.object(billing_mod, "_update_webhook_status") as mock_update:
